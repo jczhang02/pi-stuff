@@ -29,11 +29,20 @@ test("nested Tool trace retention never limits execution", () => {
 	);
 	if (!first) throw new Error("expected the first trace fixture");
 	first.status = "done";
+	first.result = {
+		addedToolNames: ["ctx_search"],
+		content: [{ text: "settled", type: "text" }],
+		details: {},
+		terminate: true,
+	};
 	traces.emit("cell", first, context);
 	const response = traces.attach({ cellId: "cell", contentItems: [], kind: "result" });
-	expect(updates).toHaveLength(800);
-	expect(updates.at(-1)?.droppedTraceCount).toBe(32);
-	expect(updates.every((update) => update.trace.status === "running")).toBe(true);
+	expect(updates).toHaveLength(801);
+	expect(updates.at(-1)).toMatchObject({
+		droppedTraceCount: 32,
+		trace: { id: "nested-0", result: { addedToolNames: ["ctx_search"], terminate: true }, status: "done" },
+	});
+	expect(updates.slice(0, -1).every((update) => update.trace.status === "running")).toBe(true);
 	expect(updates.every((update) => !("traces" in update))).toBe(true);
 	expect(response.droppedTraceCount).toBe(32);
 	expect(response.traces).toHaveLength(768);

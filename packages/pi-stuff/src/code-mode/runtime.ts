@@ -175,7 +175,8 @@ function dropOldestTrace(
 	const oldestId = target.keys().next().value;
 	if (oldestId === undefined) return;
 	const oldestTrace = target.get(oldestId);
-	if (oldestTrace?.result) retainNestedResultControls(retainedControls, oldestTrace.result);
+	if (oldestTrace?.status === "running") retainedControls.omittedRunningTraceIds.add(oldestId);
+	else if (oldestTrace?.result) retainNestedResultControls(retainedControls, oldestTrace.result);
 	const index = operationIndexes.get(oldestId);
 	target.delete(oldestId);
 	operationIndexes.delete(oldestId);
@@ -195,6 +196,13 @@ function mergeTrace(
 ): number {
 	let index = operationIndexes.get(trace.id);
 	let dropped = 0;
+	if (index === undefined && retainedControls.omittedRunningTraceIds.has(trace.id)) {
+		if (trace.status !== "running") {
+			retainedControls.omittedRunningTraceIds.delete(trace.id);
+			if (trace.result) retainNestedResultControls(retainedControls, trace.result);
+		}
+		return 0;
+	}
 	if (index === undefined) {
 		if (target.size >= MAX_RETAINED_CODE_MODE_TRACES) {
 			dropOldestTrace(target, operationIndexes, operations, retainedControls);
@@ -314,12 +322,13 @@ type ToolUsage = NonNullable<AgentToolResult<unknown>["usage"]>;
 
 type NestedResultControlState = {
 	readonly addedToolNames: Set<string>;
+	readonly omittedRunningTraceIds: Set<string>;
 	terminate: boolean;
 	usage: ToolUsage | undefined;
 };
 
 function newNestedResultControlState(): NestedResultControlState {
-	return { addedToolNames: new Set(), terminate: false, usage: undefined };
+	return { addedToolNames: new Set(), omittedRunningTraceIds: new Set(), terminate: false, usage: undefined };
 }
 
 function aggregateUsage(values: readonly ToolUsage[]): ToolUsage | undefined {

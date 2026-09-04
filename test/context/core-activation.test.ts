@@ -279,6 +279,19 @@ test("reports degraded continuity without disabling active Magic Context", async
 	});
 });
 
+test("reports degraded continuity when native compaction settings are unavailable", () => {
+	const status = contextStatusWithContinuity(
+		{ engine: "magic-context", state: "active", trigger: "startup" },
+		context(),
+		() => undefined,
+	);
+
+	expect(status).toMatchObject({
+		continuity: "degraded",
+		continuityDetail: expect.stringContaining("could not be read"),
+	});
+});
+
 test("reports degraded continuity when native compaction settings cannot be read", () => {
 	const status = contextStatusWithContinuity(
 		{ engine: "magic-context", state: "active", trigger: "startup" },

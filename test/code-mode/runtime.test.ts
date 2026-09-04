@@ -602,23 +602,31 @@ test("runtime bounds retained trace evidence without losing controls from omitte
 					id: `nested-${String(index)}`,
 					input: { index },
 					name: "read",
-					status: "done",
+					status: index === 0 ? "running" : "done",
 				};
-				if (index === 0) {
-					trace.result = {
-						addedToolNames: ["ctx_search"],
-						content: [{ text: "complete", type: "text" }],
-						details: {},
-						terminate: true,
-						usage,
-					};
-				}
 				options.context.onTraceUpdate?.({
 					cellId: "cell-many",
 					droppedTraceCount: Math.max(0, index - 767),
 					trace,
 				});
 			}
+			options.context.onTraceUpdate?.({
+				cellId: "cell-many",
+				droppedTraceCount: 32,
+				trace: {
+					id: "nested-0",
+					input: { index: 0 },
+					name: "read",
+					result: {
+						addedToolNames: ["ctx_search"],
+						content: [{ text: "complete", type: "text" }],
+						details: {},
+						terminate: true,
+						usage,
+					},
+					status: "done",
+				},
+			});
 			return { cellId: "cell-many", contentItems: [{ type: "input_text", text: "done" }], kind: "result" };
 		},
 		async shutdown() {},

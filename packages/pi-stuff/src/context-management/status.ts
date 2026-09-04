@@ -29,9 +29,13 @@ export function contextStatusWithContinuity(
 ): ContextStatusSnapshot {
 	if (state.state !== "active" || !ctx) return { ...state };
 	try {
-		return readNativeCompactionSettings(ctx)?.enabled === false
-			? { ...state, continuity: "degraded", continuityDetail: NATIVE_COMPACTION_DISABLED_DETAIL }
-			: { ...state };
+		const settings = readNativeCompactionSettings(ctx);
+		if (!settings) {
+			return { ...state, continuity: "degraded", continuityDetail: NATIVE_COMPACTION_UNKNOWN_DETAIL };
+		}
+		return settings.enabled
+			? { ...state }
+			: { ...state, continuity: "degraded", continuityDetail: NATIVE_COMPACTION_DISABLED_DETAIL };
 	} catch {
 		return { ...state, continuity: "degraded", continuityDetail: NATIVE_COMPACTION_UNKNOWN_DETAIL };
 	}

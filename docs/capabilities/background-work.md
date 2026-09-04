@@ -102,8 +102,9 @@ One Session may have up to 16 simultaneous Shells and Monitors, including launch
 
 A Shell keeps complete output until the 20 MiB retention threshold. Crossing it does not terminate the process: Background
 Work continues consuming output, retains the latest 64 KiB with an omitted-byte count, and returns a 50 KiB
-model-readable tail by default. Redirect output in the command when a complete log is required. Monitor evidence is
-capped at 64 KiB. Output reads preserve valid UTF-8 boundaries.
+model-readable tail by default. When completed Bash details include an output artifact, they expose `fullOutputPath` only while that file remains
+complete; after rolling they expose `retainedOutputPath` and `omittedBytes` instead. Redirect output in the command when a
+complete log is required. Monitor evidence is capped at 64 KiB. Output reads preserve valid UTF-8 boundaries.
 
 ## Shutdown and recovery
 

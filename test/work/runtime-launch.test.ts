@@ -17,6 +17,7 @@ import {
 	projectNotificationBatch,
 	Readable,
 	readdirSync,
+	renameSync,
 	resolve,
 	statSync,
 	TEST_WORK_AUTHORITY_KEY,
@@ -32,12 +33,26 @@ afterEach(cleanupRuntimeFixtures);
 test("bounds durable output while retaining the newest evidence", () => {
 	const root = temporaryRoot();
 	const path = join(root, "output");
-	const output = new BoundedOutputFile(path, 256);
+	let observedPublicationBoundary = false;
+	let readBetweenPublications: string | undefined;
+	const output = new BoundedOutputFile(path, 256, {
+		renameSync: (source, destination) => {
+			renameSync(source, destination);
+			if (destination === path) {
+				observedPublicationBoundary = true;
+				readBetweenPublications = tryReadBoundedTail(path);
+			}
+		},
+	});
+	const initialInode = statSync(path).ino;
 	output.append(Buffer.from(`\u001b[31m${"x".repeat(70_000)}\u001b[0m`));
 	output.append(Buffer.from("LATEST-EVIDENCE\n"));
 	output.close();
 
 	expect(statSync(path).size).toBeLessThanOrEqual(256);
+	expect(statSync(path).ino).not.toBe(initialInode);
+	expect(observedPublicationBoundary).toBeTrue();
+	expect(readBetweenPublications).toBeUndefined();
 	expect(output.overflowed).toBeTrue();
 	expect(output.durable).toBeTrue();
 	expect(tryReadBoundedTail(path, 1_024)).toEndWith("LATEST-EVIDENCE");
@@ -62,6 +77,30 @@ test("preserves cumulative omission in a truncated foreground result", () => {
 	expect(snapshot.text).toContain("LATEST-EVIDENCE");
 	expect(snapshot.text).toContain("Retained output:");
 	expect(snapshot.text).not.toContain("Full output:");
+	expect(snapshot.details).toMatchObject({ omittedBytes: 34_464, retainedOutputPath: path });
+	expect(snapshot.details).not.toHaveProperty("fullOutputPath");
+});
+
+test("counts malformed UTF-8 bytes exactly in retained output", () => {
+	const path = join(temporaryRoot(), "binary-output");
+	const output = new BoundedOutputFile(path, 70_000);
+	output.append(Buffer.alloc(100_000, 0xff));
+	output.close();
+
+	const snapshot = foregroundOutputSnapshot(path, output.recentText());
+	expect(snapshot.text).toStartWith("…[81.0KB earlier output bytes omitted]");
+	expect(snapshot.details?.truncation.outputBytes).toBeLessThanOrEqual(50 * 1_024);
+});
+
+test("falls back instead of pairing output with mismatched omission metadata", () => {
+	const path = join(temporaryRoot(), "mismatched-generation");
+	const output = new BoundedOutputFile(path, 256);
+	output.append(Buffer.from("x".repeat(1_000)));
+	output.close();
+	writeFileSync(`${path}.omitted-bytes`, "0:0:123", { mode: 0o600 });
+
+	expect(tryReadBoundedTail(path)).toBeUndefined();
+	expect(foregroundOutputSnapshot(path, "MEMORY-FALLBACK").text).toBe("MEMORY-FALLBACK");
 });
 
 test("preserves command output that resembles an internal omission marker", () => {

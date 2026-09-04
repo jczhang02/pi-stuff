@@ -337,7 +337,6 @@ export class CodeModeDelegateRuntime {
 							});
 							settlementAttempted = true;
 						}
-						if (!call.hidden) this.traces.emit(call.cellId, call.trace, call.context);
 						const serializationError = this.respond(call.messageId, {
 							status: "ok",
 							value: { result: transportValue, type: "tool/result" },
@@ -345,8 +344,8 @@ export class CodeModeDelegateRuntime {
 						if (serializationError) {
 							call.trace.status = "error";
 							call.trace.error = serializationError.message;
-							if (!call.hidden) this.traces.emit(call.cellId, call.trace, call.context);
 						}
+						if (!call.hidden) this.traces.emit(call.cellId, call.trace, call.context);
 						finished = true;
 					},
 					catch: normalizeError,

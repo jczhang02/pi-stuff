@@ -60,6 +60,8 @@ export { projectNotificationBatch } from "./notification-projection.js";
 
 export interface BackgroundWorkBashDetails extends BashToolDetails {
 	readonly backgroundTaskId?: string;
+	readonly omittedBytes?: number;
+	readonly retainedOutputPath?: string;
 }
 
 export interface BackgroundWorkSnapshot {

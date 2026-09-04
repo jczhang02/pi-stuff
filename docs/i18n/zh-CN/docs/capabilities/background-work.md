@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: 3262c335cffb9a0f0f3f3662d5831eb1412b2464d75165df452c1f93e6db3055 -->
+<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: 5fdc7d6b6e8da5e7e3733b0e7d78863a8821526f747145475fa2640104d75f0f -->
 
 # Background Work
 
@@ -99,8 +99,10 @@ Runtime 保留最新 64 个 receipt，每批最多 16 个结果。Receipt 只用
 每个 Session 最多同时运行 16 个 Shell 和 Monitor，包括 launch reservation。
 
 Shell 在 20 MiB 保留阈值内保存完整输出。跨过阈值不会终止进程：Background Work 会继续消费输出，保留
-最新 64 KiB 和 omitted-byte count，并默认返回 50 KiB 的 model-readable tail。需要完整日志时，应在命令中
-重定向输出。Monitor 证据上限为 64 KiB。输出读取会保持有效 UTF-8 边界。
+最新 64 KiB 和 omitted-byte count，并默认返回 50 KiB 的 model-readable tail。已完成 Bash 的 details 在包含输出
+artifact 时，仅当文件仍含完整输出才提供 `fullOutputPath`；滚动后改为提供 `retainedOutputPath` 和
+`omittedBytes`。需要完整日志时，
+应在命令中重定向输出。Monitor 证据上限为 64 KiB。输出读取会保持有效 UTF-8 边界。
 
 ## Shutdown 与恢复
 

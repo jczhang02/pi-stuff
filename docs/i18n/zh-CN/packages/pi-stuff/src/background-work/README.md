@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/background-work/README.md; translation-source-sha256: 7ddf7c52784430d90d6f7e10e752ea82150f780fd7c4c3a29a8c9ece746d9860 -->
+<!-- translation-source: packages/pi-stuff/src/background-work/README.md; translation-source-sha256: 94e4255355739d5a26401763bfb7807bf2f8cad0d629ca61a9204d51ffdd1d8a -->
 
 # Background Work
 
@@ -34,6 +34,7 @@ Dialog 列出当前工作、跟随有界输出，并停止当前 Session 拥有�
 - 保留最新 64 个有界 completion receipt，供近期检查。
 - 每个 Session 最多同时运行 16 个 Shell 与 Monitor。
 - 跨过输出保留阈值时保留带 omission count 的滚动 tail，而不停止生产性工作。
+- 根据是否发生滚动，将已完成输出路径明确标记为完整或保留。
 - Shutdown 时停止所属进程树并记录经过认证的恢复 metadata。
 
 ## 文档
