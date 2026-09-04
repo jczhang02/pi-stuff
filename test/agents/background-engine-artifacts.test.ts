@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+	appendDiagnosticEvent,
 	cleanupBackgroundEngineFixtures,
 	fixtureRoot,
 	fs,
@@ -12,6 +13,19 @@ import {
 } from "./background-engine-fixtures.js";
 
 afterEach(cleanupBackgroundEngineFixtures);
+
+test("records diagnostic rollover when the newest event cannot fit beside the marker", () => {
+	const eventsPath = path.join(fixtureRoot(), "events.jsonl");
+	process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"] = "256";
+	fs.writeFileSync(eventsPath, `${JSON.stringify({ payload: "old".repeat(40), type: "old" })}\n`, { mode: 0o600 });
+
+	appendDiagnosticEvent(eventsPath, { payload: "x".repeat(160), type: "latest" });
+
+	const events = fs.readFileSync(eventsPath, "utf8");
+	expect(Buffer.byteLength(events, "utf8")).toBeLessThanOrEqual(256);
+	expect(events).toContain("subagent.events.truncated");
+	expect(events).not.toContain('"type":"latest"');
+});
 
 test("keeps a valid Agent result when its optional artifact directory disappears", async () => {
 	const root = fixtureRoot();

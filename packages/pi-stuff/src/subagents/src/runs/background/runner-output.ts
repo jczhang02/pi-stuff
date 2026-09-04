@@ -139,8 +139,10 @@ export function appendDiagnosticEvent<Event extends object>(eventsPath: string, 
 			type: "subagent.events.truncated",
 		})}\n`;
 		const rolled = `${marker}${retained}${line}`;
+		const payload = Buffer.byteLength(rolled, "utf-8") <= limit ? rolled : marker;
+		if (Buffer.byteLength(payload, "utf-8") > limit) return;
 		const temporary = `${eventsPath}.${process.pid}.${randomUUID()}.tmp`;
-		fs.writeFileSync(temporary, Buffer.byteLength(rolled, "utf-8") <= limit ? rolled : line, {
+		fs.writeFileSync(temporary, payload, {
 			mode: 0o600,
 			flag: "wx",
 		});

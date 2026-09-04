@@ -3,7 +3,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SuiteCodeModeConnector } from "../../packages/pi-stuff/src/code-mode/connector.js";
 import { CodeModeHostLostError } from "../../packages/pi-stuff/src/code-mode/host/host-client.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE } from "../../packages/pi-stuff/src/code-mode/image-content.js";
-import type { RuntimeResponse } from "../../packages/pi-stuff/src/code-mode/protocol.js";
+import type { RuntimeResponse, RuntimeToolTrace } from "../../packages/pi-stuff/src/code-mode/protocol.js";
 import { type CodeModeExecutor, CodeModeRuntime } from "../../packages/pi-stuff/src/code-mode/runtime.js";
 import { registryFixture, sessionLedgerFixture } from "./fixtures.js";
 
@@ -586,19 +586,37 @@ test("runtime recognizes an executor AbortError even without an outer AbortSigna
 	expect(result.details.operations).toMatchObject([{ id: "nested-bash", state: "cancelled" }]);
 });
 
-test("runtime bounds retained trace evidence without losing the omission count", async () => {
+test("runtime bounds retained trace evidence without losing controls from omitted rows", async () => {
+	const usage = {
+		cacheRead: 1,
+		cacheWrite: 2,
+		cost: { cacheRead: 0.01, cacheWrite: 0.02, input: 0.03, output: 0.04, total: 0.1 },
+		input: 3,
+		output: 4,
+		totalTokens: 10,
+	};
 	const executor: CodeModeExecutor = {
 		async execute(options) {
 			for (let index = 0; index < 800; index += 1) {
+				const trace: RuntimeToolTrace = {
+					id: `nested-${String(index)}`,
+					input: { index },
+					name: "read",
+					status: "done",
+				};
+				if (index === 0) {
+					trace.result = {
+						addedToolNames: ["ctx_search"],
+						content: [{ text: "complete", type: "text" }],
+						details: {},
+						terminate: true,
+						usage,
+					};
+				}
 				options.context.onTraceUpdate?.({
 					cellId: "cell-many",
 					droppedTraceCount: Math.max(0, index - 767),
-					trace: {
-						id: `nested-${String(index)}`,
-						input: { index },
-						name: "read",
-						status: "done",
-					},
+					trace,
 				});
 			}
 			return { cellId: "cell-many", contentItems: [{ type: "input_text", text: "done" }], kind: "result" };
@@ -618,4 +636,7 @@ test("runtime bounds retained trace evidence without losing the omission count",
 	expect(result.details.droppedOperationCount).toBe(32);
 	expect(result.details.operations).toHaveLength(768);
 	expect(result.details.operations[0]?.id).toBe("nested-32");
+	expect(result.terminate).toBe(true);
+	expect(result.addedToolNames).toEqual(["ctx_search"]);
+	expect(result.usage).toEqual(usage);
 });

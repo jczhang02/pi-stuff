@@ -38,6 +38,7 @@ import {
 	finalizeProcessTerminal,
 	writeProcessTerminalCandidate,
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/process-terminal.js";
+import { appendDiagnosticEvent } from "../../packages/pi-stuff/src/subagents/src/runs/background/runner-output.js";
 import type { BackgroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/background/runner-state.js";
 import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/runs/background/stale-run-reconciler.js";
 import {
@@ -79,6 +80,7 @@ import { ASYNC_DIR, type AsyncStatus } from "../../packages/pi-stuff/src/subagen
 
 const temporaryDirectories: string[] = [];
 const originalPiBinary = process.env["PI_SUBAGENT_PI_BINARY"];
+const originalAsyncEventsMaxBytes = process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"];
 const originalChildProtocolMaxBytes = process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"];
 const originalTaskResultMaxBytes = process.env["PI_SUBAGENT_TASK_RESULT_MAX_BYTES"];
 const originalRunResultMaxBytes = process.env["PI_SUBAGENT_RUN_RESULT_MAX_BYTES"];
@@ -313,6 +315,7 @@ export type { BackgroundRunnerConfig, RunnerAgentTask };
 export {
 	ASYNC_DIR,
 	agent,
+	appendDiagnosticEvent,
 	buildAsyncParallelRunnerWork,
 	buildAsyncSingleRunnerWork,
 	buildContext,
@@ -388,6 +391,8 @@ export function cleanupBackgroundEngineFixtures(): void {
 	}
 	if (originalPiBinary === undefined) delete process.env["PI_SUBAGENT_PI_BINARY"];
 	else process.env["PI_SUBAGENT_PI_BINARY"] = originalPiBinary;
+	if (originalAsyncEventsMaxBytes === undefined) delete process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"];
+	else process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"] = originalAsyncEventsMaxBytes;
 	if (originalChildProtocolMaxBytes === undefined) delete process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"];
 	else process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"] = originalChildProtocolMaxBytes;
 	if (originalTaskResultMaxBytes === undefined) delete process.env["PI_SUBAGENT_TASK_RESULT_MAX_BYTES"];

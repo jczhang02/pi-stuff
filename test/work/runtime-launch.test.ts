@@ -64,6 +64,15 @@ test("preserves cumulative omission in a truncated foreground result", () => {
 	expect(snapshot.text).not.toContain("Full output:");
 });
 
+test("preserves command output that resembles an internal omission marker", () => {
+	const path = join(temporaryRoot(), "literal-marker-output");
+	const literal = "…[123 earlier output bytes omitted]\nREAL-OUTPUT";
+	writeFileSync(path, literal, { mode: 0o600 });
+
+	expect(tryReadBoundedTail(path)).toBe(literal);
+	expect(foregroundOutputSnapshot(path, undefined).text).toBe(literal);
+});
+
 test("rejects timer slices that the runtime cannot schedule safely", () => {
 	expect(() => configuredRuntime(temporaryRoot(), { maxTimeoutSliceMs: 2_147_483_648 })).toThrow(
 		"timer slice must be a positive safe integer no greater than 2147483647",

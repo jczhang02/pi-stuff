@@ -170,9 +170,12 @@ function dropOldestTrace(
 	target: Map<string, RuntimeToolTrace>,
 	operationIndexes: Map<string, number>,
 	operations: SuiteToolEnvelopeOperation[],
+	retainedControls: NestedResultControlState,
 ): void {
 	const oldestId = target.keys().next().value;
 	if (oldestId === undefined) return;
+	const oldestTrace = target.get(oldestId);
+	if (oldestTrace?.result) retainNestedResultControls(retainedControls, oldestTrace.result);
 	const index = operationIndexes.get(oldestId);
 	target.delete(oldestId);
 	operationIndexes.delete(oldestId);
@@ -188,12 +191,13 @@ function mergeTrace(
 	operationIndexes: Map<string, number>,
 	operations: SuiteToolEnvelopeOperation[],
 	trace: RuntimeToolTrace,
+	retainedControls: NestedResultControlState,
 ): number {
 	let index = operationIndexes.get(trace.id);
 	let dropped = 0;
 	if (index === undefined) {
 		if (target.size >= MAX_RETAINED_CODE_MODE_TRACES) {
-			dropOldestTrace(target, operationIndexes, operations);
+			dropOldestTrace(target, operationIndexes, operations, retainedControls);
 			dropped = 1;
 		}
 		index = operations.length;
@@ -209,9 +213,11 @@ function mergeTraces(
 	operationIndexes: Map<string, number>,
 	operations: SuiteToolEnvelopeOperation[],
 	traces: readonly RuntimeToolTrace[] | undefined,
+	retainedControls: NestedResultControlState,
 ): number {
 	let dropped = 0;
-	for (const trace of traces ?? []) dropped += mergeTrace(target, operationIndexes, operations, trace);
+	for (const trace of traces ?? [])
+		dropped += mergeTrace(target, operationIndexes, operations, trace, retainedControls);
 	return dropped;
 }
 
@@ -306,8 +312,17 @@ function runOutcome(
 
 type ToolUsage = NonNullable<AgentToolResult<unknown>["usage"]>;
 
-function aggregateUsage(results: readonly AgentToolResult<unknown>[]): ToolUsage | undefined {
-	const values = results.flatMap((result) => (result.usage ? [result.usage] : []));
+type NestedResultControlState = {
+	readonly addedToolNames: Set<string>;
+	terminate: boolean;
+	usage: ToolUsage | undefined;
+};
+
+function newNestedResultControlState(): NestedResultControlState {
+	return { addedToolNames: new Set(), terminate: false, usage: undefined };
+}
+
+function aggregateUsage(values: readonly ToolUsage[]): ToolUsage | undefined {
 	if (values.length === 0) return undefined;
 	const optional = (key: "cacheWrite1h" | "reasoning"): number | undefined => {
 		const present = values.filter((usage) => usage[key] !== undefined);
@@ -334,15 +349,29 @@ function aggregateUsage(results: readonly AgentToolResult<unknown>[]): ToolUsage
 	return usage;
 }
 
+function retainNestedResultControls(target: NestedResultControlState, result: AgentToolResult<unknown>): void {
+	for (const name of result.addedToolNames ?? []) target.addedToolNames.add(name);
+	target.terminate ||= result.terminate === true;
+	target.usage = aggregateUsage([...(target.usage ? [target.usage] : []), ...(result.usage ? [result.usage] : [])]);
+}
+
 function nestedResultControls(
 	traces: ReadonlyMap<string, RuntimeToolTrace>,
+	retained: NestedResultControlState,
 ): Pick<AgentToolResult<unknown>, "addedToolNames" | "terminate" | "usage"> {
 	const results = [...traces.values()].flatMap((trace) => (trace.result ? [trace.result] : []));
-	const addedToolNames = [...new Set(results.flatMap((result) => result.addedToolNames ?? []))];
-	const usage = aggregateUsage(results);
+	const addedToolNames = new Set(retained.addedToolNames);
+	for (const result of results) {
+		for (const name of result.addedToolNames ?? []) addedToolNames.add(name);
+	}
+	const usage = aggregateUsage([
+		...(retained.usage ? [retained.usage] : []),
+		...results.flatMap((result) => (result.usage ? [result.usage] : [])),
+	]);
 	const controls: Pick<AgentToolResult<unknown>, "addedToolNames" | "terminate" | "usage"> = {};
-	if (addedToolNames.length > 0) Object.assign(controls, { addedToolNames });
-	if (results.some((result) => result.terminate === true)) Object.assign(controls, { terminate: true });
+	if (addedToolNames.size > 0) Object.assign(controls, { addedToolNames: [...addedToolNames] });
+	if (retained.terminate || results.some((result) => result.terminate === true))
+		Object.assign(controls, { terminate: true });
 	if (usage) Object.assign(controls, { usage });
 	return controls;
 }
@@ -519,6 +548,7 @@ export class CodeModeRuntime {
 		const traces = new Map<string, RuntimeToolTrace>();
 		const operationIndexes = new Map<string, number>();
 		const operations: SuiteToolEnvelopeOperation[] = [];
+		const retainedControls = newNestedResultControlState();
 		let droppedOperationCount = 0;
 		let cellId: string | undefined;
 		let attempt = controller?.attempt ?? 0;
@@ -542,12 +572,10 @@ export class CodeModeRuntime {
 			if (pending.length > 0) Object.assign(value, { pending });
 			return value;
 		};
-		const publish = (): void => {
-			onUpdate?.({ content: [], details: details("running") });
-		};
+		const publish = (): void => onUpdate?.({ content: [], details: details("running") });
 		const recordResponse = (response: RuntimeResponse): void => {
 			cellId = response.cellId;
-			const dropped = mergeTraces(traces, operationIndexes, operations, response.traces);
+			const dropped = mergeTraces(traces, operationIndexes, operations, response.traces, retainedControls);
 			droppedOperationCount = Math.max(droppedOperationCount + dropped, response.droppedTraceCount ?? 0);
 			publish();
 		};
@@ -556,7 +584,7 @@ export class CodeModeRuntime {
 			extensionContext: context,
 			onTraceUpdate: (update: { cellId: string; droppedTraceCount?: number; trace: RuntimeToolTrace }) => {
 				cellId = update.cellId;
-				const dropped = mergeTrace(traces, operationIndexes, operations, update.trace);
+				const dropped = mergeTrace(traces, operationIndexes, operations, update.trace, retainedControls);
 				droppedOperationCount = Math.max(droppedOperationCount + dropped, update.droppedTraceCount ?? 0);
 				publish();
 			},
@@ -623,7 +651,7 @@ export class CodeModeRuntime {
 		return {
 			content: media.content,
 			details: finalDetails,
-			...nestedResultControls(traces),
+			...nestedResultControls(traces, retainedControls),
 		};
 	}
 

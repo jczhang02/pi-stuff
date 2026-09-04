@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { rmSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getShellConfig } from "@earendil-works/pi-coding-agent";
 import type { BoundedOutputFile } from "./output.js";
@@ -146,6 +145,5 @@ function sessionEnvironment(ctx: ExtensionContext): NodeJS.ProcessEnv {
 }
 
 function discardOutput(output: BoundedOutputFile): void {
-	output.close();
-	rmSync(output.path, { force: true });
+	output.remove();
 }

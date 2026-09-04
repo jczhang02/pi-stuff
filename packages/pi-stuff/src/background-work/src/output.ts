@@ -1,4 +1,14 @@
-import { closeSync, ftruncateSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeSync } from "node:fs";
+import {
+	closeSync,
+	ftruncateSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	readSync,
+	rmSync,
+	statSync,
+	writeSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalWhitespace as sanitizeTerminalText } from "../../shared/terminal-text.js";
@@ -9,8 +19,7 @@ const DEFAULT_ACTIVITY_OUTPUT_LIMIT = 20 * 1024 * 1024;
 export const DEFAULT_MODEL_OUTPUT_LIMIT = 50 * 1024;
 const MEMORY_TAIL_LIMIT = 64 * 1024;
 const MIN_ROLLING_OUTPUT_LIMIT = 64;
-const ROLLING_OMISSION_PREFIX = "…[";
-const ROLLING_OMISSION_SUFFIX = " earlier output bytes omitted]\n";
+const OMISSION_METADATA_SUFFIX = ".omitted-bytes";
 
 function completeUtf8End(buffer: Buffer): number {
 	let end = buffer.length;
@@ -49,19 +58,19 @@ function formatTextTail(selected: Buffer, omittedBytes: number): string {
 	return sanitizeTerminalText(`${visibleOmissionMarker(omittedBytes)}${selected.toString("utf-8")}`).trimEnd();
 }
 
-function rollingOmissionMarker(omittedBytes: number): Buffer {
-	return Buffer.from(`${ROLLING_OMISSION_PREFIX}${String(omittedBytes)}${ROLLING_OMISSION_SUFFIX}`, "utf-8");
+function omissionMetadataPath(path: string): string {
+	return `${path}${OMISSION_METADATA_SUFFIX}`;
 }
 
-function parseRollingOmissionMarker(buffer: Buffer): { bytes: number; length: number } | undefined {
-	const newline = buffer.indexOf(0x0a);
-	if (newline < 0) return undefined;
-	const line = buffer.subarray(0, newline + 1).toString("utf-8");
-	if (!line.startsWith(ROLLING_OMISSION_PREFIX) || !line.endsWith(ROLLING_OMISSION_SUFFIX)) return undefined;
-	const raw = line.slice(ROLLING_OMISSION_PREFIX.length, -ROLLING_OMISSION_SUFFIX.length);
-	if (!/^\d+$/u.test(raw)) return undefined;
-	const bytes = Number(raw);
-	return Number.isSafeInteger(bytes) ? { bytes, length: Buffer.byteLength(line, "utf-8") } : undefined;
+function readOmittedBytes(path: string): number | undefined {
+	try {
+		const raw = readFileSync(omissionMetadataPath(path), "utf8");
+		if (!/^\d+$/u.test(raw)) return undefined;
+		const bytes = Number(raw);
+		return Number.isSafeInteger(bytes) ? bytes : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 export class BoundedOutputFile {
@@ -71,6 +80,7 @@ export class BoundedOutputFile {
 	private fd: number | undefined;
 	private readonly closeFile: typeof closeSync;
 	private readonly maxBytes: number;
+	private metadataFd: number | undefined;
 	private omittedTailBytes = 0;
 	private overflow = false;
 	private storageError: string | undefined;
@@ -99,6 +109,16 @@ export class BoundedOutputFile {
 		this.writeFile = deps.writeSync ?? writeSync;
 		mkdirSync(dirname(path), { mode: 0o700, recursive: true });
 		this.fd = openSync(path, "wx", 0o600);
+		try {
+			this.metadataFd = openSync(omissionMetadataPath(path), "wx", 0o600);
+			this.writeOmittedBytes(0);
+		} catch (error) {
+			if (this.metadataFd !== undefined) closeSync(this.metadataFd);
+			closeSync(this.fd);
+			rmSync(path, { force: true });
+			rmSync(omissionMetadataPath(path), { force: true });
+			throw error;
+		}
 	}
 
 	get bytesWritten(): number {
@@ -137,6 +157,12 @@ export class BoundedOutputFile {
 		this.closeStorage();
 	}
 
+	remove(): void {
+		this.close();
+		rmSync(this.path, { force: true });
+		rmSync(omissionMetadataPath(this.path), { force: true });
+	}
+
 	private write(chunk: Buffer): void {
 		if (this.fd === undefined) return;
 		try {
@@ -167,23 +193,26 @@ export class BoundedOutputFile {
 	private rewriteWithTail(): void {
 		if (this.fd === undefined) return;
 		try {
-			const snapshot = this.rollingSnapshot();
+			const selected = utf8SafeTail(this.tail, this.maxBytes);
+			const omittedBytes = this.omittedTailBytes + this.tail.length - selected.length;
 			this.truncateFile(this.fd, 0);
-			this.writeAll(snapshot, 0);
-			this.bytes = snapshot.length;
+			this.writeAll(selected, 0);
+			this.writeOmittedBytes(omittedBytes);
+			this.bytes = selected.length;
 		} catch (error) {
 			this.degradeStorage(error);
 		}
 	}
 
-	private rollingSnapshot(): Buffer {
-		let selected = utf8SafeTail(this.tail, this.maxBytes);
-		for (;;) {
-			const omittedBytes = this.omittedTailBytes + this.tail.length - selected.length;
-			const marker = rollingOmissionMarker(omittedBytes);
-			const next = utf8SafeTail(this.tail, this.maxBytes - marker.length);
-			if (next.length === selected.length) return Buffer.concat([marker, selected]);
-			selected = next;
+	private writeOmittedBytes(bytes: number): void {
+		if (this.metadataFd === undefined) throw new Error("Background output metadata is unavailable");
+		ftruncateSync(this.metadataFd, 0);
+		const value = Buffer.from(String(bytes), "utf8");
+		let offset = 0;
+		while (offset < value.length) {
+			const written = writeSync(this.metadataFd, value, offset, value.length - offset, offset);
+			if (written <= 0) throw new Error("Background output metadata write made no progress");
+			offset += written;
 		}
 	}
 
@@ -196,13 +225,21 @@ export class BoundedOutputFile {
 
 	private closeStorage(): void {
 		const fd = this.fd;
+		const metadataFd = this.metadataFd;
 		this.fd = undefined;
-		if (fd === undefined) return;
+		this.metadataFd = undefined;
+		let failure: unknown;
 		try {
-			this.closeFile(fd);
+			if (fd !== undefined) this.closeFile(fd);
 		} catch (error) {
-			this.degradeStorage(error);
+			failure = error;
 		}
+		try {
+			if (metadataFd !== undefined) closeSync(metadataFd);
+		} catch (error) {
+			failure ??= error;
+		}
+		if (failure !== undefined) this.degradeStorage(failure);
 	}
 }
 
@@ -216,14 +253,8 @@ export function tryReadBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT
 		const position = Math.max(0, size - bytes);
 		readSync(fd, buffer, 0, bytes, position);
 		const selected = utf8SafeTail(buffer, bytes);
-		const markerBuffer = Buffer.alloc(Math.min(size, 128));
-		readSync(fd, markerBuffer, 0, markerBuffer.length, 0);
-		const marker = parseRollingOmissionMarker(markerBuffer);
-		if (!marker) return formatTextTail(selected, size - selected.length);
-		const selectedPosition = size - selected.length;
-		const retainedBytesOmitted = Math.max(0, selectedPosition - marker.length);
-		const payload = selected.subarray(Math.max(0, marker.length - selectedPosition));
-		return formatTextTail(payload, marker.bytes + retainedBytesOmitted);
+		const retainedBytesOmitted = size - selected.length;
+		return formatTextTail(selected, (readOmittedBytes(path) ?? 0) + retainedBytesOmitted);
 	} catch {
 		return undefined;
 	} finally {
@@ -246,15 +277,15 @@ export function foregroundOutputSnapshot(outputPath: string | undefined, recentO
 	} catch {
 		return { text: recentOutput ?? "" };
 	}
-	const marker = parseRollingOmissionMarker(file.subarray(0, 128));
-	const raw = file.subarray(marker?.length ?? 0).toString("utf8");
+	const raw = file.toString("utf8");
 	const truncation = truncateTail(raw, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
 	const retainedBytesOmitted = truncation.truncated ? Buffer.byteLength(raw, "utf8") - truncation.outputBytes : 0;
-	const prefix = marker ? visibleOmissionMarker(marker.bytes + retainedBytesOmitted) : "";
+	const rolledBytesOmitted = readOmittedBytes(outputPath) ?? 0;
+	const prefix = rolledBytesOmitted > 0 ? visibleOmissionMarker(rolledBytesOmitted + retainedBytesOmitted) : "";
 	if (!truncation.truncated) return { text: `${prefix}${truncation.content}` };
 	const startLine = truncation.totalLines - truncation.outputLines + 1;
 	const endLine = truncation.totalLines;
-	const outputLabel = marker ? "Retained output" : "Full output";
+	const outputLabel = rolledBytesOmitted > 0 ? "Retained output" : "Full output";
 	let footer: string;
 	if (truncation.lastLinePartial) {
 		footer = `Showing last ${formatSize(truncation.outputBytes)} of line ${String(endLine)}. ${outputLabel}: ${outputPath}`;

@@ -210,8 +210,7 @@ export class ShellActivity {
 				});
 				yield* Effect.sync(() => {
 					this.finalization = "done";
-					this.launch.output.close();
-					rmSync(this.launch.output.path, { force: true });
+					this.launch.output.remove();
 					try {
 						this.owner.persist();
 					} catch (error) {
