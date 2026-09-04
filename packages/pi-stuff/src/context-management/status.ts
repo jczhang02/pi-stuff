@@ -15,6 +15,8 @@ export interface ContextStatusSnapshot {
 
 const NATIVE_COMPACTION_DISABLED_DETAIL =
 	"Pi native auto-compaction is disabled. Run /settings and enable auto-compaction so Pi can recover if Magic Context becomes unavailable.";
+const NATIVE_COMPACTION_UNKNOWN_DETAIL =
+	"Pi native auto-compaction settings could not be read. Run /settings and verify auto-compaction is enabled so Pi can recover if Magic Context becomes unavailable.";
 
 export function nativeContextStatus(trigger: ContextActivationTrigger): ContextStatusSnapshot {
 	return { state: "native", engine: "native", trigger };
@@ -31,6 +33,6 @@ export function contextStatusWithContinuity(
 			? { ...state, continuity: "degraded", continuityDetail: NATIVE_COMPACTION_DISABLED_DETAIL }
 			: { ...state };
 	} catch {
-		return { ...state };
+		return { ...state, continuity: "degraded", continuityDetail: NATIVE_COMPACTION_UNKNOWN_DETAIL };
 	}
 }

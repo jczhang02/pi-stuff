@@ -133,13 +133,15 @@ export function appendDiagnosticEvent<Event extends object>(eventsPath: string, 
 			}
 		}
 		const discardedBytesThisRoll = Math.max(0, size - Buffer.byteLength(retained, "utf-8"));
-		const marker = `${JSON.stringify({
-			discardedBytesThisRoll,
-			observedAt: Date.now(),
-			type: "subagent.events.truncated",
-		})}\n`;
-		const rolled = `${marker}${retained}${line}`;
-		const payload = Buffer.byteLength(rolled, "utf-8") <= limit ? rolled : marker;
+		const observedAt = Date.now();
+		const marker = (discardedBytes: number) =>
+			`${JSON.stringify({
+				discardedBytesThisRoll: discardedBytes,
+				observedAt,
+				type: "subagent.events.truncated",
+			})}\n`;
+		const rolled = `${marker(discardedBytesThisRoll)}${retained}${line}`;
+		const payload = Buffer.byteLength(rolled, "utf-8") <= limit ? rolled : marker(size + lineBytes);
 		if (Buffer.byteLength(payload, "utf-8") > limit) return;
 		const temporary = `${eventsPath}.${process.pid}.${randomUUID()}.tmp`;
 		fs.writeFileSync(temporary, payload, {

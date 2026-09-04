@@ -18,6 +18,7 @@ import piStuffContext, {
 	getContextCapability,
 	projectCurrentContext,
 } from "../../packages/pi-stuff/src/context-management/index.js";
+import { contextStatusWithContinuity } from "../../packages/pi-stuff/src/context-management/status.js";
 import {
 	hasDirectUserActivation,
 	isSuiteNativeCompactionPreflight,
@@ -272,6 +273,7 @@ export {
 	commandMagicModule,
 	context,
 	contextActivityData,
+	contextStatusWithContinuity,
 	createExtensionCommandContext,
 	createExtensionRuntime,
 	createSyntheticSourceInfo,

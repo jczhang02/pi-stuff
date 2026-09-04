@@ -5,6 +5,7 @@ import {
 	type CompactOptions,
 	cleanupContextCoreFixtures,
 	context,
+	contextStatusWithContinuity,
 	createExtensionCommandContext,
 	type ExtensionAPI,
 	emit,
@@ -275,6 +276,21 @@ test("reports degraded continuity without disabling active Magic Context", async
 		continuity: "degraded",
 		continuityDetail:
 			"Pi native auto-compaction is disabled. Run /settings and enable auto-compaction so Pi can recover if Magic Context becomes unavailable.",
+	});
+});
+
+test("reports degraded continuity when native compaction settings cannot be read", () => {
+	const status = contextStatusWithContinuity(
+		{ engine: "magic-context", state: "active", trigger: "startup" },
+		context(),
+		() => {
+			throw new Error("settings unavailable");
+		},
+	);
+
+	expect(status).toMatchObject({
+		continuity: "degraded",
+		continuityDetail: expect.stringContaining("could not be read"),
 	});
 });
 
