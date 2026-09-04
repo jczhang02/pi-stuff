@@ -6,6 +6,7 @@ import {
 	CodeModeIncompleteExecutionError,
 	CodeModeSessionLedger,
 } from "../../packages/pi-stuff/src/code-mode/ledger.js";
+import { durableInputValue } from "../../packages/pi-stuff/src/code-mode/ledger-state.js";
 import type { JsonInputObject } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 type ReplayPolicies = Readonly<Record<string, "never" | "record" | "reexecute">>;
@@ -358,6 +359,19 @@ test("a delayed obsolete result cannot settle the active reexecution attempt", (
 		"no matching running ledger call",
 	);
 	controller.completeToolCall(active, { status: "success", value: "current" });
+});
+
+test("checks durable input size without a second serialization pass", () => {
+	let reads = 0;
+	const stored = durableInputValue("input", {
+		get content() {
+			reads++;
+			return "value";
+		},
+	});
+	expect(stored).toEqual({ kind: "json", json: { content: "value" } });
+	// One trust-boundary validation and one JSON serialization.
+	expect(reads).toBe(2);
 });
 
 test("rejects oversized Tool arguments before the external effect starts", () => {

@@ -162,6 +162,8 @@ export interface AsyncJobState
 	sessionFile?: string | undefined;
 	controlEventCursor?: number;
 	controlEventIdentity?: string;
+	/** Logical stream offset of physical byte zero in this retained log generation. */
+	controlEventOffset?: number;
 	/** A restored observer failed to stat events; first successful read starts at EOF. */
 	controlEventCursorPending?: boolean | undefined;
 	nestedRoute?: NestedRouteInfo | undefined;

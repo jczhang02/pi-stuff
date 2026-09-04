@@ -27,7 +27,7 @@ export function contextStatusWithContinuity(
 	ctx: ExtensionContext | undefined,
 	readNativeCompactionSettings: (ctx: ExtensionContext) => NativeCompactionSettings | undefined,
 ): ContextStatusSnapshot {
-	if (state.state !== "active" || !ctx) return { ...state };
+	if ((state.state !== "active" && state.state !== "degraded") || !ctx) return { ...state };
 	try {
 		const settings = readNativeCompactionSettings(ctx);
 		if (!settings) {

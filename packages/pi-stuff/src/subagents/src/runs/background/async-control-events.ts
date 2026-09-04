@@ -7,6 +7,7 @@ import { isRuntimeNumber } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { errnoCode } from "../../shared/private-directory.ts";
 import type { AsyncJobState } from "../../shared/types.ts";
+import { DIAGNOSTIC_EVENT_HEADER_BYTES, diagnosticEventOffset } from "./runner-output.ts";
 
 const CONTROL_EVENT_READ_CHUNK_BYTES = 64 * 1024;
 const MAX_CONTROL_EVENT_LINE_BYTES = 1024 * 1024;
@@ -50,16 +51,24 @@ function readOpenControlEvents(
 				const currentUid = process.getuid?.();
 				if (!stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid)) return { changed, more };
 				const identity = `${String(stat.dev)}:${String(stat.ino)}`;
+				if (job.controlEventIdentity !== identity) {
+					const header = Buffer.alloc(Math.min(stat.size, DIAGNOSTIC_EVENT_HEADER_BYTES));
+					await handle.read(header, 0, header.length, 0);
+					const offset = diagnosticEventOffset(header);
+					if (job.controlEventIdentity !== undefined) {
+						job.controlEventCursor =
+							offset === undefined
+								? 0
+								: Math.max(0, (job.controlEventCursor ?? 0) + (job.controlEventOffset ?? 0) - offset);
+					}
+					job.controlEventOffset = offset ?? 0;
+					job.controlEventIdentity = identity;
+				}
 				if (job.controlEventCursorPending) {
 					job.controlEventCursor = stat.size;
 					job.controlEventCursorPending = false;
-					job.controlEventIdentity = identity;
 					return { changed, more };
 				}
-				if (job.controlEventIdentity !== undefined && job.controlEventIdentity !== identity) {
-					job.controlEventCursor = 0;
-				}
-				job.controlEventIdentity = identity;
 				const savedCursor = job.controlEventCursor;
 				let cursor = stat.size < (savedCursor ?? 0) ? 0 : (savedCursor ?? 0);
 				const startedFromTail = savedCursor === undefined && stat.size > CONTROL_EVENT_SCAN_WINDOW_BYTES;

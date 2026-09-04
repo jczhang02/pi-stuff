@@ -347,13 +347,15 @@ test("fails open and retries when Magic session startup throws", async () => {
 	});
 });
 
-test("degrades immediately when the active Context engine reports a fatal failure", async () => {
+test("keeps the native fallback warning after the active Context engine fails", async () => {
 	const handlers: Handlers = new Map();
 	const tools: ToolDefinition[] = [];
 	const api = apiFor(handlers, tools);
 	let reportFatal: ((cause: unknown) => void) | undefined;
 	let loads = 0;
+	let enabled = false;
 	await piStuffContext(api, {
+		readNativeCompactionSettings: () => ({ enabled, reserveTokens: 16_384 }),
 		loadMagicContext: async () => {
 			loads += 1;
 			if (loads > 1) throw new Error("replacement engine unavailable");
@@ -391,7 +393,12 @@ test("degrades immediately when the active Context engine reports a fatal failur
 		engine: "native",
 		trigger: "startup",
 		error: "Context engine worker crashed",
+		continuity: "degraded",
+		continuityDetail: expect.stringContaining("Run /settings and enable auto-compaction"),
 	});
+	enabled = true;
+	expect(getContextCapability(ctx).status().continuity).toBeUndefined();
+	expect(getContextCapability(ctx).status().error).toBe("Context engine worker crashed");
 	expect(api.getActiveTools()).not.toContain("ctx_search");
 	const fallback = await projectCurrentContext("agent-fork", ctx);
 	expect(loads).toBe(2);

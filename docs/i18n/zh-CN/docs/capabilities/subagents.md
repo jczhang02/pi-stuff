@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: c39339162370806a80f66880569eec03acae0c3b8fc8a6f0a8275ae669333fe4 -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 09540cca81d8e9728b5961d0354a6529ce69d299ba3448e16fc5edb631631fd9 -->
 
 # Agents
 
@@ -85,7 +85,7 @@ Grouped task 会在当前容量内并发运行。同一条 Assistant response �
 ## 后台与前台
 
 后台 launch 在 admission 和启动后返回。最终结果会生成紧凑、持久的 TUI result，不会主动开启另一轮主 Agent。
-完整报告保留在 `/agents` 中。
+完整报告保留在 `/agents` 中。诊断事件日志仅保留有界尾部；滚动日志不会重复发送已观测的控制事件。
 
 前台 launch 会等到结果就绪，再把它返回当前 Tool call。嵌套 fanout 始终归启动它的 child 所有，不能脱离该 owner。
 

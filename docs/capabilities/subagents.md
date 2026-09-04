@@ -86,7 +86,8 @@ resume after the cost guard requests attention. Use `/agents` for regular inspec
 ## Background and foreground
 
 Background launches return after admission and start. A terminal outcome creates a compact durable TUI result and does
-not start an unsolicited main Agent turn. Full reports remain available in `/agents`.
+not start an unsolicited main Agent turn. Full reports remain available in `/agents`. Diagnostic event logs retain a
+bounded suffix; rolling that log does not redeliver already observed control events.
 
 Foreground launches block until the result is ready and return it to the current Tool call. Nested fanout remains
 owned by the launching child and cannot detach beyond that owner.

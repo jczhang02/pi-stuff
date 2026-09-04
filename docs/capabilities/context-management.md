@@ -81,7 +81,8 @@ For an idle custom turn that bypasses the ordinary preflight, Context Management
 method when native compaction is enabled and its threshold is exceeded. Extreme overflow yields to native compaction
 and temporarily degrades active Context to the native projection. If Magic Context is active while Pi native
 auto-compaction is disabled, `/ctx` keeps Magic active but reports degraded continuity and directs the user to enable
-auto-compaction through `/settings`; Pi Stuff does not change the setting itself.
+auto-compaction through `/settings`; Pi Stuff does not change the setting itself. The warning remains visible if Magic
+fails over to native Context and clears when native auto-compaction is enabled.
 
 ## Worker and recovery
 

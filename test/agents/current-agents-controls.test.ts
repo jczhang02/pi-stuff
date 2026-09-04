@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import * as Effect from "effect/Effect";
 import type { AsyncJobState } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-contract.js";
 import { readNewAsyncControlEvents } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-control-events.js";
+import { appendDiagnosticEvent } from "../../packages/pi-stuff/src/subagents/src/runs/background/runner-output.js";
 import {
 	acknowledgedOptions,
 	asyncJob,
@@ -48,6 +49,52 @@ test("rescans retained control events after the event log inode changes", async 
 
 		expect(observed.some((line) => line.includes("replacement-control"))).toBeTrue();
 	} finally {
+		fs.rmSync(root, { force: true, recursive: true });
+	}
+});
+
+test("does not replay retained control records across one or several missed rollovers", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-control-rollover-"));
+	const eventsPath = path.join(root, "events.jsonl");
+	const priorLimit = process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"];
+	process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"] = "32768";
+	try {
+		const records = Array.from(
+			{ length: 500 },
+			(_, id) => `${JSON.stringify({ type: "subagent.control", id })}\n`,
+		).join("");
+		const prefix = `${JSON.stringify({ payload: "x".repeat(32768 - Buffer.byteLength(records) - 16) })}\n`;
+		fs.writeFileSync(eventsPath, prefix + records, { mode: 0o600 });
+		// SAFETY: this focused reader fixture supplies all cursor state and its owned event directory.
+		const job = { asyncDir: root, controlEventCursor: 0 } as AsyncJobState;
+		const observed: number[] = [];
+		const read = () =>
+			Effect.runPromise(
+				readNewAsyncControlEvents(job, (line) => {
+					const event = JSON.parse(line);
+					if (event.type === "subagent.control") observed.push(event.id);
+					return true;
+				}),
+			);
+		await read();
+		expect(observed).toHaveLength(500);
+		const initialIdentity = job.controlEventIdentity;
+		appendDiagnosticEvent(eventsPath, { type: "subagent.control", id: 500 });
+		// Retain more than 200 old controls: a fixed-size deduplication cache is not sufficient.
+		expect(fs.readFileSync(eventsPath, "utf8").split("subagent.control").length).toBeGreaterThan(201);
+		await read();
+		expect(job.controlEventIdentity).not.toBe(initialIdentity);
+		expect(observed).toEqual(Array.from({ length: 501 }, (_, id) => id));
+		for (let roll = 0; roll < 3; roll++) {
+			appendDiagnosticEvent(eventsPath, { payload: "x".repeat(20000) });
+		}
+		appendDiagnosticEvent(eventsPath, { type: "subagent.control", id: 501 });
+		await read();
+		await read();
+		expect(observed).toEqual(Array.from({ length: 502 }, (_, id) => id));
+	} finally {
+		if (priorLimit === undefined) delete process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"];
+		else process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"] = priorLimit;
 		fs.rmSync(root, { force: true, recursive: true });
 	}
 });

@@ -181,31 +181,34 @@ export interface LedgerSnapshot {
 	totalExecutions: number;
 }
 
-export function durableValue<Value>(what: string, value: Value): StoredValue {
-	let serialized: string | undefined;
+function serializeDurableValue<Value>(what: string, value: Value): string | undefined {
 	try {
-		serialized = stringifyForStorage(value);
+		return stringifyForStorage(value);
 	} catch (error) {
 		throw new Error(
 			`${what} could not be recorded durably (not serializable: ${error instanceof Error ? error.message : String(error)}). Only JSON-compatible values, binary, and bigint can cross a replay boundary.`,
 		);
 	}
-	if (serialized === undefined) return { kind: "undefined" };
-	return { json: parseJsonValue(serialized), kind: "json" };
+}
+
+function storedDurableValue(serialized: string | undefined): StoredValue {
+	return serialized === undefined ? { kind: "undefined" } : { json: parseJsonValue(serialized), kind: "json" };
+}
+
+export function durableValue<Value>(what: string, value: Value): StoredValue {
+	return storedDurableValue(serializeDurableValue(what, value));
 }
 
 export function durableInputValue<Value>(what: string, value: Value): StoredValue {
-	const stored = durableValue(what, value);
-	const serialized = stringifyForStorage(value);
+	const serialized = serializeDurableValue(what, value);
 	const bytes = serialized === undefined ? 0 : Buffer.byteLength(serialized);
 	if (bytes > MAX_DURABLE_INPUT_BYTES) {
 		throw new Error(
 			`${what} is too large to record durably before execution (${String(bytes)} bytes > ${String(MAX_DURABLE_INPUT_BYTES)} byte limit). Write large data to a file or workspace and pass a small reference such as a path.`,
 		);
 	}
-	return stored;
+	return storedDurableValue(serialized);
 }
-
 export function optionalPresentationValue(name: string, value: AgentToolResult<unknown>): StoredValue | undefined {
 	try {
 		if (!isCodeModeToolContent(value.content)) return undefined;

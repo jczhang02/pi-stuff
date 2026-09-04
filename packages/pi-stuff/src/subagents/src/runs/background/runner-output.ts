@@ -99,6 +99,31 @@ export function boundRunResultOutputs(results: BackgroundTaskResult[]): Backgrou
 	}));
 }
 
+export const DIAGNOSTIC_EVENT_HEADER_BYTES = 512;
+
+/** Map a physical retained-log position back to its original stream position. */
+export function diagnosticEventOffset(header: Buffer): number | undefined {
+	const end = header.indexOf(0x0a);
+	if (end < 0) return undefined;
+	try {
+		const record: unknown = JSON.parse(header.subarray(0, end).toString("utf-8"));
+		if (
+			!isRuntimeObject(record) ||
+			record === null ||
+			!("type" in record) ||
+			!("sourceOffset" in record) ||
+			record.type !== "subagent.events.truncated" ||
+			!isRuntimeNumber(record.sourceOffset) ||
+			!Number.isSafeInteger(record.sourceOffset) ||
+			record.sourceOffset < 0
+		)
+			return undefined;
+		return record.sourceOffset - end - 1;
+	} catch {
+		return undefined;
+	}
+}
+
 export function appendDiagnosticEvent<Event extends object>(eventsPath: string, event: Event): void {
 	try {
 		withArtifactGroupWriteClaim(eventsPath, () => {
@@ -123,11 +148,14 @@ export function appendDiagnosticEvent<Event extends object>(eventsPath: string, 
 			}
 			const markerReserve = 160;
 			const retainedBudget = Math.max(0, Math.floor(limit / 2) - lineBytes - markerReserve);
-			let retained = "";
-			let retainedSourceBytes = 0;
-			if (retainedBudget > 0 && size > 0) {
+			let retained: Buffer = Buffer.alloc(0);
+			let previousOffset = 0;
+			if (size > 0) {
 				const descriptor = fs.openSync(eventsPath, fs.constants.O_RDONLY);
 				try {
+					const header = Buffer.alloc(Math.min(size, DIAGNOSTIC_EVENT_HEADER_BYTES));
+					fs.readSync(descriptor, header, 0, header.length, 0);
+					previousOffset = diagnosticEventOffset(header) ?? 0;
 					const buffer = Buffer.allocUnsafe(Math.min(size, retainedBudget));
 					const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, Math.max(0, size - buffer.length));
 					let retainedBuffer = buffer.subarray(0, bytesRead);
@@ -135,22 +163,22 @@ export function appendDiagnosticEvent<Event extends object>(eventsPath: string, 
 						const firstNewline = retainedBuffer.indexOf(0x0a);
 						retainedBuffer = firstNewline >= 0 ? retainedBuffer.subarray(firstNewline + 1) : Buffer.alloc(0);
 					}
-					retained = retainedBuffer.toString("utf-8");
-					retainedSourceBytes = retainedBuffer.length;
+					retained = retainedBuffer;
 				} finally {
 					fs.closeSync(descriptor);
 				}
 			}
-			const discardedBytesThisRoll = Math.max(0, size - retainedSourceBytes);
+			const discardedBytesThisRoll = Math.max(0, size - retained.length);
 			const observedAt = Date.now();
 			const marker = (discardedBytes: number) =>
 				`${JSON.stringify({
 					discardedBytesThisRoll: discardedBytes,
+					sourceOffset: previousOffset + discardedBytes,
 					observedAt,
 					type: "subagent.events.truncated",
 				})}\n`;
-			const rolled = `${marker(discardedBytesThisRoll)}${retained}${line}`;
-			const payload = Buffer.byteLength(rolled, "utf-8") <= limit ? rolled : marker(size + lineBytes);
+			const rolled = Buffer.concat([Buffer.from(marker(discardedBytesThisRoll)), retained, Buffer.from(line)]);
+			const payload = rolled.length <= limit ? rolled : Buffer.from(marker(size + lineBytes));
 			if (Buffer.byteLength(payload, "utf-8") > limit) {
 				if (size > limit) fs.rmSync(eventsPath, { force: true });
 				return;

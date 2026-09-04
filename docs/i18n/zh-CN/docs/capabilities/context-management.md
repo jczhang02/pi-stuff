@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/context-management.md; translation-source-sha256: 5da00686863a539d2df54282962d94cd39c8b88c57b15bdeb29b493505d28fa0 -->
+<!-- translation-source: docs/capabilities/context-management.md; translation-source-sha256: 40ae936750b44ffacfca68c2975be8b32945c45391b655d183bb54b39fd48e39 -->
 
 # Context Management
 
@@ -80,7 +80,8 @@ compaction。
 对于绕过普通 preflight 的 idle custom turn，如果原生 compaction 已启用并超过 threshold，Context Management
 可以调用 Pi 的公开 compaction 方法。极端 overflow 会交给原生 compaction，并暂时把活动 Context 降级为原生投影。
 Magic Context 活动但 Pi native auto-compaction 被禁用时，`/ctx` 会保持 Magic 活动，同时报告 degraded
-continuity，并引导用户通过 `/settings` 启用 auto-compaction；Pi Stuff 不会自行更改该设置。
+continuity，并引导用户通过 `/settings` 启用 auto-compaction；Pi Stuff 不会自行更改该设置。Magic
+降级到 native Context 后仍保留此警告，启用 native auto-compaction 后才清除。
 
 ## Worker 与恢复
 
