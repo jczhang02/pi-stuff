@@ -88,6 +88,7 @@ The Web and MCP runtimes also have source-local READMEs:
 | [0027](adr/0027-preserve-foreground-reporting-through-background-handoff.md) | Preserve foreground reporting through Background Work handoff |
 | [0028](adr/0028-bound-tool-display-before-projection.md) | Bound Tool Display before projection |
 | [0029](adr/0029-keep-work-independent-of-retention-quotas.md) | Keep productive work independent of internal retention quotas |
+| [0030](adr/0030-remove-redundant-suite-work-without-feature-cuts.md) | Remove redundant Suite work without reducing functionality |
 
 ## Evidence and history
 

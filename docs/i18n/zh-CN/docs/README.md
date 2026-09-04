@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: f6c847d2fe46ba86438a282370a8dd9686b4fb5d78340758fd3e5a4c6ef43959 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: c66d20ce869f3b996d203a0a143cd46727a9d8e1725040bc22a01a2ac7df9455 -->
 
 # 文档
 
@@ -90,6 +90,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0027](adr/0027-preserve-foreground-reporting-through-background-handoff.md) | 在 Background Work 移交后保留前台报告义务 |
 | [0028](adr/0028-bound-tool-display-before-projection.md) | 在 projection 前限制 Tool Display |
 | [0029](adr/0029-keep-work-independent-of-retention-quotas.md) | 让生产性工作不受内部保留配额支配 |
+| [0030](adr/0030-remove-redundant-suite-work-without-feature-cuts.md) | 消除 Suite 重复工作，不删减功能 |
 
 ## 证据与历史
 
