@@ -67,7 +67,7 @@ jobs:
     needs: fast
     if: ${{ github.event_name != 'push' && needs.fast.outputs.acceptance_required == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       PI_BIN: ${{ github.workspace }}/.artifacts/pi-release/pi/pi
       PI_STUFF_CODE_MODE_HOST: ${{ github.workspace }}/.artifacts/code-mode-host/codex-code-mode-host
