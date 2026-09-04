@@ -117,7 +117,7 @@ export class SessionStatusSource {
 
 	readContextUsage(
 		model: ExtensionContext["model"],
-		refresh: boolean,
+		hostIdle: boolean,
 		read: () => StatuslineContextUsage | undefined,
 	): StatuslineContextUsage | null | undefined {
 		let leafId: string | null;
@@ -127,14 +127,14 @@ export class SessionStatusSource {
 			if (sessionId !== this.sessionId) this.reset(sessionId);
 		} catch {
 			const cached = this.contextUsage;
-			if (refresh) return readContextUsageSafely(read);
+			if (hostIdle) return readContextUsageSafely(read);
 			return cached && cached.model === model ? cached.value : undefined;
 		}
 		const cached = this.contextUsage;
-		// Pi may serialize complete in-flight Tool arguments to estimate usage.
-		// Keep the last settled value while the Host is working.
-		if (cached && model === cached.model && (leafId === cached.leafId || !refresh)) return cached.value;
-		if (!refresh) return;
+		// A settled Session branch is immutable, so Session leaf plus model identifies
+		// exact usage. Reuse it during idle input repaints and while the Host is working.
+		if (cached && model === cached.model && (leafId === cached.leafId || !hostIdle)) return cached.value;
+		if (!hostIdle) return;
 		const value = readContextUsageSafely(read);
 		if (value === null) return null;
 		this.contextUsage = { leafId, model, value };

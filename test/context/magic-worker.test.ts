@@ -298,6 +298,19 @@ async function verifyToolLifecycleSkipsContextUsage(
 		context,
 	);
 	expect(state.contextUsageReads).toBe(readsBeforeToolStart);
+	await requireHandler(handlers, "tool_result")(
+		{
+			content: [{ text: "done", type: "text" }],
+			details: undefined,
+			input: {},
+			isError: false,
+			toolCallId: "context-usage-free-tool-start",
+			toolName: "custom_tool",
+			type: "tool_result",
+		},
+		context,
+	);
+	expect(state.contextUsageReads).toBe(readsBeforeToolStart);
 }
 
 test("the pinned direct engine keeps signal-blind lifecycle work outside Agent cancellation", async () => {

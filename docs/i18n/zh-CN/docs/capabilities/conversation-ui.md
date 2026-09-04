@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: 603fc6091d03bba97850105feeb124a019b0d83c6d132b2c59bd96b5c628be90 -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: c5ddce7c9b451853a5b928e26c15f0b6f79cfcb37f3b970309f6bfb35928c37b -->
 
 # Conversation UI
 
@@ -36,8 +36,8 @@ Tool timer 由 Tool Display 负责，但放在 `/ui` 中，便于集中管理呈
 Statusline 使用一行状态和可选的一行 latest prompt。在空间允许时，状态行保持固定顺序：model 与 Thinking、
 Codex Fast mode、工作目录与 Git、Context、cache 或用量、当前 Goal，以及 Ponytail mode。
 
-Context usage 只在 Host idle 时刷新。Agent 或 Tool 正在工作时，Statusline 会保留上一次 settled value，不会在
-每次 repaint 时要求 Pi 重新扫描 in-flight conversation。
+每个 settled Session leaf 与 model 的 Context usage 只在 Host idle 时读取一次。Agent 或 Tool 正在工作时，
+Statusline 会保留上一次 settled value，不会在每次 repaint 时要求 Pi 重新扫描 conversation。
 
 `auto` 密度会先缩短字段，再移除低优先级组。它不会换行，也不会留下截断的半个字段。Model 与 Context
 保留最久。只有当前状态需要持续指示时，Goal 与 Ponytail 才会出现。

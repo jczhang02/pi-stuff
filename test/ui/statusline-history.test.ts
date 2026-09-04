@@ -189,7 +189,7 @@ test("matches the old footer usage accounting by ignoring aborted turns and comp
 	expect(rendered).not.toContain("$0.");
 });
 
-test("incrementally caches history and defers context usage refresh until Host idle", () => {
+test("caches exact usage by settled Session leaf and defers changed leaves until Host idle", () => {
 	const [rootUser, rootAssistant] = turnEntries("root", "Root prompt", null, 100, 0.1);
 	const [mainUser, mainAssistant] = turnEntries("main", "Main branch prompt", rootAssistant.id, 200, 0.2);
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.

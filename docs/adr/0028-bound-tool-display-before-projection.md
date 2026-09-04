@@ -37,10 +37,10 @@ unchanged visible Vibe Line Spinner frame beyond 200 ms. ADR 0025's 500 ms asser
 backstop. The guarantee includes Suite-owned Agent-related Tool rows but excludes `/agents`, delegated execution policy,
 Host-native renderers, and third-party Extension renderers.
 
-Supporting Suite surfaces must not turn a Tool repaint into a full Context scan. While the Host is busy, the Statusline
-keeps its last settled context-usage value and refreshes it after the Host becomes idle. The Context Engine Worker omits
-context-usage reads from Tool lifecycle and Session-only synchronization paths where the pinned engine consumes only
-Session metadata or Assistant usage.
+Supporting Suite surfaces must not turn a Tool repaint into a full Context scan. The Statusline reads context usage once
+per settled Session leaf and model while the Host is idle, then reuses it for Tool and input repaints. The Context Engine
+Worker omits context-usage reads from Tool lifecycle, Tool result, and Session-only synchronization paths where the
+pinned engine consumes only Session metadata or Assistant usage.
 
 ## Rejected alternatives
 

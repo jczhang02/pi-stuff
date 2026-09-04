@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0028-bound-tool-display-before-projection.md; translation-source-sha256: 0ff774c61e052774e1c9c9d2a71c31f557746f08e3808f9b54e39a7dd78af35b -->
+<!-- translation-source: docs/adr/0028-bound-tool-display-before-projection.md; translation-source-sha256: d8dc538c673ce849a562e799c4695d12362418cbeeb909c05a1077ad478440ea -->
 
 ---
 status: accepted
@@ -37,9 +37,10 @@ Spinner frame 不得保持不变超过 200 ms。ADR 0025 的 500 ms assertion �
 Suite 所有的 Agent 相关 Tool row，但不包含 `/agents`、委派执行策略、Host 原生 renderer 与第三方 Extension
 renderer。
 
-Suite 的辅助 surface 不能把 Tool repaint 变成完整 Context scan。Host 忙碌时，Statusline 保留上一次 settled
-context-usage value，并在 Host 恢复 idle 后刷新。对于固定引擎只读取 Session metadata 或 Assistant usage 的
-Tool lifecycle 与 Session-only synchronization 路径，Context Engine Worker 会省略 context-usage 读取。
+Suite 的辅助 surface 不能把 Tool repaint 变成完整 Context scan。Statusline 会在 Host idle 时为每个 settled
+Session leaf 与 model 读取一次 context usage，随后供 Tool 和输入 repaint 复用。对于固定引擎只读取 Session
+metadata 或 Assistant usage 的 Tool lifecycle、Tool result 与 Session-only synchronization 路径，Context
+Engine Worker 会省略 context-usage 读取。
 
 ## 拒绝的方案
 

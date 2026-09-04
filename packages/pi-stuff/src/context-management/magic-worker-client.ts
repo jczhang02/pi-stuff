@@ -395,11 +395,12 @@ class MagicWorkerClient {
 
 function magicEventReadsContextUsage(event: ExtensionEvent): boolean {
 	// Pi Stuff suppresses upstream Tool-time Statusline output. The pinned
-	// lifecycle handlers otherwise use Session metadata, while a Tool-use
+	// Tool lifecycle and result handlers otherwise use Session metadata, while a Tool-use
 	// message already carries Assistant usage and is followed by Context refresh.
 	return (
 		event.type !== "tool_execution_start" &&
 		event.type !== "tool_execution_end" &&
+		event.type !== "tool_result" &&
 		!(event.type === "message_end" && event.message.role === "assistant" && event.message.stopReason === "toolUse")
 	);
 }
