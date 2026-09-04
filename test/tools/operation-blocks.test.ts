@@ -6,6 +6,7 @@ import { sanitizeMultilineTerminalText } from "../../packages/pi-stuff/src/share
 import type { ToolArguments } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import { registerBuiltins } from "../../packages/pi-stuff/src/tool-display/builtin-tools.js";
 import { getToolUiRuntime, type ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { diffRowsFromResult } from "../../packages/pi-stuff/src/tool-display/operation-block-diff.js";
 import { styleOperationEvidence } from "../../packages/pi-stuff/src/tool-display/operation-block-renderer.js";
 import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
@@ -121,6 +122,42 @@ test("Write shows result-authorized final content with compact and expanded boun
 	);
 	expect(expanded).toContain("12 │ const value12 = 12;");
 	expect(expanded).not.toContain("ctrl+o to expand");
+});
+
+test("Operation Blocks cap large source and diff before expanded rendering", () => {
+	const { runtime, tools } = builtins();
+	const write = tools.get("write");
+	const edit = tools.get("edit");
+	if (!write || !edit) throw new Error("missing file Tools");
+	const source = `${"const value = 1;\n".repeat(300_000)}POISON_SOURCE_TAIL`;
+	const writeLines = renderSettled(
+		write,
+		runtime,
+		"write-large",
+		{ content: source, path: "src/large.ts" },
+		{ content: [{ type: "text", text: "written" }], details: { finalContent: source } },
+		{ expanded: true },
+	);
+	expect(writeLines.join("\n")).toContain("preview truncated");
+	expect(writeLines.join("\n")).not.toContain("POISON_SOURCE_TAIL");
+	expect(writeLines.length).toBeLessThanOrEqual(250);
+
+	const diff = `--- a/src/large.ts\n+++ b/src/large.ts\n@@ -1,1 +1,100001 @@\n${"+const next = 1;\n".repeat(100_000)}POISON_DIFF_TAIL`;
+	const result = { content: [{ type: "text" as const, text: "edited" }], details: { diff } };
+	const parsed = diffRowsFromResult(result, "src/large.ts", true);
+	expect(parsed.rows.length).toBeLessThanOrEqual(480);
+	expect(parsed.truncated).toBeTrue();
+	const editLines = renderSettled(
+		edit,
+		runtime,
+		"edit-large",
+		{ newText: "next", oldText: "value", path: "src/large.ts" },
+		result,
+		{ expanded: true },
+	);
+	expect(editLines.join("\n")).toContain("more diff omitted");
+	expect(editLines.join("\n")).not.toContain("POISON_DIFF_TAIL");
+	expect(editLines.length).toBeLessThanOrEqual(250);
 });
 
 test("operation evidence sanitizes Tool controls before source and diff styling", () => {

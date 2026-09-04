@@ -22,6 +22,7 @@ import { ToolEnvelopeProjection } from "./envelope-projection.js";
 import { ToolGroupProjection } from "./group-projection.js";
 import type { CachedToolRow } from "./render.js";
 import { ToolUiSettingsStore } from "./settings.js";
+import { boundedToolArguments, boundedToolResult } from "./tool-text.js";
 
 export {
 	sendSuiteAgentMessage,
@@ -60,6 +61,7 @@ export interface ToolFormattedImage {
 }
 
 export interface ToolDetailPresentation {
+	readonly argumentKeys?: readonly string[];
 	readonly detailSections?: (
 		args: ToolArguments,
 		result: AgentToolResult<unknown>,
@@ -152,6 +154,8 @@ export type SuiteToolEnvelopeOperationState = "cancelled" | "error" | "rejected"
 export interface SuiteToolEnvelopeOperation {
 	readonly args: ToolArguments;
 	readonly attempt?: number;
+	/** Display-only truthful marker for nested work omitted by the fixed projection budget. */
+	readonly displayOnly?: "overflow";
 	readonly executionId?: string;
 	readonly id: string;
 	/** Preserve media at the same boundary it occupied in the direct Tool result. */
@@ -459,11 +463,9 @@ export class ToolUiRuntime extends ToolActivityPresentation {
 		// SAFETY: metadata is retrieved only for the registered Tool whose schema produced these arguments.
 		this.activityPolicies.set(name, activity as ToolActivityMetadata<ToolArguments, unknown>);
 		if (resultIsError) {
-			this.errorPolicies.set(
-				name,
-				// SAFETY: this policy receives only arguments and results from the same registered Tool.
-				resultIsError as (args: ToolArguments, result: AgentToolResult<unknown>) => boolean,
-			);
+			// SAFETY: this policy is stored only under the Tool name whose schema and result contract own it.
+			const policy = resultIsError as (args: ToolArguments, result: AgentToolResult<unknown>) => boolean;
+			this.errorPolicies.set(name, (args, result) => policy(boundedToolArguments(args), boundedToolResult(result)));
 		} else {
 			this.errorPolicies.delete(name);
 		}
@@ -544,6 +546,7 @@ export class ToolUiRuntime extends ToolActivityPresentation {
 	resetProjection(messages: readonly unknown[]): void {
 		this.resetActivityProjection();
 		this.envelopes.clearClaims();
+		this.envelopes.clearRawArguments();
 		this.groupProjection.resetProjection(messages);
 		this.retainBindings(this.groupProjection.memberIds());
 	}
@@ -551,6 +554,7 @@ export class ToolUiRuntime extends ToolActivityPresentation {
 	override clear(): void {
 		super.clear();
 		this.envelopes.clearClaims();
+		this.envelopes.clearRawArguments();
 		this.groupProjection.clear();
 	}
 

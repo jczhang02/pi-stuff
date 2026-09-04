@@ -9,19 +9,43 @@ import { oneLine } from "./tool-text.js";
 export const COMPACT_OPERATION_BYTE_LIMIT = 2 * 1024;
 export const EXPANDED_OPERATION_BYTE_LIMIT = 24 * 1024;
 export const EXPANDED_OPERATION_LINE_LIMIT = 240;
+const OPERATION_CONTENT_BLOCK_LIMIT = 64;
+const OPERATION_SOURCE_SCAN_FACTOR = 4;
+
+export interface OperationTextPreview {
+	readonly text: string;
+	readonly truncated: boolean;
+}
 
 export function operationArgument(args: ToolArguments, key: string): string {
 	const value = args[key];
 	return isRuntimeString(value) ? value : "";
 }
 
-export function operationResultText(result: AgentToolResult<unknown> | undefined): string {
-	return (
-		result?.content
-			.filter((item): item is { readonly text: string; readonly type: "text" } => item.type === "text")
-			.map((item) => item.text)
-			.join("\n") ?? ""
-	);
+export function operationResultText(
+	result: AgentToolResult<unknown> | undefined,
+	maxCodeUnits = EXPANDED_OPERATION_BYTE_LIMIT * OPERATION_SOURCE_SCAN_FACTOR,
+): OperationTextPreview {
+	let text = "";
+	let truncated = false;
+	for (let index = 0; result && index < Math.min(result.content.length, OPERATION_CONTENT_BLOCK_LIMIT); index += 1) {
+		const item = result.content[index];
+		if (item?.type !== "text") continue;
+		const separator = text ? "\n" : "";
+		const remaining = maxCodeUnits - text.length - separator.length;
+		if (remaining <= 0) {
+			truncated = true;
+			break;
+		}
+		const source = item.text.slice(0, remaining);
+		text += `${separator}${source}`;
+		if (source.length < item.text.length) {
+			truncated = true;
+			break;
+		}
+	}
+	if (result && result.content.length > OPERATION_CONTENT_BLOCK_LIMIT) truncated = true;
+	return { text, truncated };
 }
 
 export function operationLineCount(count: number): string {
@@ -37,7 +61,7 @@ export function operationIssueLine(
 	result: AgentToolResult<unknown> | undefined,
 ): OperationEvidenceLine {
 	const raw = operationResultText(result)
-		.split(/\r?\n/u)
+		.text.split(/\r?\n/u)
 		.find((line) => line.trim().length > 0);
 	const reason = normalizeOperationIssueReason(oneLine(raw ?? state)) || state;
 	if (state === "rejected") return { kind: "outcome", text: `Rejected: ${reason}`, tone: "warning" };
@@ -45,11 +69,13 @@ export function operationIssueLine(
 	return { kind: "outcome", text: `Error: ${reason}`, tone: "error" };
 }
 
-export function logicalOperationLines(value: string): string[] {
-	if (!value) return [];
-	const lines = value.replaceAll("\r", "").split("\n");
+export function logicalOperationLines(value: string, expanded: boolean): OperationTextPreview & { lines: string[] } {
+	if (!value) return { lines: [], text: "", truncated: false };
+	const byteLimit = expanded ? EXPANDED_OPERATION_BYTE_LIMIT : COMPACT_OPERATION_BYTE_LIMIT;
+	const source = value.slice(0, byteLimit * OPERATION_SOURCE_SCAN_FACTOR);
+	const lines = source.replaceAll("\r", "").split("\n");
 	if (lines.at(-1) === "") lines.pop();
-	return lines;
+	return { lines, text: source, truncated: source.length < value.length };
 }
 
 export function boundedOperationLines(lines: readonly string[], expanded: boolean, compactLineLimit: number) {
@@ -83,7 +109,14 @@ export function operationDetailStrings(result: AgentToolResult<unknown> | undefi
 	const details = detailsRecord(result);
 	if (!details) return [];
 	const value: unknown = readHostProxyProperty(details, key);
-	return Array.isArray(value) && value.every(isRuntimeString) ? [...value] : [];
+	if (!Array.isArray(value)) return [];
+	const output: string[] = [];
+	for (let index = 0; index < Math.min(value.length, OPERATION_CONTENT_BLOCK_LIMIT); index += 1) {
+		const item = value[index];
+		if (!isRuntimeString(item)) return [];
+		output.push(item.slice(0, EXPANDED_OPERATION_BYTE_LIMIT * OPERATION_SOURCE_SCAN_FACTOR));
+	}
+	return output;
 }
 
 export function baseOperationBlockModel(

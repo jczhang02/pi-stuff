@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: 32acd9a7a2149a64c00b3629a68264a7e20686678e9d97ea53082f6ded9803e9 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: f6c847d2fe46ba86438a282370a8dd9686b4fb5d78340758fd3e5a4c6ef43959 -->
 
 # 文档
 
@@ -88,7 +88,8 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0025](adr/0025-protect-vibe-line-spinner-liveness.md) | 在 Pi Stuff 边界内保护 Vibe Line Spinner 活性 |
 | [0026](adr/0026-bound-context-managed-provider-requests.md) | 约束由上下文管理的 Provider 请求 |
 | [0027](adr/0027-preserve-foreground-reporting-through-background-handoff.md) | 在 Background Work 移交后保留前台报告义务 |
-| [0028](adr/0028-keep-work-independent-of-retention-quotas.md) | 让生产性工作不受内部保留配额支配 |
+| [0028](adr/0028-bound-tool-display-before-projection.md) | 在 projection 前限制 Tool Display |
+| [0029](adr/0029-keep-work-independent-of-retention-quotas.md) | 让生产性工作不受内部保留配额支配 |
 
 ## 证据与历史
 

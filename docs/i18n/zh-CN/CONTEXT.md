@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: a229dcbcf873f1cb0f210b667aca44ed15def0db6e5643e8aa369ca963d6a961 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 61a1876b43a9e5be8e6135772e2cd6f14321428c4b218db518ebcfd7b3725707 -->
 
 # Pi Stuff
 
@@ -126,8 +126,9 @@ _避免使用_：Unlimited execution、cross-Session daemon、no limits
 _避免使用_：Tool call、Tool row、Tool Activity Group
 
 **Retrieval Group**：
-对一段连续原生 Read、Grep/Find 或 List invocation 生成的仅显示摘要，但不包含 resolved basename 恰好为
-`SKILL.md` 的 Read。Narrative Boundary、独立 Tool Activity、automatic continuation 或 turn completion 会关闭它。
+对一段有界、连续的原生 Read、Grep/Find 或 List invocation 生成的仅显示摘要，但不包含 resolved basename
+恰好为 `SKILL.md` 的 Read。更长的连续运行会显示为有序 continuation segment；Narrative Boundary、独立 Tool
+Activity、automatic continuation 或 turn completion 会关闭这次运行。
 _避免使用_：Exploration group、Tool batch、merged Tool call
 
 **Skill Tool Activity**：

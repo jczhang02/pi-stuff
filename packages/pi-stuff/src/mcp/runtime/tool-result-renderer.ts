@@ -1,11 +1,11 @@
 import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { type Component, Text, visibleWidth } from "@earendil-works/pi-tui";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { boundTerminalLine, boundTerminalText, graphemePrefix } from "../../tool-display/index.js";
+import { buildToolResultLines } from "../../tool-display/tool-text.js";
 
 type McpToolResultDetails = JsonInputObject & { error?: JsonInputValue };
-type McpToolContentBlock = AgentToolResult<McpToolResultDetails>["content"][number];
 
 type RenderTheme = Pick<Theme, "fg"> & Partial<Pick<Theme, "bold">>;
 
@@ -36,6 +36,14 @@ const DEFAULT_MAX_CALL_INPUT_CHARS = 1500;
 const DEFAULT_MAX_COLLAPSED_LINES = 3;
 const DEFAULT_MAX_COLLAPSED_CHARS = 8000;
 const COLLAPSED_RENDER_CHAR_SLACK = 8;
+const MCP_INPUT_SCAN_FACTOR = 4;
+
+function boundedCallPart(value: string, maxChars = DEFAULT_MAX_CALL_INPUT_CHARS): string {
+	const limit = Math.max(0, Math.floor(maxChars));
+	const sourceLimit = Math.max(1, limit) * MCP_INPUT_SCAN_FACTOR;
+	const source = value.slice(0, sourceLimit + 1);
+	return boundTerminalLine(source.slice(0, sourceLimit), limit, source.length < value.length ? "…" : "");
+}
 
 class CollapsibleText implements Component {
 	private readonly text: string;
@@ -98,22 +106,16 @@ function truncateText(value: string, maxChars: number): string {
 
 function formatJsonish(value: NonNullable<McpProxyToolCallInput["args"]>, maxChars: number): string {
 	if (isRuntimeString(value)) {
+		const scanLimit = Math.max(1, Math.floor(maxChars)) * MCP_INPUT_SCAN_FACTOR;
+		const source = value.slice(0, scanLimit + 1);
+		if (source.length < value.length) return `${truncateText(source.slice(0, scanLimit), maxChars)}…`;
 		try {
-			return truncateText(JSON.stringify(JSON.parse(value), null, 2), maxChars);
+			return truncateText(JSON.stringify(JSON.parse(source), null, 2), maxChars);
 		} catch {
-			return truncateText(value, maxChars);
+			return truncateText(source, maxChars);
 		}
 	}
-
-	try {
-		return truncateText(JSON.stringify(value, null, 2), maxChars);
-	} catch {
-		return truncateText(String(value), maxChars);
-	}
-}
-
-function hasUsefulObjectContent(value: JsonInputValue): boolean {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value) && Object.keys(value).length > 0;
+	return "[argument object preview omitted]";
 }
 
 export function formatMcpProxyToolCallLines(
@@ -123,25 +125,26 @@ export function formatMcpProxyToolCallLines(
 	if (args.action === "ui-messages") return [`mcp ${args.action}`];
 
 	if (args.tool) {
-		const target = args.server ? `${args.tool} @ ${args.server}` : args.tool;
+		const tool = boundedCallPart(args.tool, maxInputChars);
+		const target = args.server ? `${tool} @ ${boundedCallPart(args.server, maxInputChars)}` : tool;
 		const lines = [`mcp call ${target}`];
 		if (args.args) lines.push(formatJsonish(args.args, maxInputChars));
 		return lines;
 	}
 
-	if (args.connect) return [`mcp connect ${args.connect}`];
-	if (args.describe) return [`mcp describe ${args.describe}`];
+	if (args.connect) return [`mcp connect ${boundedCallPart(args.connect, maxInputChars)}`];
+	if (args.describe) return [`mcp describe ${boundedCallPart(args.describe, maxInputChars)}`];
 
 	if (args.search) {
-		let line = `mcp search ${args.search}`;
-		if (args.server) line += ` @ ${args.server}`;
+		let line = `mcp search ${boundedCallPart(args.search, maxInputChars)}`;
+		if (args.server) line += ` @ ${boundedCallPart(args.server, maxInputChars)}`;
 		if (args.regex === true) line += " (regex)";
 		if (args.includeSchemas === false) line += " (schemas hidden)";
 		return [line];
 	}
 
-	if (args.server) return [`mcp list ${args.server}`];
-	if (args.action) return [`mcp ${args.action}`];
+	if (args.server) return [`mcp list ${boundedCallPart(args.server, maxInputChars)}`];
+	if (args.action) return [`mcp ${boundedCallPart(args.action, maxInputChars)}`];
 
 	return ["mcp status"];
 }
@@ -151,14 +154,13 @@ export function formatMcpDirectToolCallLines(
 	args: JsonInputObject,
 	maxInputChars = DEFAULT_MAX_CALL_INPUT_CHARS,
 ): string[] {
-	if (!hasUsefulObjectContent(args)) return [displayName];
-	return [displayName, formatJsonish(args, maxInputChars)];
+	return [boundedCallPart(displayName, maxInputChars), formatJsonish(args, maxInputChars)];
 }
 
 function renderToolCallLines(lines: string[], theme?: RenderTheme) {
 	const activeTheme = theme ?? plainTheme;
 	const [rawTitle = "mcp", ...rest] = lines;
-	const title = boundTerminalLine(rawTitle, DEFAULT_MAX_CALL_INPUT_CHARS);
+	const title = boundedCallPart(rawTitle);
 	const styledTitle = activeTheme.fg("toolTitle", activeTheme.bold ? activeTheme.bold(title) : title);
 	const styledRest = rest.map((line) =>
 		activeTheme.fg("muted", boundTerminalText(line, DEFAULT_MAX_CALL_INPUT_CHARS)),
@@ -174,13 +176,6 @@ export function createMcpDirectToolCallRenderer(displayName: string) {
 	return (args: JsonInputObject, theme?: RenderTheme) => {
 		return renderToolCallLines(formatMcpDirectToolCallLines(displayName, args), theme);
 	};
-}
-
-function blockToLines(block: McpToolContentBlock): string[] {
-	if (block.type === "text") {
-		return block.text.split("\n").map((line) => boundTerminalLine(line, Number.MAX_SAFE_INTEGER));
-	}
-	return [`[image: ${block.mimeType}]`];
 }
 
 function collectCollapsedResultLines(
@@ -200,16 +195,19 @@ function collectCollapsedResultLines(
 			return false;
 		}
 
-		const safe = boundTerminalLine(line, Number.MAX_SAFE_INTEGER);
-		if (visibleWidth(safe) > remainingCells) {
-			lines.push(boundTerminalLine(safe, remainingCells, ""));
+		const scanLimit = Math.max(1_024, remainingCells * MCP_INPUT_SCAN_FACTOR);
+		const source = line.slice(0, scanLimit + 1);
+		const sourceTruncated = source.length < line.length;
+		const safeSource = boundTerminalLine(source.slice(0, scanLimit), scanLimit, "");
+		if (sourceTruncated || visibleWidth(safeSource) > remainingCells) {
+			lines.push(boundTerminalLine(safeSource, remainingCells, ""));
 			truncated = true;
 			remainingCells = 0;
 			return false;
 		}
 
-		lines.push(safe);
-		remainingCells -= visibleWidth(safe) + 1;
+		lines.push(safeSource);
+		remainingCells -= visibleWidth(safeSource) + 1;
 		return true;
 	};
 
@@ -221,10 +219,17 @@ function collectCollapsedResultLines(
 
 		let start = 0;
 		while (start <= block.text.length) {
-			const newline = block.text.indexOf("\n", start);
-			const line = newline === -1 ? block.text.slice(start) : block.text.slice(start, newline);
+			const scanLimit = Math.max(1_024, remainingCells * MCP_INPUT_SCAN_FACTOR);
+			const scanEnd = Math.min(block.text.length, start + scanLimit + 1);
+			const source = block.text.slice(start, scanEnd);
+			const relativeNewline = source.indexOf("\n");
+			const newline = relativeNewline < 0 ? -1 : start + relativeNewline;
+			const line = newline === -1 ? source : source.slice(0, relativeNewline);
 			if (!appendLine(line)) break;
-			if (newline === -1) break;
+			if (newline === -1) {
+				if (scanEnd < block.text.length) truncated = true;
+				break;
+			}
 			start = newline + 1;
 		}
 
@@ -244,9 +249,14 @@ export function formatMcpToolResultIdentity(details: McpToolResultDetails | unde
 			? details["hintServer"]
 			: null;
 	if (!server) return null;
-	if (isRuntimeString(details["tool"])) return `MCP ${server}/${details["tool"]}`;
-	if (isRuntimeString(details["resourceUri"])) return `MCP ${server} resource ${details["resourceUri"]}`;
-	if (isRuntimeString(details["requestedTool"])) return `MCP ${server}/${details["requestedTool"]}`;
+	const safeServer = boundedCallPart(server);
+	if (isRuntimeString(details["tool"])) return `MCP ${safeServer}/${boundedCallPart(details["tool"])}`;
+	if (isRuntimeString(details["resourceUri"])) {
+		return `MCP ${safeServer} resource ${boundedCallPart(details["resourceUri"])}`;
+	}
+	if (isRuntimeString(details["requestedTool"])) {
+		return `MCP ${safeServer}/${boundedCallPart(details["requestedTool"])}`;
+	}
 	return null;
 }
 
@@ -260,9 +270,10 @@ export function formatMcpToolResultLines(
 		return collectCollapsedResultLines(result.content, maxCollapsedLines, maxCollapsedChars);
 	}
 
-	const allLines = result.content.flatMap(blockToLines);
-	const lines = allLines.length > 0 ? allLines : ["(empty result)"];
-	return { lines, truncated: false };
+	if (result.content.length === 0) return { lines: ["(empty result)"], truncated: false };
+	// SAFETY: the shared renderer reads only the content property present on this narrowed result view.
+	const lines = buildToolResultLines(result as AgentToolResult<unknown>);
+	return { lines, truncated: lines.at(-1)?.startsWith("… detail capped") === true };
 }
 
 export function renderMcpToolResult(

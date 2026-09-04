@@ -8,21 +8,28 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import { ensureUiSettingsCommand } from "../packages/pi-stuff/src/conversation-ui/index.js";
+import {
+	ensureUiSettingsCommand,
+	getCommandDialogCoordinator,
+} from "../packages/pi-stuff/src/conversation-ui/index.js";
 import {
 	completeEffectFoundationInstallation,
 	EffectFoundation,
 	installEffectFoundation,
 } from "../packages/pi-stuff/src/shared/effect-foundation.js";
 import piStuffTools, { getToolUiRuntime } from "../packages/pi-stuff/src/tool-display/index.js";
+import { isRecordValue } from "../packages/pi-stuff/src/tool-display/tool-value.js";
 import { captureExtensionHandlers, createExtensionApi } from "./fixtures/extension-api.js";
-import { createExtensionContext } from "./fixtures/extension-context.js";
+import { createExtensionCommandContext, createExtensionContext } from "./fixtures/extension-context.js";
+import { createAssistantMessage } from "./fixtures/faux-provider.js";
 
 type ExtensionEventListener = Parameters<ExtensionAPI["events"]["on"]>[1];
 type LifecycleEvent = SessionShutdownEvent | SessionStartEvent;
 type LifecycleHandler = (event: LifecycleEvent, context: ExtensionContext) => Promise<void> | void;
+type RegisteredCommand = Parameters<ExtensionAPI["registerCommand"]>[1];
 
 class HostEventBus {
+	private readonly commands = new Map<string, RegisteredCommand>();
 	private readonly discovery = new Map<string, Set<ExtensionEventListener>>();
 	private readonly lifecycle = new Map<string, LifecycleHandler[]>();
 
@@ -39,7 +46,11 @@ class HostEventBus {
 				return () => handlers.delete(handler);
 			},
 		};
-		return createExtensionApi({ events, on: captureExtensionHandlers(this.lifecycle) });
+		return createExtensionApi({
+			events,
+			on: captureExtensionHandlers(this.lifecycle),
+			registerCommand: (name, command) => this.commands.set(name, command),
+		});
 	}
 
 	async fire(event: LifecycleEvent, context = createExtensionContext()): Promise<void> {
@@ -48,6 +59,10 @@ class HostEventBus {
 
 	handlerCount(type: LifecycleEvent["type"]): number {
 		return this.lifecycle.get(type)?.length ?? 0;
+	}
+
+	command(name: string): RegisteredCommand | undefined {
+		return this.commands.get(name);
 	}
 }
 
@@ -141,6 +156,111 @@ test("one Host event bus shares and hands off Session-owned Tool UI resources", 
 	expect(settings.list()).toEqual([]);
 	await host.fire({ reason: "quit", type: "session_shutdown" });
 	expect(settings.list()).toEqual([]);
+});
+
+test("/tools rejects public IDs and refreshes one newest bounded history page before opening", async () => {
+	const host = new HostEventBus();
+	const pi = host.facade();
+	await piStuffTools(pi);
+	const command = host.command("tools");
+	if (!command) throw new Error("missing /tools command");
+	const entries = Array.from(
+		{ length: 65 },
+		(_, index): SessionEntry => ({
+			id: `history-${String(index)}`,
+			message: { content: `history-${String(index)}`, role: "user", timestamp: index },
+			parentId: index > 0 ? `history-${String(index - 1)}` : null,
+			timestamp: "2026-09-03T00:00:00.000Z",
+			type: "message",
+		}),
+	);
+	const notifications: string[] = [];
+	const context = createExtensionCommandContext({
+		sessionManager: { getBranch: () => entries },
+		ui: { notify: (message) => notifications.push(message) },
+	});
+	const runtime = getToolUiRuntime(pi);
+	const originalReset = runtime.resetProjection.bind(runtime);
+	const projections: (readonly unknown[])[] = [];
+	const order: string[] = [];
+	runtime.resetProjection = (messages) => {
+		order.push("reset");
+		projections.push(messages);
+		originalReset(messages);
+	};
+	const coordinator = getCommandDialogCoordinator(pi);
+	Reflect.defineProperty(coordinator, "show", {
+		configurable: true,
+		value: async () => {
+			order.push(runtime.hasOlderHistory() ? "show-with-older" : "show");
+		},
+	});
+	try {
+		await command.handler("history-64", context);
+		expect(notifications).toEqual(["/tools does not accept arguments."]);
+		expect(order).toEqual([]);
+
+		await command.handler("", context);
+		expect(order).toEqual(["reset", "show-with-older"]);
+		const projected = JSON.stringify(projections[0]);
+		expect(projected).not.toContain("history-0");
+		expect(projected).toContain("history-1");
+		expect(projected).toContain("history-64");
+	} finally {
+		runtime.resetProjection = originalReset;
+		Reflect.deleteProperty(coordinator, "show");
+	}
+});
+
+test("/tools pages an oversized assistant message without losing its oldest Tool calls", async () => {
+	const host = new HostEventBus();
+	const pi = host.facade();
+	await piStuffTools(pi);
+	const command = host.command("tools");
+	if (!command) throw new Error("missing /tools command");
+	const content = Array.from({ length: 300 }, (_, index) => ({
+		arguments: { path: `${String(index)}.ts` },
+		id: `read-${String(index)}`,
+		name: "read",
+		type: "toolCall" as const,
+	}));
+	const entry: SessionEntry = {
+		id: "oversized-assistant",
+		message: createAssistantMessage("fixture", "fixture-model")(content, "toolUse"),
+		parentId: null,
+		timestamp: "2026-09-03T00:00:00.000Z",
+		type: "message",
+	};
+	const context = createExtensionCommandContext({ sessionManager: { getBranch: () => [entry] } });
+	const runtime = getToolUiRuntime(pi);
+	const projections: (readonly unknown[])[] = [];
+	const originalReset = runtime.resetProjection;
+	runtime.resetProjection = (messages) => {
+		projections.push(messages);
+		originalReset.call(runtime, messages);
+	};
+	const coordinator = getCommandDialogCoordinator(pi);
+	Reflect.defineProperty(coordinator, "show", { configurable: true, value: async () => undefined });
+	try {
+		await command.handler("", context);
+		const newest = projections[0]?.[0];
+		expect(newest).toMatchObject({ role: "assistant" });
+		if (!isRecordValue(newest) || !Array.isArray(newest.content)) {
+			throw new Error("missing newest Tool history page");
+		}
+		expect(newest.content).toHaveLength(256);
+		expect(newest.content[0]).toMatchObject({ id: "read-44" });
+		expect(newest.content.at(-1)).toMatchObject({ id: "read-299" });
+		expect(runtime.hasOlderHistory()).toBeTrue();
+
+		const olderIds = runtime.loadOlderActivities().flatMap((group) => group.memberIds);
+		expect(olderIds).toContain("read-0");
+		expect(olderIds).toContain("read-43");
+		expect(runtime.hasOlderHistory()).toBeFalse();
+	} finally {
+		runtime.resetProjection = originalReset;
+		Reflect.deleteProperty(coordinator, "show");
+	}
 });
 
 test("the newest concurrent Session start remains current", async () => {

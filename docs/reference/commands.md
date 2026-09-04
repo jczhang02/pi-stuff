@@ -11,8 +11,7 @@ scriptable form.
 | --- | --- |
 | `/ui` | Configure the Welcome card, Statusline, inline slash completion, input highlighting, density, and Tool timer |
 | `/diagnostics` | Show bounded, redacted Suite diagnostics from the current process |
-| `/tools` | List Retrieval Group members and independent Tool Activities |
-| `/tools <id>` | Inspect one Tool Activity |
+| `/tools` | Open the newest bounded Tool Activity page; load older activities explicitly inside the dialog |
 | `/notifications` | Configure notification policy and send a test notification |
 
 Pi's own `/settings` command controls Host settings such as the active theme.

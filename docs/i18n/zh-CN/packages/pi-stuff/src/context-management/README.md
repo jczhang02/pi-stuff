@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: aa2c3177b0fd28b03483bb953382eab362fa793a63b8d142c97a37356623a842 -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: b23a8b88093dad19e844a9830d64a4e8434ea6447ef614dff1b94db0d69be499 -->
 
 # Context Management
 
@@ -29,6 +29,7 @@ token、当前错误，以及 native-compaction fallback 是否可用。
 - 只有直接交互有权执行首次配置与迁移。
 - 通过 `/ctx` 和持久 Context Activity 提供状态与维护。
 - 在 Worker 中运行 Context engine，但不接管 Pi 的输入、Agent turn 或 Session 生命周期。
+- 只把固定引擎必需的 Tool event 字段发送到 Worker。
 - 投影派生 context，同时保留 Pi Session JSONL 作为原始记录。
 - 仅在启动期间或 Engine 不可用导致降级运行时，使用 Pi 原生 context 与 compaction；该 fallback 被禁用时报告 continuity degraded。
 - 激活后，Host 管理的 `before_provider_request` 适配器采用故障关闭策略，并要求最终载荷通过 95% 验证。

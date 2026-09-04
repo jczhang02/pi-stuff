@@ -75,12 +75,14 @@ function identityLines(model: OperationBlockRowModel): string[] {
 			? (model.identityLineLimit ?? 240)
 			: COMPACT_IDENTITY_LINES
 		: 1;
-	const safe = boundTerminalText(model.identity, maximumCodeUnits + 1, "").trim();
+	const source = model.identity.slice(0, (maximumCodeUnits + 1) * 4);
+	const sourceTruncated = source.length < model.identity.length;
+	const safe = boundTerminalText(source, maximumCodeUnits + 1, "").trim();
 	const clipped = graphemePrefix(safe, maximumCodeUnits);
-	const source = clipped.split("\n");
-	const lines = source.slice(0, maximumLines);
+	const sourceLines = clipped.split("\n");
+	const lines = sourceLines.slice(0, maximumLines);
 	if (lines.length === 0) lines.push("");
-	if (clipped.length < safe.length || source.length > maximumLines) {
+	if (sourceTruncated || clipped.length < safe.length || sourceLines.length > maximumLines) {
 		const last = lines.length - 1;
 		lines[last] = `${lines[last]?.trimEnd() ?? ""}…`;
 	}

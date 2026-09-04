@@ -174,6 +174,29 @@ test("standalone Code Mode images remain Host-rendered while nested images stay 
 	expect(decodeCodeModeMediaSegments(result?.details)).toEqual([[standaloneImage], [nestedImage]]);
 });
 
+test("Code Mode media overflow stays display-only and preserves provider content", () => {
+	const operations = Array.from({ length: 65 }, (_, index) => ({
+		args: {},
+		id: `nested-${String(index)}`,
+		mediaPlacements: [{ afterContentIndex: 0, mediaIndex: index }],
+		name: "view_image",
+		result: { content: [], details: {} },
+		state: "success" as const,
+	}));
+	const details: PiStuffCodeModeDetails = { kind: "pi-stuff-code-mode", operations, status: "success" };
+	const modelContent = Array.from({ length: 65 }, (_, index) => ({
+		...normalizedImage,
+		data: `${normalizedImage.data}${String(index)}`,
+	}));
+	captureCodeModeModelContent(details, modelContent);
+	const projected = separateCodeModeMediaForUi({ content: modelContent, details });
+
+	expect(projected?.content).toEqual([{ type: "text", text: "… Code Mode media preview omitted" }]);
+	expect(projected?.details.modelContent).toBe(modelContent);
+	expect(projected?.details.mediaContentIndexes).toEqual([]);
+	expect(decodeCodeModeMediaSegments(projected?.details)).toEqual([]);
+});
+
 test("malformed Host details are ignored at the media projection boundary", () => {
 	expect(separateCodeModeMediaForUi({ content: [], details: null })).toBeUndefined();
 	expect(

@@ -2,6 +2,10 @@ import { performance } from "node:perf_hooks";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { planRetrievalGroups } from "../packages/pi-stuff/src/tool-display/activity.js";
 import { ToolUiRuntime } from "../packages/pi-stuff/src/tool-display/contract.js";
+import {
+	boundedToolTranscript,
+	RETRIEVAL_GROUP_MEMBER_LIMIT,
+} from "../packages/pi-stuff/src/tool-display/retrieval-groups.js";
 import { buildToolResultLines } from "../packages/pi-stuff/src/tool-display/tool-text.js";
 
 const CALLS = 20_000;
@@ -149,13 +153,38 @@ for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
 		});
 	}
 	streamingSamples.push(performance.now() - started);
-	const streamedGroup = runtime.resolveGroup("stream-0");
-	if (!streamedGroup || streamedGroup === "ambiguous" || streamedGroup.memberIds.length !== STREAMING_UPDATES / 2) {
-		throw new Error("Incremental Activity benchmark did not build the streamed Retrieval Group");
+	const streamedHead = runtime.resolveGroup("stream-0");
+	const streamedTail = runtime.resolveGroup(`stream-${String(STREAMING_UPDATES / 2 - 1)}`);
+	if (
+		!streamedHead ||
+		streamedHead === "ambiguous" ||
+		!streamedTail ||
+		streamedTail === "ambiguous" ||
+		streamedHead.memberIds.length !== RETRIEVAL_GROUP_MEMBER_LIMIT ||
+		streamedTail.memberIds.length !== STREAMING_UPDATES / 2 - RETRIEVAL_GROUP_MEMBER_LIMIT ||
+		!streamedHead.summary.includes("continues") ||
+		!streamedTail.summary.includes("Continued")
+	) {
+		throw new Error("Incremental Activity benchmark did not build bounded Retrieval Group segments");
 	}
 }
 const streamingMs = median(streamingSamples);
 const groups = planRetrievalGroups(messages, classify, true);
+const expectedMemberIds = boundedToolTranscript(messages).flatMap((message) =>
+	isRuntimeObject(message) && message !== null && "content" in message && Array.isArray(message.content)
+		? message["content"].flatMap((block) =>
+				isRuntimeObject(block) &&
+				block !== null &&
+				"type" in block &&
+				block.type === "toolCall" &&
+				"id" in block &&
+				isRuntimeString(block.id)
+					? [block.id]
+					: [],
+			)
+		: [],
+);
+const memberIds = groups.flatMap((group) => group.members.map((member) => member.id));
 const shortResults = Array.from({ length: FORMATTED_RESULTS }, (_, index) => ({
 	content: [{ type: "text" as const, text: `result ${String(index)}` }],
 	details: { index },
@@ -166,9 +195,14 @@ const baselineGroups = shippedExplorationProjection(messages);
 if (baselineGroups !== CALLS / CALLS_PER_ROUND) {
 	throw new Error(`Shipped Exploration benchmark copy produced ${String(baselineGroups)} groups`);
 }
-if (groups.length !== 1 || groups[0]?.members.length !== CALLS) {
+if (
+	memberIds.length !== expectedMemberIds.length ||
+	memberIds.some((id, index) => id !== expectedMemberIds[index]) ||
+	groups.some((group) => group.members.length > RETRIEVAL_GROUP_MEMBER_LIMIT) ||
+	groups.slice(1).some((group, index) => !group.continuedFromPrevious || !groups[index]?.continuesToNext)
+) {
 	throw new Error(
-		`Activity reconstruction lost members: ${String(groups.length)} groups, ${String(groups[0]?.members.length)} members`,
+		`Bounded Activity reconstruction was incomplete: ${String(groups.length)} groups, ${String(memberIds.length)} of ${String(expectedMemberIds.length)} members`,
 	);
 }
 if (activityMs > 250) throw new Error(`Activity reconstruction exceeded 250 ms: ${activityMs.toFixed(2)} ms`);

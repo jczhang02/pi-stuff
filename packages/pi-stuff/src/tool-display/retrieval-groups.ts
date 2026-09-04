@@ -6,6 +6,7 @@ import {
 	type ToolActivityMetadata,
 	type ToolArguments,
 } from "./activity-model.js";
+import { TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT, TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT } from "./limits.js";
 import { isToolArguments } from "./tool-value.js";
 
 export interface PlannedToolActivityMember {
@@ -19,10 +20,22 @@ export interface PlannedToolActivityMember {
 
 export interface PlannedRetrievalGroup {
 	readonly closed: boolean;
+	/** This bounded segment continues a Retrieval Group that began earlier. */
+	readonly continuedFromPrevious?: boolean;
+	/** This bounded segment continues in a later Retrieval Group segment. */
+	readonly continuesToNext?: boolean;
 	readonly leaderId: string;
 	readonly members: readonly PlannedToolActivityMember[];
 	/** Standalone Tools remain visually independent while sharing detail reconstruction. */
 	readonly standalone?: boolean;
+}
+
+export interface PlannedRetrievalPage {
+	readonly groups: readonly PlannedRetrievalGroup[];
+	/** No visible boundary separates an earlier page from this page's first group. */
+	readonly headCanContinue: boolean;
+	/** No visible boundary separates this page's last group from a later page. */
+	readonly tailCanContinue: boolean;
 }
 
 export type RetrievalGroupDisposition = "boundary" | "retrieval" | "transparent";
@@ -31,6 +44,8 @@ export type RetrievalGroupClassifier = (name: string, args: ToolArguments) => Re
 const RETRIEVAL_ACTIVITY_CATEGORIES = new Set<ToolActivityCategory>(["read-file", "search-pattern", "list-directory"]);
 const RETRIEVAL_ACTIVITY_TOOL_NAMES = new Set(["find", "grep", "ls", "read"]);
 const TRANSPARENT_ACTIVITY_TOOL_NAMES = new Set(["ctx_reduce", "tool_search"]);
+export const RETRIEVAL_GROUP_MEMBER_LIMIT = 64;
+const TRANSCRIPT_TEXT_SCAN_LIMIT = 1_024;
 
 /** One invocation-level policy shared by streaming, replay, and envelope projection. */
 export function classifyRetrievalGroupInvocation(
@@ -102,7 +117,7 @@ function hasVisibleText<Value>(block: Value): boolean {
 		block.type === "text" &&
 		"text" in block &&
 		isRuntimeString(block.text) &&
-		block.text.trim().length > 0
+		hasBoundedVisibleText(block.text)
 	);
 }
 
@@ -113,8 +128,35 @@ function hasVisibleThinking<Value>(block: Value): boolean {
 		block.type === "thinking" &&
 		"thinking" in block &&
 		isRuntimeString(block.thinking) &&
-		block.thinking.trim().length > 0
+		hasBoundedVisibleText(block.thinking)
 	);
+}
+
+function hasBoundedVisibleText(value: string): boolean {
+	const scanLength = Math.min(value.length, TRANSCRIPT_TEXT_SCAN_LIMIT);
+	for (let index = 0; index < scanLength; index += 1) {
+		if (!/\s/u.test(value[index] ?? "")) return true;
+	}
+	return scanLength < value.length;
+}
+
+export function boundedToolTranscript(messages: readonly unknown[]): readonly unknown[] {
+	const selected: unknown[] = [];
+	let remainingBlocks = TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT;
+	const start = Math.max(0, messages.length - TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT);
+	for (let index = messages.length - 1; index >= start && remainingBlocks > 0; index -= 1) {
+		const message = messages[index];
+		if (!isRecord(message) || message.role !== "assistant" || !Array.isArray(message.content)) {
+			selected.push(message);
+			remainingBlocks -= 1;
+			continue;
+		}
+		const contentStart = Math.max(0, message.content.length - remainingBlocks);
+		const content = message.content.slice(contentStart);
+		selected.push({ ...message, content });
+		remainingBlocks -= Math.max(1, content.length);
+	}
+	return selected.reverse();
 }
 
 function isVisibleMessageBoundary(message: ToolTranscriptRecord): boolean {
@@ -160,7 +202,8 @@ export function directBashCancelledByHostAbort(
 	) {
 		return undefined;
 	}
-	for (let index = previous.content.length - 1; index >= 0; index -= 1) {
+	const contentStart = Math.max(0, previous.content.length - TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT);
+	for (let index = previous.content.length - 1; index >= contentStart; index -= 1) {
 		const call = toolCall(previous.content[index]);
 		if (call) {
 			if (call.name !== "bash") return undefined;
@@ -178,34 +221,52 @@ export function directBashCancelledByHostAbort(
  * Tool results are transparent; visible Thinking runs, prose, user-visible context,
  * and unsupported Tool calls close the current group.
  */
-export function planRetrievalGroups(
+export function planRetrievalPage(
 	messages: readonly unknown[],
 	classifyInvocation: RetrievalGroupClassifier,
 	closeTail: boolean,
-): readonly PlannedRetrievalGroup[] {
+): PlannedRetrievalPage {
+	const visibleMessages = boundedToolTranscript(messages);
 	const results = new Map<string, AgentToolResult<unknown> & { readonly isError?: true }>();
-	for (const message of messages) {
+	for (const message of visibleMessages) {
 		const parsed = toolResult(message);
 		if (parsed) results.set(parsed.id, parsed.result);
 	}
 	const hostCancelledBash = new Set<string>();
-	for (let index = 1; index < messages.length; index += 1) {
-		const call = directBashCancelledByHostAbort(messages, index);
+	for (let index = 1; index < visibleMessages.length; index += 1) {
+		const call = directBashCancelledByHostAbort(visibleMessages, index);
 		if (call) hostCancelledBash.add(call.id);
 	}
 
 	const groups: PlannedRetrievalGroup[] = [];
 	let members: PlannedToolActivityMember[] = [];
-	const flush = (closed: boolean) => {
+	let continuedFromPrevious = false;
+	let headCanContinue = true;
+	let tailCanContinue = true;
+	const flush = (closed: boolean, continuesToNext = false) => {
 		const leader = members[0];
-		if (leader) groups.push({ closed, leaderId: leader.id, members });
+		if (leader) {
+			const group: PlannedRetrievalGroup = { closed, leaderId: leader.id, members };
+			if (continuedFromPrevious) Object.assign(group, { continuedFromPrevious: true });
+			if (continuesToNext) Object.assign(group, { continuesToNext: true });
+			groups.push(group);
+		}
 		members = [];
+		continuedFromPrevious = continuesToNext;
 	};
 	const append = (member: PlannedToolActivityMember) => {
+		if (members.length >= RETRIEVAL_GROUP_MEMBER_LIMIT) flush(true, true);
 		members.push(member);
+		tailCanContinue = true;
+	};
+	const closePageContinuity = () => {
+		if (groups.length === 0 && members.length === 0) headCanContinue = false;
+		tailCanContinue = false;
 	};
 	const appendStandalone = (member: PlannedToolActivityMember) => {
 		flush(true);
+		continuedFromPrevious = false;
+		closePageContinuity();
 		groups.push({
 			closed: true,
 			leaderId: member.id,
@@ -215,13 +276,17 @@ export function planRetrievalGroups(
 	};
 	const appendInfrastructureIssue = (member: PlannedToolActivityMember) => {
 		flush(true);
+		continuedFromPrevious = false;
+		closePageContinuity();
 		groups.push({ closed: true, leaderId: member.id, members: [member] });
 	};
 
-	for (const candidate of messages) {
+	for (const candidate of visibleMessages) {
 		if (!isRecord(candidate)) continue;
 		if (isVisibleMessageBoundary(candidate)) {
 			flush(true);
+			continuedFromPrevious = false;
+			closePageContinuity();
 			continue;
 		}
 		if (candidate["role"] !== "assistant" || !Array.isArray(candidate["content"])) continue;
@@ -229,6 +294,8 @@ export function planRetrievalGroups(
 		for (const block of candidate["content"]) {
 			if (hasVisibleText(block) || hasVisibleThinking(block)) {
 				flush(true);
+				continuedFromPrevious = false;
+				closePageContinuity();
 				continue;
 			}
 			const call = toolCall(block);
@@ -251,5 +318,13 @@ export function planRetrievalGroups(
 		}
 	}
 	flush(closeTail);
-	return groups;
+	return { groups, headCanContinue, tailCanContinue };
+}
+
+export function planRetrievalGroups(
+	messages: readonly unknown[],
+	classifyInvocation: RetrievalGroupClassifier,
+	closeTail: boolean,
+): readonly PlannedRetrievalGroup[] {
+	return planRetrievalPage(messages, classifyInvocation, closeTail).groups;
 }

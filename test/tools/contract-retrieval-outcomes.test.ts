@@ -235,7 +235,7 @@ test("failed mutations never produce successful change clauses", () => {
 	expect(output).not.toContain("Changed");
 });
 
-test("retrieval group outcomes keep failures visible after exact retries", () => {
+test("retrieval group failures remain historical after later successes", () => {
 	const project = (category: "read-file", firstValue: string, secondValue: string, secondError = false) => {
 		const harness = apiHarness();
 		const tool = toolFromHarness(harness, "read", category);
@@ -253,20 +253,13 @@ test("retrieval group outcomes keep failures visible after exact retries", () =>
 
 	const retry = project("read-file", "same.ts", "same.ts");
 	expect(retry.runtime.resolveGroup("first")).toMatchObject({
-		state: "success",
-		summary: expect.stringContaining("1 failed"),
-	});
-	retry.runtime.resetProjection(retry.messages);
-	settle(retry.tool, "first", "bun test", true, false, "FIRST FAILED");
-	settle(retry.tool, "second", "bun test");
-	expect(retry.runtime.resolveGroup("first")).toMatchObject({
-		state: "success",
+		state: "warning",
 		summary: expect.stringContaining("1 failed"),
 	});
 
 	const effect = project("read-file", "./a.ts", "/project/a.ts");
 	expect(effect.runtime.resolveGroup("first")).toMatchObject({
-		state: "success",
+		state: "warning",
 		summary: expect.stringContaining("1 failed"),
 	});
 
@@ -397,23 +390,57 @@ test("a live infrastructure issue splits retrieval on both sides", () => {
 	expect(runtime.resolveGroup("r2")).toMatchObject({ memberIds: ["r2"] });
 });
 
-test("group details rebuild every member from the current branch beyond the live cache limit", () => {
+test("oversized retrieval history stays ordered across bounded continued pages", () => {
 	const runtime = new ToolUiRuntime();
 	runtime.registerActivity<Params, unknown>("read", {
 		categories: ["read-file"],
 		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["value"])] }],
 	});
 	runtime.markRendererAttached("read");
-	const content = Array.from({ length: 900 }, (_, index) =>
+	const content = Array.from({ length: 130 }, (_, index) =>
 		call(`read-${String(index)}`, "read", `${String(index)}.ts`),
 	);
-	const results = Array.from({ length: 900 }, (_, index) => result(`read-${String(index)}`));
-	runtime.indexMessages([assistant(...content), ...results], true);
-	const group = runtime.resolveGroup("read-0");
-	expect(group).not.toBe("ambiguous");
-	if (!group || group === "ambiguous") throw new Error("group missing");
-	expect(group.memberIds).toHaveLength(900);
-	expect(runtime.groupActivities(group.id)).toHaveLength(900);
-	expect(runtime.groupActivityPage(group.id, 512, 2).map((activity) => activity.id)).toEqual(["read-512", "read-513"]);
-	expect(runtime.groupActivityPage(group.id, 900, 2)).toEqual([]);
+	const results = Array.from({ length: 130 }, (_, index) => result(`read-${String(index)}`));
+	runtime.resetProjection([assistant(...content.slice(4)), ...results]);
+	runtime.configureHistoryLoader(() => ({ hasOlder: false, messages: [assistant(...content.slice(0, 4))] }), true);
+
+	const current = [...runtime.listGroups()].reverse();
+	expect(current.map((group) => group.memberIds.length)).toEqual([64, 62]);
+	expect(current[0]?.summary).toContain("continues");
+	expect(current[1]?.summary).toContain("Continued");
+	const older = runtime.loadOlderActivities();
+	expect(older).toHaveLength(1);
+	expect(older[0]?.memberIds).toEqual(["read-0", "read-1", "read-2", "read-3"]);
+	expect(older[0]?.state).toBe("success");
+	expect(older[0]?.summary).toContain("continues");
+	expect([...older, ...current].flatMap((group) => group.memberIds)).toEqual(
+		Array.from({ length: 130 }, (_, index) => `read-${String(index)}`),
+	);
+});
+
+test("history pages do not claim continuation across a visible boundary", () => {
+	for (const [currentMessages, olderMessages] of [
+		[
+			[{ content: "next", role: "user" }, assistant(call("read-2", "read", "2.ts"))],
+			[assistant(call("read-1", "read", "1.ts"))],
+		],
+		[
+			[assistant(call("read-2", "read", "2.ts"))],
+			[assistant(call("read-1", "read", "1.ts")), { content: "done", role: "user" }],
+		],
+	] as const) {
+		const runtime = new ToolUiRuntime();
+		runtime.registerActivity<Params, unknown>("read", {
+			categories: ["read-file"],
+			classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["value"])] }],
+		});
+		runtime.markRendererAttached("read");
+		runtime.resetProjection(currentMessages);
+		runtime.configureHistoryLoader(() => ({ hasOlder: false, messages: olderMessages }), true);
+
+		const current = runtime.listGroups().at(-1);
+		const older = runtime.loadOlderActivities().at(-1);
+		expect(current?.summary).not.toContain("Continued");
+		expect(older?.summary).not.toContain("continues");
+	}
 });

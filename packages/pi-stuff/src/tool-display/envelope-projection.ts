@@ -10,6 +10,7 @@ import type {
 	SuiteToolEnvelopeOperation,
 } from "./contract.js";
 import { decodeEnvelopeOperations, envelopeFallbackVisible, envelopeOperationResult } from "./envelope-renderer.js";
+import { TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT } from "./limits.js";
 import { isRecordValue, isToolArguments } from "./tool-value.js";
 
 /** Projects execution envelopes into the ordinary Tool protocol owned by Tool UI. */
@@ -41,6 +42,10 @@ export class ToolEnvelopeProjection {
 		this.calls.clear();
 	}
 
+	clearRawArguments(): void {
+		this.rawArguments.clear();
+	}
+
 	rawArgumentsFor(toolCallId: string): ToolArguments | undefined {
 		return this.rawArguments.get(toolCallId);
 	}
@@ -51,6 +56,7 @@ export class ToolEnvelopeProjection {
 		details: SuiteToolEnvelopeDetails,
 	): Iterable<SuiteToolEnvelopeOperation> {
 		for (const operation of this.decode(envelopeName, details)) {
+			if (operation.displayOnly === "overflow") continue;
 			const owner = this.calls.get(operation.id);
 			if (owner && owner !== envelopeId) continue;
 			if (!owner) this.calls.set(operation.id, envelopeId);
@@ -61,13 +67,12 @@ export class ToolEnvelopeProjection {
 	/** Project registered Tool envelopes into the ordinary calls and results they contain. */
 	projectMessages(messages: readonly unknown[]): readonly unknown[] {
 		if (this.decoders.size === 0) return messages;
-		this.rawArguments.clear();
 		const envelopeCallsById = new Map<string, { readonly args: ToolArguments; readonly name: string }>();
 		for (const candidate of messages) {
 			if (!isRecordValue(candidate) || candidate["role"] !== "assistant" || !Array.isArray(candidate["content"])) {
 				continue;
 			}
-			for (const block of candidate["content"]) {
+			for (const block of candidate["content"].slice(-TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT)) {
 				if (!isRecordValue(block) || block["type"] !== "toolCall") continue;
 				const id = block["id"];
 				const name = block["name"];
@@ -119,26 +124,35 @@ export class ToolEnvelopeProjection {
 				continue;
 			}
 			if (candidate["role"] === "assistant" && Array.isArray(candidate["content"])) {
-				const content = candidate["content"].flatMap((block) => {
-					if (!isRecordValue(block) || block["type"] !== "toolCall") return [block];
+				const content: unknown[] = [];
+				for (const block of candidate["content"].slice(-TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT)) {
+					if (!isRecordValue(block) || block["type"] !== "toolCall") {
+						content.push(block);
+						continue;
+					}
 					const id = block["id"];
 					const name = block["name"];
 					if (!isRuntimeString(id) || !isRuntimeString(name) || !this.decoders.has(name)) {
-						return [block];
+						content.push(block);
+						continue;
 					}
 					const projection = projectionsById.get(id);
-					if (!projection) return [block];
-					const nested = projection.operations.map((operation) => {
+					if (!projection) {
+						content.push(block);
+						continue;
+					}
+					for (const operation of projection.operations) {
+						if (operation.displayOnly === "overflow") continue;
 						this.rawArguments.set(operation.id, operation.args);
-						return {
+						content.push({
 							arguments: this.prepareArguments(projection.name, operation),
 							id: operation.id,
 							name: operation.name,
 							type: "toolCall",
-						};
-					});
-					return projection.fallback ? [...nested, block] : nested;
-				});
+						});
+					}
+					if (projection.fallback) content.push(block);
+				}
 				projected.push({ ...candidate, content });
 				continue;
 			}
@@ -150,6 +164,7 @@ export class ToolEnvelopeProjection {
 					continue;
 				}
 				for (const operation of projection.operations) {
+					if (operation.displayOnly === "overflow") continue;
 					const result = envelopeOperationResult(operation);
 					if (!result) continue;
 					const projectedResult = {

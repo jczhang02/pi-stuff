@@ -33,6 +33,11 @@ import { formatElapsed } from "./tool-text.js";
 const ACTIVITY_HINT_HOLD_MS = 700;
 const BINDING_LIMIT = 768;
 
+export interface ToolHistoryPage {
+	readonly hasOlder: boolean;
+	readonly messages: readonly unknown[];
+}
+
 interface GroupedRowBinding extends ToolActivityQueryBinding {
 	bashOutput?: string;
 	bashOutputExpanded?: boolean;
@@ -64,6 +69,8 @@ export class ToolActivityPresentation {
 	private invalidationScheduled = false;
 	private readonly isRendered: (name: string) => boolean;
 	private readonly liveResults = new Map<string, AgentToolResult<unknown>>();
+	private hasOlderHistoryPage = false;
+	private historyLoader: (() => ToolHistoryPage | undefined) | undefined;
 	private readonly now: () => number;
 	private readonly pendingInvalidations = new Set<() => void>();
 	private readonly query: ToolActivityQueryProjection;
@@ -178,6 +185,8 @@ export class ToolActivityPresentation {
 
 	clear(): void {
 		this.suspend();
+		this.historyLoader = undefined;
+		this.hasOlderHistoryPage = false;
 		for (const binding of this.bindings.values()) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 		this.bindings.clear();
 		this.groupSummaries.clear();
@@ -295,6 +304,25 @@ export class ToolActivityPresentation {
 
 	listGroups(): readonly ToolActivityView[] {
 		return this.query.listGroups();
+	}
+
+	configureHistoryLoader(loader: (() => ToolHistoryPage | undefined) | undefined, hasOlder: boolean): void {
+		this.historyLoader = loader;
+		this.hasOlderHistoryPage = hasOlder;
+	}
+
+	hasOlderHistory(): boolean {
+		return this.hasOlderHistoryPage;
+	}
+
+	loadOlderActivities(): readonly ToolActivityView[] {
+		const page = this.historyLoader?.();
+		if (!page) {
+			this.hasOlderHistoryPage = false;
+			return [];
+		}
+		this.hasOlderHistoryPage = page.hasOlder;
+		return this.query.viewsForGroups(this.groups().prependHistoryPage(page.messages));
 	}
 
 	resolveGroup(query: string): ToolActivityView | "ambiguous" | undefined {

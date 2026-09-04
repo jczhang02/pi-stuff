@@ -86,7 +86,8 @@ The Web and MCP runtimes also have source-local READMEs:
 | [0025](adr/0025-protect-vibe-line-spinner-liveness.md) | Protect Vibe Line Spinner liveness at Pi Stuff boundaries |
 | [0026](adr/0026-bound-context-managed-provider-requests.md) | Bound Context-managed Provider requests |
 | [0027](adr/0027-preserve-foreground-reporting-through-background-handoff.md) | Preserve foreground reporting through Background Work handoff |
-| [0028](adr/0028-keep-work-independent-of-retention-quotas.md) | Keep productive work independent of internal retention quotas |
+| [0028](adr/0028-bound-tool-display-before-projection.md) | Bound Tool Display before projection |
+| [0029](adr/0029-keep-work-independent-of-retention-quotas.md) | Keep productive work independent of internal retention quotas |
 
 ## Evidence and history
 

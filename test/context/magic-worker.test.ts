@@ -31,6 +31,7 @@ import { MagicWorkerContextStore } from "../../packages/pi-stuff/src/context-man
 import {
 	applyMagicWorkerHostCompaction,
 	applyMagicWorkerHostEffect,
+	snapshotMagicWorkerEvent,
 	writeMagicWorkerSyncResponse,
 } from "../../packages/pi-stuff/src/context-management/magic-worker-host.js";
 import {
@@ -74,6 +75,7 @@ type WorkerHandler = (
 
 interface WorkerHarnessState {
 	branchReads: number;
+	contextUsageReads: number;
 	entryReads: number;
 	currentBranch: SessionEntry[];
 	currentLeafId: string | null;
@@ -168,6 +170,7 @@ async function createMagicWorkerHarness() {
 	const commands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]["handler"]>();
 	const state: WorkerHarnessState = {
 		branchReads: 0,
+		contextUsageReads: 0,
 		entryReads: 0,
 		currentBranch: [],
 		currentLeafId: null,
@@ -185,7 +188,10 @@ async function createMagicWorkerHarness() {
 	const contextForSession = (id: string) =>
 		createExtensionCommandContext({
 			cwd: temporaryDirectory,
-			getContextUsage: () => ({ contextWindow: 128_000, percent: 0, tokens: 0 }),
+			getContextUsage: () => {
+				state.contextUsageReads += 1;
+				return { contextWindow: 128_000, percent: 0, tokens: 0 };
+			},
 			hasUI: false,
 			model: MODEL,
 			sessionManager: {
@@ -258,6 +264,98 @@ async function verifyOwnedCancellation(
 	await commands.get("ctx-status")?.("", activeContext);
 }
 
+async function verifyToolLifecycleSkipsContextUsage(
+	harness: Awaited<ReturnType<typeof createMagicWorkerHarness>>,
+	context: ExtensionCommandContext,
+): Promise<void> {
+	const { handlers, state } = harness;
+	const readsBeforeToolStart = state.contextUsageReads;
+	await requireHandler(handlers, "message_end")(
+		{
+			message: { ...assistantMessage("TOOL_USE_USAGE_EVIDENCE"), stopReason: "toolUse" },
+			type: "message_end",
+		},
+		context,
+	);
+	await requireHandler(handlers, "tool_execution_start")(
+		{
+			args: {},
+			toolCallId: "context-usage-free-tool-start",
+			toolName: "custom_tool",
+			type: "tool_execution_start",
+		},
+		context,
+	);
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	expect(state.contextUsageReads).toBe(readsBeforeToolStart);
+	await requireHandler(handlers, "tool_execution_end")(
+		{
+			isError: false,
+			result: { content: [{ text: "done", type: "text" }], details: undefined },
+			toolCallId: "context-usage-free-tool-start",
+			toolName: "custom_tool",
+			type: "tool_execution_end",
+		},
+		context,
+	);
+	expect(state.contextUsageReads).toBe(readsBeforeToolStart);
+	await requireHandler(handlers, "tool_result")(
+		{
+			content: [{ text: "done", type: "text" }],
+			details: undefined,
+			input: {},
+			isError: false,
+			toolCallId: "context-usage-free-tool-start",
+			toolName: "custom_tool",
+			type: "tool_result",
+		},
+		context,
+	);
+	expect(state.contextUsageReads).toBe(readsBeforeToolStart);
+}
+
+test("Magic worker Tool events do not traverse irrelevant payloads", () => {
+	const unreadPayload = {};
+	Object.defineProperty(unreadPayload, "payload", {
+		enumerable: true,
+		get: () => {
+			throw new Error("irrelevant Tool payload was traversed");
+		},
+	});
+	const toolStart = snapshotMagicWorkerEvent({
+		args: unreadPayload,
+		toolCallId: "large-call",
+		toolName: "fixture_large",
+		type: "tool_execution_start",
+	});
+	expect(toolStart.name).toBe("tool_execution_start");
+	if (toolStart.name !== "tool_execution_start") throw new Error("unexpected Magic worker event snapshot");
+	expect(toolStart.event.args).toEqual({});
+	const todos = [{ content: "keep the required field", status: "pending" }];
+	const todoStart = snapshotMagicWorkerEvent({
+		args: { ignored: unreadPayload, todos },
+		toolCallId: "todo-call",
+		toolName: "todowrite",
+		type: "tool_execution_start",
+	});
+	expect(todoStart.name).toBe("tool_execution_start");
+	if (todoStart.name !== "tool_execution_start") throw new Error("unexpected Magic worker event snapshot");
+	expect(todoStart.event.args).toEqual({ todos });
+
+	const toolResult = snapshotMagicWorkerEvent({
+		content: [{ text: "done", type: "text" }],
+		details: undefined,
+		input: unreadPayload,
+		isError: false,
+		toolCallId: "large-call",
+		toolName: "fixture_large",
+		type: "tool_result",
+	});
+	expect(toolResult.name).toBe("tool_result");
+	if (toolResult.name !== "tool_result") throw new Error("unexpected Magic worker event snapshot");
+	expect(toolResult.event.input).toEqual({});
+});
+
 test("the pinned direct engine keeps signal-blind lifecycle work outside Agent cancellation", async () => {
 	const harness = await createMagicWorkerHarness();
 	const { commands, contextForSession, handlers, pi } = harness;
@@ -303,8 +401,6 @@ test("the isolated engine matches pinned cancellation and keeps ordinary turns i
 			throw new Error(await readFile(magicLog, "utf8"));
 		}
 		expect(handlers.has("context")).toBeTrue();
-		expect(handlers.has("session_start")).toBeTrue();
-		expect(handlers.has("session_shutdown")).toBeTrue();
 		expect([...registeredTools.keys()].sort()).toEqual([
 			"ctx_expand",
 			"ctx_memory",
@@ -341,15 +437,14 @@ test("the isolated engine matches pinned cancellation and keeps ordinary turns i
 		);
 		context.abort();
 		expect(await inFlightEvent).toEqual({ message: inFlightProjected });
-		const statusCommand = commands.get("ctx-status");
-		expect(statusCommand).toBeDefined();
-		await statusCommand?.("", context);
 		const taggedMessage = assistantMessage("§1§ WORKER_INCREMENTAL_INDEX_EVIDENCE");
 		const projectedMessage = assistantMessage("WORKER_INCREMENTAL_INDEX_EVIDENCE");
 		projectedMessage.timestamp = taggedMessage.timestamp;
 		const messageEnd: MessageEndEvent = { message: taggedMessage, type: "message_end" };
+		const readsBeforeSettledMessage = state.contextUsageReads;
 		const messageResult = await requireHandler(handlers, "message_end")(messageEnd, context);
 		expect(messageResult).toEqual({ message: projectedMessage });
+		expect(state.contextUsageReads).toBeGreaterThan(readsBeforeSettledMessage);
 		state.currentLeafId = "worker-entry";
 		state.currentBranch = [messageEntry(state.currentLeafId, projectedMessage, null)];
 		await Bun.sleep(20);
@@ -393,6 +488,8 @@ test("the isolated engine matches pinned cancellation and keeps ordinary turns i
 			};
 			await requireHandler(handlers, "tool_result")(toolResult, context);
 		}
+
+		await verifyToolLifecycleSkipsContextUsage(harness, context);
 
 		const agentEnd: AgentEndEvent = { messages: [projectedMessage], type: "agent_end" };
 		await requireHandler(handlers, "agent_end")(agentEnd, context);

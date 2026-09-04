@@ -12,7 +12,10 @@ import type {
 	Theme,
 } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
-import piStuffCodeMode, { type CodeModeHost } from "../../packages/pi-stuff/src/code-mode/extension.js";
+import piStuffCodeMode, {
+	type CodeModeHost,
+	decodeCodeModeOperations,
+} from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE } from "../../packages/pi-stuff/src/code-mode/image-content.js";
 import {
 	readCodeModeProjectEnabled,
@@ -23,6 +26,7 @@ import {
 	__test as promptContributionsTest,
 } from "../../packages/pi-stuff/src/context-management/prompt-contributions.js";
 import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
+import { readHostProxyProperty } from "../../packages/pi-stuff/src/shared/host-proxy.js";
 import { isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type {
 	SuiteToolDefinitionRegistry,
@@ -47,6 +51,28 @@ const registry: SuiteToolDefinitionRegistry = {
 	isActive: () => false,
 	list: () => [],
 };
+
+test("Code Mode display reads only the newest bounded nested operations", () => {
+	let operationReads = 0;
+	const operations = new Proxy([], {
+		get: (target, property) => {
+			if (property === "length") return 100_000;
+			if (/^\d+$/u.test(String(property))) {
+				operationReads += 1;
+				const index = Number(property);
+				return { args: { value: index }, id: `nested-${String(index)}`, name: "read", state: "success" };
+			}
+			return readHostProxyProperty(target, property);
+		},
+	});
+
+	const projected = decodeCodeModeOperations({ kind: "pi-stuff-code-mode", operations });
+	expect(projected).toHaveLength(64);
+	expect(projected[0]?.displayOnly).toBe("overflow");
+	expect(projected[1]?.id).toBe("nested-99937");
+	expect(projected.at(-1)?.id).toBe("nested-99999");
+	expect(operationReads).toBe(63);
+});
 
 afterEach(async () => {
 	promptContributionsTest.clear();

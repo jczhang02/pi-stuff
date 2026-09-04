@@ -33,6 +33,7 @@ import {
 import { type ToolActivityOutcome, toolActivityOutcome } from "./activity.js";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
 import type { ToolActivityView, ToolFormattedImage, ToolFormattedSection, ToolUiRuntime } from "./contract.js";
+import { TOOL_DISPLAY_MEDIA_CODE_UNIT_LIMIT, TOOL_DISPLAY_MEDIA_LIMIT } from "./limits.js";
 import { styleOperationEvidence } from "./operation-block-renderer.js";
 import { toolStateGlyph } from "./render.js";
 import { sanitizeTerminalText } from "./terminal.js";
@@ -47,6 +48,7 @@ const NARROW_WIDTH = 64;
 const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
 const TOOL_DIALOG_ROWS = 18;
+const LOAD_OLDER_ID = "\u0000load-older-activities";
 
 function stateText(theme: Theme, state: ToolActivityOutcome | ToolActivityState, value: string): string {
 	switch (state) {
@@ -198,18 +200,27 @@ function wrapFormattedSection(
 
 function renderDetailImages(images: readonly ToolFormattedImage[], width: number, theme: Theme): string[] {
 	const available = Math.max(1, width - visibleWidth(GUTTER));
-	if (!getCapabilities().images) {
-		return images.map((item) => theme.fg("dim", `Image preview unavailable · ${item.mimeType}`));
+	const output: string[] = [];
+	for (let index = 0; index < Math.min(images.length, TOOL_DISPLAY_MEDIA_LIMIT); index += 1) {
+		const item = images[index];
+		if (!item) continue;
+		if (output.length > 0) output.push("");
+		const oversized = item.data.length > TOOL_DISPLAY_MEDIA_CODE_UNIT_LIMIT || item.mimeType.length > 256;
+		if (oversized || !getCapabilities().images) {
+			const status = oversized ? "omitted" : "unavailable";
+			output.push(theme.fg("dim", `Image preview ${status} · ${oneLine(item.mimeType)}`));
+			continue;
+		}
+		output.push(
+			...new Image(
+				item.data,
+				item.mimeType,
+				{ fallbackColor: (value) => theme.fg("toolOutput", value) },
+				{ maxWidthCells: Math.min(60, available) },
+			).render(available),
+		);
 	}
-	return images.flatMap((item, index) => [
-		...(index > 0 ? [""] : []),
-		...new Image(
-			item.data,
-			item.mimeType,
-			{ fallbackColor: (value) => theme.fg("toolOutput", value) },
-			{ maxWidthCells: Math.min(60, available) },
-		).render(available),
-	]);
+	return output;
 }
 
 interface DetailWrapCache {
@@ -242,6 +253,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private detailRepresentation: ToolDetailRepresentation = "formatted";
 	private disposed = false;
 	private groups: readonly ToolActivityView[];
+	private hasOlderHistory: boolean;
 	private lastDetailWidth = 64;
 	private lastListViewportRows = NARROW_LIST_ROWS;
 	private lastRenderWidth = 64;
@@ -253,6 +265,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private readonly runtime: ToolUiRuntime;
 	private scrollOffset = 0;
 	private selectedId: string | undefined;
+	private showingNewest = true;
 	private showKeyHelp = false;
 	private readonly unsubscribe: () => void;
 
@@ -261,6 +274,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		this.context = context;
 		this.activities = runtime.activities.list();
 		this.groups = this.currentGroups();
+		this.hasOlderHistory = runtime.hasOlderHistory();
 		const initial = initialId ? runtime.resolveGroup(initialId) : undefined;
 		const initialActivity = initialId ? runtime.activities.resolve(initialId) : undefined;
 		const initialGroup =
@@ -272,12 +286,15 @@ class ToolDialogComponent implements CommandDialogComponent {
 		this.pinnedGroup = initialGroup;
 		this.pendingFocusId = initialActivity?.id;
 		this.groups = this.currentGroups();
-		this.selectedId = initialGroup?.id ?? this.groups[0]?.id;
+		this.selectedId = initialGroup?.id ?? this.groups[0]?.id ?? (this.hasOlderHistory ? LOAD_OLDER_ID : undefined);
 		this.mode = initialGroup ? "detail" : "list";
 		if (initialGroup) this.splitFocus = "right";
 		this.unsubscribe = runtime.activities.subscribe((activities) => {
 			this.activities = activities;
-			this.groups = this.currentGroups();
+			if (this.showingNewest) {
+				this.groups = this.currentGroups();
+				this.hasOlderHistory = runtime.hasOlderHistory();
+			}
 			this.reconcileSelection();
 			this.context.requestRender();
 		});
@@ -342,7 +359,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const renderWidth = Math.max(1, Math.floor(width));
 		const wasSplit = this.isSplit();
 		this.lastRenderWidth = renderWidth;
-		this.groups = this.currentGroups();
+		if (this.showingNewest) {
+			this.groups = this.currentGroups();
+			this.hasOlderHistory = this.runtime.hasOlderHistory();
+		}
 		this.reconcileSelection();
 		const isSplit = this.isSplit();
 		if (wasSplit !== isSplit) {
@@ -358,7 +378,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 			]);
 			if (list) {
 				keyHelp =
-					this.groups.length > 0
+					this.listLength() > 0
 						? commandDialogListKeyHelp(this.context.keybindings, "activity", pane)
 						: commandDialogExitKeyHelp(this.context.keybindings);
 			}
@@ -385,7 +405,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	}
 
 	private isSplit(): boolean {
-		return this.lastRenderWidth >= WIDE_COMMAND_DIALOG_MIN_WIDTH && this.groups.length > 0;
+		return this.lastRenderWidth >= WIDE_COMMAND_DIALOG_MIN_WIDTH && this.selected() !== undefined;
 	}
 
 	private currentGroups(): readonly ToolActivityView[] {
@@ -399,6 +419,22 @@ class ToolDialogComponent implements CommandDialogComponent {
 
 	private handleListInput(data: string): void {
 		if (matchesCommandDialogConfirm(data, this.context.keybindings)) {
+			if (this.selectedId === LOAD_OLDER_ID) {
+				this.groups = this.runtime.loadOlderActivities();
+				this.hasOlderHistory = this.runtime.hasOlderHistory();
+				this.showingNewest = false;
+				this.pinnedGroup = undefined;
+				this.pendingFocusId = undefined;
+				this.selectedId = this.groups[0]?.id ?? (this.hasOlderHistory ? LOAD_OLDER_ID : undefined);
+				this.mode = "list";
+				this.splitFocus = "left";
+				this.detailMemberIndex = 0;
+				this.detailRepresentation = "formatted";
+				this.scrollOffset = 0;
+				this.detailWrapCache = undefined;
+				this.context.requestRender();
+				return;
+			}
 			if (!this.selected()) return;
 			if (this.isSplit()) {
 				this.splitFocus = "right";
@@ -418,13 +454,17 @@ class ToolDialogComponent implements CommandDialogComponent {
 		}
 		const navigation = commandDialogNavigation(data, this.context.keybindings);
 		if (!navigation) return;
-		if (this.groups.length === 0) return;
-		const current = Math.max(
-			0,
-			this.groups.findIndex((group) => group.id === this.selectedId),
-		);
-		const next = commandDialogListIndex(current, this.groups.length, this.lastListViewportRows, navigation);
-		this.selectedId = this.groups[next]?.id;
+		const listLength = this.listLength();
+		if (listLength === 0) return;
+		const current =
+			this.selectedId === LOAD_OLDER_ID
+				? this.groups.length
+				: Math.max(
+						0,
+						this.groups.findIndex((group) => group.id === this.selectedId),
+					);
+		const next = commandDialogListIndex(current, listLength, this.lastListViewportRows, navigation);
+		this.selectedId = next === this.groups.length ? LOAD_OLDER_ID : this.groups[next]?.id;
 		this.detailMemberIndex = 0;
 		this.detailRepresentation = "formatted";
 		this.scrollOffset = 0;
@@ -477,41 +517,58 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const activityHints: string[] = [];
-		if (this.groups.length > 0) {
+		const listLength = this.listLength();
+		if (listLength > 0) {
 			activityHints.push(`${up}/${down} select`);
 			if (this.isSplit()) activityHints.push("Tab pane");
 			activityHints.push(`${confirm} details`);
 		}
 		let footer = hintLines(theme, width, [...activityHints, "? keys", `${cancel} close`]);
 		let viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
-		const page = commandDialogReadOnlyPageHint(this.groups.length > viewportRows);
+		const page = commandDialogReadOnlyPageHint(listLength > viewportRows);
 		if (page) {
 			activityHints.splice(1, 0, page);
 			footer = hintLines(theme, width, [...activityHints, "? keys", `${cancel} close`]);
 			viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
 		}
 		this.lastListViewportRows = Math.max(1, viewportRows);
-		const selectedIndex = Math.max(
-			0,
-			this.groups.findIndex((group) => group.id === this.selectedId),
-		);
-		const start = Math.max(
-			0,
-			Math.min(selectedIndex - Math.floor(viewportRows / 2), this.groups.length - viewportRows),
-		);
-		const visible = viewportRows > 0 ? this.groups.slice(start, start + viewportRows) : [];
+		const selectedIndex =
+			this.selectedId === LOAD_OLDER_ID
+				? this.groups.length
+				: Math.max(
+						0,
+						this.groups.findIndex((group) => group.id === this.selectedId),
+					);
+		const start = Math.max(0, Math.min(selectedIndex - Math.floor(viewportRows / 2), listLength - viewportRows));
+		const visibleIndexes =
+			viewportRows > 0
+				? Array.from({ length: Math.min(viewportRows, listLength - start) }, (_, index) => start + index)
+				: [];
 		const count = width >= 30 ? theme.fg("dim", ` · ${activityCount(this.groups.length)}`) : "";
 		const title = focused ? theme.bold(theme.fg("accent", "Tools")) : theme.bold("Tools");
 		const header = [theme.fg("border", "━".repeat(width)), `${GUTTER}${title}${count}`];
 		const body = [""];
-		if (visible.length === 0) body.push(`${GUTTER}${theme.fg("dim", "No tool activity in this session.")}`);
-		else {
+		if (visibleIndexes.length === 0) {
+			body.push(
+				`${GUTTER}${theme.fg(
+					"dim",
+					this.showingNewest ? "No tool activity in this session." : "No tool activity on this page.",
+				)}`,
+			);
+		} else {
 			if (start > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${String(start)} newer`)}`);
-			for (const group of visible) {
-				const selected = group.id === this.selectedId;
-				body.push(activityRow(theme, group, selected, width));
+			for (const index of visibleIndexes) {
+				const group = this.groups[index];
+				if (group) {
+					body.push(activityRow(theme, group, group.id === this.selectedId, width));
+				} else {
+					const cursor = this.selectedId === LOAD_OLDER_ID ? theme.fg("accent", "›") : " ";
+					const label =
+						this.selectedId === LOAD_OLDER_ID ? theme.bold("Load older activities…") : "Load older activities…";
+					body.push(`${GUTTER}${cursor} ${label}`);
+				}
 			}
-			const older = this.groups.length - start - visible.length;
+			const older = listLength - start - visibleIndexes.length;
 			if (older > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${String(older)} older`)}`);
 		}
 		body.push("");
@@ -681,6 +738,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	}
 
 	private reconcileSelection(): void {
+		if (this.selectedId === LOAD_OLDER_ID && this.hasOlderHistory) return;
 		const selected = this.selected();
 		if (selected) {
 			const memberIndex = Math.min(this.detailMemberIndex, Math.max(0, selected.memberIds.length - 1));
@@ -691,7 +749,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 			}
 			return;
 		}
-		this.selectedId = this.groups[0]?.id;
+		this.selectedId = this.groups[0]?.id ?? (this.hasOlderHistory ? LOAD_OLDER_ID : undefined);
 		if (!this.selectedId) {
 			this.mode = "list";
 			this.splitFocus = "left";
@@ -702,6 +760,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 
 	private selected(): ToolActivityView | undefined {
 		return this.groups.find((group) => group.id === this.selectedId);
+	}
+
+	private listLength(): number {
+		return this.groups.length + (this.hasOlderHistory ? 1 : 0);
 	}
 }
 

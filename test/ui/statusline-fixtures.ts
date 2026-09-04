@@ -137,6 +137,7 @@ function context(options: {
 	contextPercent?: number | null;
 	contextWindow?: number | null;
 	cwd?: string;
+	idle?: () => boolean;
 	metered?: boolean;
 	modelId?: string;
 	modelName?: string;
@@ -164,6 +165,7 @@ function context(options: {
 			percent: "contextPercent" in options ? options.contextPercent : 42.4,
 			tokens: 84_800,
 		}),
+		isIdle: options.idle ?? (() => true),
 		model: model(options.metered ?? true, options.modelId, options.provider, options.modelName, options.reasoning),
 		modelRegistry: { isUsingOAuth: () => options.subscription === true },
 		sessionManager,
