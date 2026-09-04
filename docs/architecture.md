@@ -69,7 +69,8 @@ diagnostics surface and are available through `/diagnostics`.
 These owners coordinate through bounded shared state and Pi extension events. A visible state has one UI authority so
 the Welcome card, Statusline, overlays, notifications, and transcript do not compete to explain the same condition.
 Goal validates and persists an accepted terminal state before returning its Tool result; Pi then owns the ordinary
-follow-up Provider request and Assistant message in that same foreground Agent run.
+follow-up Provider request and Assistant message in that same foreground Agent run, unless the recorded usage exhausts
+an explicit budget or another forced-stop boundary applies.
 
 ## Configuration and data
 

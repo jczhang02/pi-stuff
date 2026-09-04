@@ -143,6 +143,8 @@ test("goal_complete advances only after the finishing run settles", async () => 
 	);
 
 	branch.push(assistantUsageEntry(400));
+	await harness.command("status");
+	assert.equal(stateGoals(harness.mock)[0]?.tokensUsed, 1_250);
 	await harness.mock.callEvent(
 		"agent_end",
 		{

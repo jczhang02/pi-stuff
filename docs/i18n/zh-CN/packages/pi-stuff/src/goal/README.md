@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: f481b6c186600a9bce4138ff1af60506d26f48c9ee0d361356241d6758ce378b -->
+<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: 0335519e23c9021e19b283b5c9d92484f05be7062c8f4a9fca5b1362a0fee5de -->
 
 # Goal
 
@@ -28,7 +28,7 @@
 - 持续推进结算工作，直到完成、暂停、budget、provider 限制或经过验证的 blocker。
 - `goal_complete` 成功前要求逐项提供证据。
 - 跨三个连续 Goal turn 审核稳定 blocker。
-- 先持久化已接受的终止状态，再由 Pi 生成正常的 Goal Final Response。
+- 先持久化已接受的终止状态，再在预算边界内请求正常的 Goal Final Response。
 - 在当前 Session 中保存目标、状态、budget 和可选队列。
 - 跨 Pi 原生 compaction 生命周期保持 Goal identity。
 - 在共享 Statusline 中显示当前状态、用量、budget 和经过时间。

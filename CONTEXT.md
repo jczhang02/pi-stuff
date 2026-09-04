@@ -252,7 +252,8 @@ is delivery or status input, not a Completion Report.
 _Avoid_: Completion notification, Background command row, Goal Tool summary
 
 **Goal Final Response**:
-The Goal-specific Completion Report that follows an accepted completed or blocked terminal state. It owns the detailed
+The Goal-specific Completion Report requested after an accepted completed or blocked terminal state when no budget or
+other forced-stop boundary prevents the follow-up. It owns the detailed
 user-facing Goal result in the Conversation Transcript and finishes within the same foreground Agent run; it is not the
 compact terminal Tool result, Goal status, a notification, or a synthetic Session message.
 _Avoid_: Goal completion message, Goal Tool summary, completion notification

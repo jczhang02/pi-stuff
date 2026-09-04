@@ -1,4 +1,4 @@
-<!-- translation-source: docs/architecture.md; translation-source-sha256: 3c13cbb5327d30deb7a179bbcc7445b8cca6b2df90522378b79c0d7a23ca5f51 -->
+<!-- translation-source: docs/architecture.md; translation-source-sha256: 7f9b3d8f818a1562cccefcc56d9cf920740b79923b2a8af6e48d25afcf0100d2 -->
 
 # 架构
 
@@ -66,7 +66,7 @@ Pi 负责编辑器、普通前台 Agent 运行、Session、model 和 Extension �
 这些 owner 通过有界共享状态与 Pi Extension event 协同。每种可见状态只有一个 UI authority，避免 Welcome
 卡片、Statusline、overlay、通知和 transcript 同时解释同一状态。
 Goal 会先验证并持久化已接受的终止状态，再返回 Tool result；随后由 Pi 在同一次前台 Agent run 中负责普通的
-follow-up Provider 请求与 Assistant 消息。
+follow-up Provider 请求与 Assistant 消息；若已记录的用量耗尽显式预算，或触及其他强制停止边界，则不再请求。
 
 ## 配置与数据
 

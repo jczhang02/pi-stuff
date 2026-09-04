@@ -7,6 +7,7 @@ import { registerSuiteOwnedTool } from "../../tool-display/registration.js";
 import { formatDuration, formatTokenCount } from "./accounting.js";
 import type { ActiveGoal } from "./persistence.js";
 import {
+	abortCurrentTurn,
 	GOAL_BLOCKED_TOOL,
 	GOAL_COMPLETE_TOOL,
 	type GoalRuntime,
@@ -102,12 +103,21 @@ function hasPendingSkipForGoal(runtime: GoalRuntime, goalId: string): boolean {
 	);
 }
 
-function goalCompletionResult(text: string, completed: ActiveGoal, details: GoalCompleteDetails, terminate: boolean) {
+function goalCompletionResult(
+	text: string,
+	completed: ActiveGoal,
+	details: GoalCompleteDetails,
+	budgetWrapUp: boolean,
+) {
+	const terminate =
+		budgetWrapUp || (completed.tokenBudget !== undefined && completed.tokensUsed >= completed.tokenBudget);
 	const facts: string[] = [];
 	if (completed.tokenBudget !== undefined) {
 		facts.push(
 			`Token budget used: ${formatTokenCount(completed.tokensUsed)}/${formatTokenCount(completed.tokenBudget)}.`,
 		);
+	} else if (completed.tokensUsed > 0) {
+		facts.push(`Tokens used: ${formatTokenCount(completed.tokensUsed)}.`);
 	}
 	if (completed.timeUsedSeconds > 0) facts.push(`Elapsed time: ${formatDuration(completed.timeUsedSeconds)}.`);
 	const finalResponse = terminate
@@ -194,9 +204,9 @@ function executeGoalComplete(
 			return reject(rejectionReason, completingDuringBudgetWrapUp);
 		}
 
+		runtime.recordGoalUsage(completedGoal, ctx);
 		runtime.activeGoal = transitionGoal(completedGoal, "complete");
 		runtime.setCompletionSummary(runtime.activeGoal.id, summary);
-		runtime.recordGoalUsage(runtime.activeGoal, ctx);
 		if (runtime.pendingQueueAction?.kind === "prioritize") {
 			runtime.persistGoal(runtime.activeGoal);
 			runtime.publishPresentationStatus(runtime.activeGoal);
@@ -301,11 +311,12 @@ function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParams, ctx
 	runtime.activeGoal = transitionGoal(blockedGoal, "blocked");
 	runtime.setTerminalReason(runtime.activeGoal.id, reason);
 	runtime.persistGoal(runtime.activeGoal);
-	return {
+	const terminate = blockedGoal.tokenBudget !== undefined && blockedGoal.tokensUsed >= blockedGoal.tokenBudget;
+	const result = {
 		content: [
 			{
 				type: "text" as const,
-				text: `Goal blocked: ${reason}\n\nThe Goal is blocked. Send the user a concise final response now with the blocker, evidence, and exact user or external action needed.`,
+				text: `Goal blocked: ${reason}${terminate ? "" : "\n\nThe Goal is blocked. Send the user a concise final response now with the blocker, evidence, and exact user or external action needed."}`,
 			},
 		],
 		details: {
@@ -317,6 +328,7 @@ function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParams, ctx
 			repeated_turns: repeatedTurns,
 		} satisfies GoalBlockedDetails,
 	};
+	return terminate ? { ...result, terminate: true as const } : result;
 }
 
 export function registerGoalTerminalTools(
@@ -338,8 +350,12 @@ export function registerGoalTerminalTools(
 			"Call goal_complete only after the requested goal is fully implemented, verified, and no known required work remains; otherwise keep working.",
 		],
 		parameters: GOAL_COMPLETE_PARAMETERS,
-		execute: (_toolCallId, params, _signal, _onUpdate, ctx) =>
-			options.run(ctx, executeGoalComplete(runtime, params, ctx, options.showCompletionStatus)),
+		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const result = await options.run(ctx, executeGoalComplete(runtime, params, ctx, options.showCompletionStatus));
+			// Pi aggregates terminate across the whole Tool batch; abort also covers mixed batches.
+			if ("terminate" in result && result.terminate) abortCurrentTurn(ctx);
+			return result;
+		},
 	});
 
 	const goalBlockedTool = defineTool({
@@ -357,11 +373,14 @@ export function registerGoalTerminalTools(
 			"Pass goal_blocked the exact current goal_id; never reuse a goal_id from an older, stopped, replaced, or cleared goal turn.",
 		],
 		parameters: GOAL_BLOCKED_PARAMETERS,
-		execute: (_toolCallId, params, _signal, _onUpdate, ctx) =>
-			options.run(
+		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const result = await options.run(
 				ctx,
 				Effect.sync(() => executeGoalBlocked(runtime, params, ctx)),
-			),
+			);
+			if ("terminate" in result && result.terminate) abortCurrentTurn(ctx);
+			return result;
+		},
 	});
 
 	registerSuiteOwnedTool(pi, goalCompleteTool, goalCompletePresentation());

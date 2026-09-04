@@ -455,6 +455,10 @@ export class GoalCommandController {
 			this.runtime.activeGoal = queueGoalSafetyReset(
 				transitionGoal(nextGoalInstance(this.runtime.activeGoal), "active"),
 			);
+			this.runtime.activeGoal.baselineTokens = Math.max(
+				0,
+				currentTokenTotal(ctx) - this.runtime.activeGoal.tokensUsed,
+			);
 			this.runtime.persistGoal(this.runtime.activeGoal);
 			if (this.runtime.activeGoal.status !== "active") {
 				ctx.ui.notify(`Goal token budget is still reached: ${formatBudget(this.runtime.activeGoal)}`, "warning");
@@ -530,6 +534,7 @@ export class GoalCommandController {
 			);
 			const nextGoal =
 				transitionedGoal.status === "active" ? queueGoalSafetyReset(transitionedGoal) : transitionedGoal;
+			nextGoal.baselineTokens = Math.max(0, currentTokenTotal(ctx) - nextGoal.tokensUsed);
 			const goalToolVisibilityBeforeActivation =
 				nextGoal.status === "active" ? this.runtime.snapshotGoalToolVisibility() : undefined;
 			if (nextGoal.status === "active") {

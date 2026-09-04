@@ -259,7 +259,7 @@ export class GoalRuntime extends GoalToolPolicy {
 	}
 
 	recordGoalUsage(goal: ActiveGoal, ctx: StatusContext, checkpointActiveTime = goal.status === "active") {
-		if (!this.canRecordGoalUsage(goal.id)) return false;
+		if (goal.status === "complete" || goal.status === "blocked" || !this.canRecordGoalUsage(goal.id)) return false;
 		updateGoalUsage(goal, ctx, checkpointActiveTime);
 		return true;
 	}

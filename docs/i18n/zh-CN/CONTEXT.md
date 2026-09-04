@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 60a0ee1c138edd308e0493b80c46d25f569528da6e405026b8e09ecc26db2942 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 3d4dd6ecda4721e114133e9839079be41b74bc9b81e29650113046ff009983bf -->
 
 # Pi Stuff
 
@@ -241,7 +241,8 @@ _避免使用_：Watcher、cron、polling task
 _避免使用_：Completion notification、Background command row、Goal Tool summary
 
 **Goal Final Response**：
-已接受的 complete 或 blocked 终止状态之后出现的 Goal 专用 Completion Report。它负责 Conversation Transcript
+在接受 complete 或 blocked 终止状态后，预算或其他强制停止边界未阻止 follow-up 时请求的 Goal 专用
+Completion Report。它负责 Conversation Transcript
 中面向用户的详细 Goal 结果，并在同一次前台 Agent run 中完成；它不是紧凑终止 Tool result、Goal 状态、通知
 或合成的 Session message。
 _避免使用_：Goal completion message、Goal Tool summary、completion notification

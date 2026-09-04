@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/goal.md; translation-source-sha256: af9ecbb960e35df16fb0b9e7fddecc96ae7fd2ab92b610644c43dfa23d1818ab -->
+<!-- translation-source: docs/capabilities/goal.md; translation-source-sha256: 4f2a32862ae4f0fe2e44fc64d8b0860103adb2ae9803b3377d7eceeb476874de -->
 
 # Goal
 
@@ -28,10 +28,11 @@ Goal 会把目标和完成契约加入后续 Agent turn。需要停止自动 con
 
 普通不确定性、未完成工作、计划或建议的下一步都不是终止结果。
 
-完成或最终 blocker 被接受后，系统会先记录 Goal 终止状态。随后 Pi 执行普通的 Tool follow-up，让模型发送
-**Goal Final Response**：Conversation Transcript 中的一条正常 Assistant 消息。这条回复会在当前 Agent run
-settled 以及任何排队 Goal 启动前完成。如果 Provider 请求失败，已记录的终止状态仍是权威状态；失败的 run
-settled 后，排队工作仍可继续。
+完成或最终 blocker 被接受后，系统会先记录 Goal 终止状态和最终用量。如果显式 token budget 已耗尽，
+包括包含终止 Tool call 的那次回复刚好耗尽预算，run 会直接停止，不再请求 Provider。已有的预算收尾和其他
+强制停止路径也保持立即终止。否则 Pi 执行普通的 Tool follow-up，让模型发送 **Goal Final Response**：
+Conversation Transcript 中的一条正常 Assistant 消息。排队 Goal 会等到当前 run settled 后再启动。
+如果 Provider 请求失败，已记录的终止状态仍是权威状态；失败的 run settled 后，排队工作仍可继续。
 
 ## 命令
 
@@ -55,9 +56,11 @@ Goal 工作活动时，Agent 可以使用 `goal_complete`。它要求准确的�
 `goal_blocked` 用于记录真正无法推进的情况。只有同一个 blocker 连续三个 Goal turn 被报告，且每次都有不同的
 尝试与观察到的失败，runtime 才会停止 Goal。前两次报告只记录进度，continuation 仍会继续。
 
-完成时的 Goal Final Response 会总结结果、验证情况和遗留风险。存在显式 token budget 或正数 elapsed time
-时，Tool result 会提供 Goal 在终止转换时的最终用量，并要求在回复中自然报告。Goal accounting 在该转换处
-关闭，因此报告回复本身不会计入已完成 Goal 的 token budget。阻塞回复则说明已经证实的 blocker，以及所需的
+完成时的 Goal Final Response 会总结结果、验证情况和遗留风险。Tool result 会提供终止转换时的正数 token
+用量（即使没有预算）、存在显式预算时的用量与预算对照，以及正数 elapsed time，并要求在回复中自然报告
+这些事实。Goal accounting 在该转换处
+关闭，因此报告回复本身不会计入已完成 Goal 的 token budget。检查已完成或受阻 Goal 时会保留该用量快照；
+恢复或编辑 Goal 后，后续 Goal 用量也不会补计期间的报告 token。阻塞回复则说明已经证实的 blocker，以及所需的
 用户或外部操作。紧凑终止 Tool row 只记录机器结果；Goal 不会再发出重复的终止通知。该回复步骤中仍可使用
 普通 Tool。
 
@@ -102,8 +105,8 @@ Pi 负责原生 compaction。Goal 会跨一次匹配的 compaction 保留目标�
 - `skip` 或 `shift` 清除当前 Goal，并激活队首。
 
 队列仍属于当前 Session，并使用同一套生命周期与证据规则。
-已接受的 Goal 会先生成 Goal Final Response，再激活队首。最终 Provider 回复失败不会重新打开已终止 Goal，
-也不会让队列搁浅。
+队首只会在终止 run settled 后激活，包括预算允许时的正常 Goal Final Response。最终 Provider 回复失败
+不会重新打开已终止 Goal，也不会让队列搁浅。
 
 ## 相关文档
 

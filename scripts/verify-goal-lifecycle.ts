@@ -18,7 +18,7 @@ const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
 const TIMEOUT_MS = 30_000;
 
-type Scenario = "blocker" | "code-mode" | "compaction" | "normal" | "reload";
+type Scenario = "blocker" | "code-mode" | "compaction" | "normal" | "reload" | "retry";
 
 interface ScenarioContract {
 	readonly expectedGoalCalls: readonly number[];
@@ -29,6 +29,13 @@ interface ScenarioContract {
 }
 
 const SCENARIO_CONTRACTS = {
+	retry: {
+		expectedGoalCalls: [1, 2, 3, 4, 5, 6],
+		finalResponse: GOAL_FINAL_RESPONSE,
+		finalTool: "goal_complete",
+		startMessage: "/goal-lifecycle-seed",
+		terminalStatus: "complete",
+	},
 	blocker: {
 		expectedGoalCalls: [1, 2, 3, 4, 5, 6],
 		finalResponse: BLOCKED_GOAL_FINAL_RESPONSE,
@@ -71,6 +78,7 @@ const GOAL_RECORD_SCHEMA = Type.Object(
 		blockerAudit: Type.Optional(
 			Type.Object({ attempts: Type.Optional(Type.Array(Type.Unknown())) }, { additionalProperties: true }),
 		),
+		id: Type.Optional(Type.String()),
 		status: Type.Optional(Type.String()),
 	},
 	{ additionalProperties: true },
@@ -321,6 +329,18 @@ function assertFinalResponse(
 	if (terminalStateIndex < 0 || terminalStateIndex >= (finalResponseIndexes[0] ?? -1)) {
 		throw new Error(`${scenario}: Goal terminal state was not persisted before its final Assistant response`);
 	}
+	if (scenario === "normal") {
+		const terminalResult = sessionEntries
+			.filter((entry) => entry.message?.role === "toolResult" && entry.message.toolName === "goal_complete")
+			.at(-1);
+		const elapsed = terminalResult?.message?.content
+			?.map((part) => part.text ?? "")
+			.join("\n")
+			.match(/Elapsed time: ([^\n]+)\./u)?.[1];
+		if (!elapsed || !sessionEntries.some((entry) => assistantText(entry).includes(`Elapsed time: ${elapsed}.`))) {
+			throw new Error("normal: persisted final response did not report the supplied elapsed duration");
+		}
+	}
 	const finalResponseEventIndex = rpcRecords.findIndex(
 		(record) => record.type === "message_end" && rpcAssistantText(record).includes(expected),
 	);
@@ -350,6 +370,42 @@ function assertFinalResponse(
 	}
 }
 
+function assertRetryQueue(records: readonly RpcRecord[]): void {
+	const states = records.flatMap((record, index) => {
+		const entry = record.entry;
+		if (
+			record.type !== "entry_appended" ||
+			entry?.customType !== "goal-state" ||
+			!Check(GOAL_STATE_SCHEMA, entry.data)
+		)
+			return [];
+		return [{ index, goal: goal(entry.data) }];
+	});
+	const completed = states.find((state) => state.goal?.status === "complete");
+	const retries = records.filter((record) => record.type === "auto_retry_start");
+	const exhausted = records.findIndex((record) => record.type === "auto_retry_end" && record.success === false);
+	const nextActive = states.find(
+		(state) => state.index > (completed?.index ?? Infinity) && state.goal?.status === "active",
+	);
+	if (
+		!completed?.goal?.id ||
+		retries.length !== 2 ||
+		exhausted <= completed.index ||
+		!nextActive ||
+		nextActive.index <= exhausted
+	) {
+		throw new Error("retry: queued Goal did not wait for final-response Host retry exhaustion");
+	}
+	if (
+		states.some(
+			(state) =>
+				state.index > completed.index && state.goal?.id === completed.goal?.id && state.goal?.status !== "complete",
+		)
+	) {
+		throw new Error("retry: final-response failure reverted the completed Goal");
+	}
+}
+
 function assertScenario(
 	scenario: Scenario,
 	records: readonly RpcRecord[],
@@ -357,6 +413,7 @@ function assertScenario(
 	logRecords: readonly RpcRecord[],
 	observedActiveGoal: boolean,
 ): void {
+	if (scenario === "retry") assertRetryQueue(records);
 	const states = goalStates(sessionEntries);
 	if (states.length === 0) throw new Error(`${scenario}: no persisted Goal states were observed`);
 	assertFinalResponse(scenario, sessionEntries, records, logRecords);
@@ -449,14 +506,18 @@ async function seedCompactionHistory(transport: RpcTransport): Promise<void> {
 	}
 }
 
-async function writeGoalLifecycleSettings(agentDirectory: string, packagePath: string): Promise<void> {
+async function writeGoalLifecycleSettings(
+	agentDirectory: string,
+	packagePath: string,
+	scenario: Scenario,
+): Promise<void> {
 	await writeFile(
 		join(agentDirectory, "settings.json"),
 		`${JSON.stringify(
 			{
 				packages: [packagePath],
 				compaction: { enabled: false, keepRecentTokens: 14_000, reserveTokens: 6_000 },
-				retry: { enabled: false },
+				retry: { enabled: scenario === "retry", maxRetries: 2, baseDelayMs: 20 },
 			},
 			null,
 			"\t",
@@ -560,9 +621,18 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			mkdir(agentDirectory, { recursive: true }),
 		]);
 		await Promise.all([
-			writeGoalLifecycleSettings(agentDirectory, options.packagePath),
+			writeGoalLifecycleSettings(agentDirectory, options.packagePath, scenario),
 			disableSessionNamingForTest(agentDirectory),
 		]);
+		if (scenario === "retry") {
+			await writeFile(
+				join(agentDirectory, "pi-stuff.json"),
+				JSON.stringify({
+					sessionNaming: { enabled: false },
+					goal: { experimental: { goals: true } },
+				}),
+			);
+		}
 		const startMessage = SCENARIO_CONTRACTS[scenario].startMessage;
 		const transport = await createRpcTransport(
 			[
@@ -614,7 +684,7 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 }
 
 export async function verifyGoalLifecycle(options: VerifyGoalLifecycleOptions): Promise<void> {
-	for (const scenario of ["normal", "code-mode", "reload", "compaction", "blocker"] as const) {
+	for (const scenario of ["normal", "code-mode", "reload", "compaction", "blocker", "retry"] as const) {
 		try {
 			await runScenario(options, scenario);
 		} catch (cause) {
