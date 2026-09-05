@@ -15,8 +15,13 @@ import type { AgentConfig } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { findModelInfo, type ModelInfo } from "../../shared/model-info.ts";
 import { type ResolvedToolBudget, wrapForkTask } from "../../shared/types.ts";
-import { type AsyncParallelTaskInput, buildResolvedTask } from "../background/async-execution.ts";
-import type { AsyncExecutionContext } from "../background/resolved-task.ts";
+import {
+	type AsyncExecutionContext,
+	type AsyncParallelTaskInput,
+	type ResolvedTaskBuildInput,
+	type ResolvedTaskProjection,
+	resolveTaskProjection,
+} from "../background/resolved-task.ts";
 import type { resolveCurrentSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
 import { buildModelCandidates, resolveEffectiveSubagentModel, resolveModelOrigin } from "../shared/model-fallback.ts";
@@ -106,12 +111,13 @@ function inheritedLaunchPromptTokens(ctx: ExtensionContext): number {
 }
 
 function inheritedReplacementPromptTokens(
-	task: Pick<RunnerAgentTask, "cwd" | "inheritProjectContext" | "inheritSkills">,
+	cwd: string,
+	agent: Pick<RunnerAgentTask, "inheritProjectContext" | "inheritSkills">,
 ) {
 	try {
 		let retained = "";
-		if (task.inheritProjectContext) {
-			const contextFiles = loadProjectContextFiles({ cwd: task.cwd, agentDir: getAgentDir() });
+		if (agent.inheritProjectContext) {
+			const contextFiles = loadProjectContextFiles({ cwd, agentDir: getAgentDir() });
 			if (contextFiles.length > 0) {
 				retained += "\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n";
 				for (const contextFile of contextFiles) {
@@ -120,45 +126,50 @@ function inheritedReplacementPromptTokens(
 				retained += "</project_context>\n";
 			}
 		}
-		if (task.inheritSkills) {
+		if (agent.inheritSkills) {
 			const skills = loadSkills({
-				cwd: task.cwd,
+				cwd,
 				agentDir: getAgentDir(),
 				skillPaths: [],
 				includeDefaults: true,
 			}).skills;
 			if (skills.length > 0) retained += formatSkillsForPrompt(skills);
 		}
-		retained += `\nCurrent working directory: ${task.cwd.replace(/\\/gu, "/")}`;
+		retained += `\nCurrent working directory: ${cwd.replace(/\\/gu, "/")}`;
 		return {
 			tokens: estimateTextTokens(retained),
 			// ExtensionContext deliberately does not expose the command-only Host
 			// construction options. When replacement mode retains any ambient
 			// resources, use a bounded projection and let the final payload gate cover
 			// package-provided resources that cannot be inspected at this seam.
-			rawForkSafe: !task.inheritProjectContext && !task.inheritSkills,
+			rawForkSafe: !agent.inheritProjectContext && !agent.inheritSkills,
 		};
 	} catch {
 		// Resource discovery failure must not admit an unmeasured child payload.
 	}
-	if (!task.inheritProjectContext && !task.inheritSkills) {
-		return { tokens: estimateTextTokens(task.cwd), rawForkSafe: true };
+	if (!agent.inheritProjectContext && !agent.inheritSkills) {
+		return { tokens: estimateTextTokens(cwd), rawForkSafe: true };
 	}
 	return { tokens: Number.POSITIVE_INFINITY, rawForkSafe: false };
 }
 
-function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): number {
+function childLaunchSurfaceTokens(
+	pi: ExtensionAPI,
+	input: ResolvedTaskBuildInput,
+	resolved: ResolvedTaskProjection,
+): number {
 	if (!isRuntimeFunction(pi.getAllTools) || !isRuntimeFunction(pi.getActiveTools)) return 0;
+	const { agent, params } = input;
 	try {
 		const plan = resolvePiLaunchToolPlan({
-			tools: task.tools,
-			extensions: task.extensions,
-			subagentOnlyExtensions: task.subagentOnlyExtensions,
-			mcpDirectTools: task.mcpDirectTools,
-			cwd: task.cwd,
-			childBaseExtensionPath: task.childBaseExtensionPath,
-			requireReadTool: task.inheritSkills || Boolean(task.skills?.length),
-			capabilityCeiling: task.capabilityCeiling,
+			tools: agent.tools,
+			extensions: agent.extensions,
+			subagentOnlyExtensions: agent.subagentOnlyExtensions,
+			mcpDirectTools: agent.mcpDirectTools,
+			cwd: resolved.taskCwd,
+			childBaseExtensionPath: params.childBaseExtensionPath,
+			requireReadTool: agent.inheritSkills || resolved.skillNames.length > 0,
+			capabilityCeiling: resolved.capabilityCeiling,
 		});
 		const requestedNames = [
 			...new Set(
@@ -187,8 +198,8 @@ function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): numb
 			JSON.stringify({
 				extensions: plan.extensionArgs,
 				mcpTools: plan.effectiveMcpTools,
-				inheritProjectContext: task.inheritProjectContext,
-				inheritSkills: task.inheritSkills,
+				inheritProjectContext: agent.inheritProjectContext,
+				inheritSkills: agent.inheritSkills,
 			}),
 		);
 		return tokens;
@@ -288,7 +299,7 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 	const agent = input.agents.find((candidate) => candidate.name === task.agent);
 	if (!agent) throw new Error(`Unknown Agent: ${task.agent}`);
 	const taskInput = resolvedTaskInput(task, input.context === "fork" ? wrapForkTask(task.task) : task.task);
-	const buildInput: Parameters<typeof buildResolvedTask>[0] = {
+	const buildInput: Parameters<typeof resolveTaskProjection>[0] = {
 		runId: input.runId,
 		index,
 		taskInput,
@@ -308,18 +319,18 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 		thinkingOverride: input.params.thinking,
 	};
 	if (taskInput.skill === false) buildInput.skills = [];
-	const built = buildResolvedTask(buildInput);
-	if ("error" in built) throw new Error(built.error);
-	const candidates = built.task.modelCandidates ?? [];
+	const resolved = resolveTaskProjection(buildInput);
+	if ("error" in resolved) throw new Error(resolved.error);
+	const candidates = resolved.modelCandidates;
 	const replacementPromptEstimate =
-		built.task.systemPromptMode === "replace"
-			? inheritedReplacementPromptTokens(built.task)
+		agent.systemPromptMode === "replace"
+			? inheritedReplacementPromptTokens(resolved.taskCwd, agent)
 			: { tokens: state.launchPromptTokens, rawForkSafe: true };
 	const taskTokens =
-		estimateTextTokens(built.task.task) +
-		estimateTextTokens(built.task.systemPrompt?.trim() ?? "") +
+		estimateTextTokens(taskInput.task) +
+		estimateTextTokens(resolved.systemPrompt.trim()) +
 		replacementPromptEstimate.tokens +
-		childLaunchSurfaceTokens(input.executionContext.pi, built.task);
+		childLaunchSurfaceTokens(input.executionContext.pi, buildInput, resolved);
 	state.fixedInputTokensByIndex[index] = taskTokens;
 	if (input.context !== "fork") {
 		state.rawForkByIndex[index] = false;

@@ -47,7 +47,6 @@ export type {
 	CommonBuildParams,
 	ResolvedTaskBuildInput,
 } from "./resolved-task.ts";
-export { buildResolvedTask } from "./resolved-task.ts";
 export {
 	acquireRunnerProcessStartIdentity,
 	finalizeSpawnedRunnerClose,

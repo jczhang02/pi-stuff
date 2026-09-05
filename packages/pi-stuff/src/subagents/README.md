@@ -44,6 +44,13 @@ Continue independent work after launch. Open `/agents` to inspect, steer, stop, 
   process.
 - Keeps Session-owned artifacts and preserves changed isolated worktrees for inspection.
 
+## Launch preparation
+
+Planning validates Skills, model candidates, Tool budgets and timeouts, and capability/MCP constraints without creating
+execution or recovery records or hashing Agent definitions and task bodies. Final construction resolves the launch
+inputs and creates their digests, model metadata, and recovery record once. Planning projections are not cached across
+launches or reused as finalized child contracts.
+
 ## Documentation
 
 - [Agents guide](../../../../docs/capabilities/subagents.md)

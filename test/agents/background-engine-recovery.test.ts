@@ -422,6 +422,10 @@ test("builds one parallel group and resolves every task override before persiste
 		context: "fork",
 		model: "provider/fast",
 		modelCandidates: ["provider/fast", "provider/writer-default"],
+		modelVerificationRegistry: [
+			{ provider: "provider", id: "fast", fullId: "provider/fast" },
+			{ provider: "provider", id: "writer-default", fullId: "provider/writer-default" },
+		],
 		modelContextWindows: [
 			{ model: "provider/fast", contextWindow: 120_000 },
 			{ model: "provider/writer-default", contextWindow: 100_000 },
@@ -447,6 +451,16 @@ test("builds one parallel group and resolves every task override before persiste
 		toolTimeoutMs: 2_500,
 	});
 	expect(built.recoveries.map((recovery) => recovery.modelOrigin)).toEqual(["explicit", "configured"]);
+	for (const [index, task] of built.work.group.tasks.entries()) {
+		expect(task.launchContractDigest).toMatch(/^[a-f0-9]{64}$/u);
+		expect(built.recoveries[index]).toMatchObject({
+			launchContractDigest: task.launchContractDigest,
+			systemPrompt: task.systemPrompt,
+			skills: task.skills,
+			thinking: task.thinking,
+			context: task.context,
+		});
+	}
 });
 
 test("single recovery data retains the child session and limits without retired features", () => {

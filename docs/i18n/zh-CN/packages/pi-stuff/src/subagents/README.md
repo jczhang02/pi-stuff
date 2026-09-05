@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 2d0bed5310779ca058d12cec3dbcbe4cdd161f470911e7d6f4517962e860f278 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: f5c343b90bfb6e27b00162c9e465ba7ba979bad374680a7eca73decd91ad037b -->
 
 # Agents
 
@@ -44,6 +44,12 @@
 - 保存 Session-owned artifact，并保留已修改的隔离 worktree 供检查。
 
 保留结果遵循验收报告优先规则，不会被后续普通 assistant 文本替换。
+
+## 启动准备
+
+规划阶段校验 Skills、候选模型、Tool 预算与超时，以及 capability/MCP 约束，但不创建执行或恢复记录，也不计算
+Agent 定义与任务正文的摘要。最终构建阶段解析启动输入，并一次性生成对应摘要、模型元数据和恢复记录。
+规划投影不会跨启动缓存，也不会被当作最终 child contract 复用。
 
 ## 文档
 
