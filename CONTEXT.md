@@ -43,11 +43,17 @@ Service. Its unconfigured behavior remains an unconditional contract; a missing 
 acceptance and never counts as passed, skipped, or not applicable.
 _Avoid_: Optional test, skipped feature, best-effort contract
 
+**Capability Benchmark**:
+An evaluation of one Capability or a limited group of Capabilities for performance, resource use, or behavioral
+effectiveness, regardless of whether execution uses the complete Host or public tasks. It supplies comparative evidence,
+not Capability Contract Acceptance or PR-blocking authority.
+_Avoid_: Internal-only benchmark, correctness test, Suite Outcome Evaluation
+
 **Suite Outcome Evaluation**:
-A paired evaluation on an external public task set that holds the certified Host, selected model, task, environment,
-and resource budget fixed while comparing the Suite loaded with the Suite absent. It reports complete-system outcomes
-and Suite delta; it does not certify individual Capability contracts.
-_Avoid_: Pi Stuff score, harness certification, correctness test
+An evaluation of the complete Suite on an external public task set, measuring task outcomes and comparing declared
+configurations such as native Pi and Pi Stuff. It does not establish coverage or acceptance of every Capability and has
+no PR-blocking authority.
+_Avoid_: Pi Stuff score, harness certification, correctness test, Capability Benchmark
 
 **Capability Contract Acceptance**:
 The verification of every applicable Capability Contract Catalog entry in an isolated scenario using its declared

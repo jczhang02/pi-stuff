@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 0672309928b0c7a3a8101a8df4b7741bbf7e402d7d860a3187c612426d986540 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 00c112fc08092a431e525a01c684eca88143475ee50407fd97caf7748ef17b9c -->
 
 # Pi Stuff
 
@@ -44,10 +44,13 @@ unconfigured behavior 仍是一项 unconditional contract；缺少所需 depende
 绝不能计为 passed、skipped 或 not applicable。
 _避免使用_：Optional test、skipped feature、best-effort contract
 
+**Capability Benchmark**：
+针对单项或有限几项 Capability 的性能、资源使用或行为效果所做的专项评测，无论执行时是否使用完整 Host 或公开任务。它提供比较证据，不代替 Capability Contract Acceptance，也没有阻断 PR 的权利。
+_避免使用_：Internal-only benchmark、correctness test、Suite Outcome Evaluation
+
 **Suite Outcome Evaluation**：
-在外部公开 task set 上进行的配对评估：固定认证 Host、所选 model、task、environment 与 resource budget，比较
-加载和不加载 Suite 的两种情况。它报告完整系统 outcome 与 Suite delta；不认证单项 Capability contract。
-_避免使用_：Pi Stuff score、harness certification、correctness test
+在外部公开任务集上评测完整 Suite 的任务效果，并对比声明的配置，例如原生 Pi 与 Pi Stuff。它不证明每项 Capability 都已覆盖或通过验收，也没有阻断 PR 的权利。
+_避免使用_：Pi Stuff score、harness certification、correctness test、Capability Benchmark
 
 **Capability Contract Acceptance**：
 使用每项所声明的 Acceptance Evidence Profile，在隔离 scenario 中验证每个适用的 Capability Contract Catalog

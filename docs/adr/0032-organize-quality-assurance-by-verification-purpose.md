@@ -30,26 +30,41 @@ This ADR defines the migration target; current checks and certification policy r
 - For system testing, the system under test is the real Pi Host with the complete Suite loaded. Model services, MCP
   services, and external tools are external dependencies. System integration targets actual interoperability with those
   dependencies. Host interface compatibility may be checked separately; merely launching Pi does not classify a test.
-- Tests own software behavior and performance verification, including startup, reload, responsiveness, and resource
-  growth. Benchmarks are a separate top-level category reserved for complete Agent task-outcome evaluation, not a
-  container for software performance checks. Whether the existing 200 ms spinner limit is a justified requirement
-  remains to be established; a diagnostic measurement alone does not create a blocking requirement.
+- Tests verify explicit behavior and performance requirements; Benchmarks independently measure and compare results.
+  Software performance measurement may belong to a Capability Benchmark and is not automatically moved into Tests.
+  Whether the existing 200 ms spinner limit is a justified requirement remains to be established; measurement alone
+  does not create a blocking requirement.
 - Static Checks cover formatting, lint, types, dependencies, architecture, generated output, package structure, and
   code-vulnerability, dependency-vulnerability, and credential-leak scanning. Reuse existing tools first; adding a scanner
   requires an explicit target and evidence of usefulness.
 - Each Capability identifies applicable normal, error, cancellation, recovery, persistence, and resource-cleanup
   behavior. Assign primary coverage at the appropriate level; higher levels add actual connection and complete-flow
   evidence without mechanically repeating every lower-level scenario.
-- Benchmarks follow the kind of task-set evaluation illustrated by
-  [FrontierHarness Eval](https://runta.com/blog/introducing-frontierharness-eval/): run complete Agents on a defined task
-  set and report task completion, result quality, token usage, cost, and elapsed time. For Pi Stuff, use the existing
-  Suite Outcome Evaluation contract: hold the Host, model, tasks, environment, and resource budget fixed while comparing
-  native Pi with the complete Suite. Use individual Capability ablations when attribution is needed. Task verifiers
-  score benchmark outcomes; those outcomes do not certify individual Capability contracts or block PRs.
+- Benchmarks have two branches by evaluation scope: Capability Benchmark and Suite Outcome Evaluation, defined below.
+  Both run independently and neither has authority to block PRs.
 - Reviews cover requirements, architecture, code, security, test effectiveness, and evaluation methodology. Reviewers
   examine redundant assertions and implementation coupling. Ordinary changes receive scoped review; cross-Capability
   and architecture changes receive independent review. Existing Thermo-Nuclear review requirements remain applicable,
   with test quality explicitly in scope.
+
+## Benchmark scope
+
+- **Capability Benchmark** evaluates one Capability or a limited group of Capabilities for performance, resource use,
+  or behavioral effectiveness. Examples include Ponytail, Skill Discovery, and Code Mode evaluations. A specialized
+  question remains in this branch even if its execution uses the complete Host or borrows public tasks.
+- **Suite Outcome Evaluation** evaluates the complete Suite on a public task set, following the overall task-evaluation
+  approach illustrated by [FrontierHarness Eval](https://runta.com/blog/introducing-frontierharness-eval/). Report task
+  completion, result quality, token usage, cost, and elapsed time. Terminal-Bench is an example task set; whole-system
+  evaluation does not imply that the chosen tasks cover every Capability.
+
+Comparison targets do not determine the branch. Either may compare native Pi with Pi Stuff, repository versions, or
+Capability configurations. Hold non-varied conditions fixed in a controlled comparison and state any differences that
+limit attribution. Prefer native Pi versus the complete Suite for a Suite-delta question; use Capability ablations when
+attribution is needed. Benchmark task verifiers score outcomes, not individual Capability Contract Acceptance.
+
+Existing software performance and specialized behavior benchmarks must be classified by their actual evaluation scope,
+not moved wholesale into Tests. This decision does not restore historical public-task runners or claim current runnable
+coverage from retained reports alone.
 
 ## Source installation and performance requirements
 
@@ -60,7 +75,7 @@ This ADR defines the migration target; current checks and certification policy r
   replacement. Preserve valuable real-Host verification when changing that path. Acceptance is scheduled on demand
   without requiring packaging or a separate release pipeline.
 - Audit existing performance thresholds for their requirement source, measurement stability, and applicable environment
-  before deciding whether each justifies a blocking performance test or only diagnostic measurement within Tests.
+  before deciding whether each justifies a blocking performance test or belongs to a non-blocking Capability Benchmark.
   Do not silently delete uncertain thresholds or change product code merely to satisfy an unexplained limit.
 - Repeated failures require distinguishing unstable outcomes from root causes. A defective test, product defect, or
   environment problem can each cause repeated failures; flakiness alone does not identify which is responsible. The
