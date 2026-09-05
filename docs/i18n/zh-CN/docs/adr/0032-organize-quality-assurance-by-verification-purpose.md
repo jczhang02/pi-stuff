@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: eeb5990905ac1f76db654ca0caea29f52034b9b60fca670fc0c3825ddc4bb292 -->
+<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: 3d4c928c8c15fd0756f7ff2eb1bdc2f10aabeeed95e5df86355807e43355110b -->
 
 ---
 status: accepted
@@ -56,6 +56,13 @@ status: accepted
 
 - 删除某项有效关键行为的唯一测试后，使用更简单可靠的测试，或复用合适的集成、验收证据。要求本身不成立时修正规范，而不是重建有缺陷的测试。删除从来不代表该行为已通过。
 - 根据独立检错价值保留测试，不设置测试数量、代码覆盖率或层级比例的硬性配额。优先删除或改写重复断言、过时场景和仅锁定私有实现形状的检查。不同层级的相似流程能发现不同缺陷时，可以保留。
+
+### 命令职责
+
+- `bun run check` 负责全部 Static Checks；`bun run test` 负责动态 Tests；`bun run benchmark:...` 负责独立 Benchmarks。`bun run verify` 将静态检查与保守选择的动态测试组合为日常验证，绝不调用 Benchmarks。Reviews 保持审查流程，不为形式对称创建空命令。
+- Tests 提供五个稳定层级入口：`test:unit`、`test:component-integration`、`test:system`、`test:system-integration`、`test:acceptance`。使用 Capability、文件和测试名称筛选进一步缩小范围，不为每个 Capability 与层级组合创建命令。无参数 test 的范围仍待决定。
+- 普通 `check`、`test`、`verify` 执行离线、无需凭据、不调用真实模型，可以要求真实本地 Pi、RTK 或 PTY 工具。真实模型与外部 Service 验证必须显式选择并预检环境，不能由含糊的 `real` 标签决定是否发起调用。
+- 本次迁移整理现有检查和 Capability Benchmarks。记录 Suite Outcome Evaluation 的接口边界，公开任务执行器另立工作实现；不暴露空命令，也不把历史报告当成可运行评测。
 
 ## 后果
 
