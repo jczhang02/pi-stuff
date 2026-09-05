@@ -135,6 +135,40 @@ coverage from retained reports alone.
   matching nothing fail visibly. Before execution, summarize scope, network/model use, and report location.
 - Extend existing scripts only as needed for this interface; do not introduce a generic CLI framework.
 
+### Naming, mutation, and result conventions
+
+- Name specialized benchmark commands `benchmark:capability:<name>`. Reserve `benchmark:suite` for the later public-task
+  runner without registering a placeholder. Require an explicit evaluation target; no default command starts every live
+  model benchmark.
+- `check` and `verify` do not rewrite source, configuration, snapshots, or expected results. An explicit `fix` command
+  performs formatting and safe lint fixes; generated composition and snapshot updates remain separate explicit actions.
+  Logs, caches, and reports may be written during verification.
+- Use concise terminal summaries with detailed local evidence where needed, reusing native reporters rather than
+  introducing a reporting framework. Report the actual scope, pass/failure/not-run status, elapsed time, and evidence
+  paths. Default generated reports to ignored `.artifacts/`, with explicit output overrides; do not automatically replace
+  retained research reports under `docs/reports/`.
+- Checks and Tests return nonzero for unmet requirements or missing required environments, with distinguishable
+  diagnostics. Benchmarks return success for a completed valid experiment even when measured outcomes are poor;
+  experiment setup errors, runner crashes, and incomplete required data return nonzero. A task failure or timeout scored
+  by the declared protocol is a valid outcome, not automatically an incomplete experiment. Neither benchmark exit status
+  nor measured outcomes acquire PR-blocking authority.
+- Use explicit `bun run <script>` for repository workflows; `bun test` remains the native focused-testing tool and does
+  not imply execution of repository orchestration. Use Bun's script listing and native filtering/reporters where they
+  satisfy the agreed interface. Remove redundant script aliases when migrating all callers and documentation together.
+
+### Public practice references
+
+The exact names above are repository conventions, not a universal software-testing standard. Reviewed on 2026-09-05:
+
+- [VS Code scripts](https://github.com/microsoft/vscode/blob/main/package.json) expose distinct test environments and
+  performance entries, illustrating explicit responsibilities rather than a single indiscriminate runner.
+- [Vite scripts](https://github.com/vitejs/vite/blob/main/package.json) provide named project workflows; adopt consistent
+  namespaces here without copying unrelated build or publication commands.
+- [Biome CLI](https://biomejs.dev/reference/cli/) makes writes explicit with `--write`; preserve that distinction between
+  verification and repair.
+- [Bun runtime](https://bun.com/docs/runtime) distinguishes native commands from package scripts and forwards script
+  arguments; [Bun reporters](https://bun.com/docs/test/reporters) supply native console and JUnit reporting.
+
 ## Consequences
 
 A single full verification run for every change is easy to specify but gives slow feedback and conflates evidence with

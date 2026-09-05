@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: 09c511bb6ed6e2c06ed57e5ce20df001770844cc68f8ffe91421a5a41c406ab0 -->
+<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: f1b6fb54dcfc5d24d13c2919453c6d0d1b74cdef1809867840a45a3d450f67ef -->
 
 ---
 status: accepted
@@ -70,6 +70,23 @@ status: accepted
 - `verify` 在 CI 使用 PR 目标比较基准，本地使用与 `origin/main` 的共同祖先，并包含暂存、未暂存和未跟踪变更。允许 `--base <ref>` 覆盖基准，执行前显示基准与选中范围。基准缺失、影响不明，或干净主分支没有可选择变更时，回退到完整适用测试。
 - 仓库测试、验证和评测入口提供不执行工作的 `--help`，以及预览选中检查或场景和环境要求的 `--list`。未知参数和显式筛选未匹配任何项目时明确失败。真正执行前简要显示范围、联网或模型调用情况及报告位置。
 - 仅按接口需要扩展现有脚本，不引入通用 CLI 框架。
+
+### 命名、修改和结果约定
+
+- 专项评测命令统一命名为 `benchmark:capability:<name>`。为后续公开任务执行器保留 `benchmark:suite`，但不注册占位命令。明确选择评测对象，不提供默认启动全部真实模型评测的命令。
+- `check` 和 `verify` 不改写源码、配置、快照或预期结果。显式 `fix` 命令执行格式化及安全 Lint 修复；生成组合与快照更新仍为独立的显式操作。验证过程中可以写日志、缓存和报告。
+- 终端输出简短摘要，按需保留本地详细证据；复用原生 reporter，不引入报告框架。显示实际范围、通过／失败／未运行、耗时和证据路径。生成报告默认进入忽略的 `.artifacts/`，允许显式覆盖输出位置；不自动替换 `docs/reports/` 的留存研究报告。
+- Checks 和 Tests 在要求不满足或必要环境缺失时返回非零，并给出可区分的诊断。Benchmarks 在有效实验完成时返回成功，即使结果不好；实验准备错误、执行器崩溃和必要数据不完整返回非零。按既定协议计分的任务失败或超时属于有效结果，不自动意味着实验未完成。Benchmark 的退出状态和测量结果都不具备 PR 阻断权。
+- 仓库工作流显式使用 `bun run <script>`；`bun test` 保留为原生聚焦测试工具，不表示执行了仓库编排。Bun 的脚本列表、筛选和 reporter 满足约定接口时直接复用。迁移时同步更新调用方与文档，删除冗余脚本别名。
+
+### 公开实践参考
+
+上述具体名称是仓库约定，不是通用软件测试标准。于 2026-09-05 核对：
+
+- [VS Code scripts](https://github.com/microsoft/vscode/blob/main/package.json) 提供不同测试环境和性能入口，体现明确职责划分。
+- [Vite scripts](https://github.com/vitejs/vite/blob/main/package.json) 提供具名项目工作流；本项目采用一致命名空间，不照搬无关构建和发布命令。
+- [Biome CLI](https://biomejs.dev/reference/cli/) 通过 `--write` 显式启用修改；保留验证与修复的区分。
+- [Bun runtime](https://bun.com/docs/runtime) 区分原生命令和 package scripts，并转发脚本参数；[Bun reporters](https://bun.com/docs/test/reporters) 提供原生终端与 JUnit 报告。
 
 ## 后果
 
