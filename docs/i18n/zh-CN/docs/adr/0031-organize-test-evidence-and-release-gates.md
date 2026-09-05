@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0031-organize-test-evidence-and-release-gates.md; translation-source-sha256: a8b1ec3d1870d2e92c3b0a9f9d2d8be7783ab6161418aa43a38db0f213b84bdf -->
+<!-- translation-source: docs/adr/0031-organize-test-evidence-and-release-gates.md; translation-source-sha256: 3bcd0ca3c2dd6d3783280bba919a37e558403434830c464ee8b7cb84fd54fc01 -->
 
 ---
 status: proposed
@@ -11,7 +11,7 @@ Pi Stuff 需要清楚的单元、组件、集成和系统测试，有效的 E2E 
 
 ## 已确认的范围
 
-- 按单元、组件、集成和系统四种执行边界组织测试。
+- 按单元、组件、集成和系统四种验证范围组织测试，以 Capability Module 为组件的主要边界。
 - 删除重复或无效的测试，替换薄弱断言，同时保留有意义的行为证据。
 - 明确 E2E 与 benchmark 的职责，包括它们与打包、PR 合并的关系。
 - 根据实测成本减少等待；测试文件数和删除比例都不是验收目标。
@@ -27,17 +27,33 @@ Pi Stuff 需要清楚的单元、组件、集成和系统测试，有效的 E2E 
 - 自用项目以成本为重要约束。比较包括 FrontierHarness Eval 在内的公开 benchmark 已存数据，以及 Pi Stuff
   多次历史运行的结果，不要求新增一组原生 Pi 对照。并列注明任务集、模型、版本和环境的差异；缺失数据不要求补跑。
 
-讨论中采用的工作定义如下：
+已确认：保留单元、组件、集成和系统四个名称，作为 Pi Stuff 的项目约定。组件以一个 Capability Module
+为主要边界；依据用例要证明的行为与交互分类，不依据执行经过的代码、文件名或依赖数量分类。
 
-| 分级 | 边界 |
+| 分类 | 验证目标 |
 | --- | --- |
-| 单元 | 一条独立规则、转换或算法 |
-| 组件 | 通过接口验证一个 Module，保留其自身实现，控制外部协作对象 |
-| 集成 | Module、基础设施、可执行程序或 Pi Host 之间的真实连接 |
-| 系统 | 通过外部入口操作完整组装的产品 |
+| 单元 | 一项局部规则、转换或算法；允许使用紧密协作的真实辅助实现 |
+| 组件 | 通过一个 Capability Module 的接口验证其职责，控制边界之外的协作对象 |
+| 集成 | 专门验证两个 Module 或某个 Module 与 Host、存储、进程、服务之间的接口及交互 |
+| 系统 | 从完整产品外部入口验证组装后的 Pi 与 Suite 的产品级行为 |
 
-这些是通用测试术语，无需在 `CONTEXT.md` 中新增词条。Provider 的真实性、资源隔离、成本和执行频率是另外的属性，
-不能由测试文件名推断。
+这不是行业唯一的四级标准。ISTQB 将组件与单元作为同义词，并区分组件集成与系统集成；
+Fowler 的组件范围则可以由团队划定。此处显式区分局部规则与 Capability 职责，以便本项目使用。
+
+分类单位是用例或同目的用例组，文件只是容器。真实 Pi 进程不自动意味着系统测试；临时文件不自动意味着
+集成测试；使用 mock 也不自动排除集成测试。窄范围集成使用替身时，需要说明替身与真实接口的一致性证据，
+不能据此声称已经通过真实 Host 或服务认证。
+
+每组测试分别记录验证目标、范围分类、实际依赖和执行安排。资源成本、耗时、确定性和执行频率与范围分开；
+benchmark 的内部性能或外部任务目的也与范围分开。验收是满足使用或发布要求的证据用途，不必复制另一套测试。
+之前的文件清单保留为盘点证据；全部层级标签都需要按此规则重新核对，不仅限于原先带问号的 44 个文件。
+
+依据：[ISTQB CTFL 4.0.1，第 2.2 节](https://www.istqb.org/wp-content/uploads/2024/11/ISTQB_CTFL_Syllabus_v4.0.1.pdf)、
+[Fowler：单元测试](https://martinfowler.com/bliki/UnitTest.html)、
+[组件测试](https://martinfowler.com/bliki/ComponentTest.html)、
+[集成测试](https://martinfowler.com/bliki/IntegrationTest.html)，以及
+[Google：测试范围与资源规模](https://abseil.io/resources/swe-book/html/ch11.html)。
+这些通用测试术语不需要在 `CONTEXT.md` 中新增领域词条。
 
 ## 调查证据，2026-09-05
 

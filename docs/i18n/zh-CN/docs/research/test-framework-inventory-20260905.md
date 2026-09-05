@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/test-framework-inventory-20260905.md; translation-source-sha256: a47652b31a4b1622c3cb66acb4317f0cbc402aa0a4e8febc1e6d89f9b69ac6e8 -->
+<!-- translation-source: docs/research/test-framework-inventory-20260905.md; translation-source-sha256: 74d1bf53887fe5647e0cfad42fa328c4f1249f726f86caa5d6f20666e6053c89 -->
 
 # 测试框架概览与全量清单
 
@@ -6,6 +6,14 @@
 这是[测试设计访谈](../adr/0031-organize-test-evidence-and-release-gates.md)的分类清单，尚未改变执行器策略。
 覆盖该快照的全部受跟踪测试入口、独立验收与 benchmark 入口，以及辅助文件。
 本次没有运行测试、付费模型评测或耗时测量。
+
+## 分类状态更新
+
+后续讨论已接受以 Capability Module 为组件主要边界，并按验证目标而非资源使用分类。
+[ADR 中的定义](../adr/0031-organize-test-evidence-and-release-gates.md)是后续重新分类的依据。
+下面的文件清点与入口映射仍是该快照的调查证据，但全部范围标签都是待复核的初始判断，
+不是仅有原先 44 个问号项待确认。不能直接用它们移动测试或安排 PR 检查。
+重新分类的每组用例分别记录：验证目标、范围、实际依赖、执行安排；不把文件当成不可拆分的分类单位。
 
 ## 框架概览
 
@@ -25,7 +33,7 @@
 └── 辅助设施与证据：fixture、执行器、观察器、清单与历史报告
 ```
 
-前四项是执行层级。E2E 描述系统流程，不是第五层。Benchmark 的目的、资源使用、执行频率，
+前四项是项目约定的范围分类。E2E 描述系统流程，不是第五层。Benchmark 的目的、资源使用、执行频率，
 以及被测对象是产品、测试设施还是仓库工具，属于另外的属性。
 验证 benchmark 统计函数仍是正确性测试，执行它不会启动付费 benchmark。
 源码文本断言也收入清单，但不能因为读取了文件，就声称验证了产品集成。

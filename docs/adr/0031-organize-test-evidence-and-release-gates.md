@@ -10,7 +10,8 @@ interview. It does not change the current checks or authorize an unreviewed redu
 
 ## Agreed scope
 
-- Organize tests by four execution boundaries: unit, component, integration, and system.
+- Organize tests by four verification scopes: unit, component, integration, and system, with a Capability Module as
+  the primary component boundary.
 - Remove redundant or ineffective tests and replace weak assertions while preserving meaningful behavior evidence.
 - Define E2E and benchmark responsibilities explicitly, including their relationship to packaging and PR merging.
 - Reduce waiting using measured costs; neither file counts nor a deletion percentage is the acceptance target.
@@ -33,17 +34,38 @@ interview. It does not change the current checks or authorize an unreviewed redu
   FrontierHarness Eval, and multiple historical Pi Stuff runs. Do not require a fresh plain-Pi control. Record
   differing task sets, models, versions, and environments alongside comparisons; missing data does not require reruns.
 
-The working definitions from the discussion are:
+Accepted: retain unit, component, integration, and system as Pi Stuff project conventions. A Capability Module is
+the primary component boundary. Classify the behavior and interactions a case intends to verify, not the code it
+happens to execute, its filename, or its dependency count.
 
-| Level | Boundary |
+| Category | Verification objective |
 | --- | --- |
-| Unit | One isolated rule, transformation, or algorithm |
-| Component | One Module through its interface, with its own implementation present and external collaborators controlled |
-| Integration | An actual connection between Modules, infrastructure, executables, or the Pi Host |
-| System | The assembled product exercised through its external entry points |
+| Unit | One local rule, transformation, or algorithm; closely collaborating real helpers are allowed |
+| Component | One Capability Module's responsibilities through its interface, controlling collaborators outside the boundary |
+| Integration | Specifically verify interfaces and interactions between Modules or with Host, storage, processes, or services |
+| System | Product-level behavior of assembled Pi and Suite through the complete product's external entry points |
 
-These are general testing terms and do not need new glossary entries in `CONTEXT.md`. Provider authenticity, resource
-isolation, cost, and execution frequency are separate properties; they must not be inferred from a test's filename.
+This is not a universal four-level standard. ISTQB treats component and unit as synonyms and distinguishes component
+integration from system integration; Fowler allows teams to choose component scope. This project explicitly separates
+local rules from Capability responsibilities for practical use.
+
+The classification unit is a case or a group of cases with one objective; files are containers. A real Pi process does
+not automatically imply system testing, temporary files do not imply integration, and mocks do not preclude
+integration. Narrow integration against doubles must state the evidence for fidelity to the real interface; it cannot
+claim actual Host or service certification from those doubles.
+
+Record verification objective, scope, actual dependencies, and execution policy separately for each group. Resource
+cost, duration, determinism, and frequency are distinct from scope; internal-performance or external-task benchmark
+purpose is also separate. Acceptance is an evidence purpose concerning use or release readiness, not a requirement to
+duplicate tests. Retain the earlier file inventory as discovery evidence; all its scope labels need reassessment under
+this rule, not only the original 44 question-marked files.
+
+Basis: [ISTQB CTFL 4.0.1, section 2.2](https://www.istqb.org/wp-content/uploads/2024/11/ISTQB_CTFL_Syllabus_v4.0.1.pdf),
+Fowler's [Unit Test](https://martinfowler.com/bliki/UnitTest.html),
+[Component Test](https://martinfowler.com/bliki/ComponentTest.html),
+[Integration Test](https://martinfowler.com/bliki/IntegrationTest.html), and
+[Google's test scope versus size](https://abseil.io/resources/swe-book/html/ch11.html).
+These general testing terms need no new domain glossary entries in `CONTEXT.md`.
 
 ## Investigation evidence, 2026-09-05
 

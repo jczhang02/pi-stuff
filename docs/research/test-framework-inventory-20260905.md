@@ -5,6 +5,15 @@ This is a design inventory for [the testing interview](../adr/0031-organize-test
 not an implemented runner policy. It covers every tracked test entry, the independent acceptance and benchmark
 entries, and the supporting files at this snapshot. No tests, paid model evaluations, or timing measurements were run.
 
+## Classification status update
+
+The subsequent discussion accepted Capability Module as the primary component boundary and verification objective,
+rather than resource use, as the scope criterion. The [ADR definitions](../adr/0031-organize-test-evidence-and-release-gates.md)
+govern reassessment. File and entry discovery below remains evidence for this snapshot, but all scope labels are
+initial judgments awaiting reassessment, not only the original 44 question-marked entries. Do not route PR checks or
+move tests directly from these labels. Reclassification records objective, scope, actual dependencies, and execution
+policy per case group; a file is not an indivisible classification unit.
+
 ## Framework overview
 
 ```text
@@ -23,7 +32,7 @@ Repository verification
 └── Support and evidence: fixtures, runners, observers, manifests, and historical reports
 ```
 
-The first four are execution levels. E2E describes a system journey, not a fifth level. Benchmark purpose, resource
+The first four are project scope categories. E2E describes a system journey, not a fifth level. Benchmark purpose, resource
 use, execution frequency, and the tested target (product, test infrastructure, or repository tooling) are separate
 properties. Tests of benchmark statistics remain correctness tests; running them does not execute a paid benchmark.
 A source-text assertion is recorded here but does not prove product integration simply because it reads a file.
