@@ -150,6 +150,57 @@ Benchmarks use two categories: internal performance and external tasks. Existing
 still need their correctness and outcome measurements reviewed for placement. This creates no third category and
 requires no fresh historical control.
 
+## Concrete change proposal, 2026-09-05
+
+The classification is a means to reduce waiting and preserve useful evidence, not the deliverable by itself. The
+following actions are proposals from targeted source inspection; no tests or runners have been changed.
+
+| Evidence | Proposed action | Coverage that must survive |
+| --- | --- | --- |
+| `verify-package.ts` calls source `verifySuiteSurface`, then packed `verifyRealPi`, which calls the surface again | Separate structural package verification from one explicit artifact-targeted system/E2E entry | Package resources, dependency declarations, executable permissions, real loading, and configured journeys |
+| Agents and Tools source wrappers add `100x32` cases; packed calls use `64x28` | Consolidate duplicated invocations after constructing the union of existing scenarios | Retain widths until case evidence demonstrates equivalence; do not delete a width merely to save time |
+| Tools wrapper also calls active parity and liveness; Context wrapper also calls input-frame acceptance | Carry these distinct journeys into the canonical E2E selection | Active Tool parity, UI liveness, malformed-image input-frame recovery |
+| Ponytail, grouping, Theme, User Message, and Session Naming have separate source journeys | Preserve their unique scenarios when changing entrypoints | Registration, visible behavior, persistence, reload, and resume obligations |
+| Retrieval tests sleep 720, 650, 80, and 720 ms around a 700 ms contract | Inject the existing runtime clock and explicitly advance/render/synchronize | Before-threshold, boundary, and after-threshold target behavior; source-order settlement |
+| An 800-delta streaming test asserts total runtime below 100 ms | Keep semantic correctness in the ordinary suite; move the timing measurement into internal Tool Activity benchmark | Large-stream result correctness and recorded performance evidence; no production-only instrumentation just for this test |
+| Connector tests assert generated private identifiers; V8 behavior tests are opt-in | Establish runnable behavioral coverage before removing replaceable source-fragment assertions | Async output, escaping, serialization, durable steps, and saved snippets; installed V8 alone is not execution evidence |
+| Redirect source guard covers 17 providers; inspected request-level behavior covers fewer | Retain the broad guard until equivalent boundary coverage exists | Redirect and credential-forwarding protections; brittle does not mean redundant |
+| Image fixtures cover distinct malformed containers; cancellation tests cover live state and replay | Retain these matrices and replay scenarios | Different failure locations and recovery paths are not duplicate behavior |
+
+Owning evidence: [package verifier](../../scripts/verify-package.ts), [Tools PTY wrapper](../../test/tools-pty.test.ts),
+[Agents PTY wrapper](../../test/agents-pty.test.ts), [Context wrapper](../../test/context-pty.test.ts),
+[Retrieval tests](../../test/tools/contract-retrieval-core.test.ts), [Connector tests](../../test/code-mode/connector.test.ts),
+and [redirect guard](../../test/web/provider-api-redirects.test.ts).
+
+### Proposed execution shape
+
+- Keep the established Bun and Goal runners. Organize cases by verification objective and owning Capability; do not
+  replace the framework or exclude benchmark-helper correctness tests merely because of their names.
+- Ordinary PR checks retain static gates, all U/C/I, and package structure checks. System/E2E and benchmark runs follow
+  the already accepted low-frequency triggers. A narrow real-Host interface test may remain I if that is its purpose.
+- Retain a fresh process per ordinary test file and introduce bounded concurrency only after checking shared resources.
+  Start conservatively; worker count is an implementation parameter to measure, not a maintainer policy question.
+- Give evidence writers unique roots. Keep Goal's fixed compilation-output owner single-run; do not run two copies in
+  one checkout. Same-file tests that mutate environment or cwd must not become concurrent as a side effect.
+- Propose CI as the authority for merge evidence on the exact checked candidate (including its merge ref where used).
+  Local focused checks aid development; do not add a local full run as a second required certificate. A changed source,
+  lockfile, workflow, runtime, or relevant environment invalidates the corresponding evidence. Cache dependencies and
+  immutable artifacts rather than inventing a cross-commit test-result cache.
+- Historical CI identifies the likely dominant costs but cannot establish a speedup. Measure the final required path,
+  including setup, against the accepted 10-minute objective. Do not meet the objective by omitting required cases or
+  treating timeouts as passes.
+
+### Next material decision
+
+Should the single formal system/E2E target be the extracted Package artifact, with existing unique source journeys
+migrated to it and no duplicate source-plus-packed full journey run? Recommended: yes. Structural packing remains a
+separate cheap operation; one explicit E2E entry reuses the produced artifact and selected existing verifier functions.
+
+This does not yet decide clean installation. The current extraction links development `node_modules`; it must not be
+reported as a clean install. Dependency-install validation and exact artifact/evidence reuse follow the target decision.
+The fate of the three self-authored live-model studies remains open; their manual execution is not the main cause of
+ordinary CI latency. Existing public and historical results remain the default benchmark comparison data.
+
 ## Design tree
 
 The following decisions remain open. Recommendations in the interview are proposals, not accepted policy.
@@ -184,14 +235,11 @@ that another project cannot retrieve the first project's marker. This tests live
 instruction-following as well as Suite execution, so cost and variability differ from deterministic evidence.
 These are descriptions of existing scripts, not claims of a fresh successful run.
 
-Current frontier:
+Prioritize the single formal system/E2E artifact target proposed above in this round. Settle that boundary before
+clean installation, scenario selection, and evidence identity; do not return to terminology as the primary work.
 
-1. The minimal report for comparing stored public and Pi Stuff results. The
-   [FrontierHarness investigation](../research/frontierharness-eval-fit-20260905.md) records task scope, runner
-   requirements, and comparability constraints. Historical comparison is accepted; a new control run is not required.
-2. Retention and placement of existing internal performance tests and experimental benchmark scripts after adopting
-   an external benchmark workflow.
-Ordinary PRs run the complete first three levels. This selection decision is settled.
+Ordinary PRs running all first three levels is settled. Retention of the three self-authored model studies and the
+minimal historical comparison report remain later decisions; they are not mistaken for the main current wait cost.
 
 Later frontiers, after their prerequisites are settled:
 

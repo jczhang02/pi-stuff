@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0031-organize-test-evidence-and-release-gates.md; translation-source-sha256: 3bcd0ca3c2dd6d3783280bba919a37e558403434830c464ee8b7cb84fd54fc01 -->
+<!-- translation-source: docs/adr/0031-organize-test-evidence-and-release-gates.md; translation-source-sha256: 79d5bfe004f75f12553ab48a192b5b5d47f299f3cb134f903c7ef5db394961ca -->
 
 ---
 status: proposed
@@ -134,6 +134,54 @@ Tools PTY、Context PTY、UI PTY、Tools grouping PTY、BTW PTY、Tools resume P
 Benchmark 采用内部性能与外部任务两类；现有自建模型实验的正确性和效果测量仍需分开审查归属。
 这不是新增第三类，也不要求重新运行历史对照。
 
+## 具体改动提案，2026-09-05
+
+分类用于减少等待并保留有效证据，本身不是最终交付。以下是针对性源码检查得出的提案，尚未修改测试或执行器。
+
+| 证据 | 建议操作 | 必须保留的覆盖 |
+| --- | --- | --- |
+| `verify-package.ts` 先调用源码 `verifySuiteSurface`，再调用打包 `verifyRealPi`，后者再次检查 surface | 把包结构验证与显式的、针对产物的系统/E2E 入口分开 | Package 资源、依赖声明、执行权限、真实加载与配置流程 |
+| Agents、Tools 源码 wrapper 还有 `100x32` 场景，打包调用使用 `64x28` | 先取现有场景并集，再合并重复调用 | 未证明场景等价前保留宽度；不能只为省时删除某个宽度 |
+| Tools wrapper 还调用 active parity、liveness；Context wrapper 还调用 input-frame 验收 | 把这些不同流程纳入统一 E2E 选择 | 活跃工具一致性、UI 活性、损坏图片输入帧恢复 |
+| Ponytail、grouping、Theme、User Message、Session Naming 有独立源码流程 | 调整入口时保留独有场景 | 注册、可见行为、持久化、reload 与 resume |
+| Retrieval 测试围绕 700 ms 契约等待 720、650、80、720 ms | 注入已有 runtime 时钟，显式推进、渲染与同步 | 阈值前、边界与阈值后的目标行为，以及按源码顺序结算 |
+| 800 次 delta 的流式测试断言总耗时小于 100 ms | 普通测试保留语义正确性，将计时测量移入内部 Tool Activity benchmark | 大流式输入结果正确性与性能记录；不为测试专门增加生产埋点 |
+| Connector 测试断言生成的私有标识符，V8 行为测试需显式开启 | 先建立实际运行的行为覆盖，再删除可替代的源码片段断言 | 异步输出、转义、序列化、durable steps 与 saved snippets；安装 V8 不代表执行过 |
+| Redirect 源码 guard 覆盖 17 个 Provider，已查请求级行为覆盖更少 | 在存在等价边界覆盖前保留该广泛 guard | 重定向与凭据转发保护；脆弱不等于重复 |
+| 图片 fixture 覆盖不同损坏容器，取消测试覆盖实时状态和重放 | 保留这些矩阵与重放场景 | 不同失败位置与恢复路径不是重复行为 |
+
+证据所属文件：[包验证器](../../../../../scripts/verify-package.ts)、[Tools PTY wrapper](../../../../../test/tools-pty.test.ts)、
+[Agents PTY wrapper](../../../../../test/agents-pty.test.ts)、[Context wrapper](../../../../../test/context-pty.test.ts)、
+[Retrieval 测试](../../../../../test/tools/contract-retrieval-core.test.ts)、[Connector 测试](../../../../../test/code-mode/connector.test.ts)、
+[redirect guard](../../../../../test/web/provider-api-redirects.test.ts)。
+
+### 建议的执行结构
+
+- 保留现有 Bun、Goal 执行器。按验证目标与所属 Capability 组织用例；不更换框架，
+  也不因为名称含 benchmark 就排除验证 benchmark 辅助逻辑正确性的测试。
+- 普通 PR 保留静态门槛、完整 U/C/I 与包结构检查；系统/E2E 和 benchmark 遵循已确认的低频触发。
+  若验证目的只是一个接口，窄范围真实 Host 测试仍可属于 I。
+- 普通测试保留逐文件独立进程，在检查共享资源后引入有界并行。先保守设置并实测；
+  worker 数是实现参数，不是需要维护者逐项决定的策略。
+- 给证据写入分配独立目录。Goal 固定编译输出保持单一执行者，不在同一 checkout 同时运行两份。
+  不能顺带把同一文件中修改环境变量或 cwd 的测试变成并发。
+- 建议由 CI 对实际检查的候选版本提供合并证据，使用 merge ref 时也须明确记录。
+  本地相关检查支持开发，不再附加本地全量认证。源码、lockfile、workflow、runtime 或相关环境变化时，
+  对应证据失效。缓存依赖与不可变产物，不另建跨提交测试结果缓存。
+- 历史 CI 能定位主要成本，不能证明提速。最终实测包含环境准备的必需检查路径，比较已接受的 10 分钟目标。
+  不以遗漏必需用例或把超时当通过来达标。
+
+### 下一个实质决策
+
+是否把解压后的 Package 产物作为唯一正式系统/E2E 验收对象，将源码侧独有流程迁入，
+不再完整重复运行源码与打包两套流程？推荐接受。结构性打包仍是独立的轻量操作，
+显式 E2E 入口复用已生成产物和选定的现有 verifier 函数。
+
+这尚未决定全新安装。当前解压目录链接开发用 `node_modules`，不能声称验证了干净安装。
+依赖安装验证与具体产物、证据复用规则在目标确定后继续讨论。
+三套自建真实模型实验的去留仍未确定；它们目前手动运行，并非普通 CI 延迟的主要来源。
+公开与历史结果仍是 benchmark 的默认对照数据。
+
 ## 决策树
 
 以下决策仍未确定。访谈中的推荐是提案，不是已接受策略。
@@ -166,13 +214,11 @@ Provider 响应由脚本预设，被验证的执行和持久化仍然是真实�
 它同时验证真实服务行为、模型指令遵循与 Suite 执行，因此成本和波动与确定性证据不同。
 这些是对现有脚本的说明，不代表本次重新运行并通过。
 
-当前可讨论的决策：
+本轮优先讨论：上文提出的唯一正式系统/E2E 产物目标。先确定这一边界，再明确干净安装、
+场景选择与证据身份，避免再次围绕分类术语停留。
 
-1. 用最小报告比较公开与 Pi Stuff 的已存结果。
-   [FrontierHarness 调查](../research/frontierharness-eval-fit-20260905.md)记录任务范围、执行要求和可比性限制。
-   已确定采用历史对比，不要求新增对照运行。
-2. 采用外部 benchmark 后，现有内部性能测试和实验性 benchmark 脚本如何保留与归类。
-普通 PR 完整运行前三层，这项选择已经确定。
+普通 PR 完整运行前三层已经确定。三套自建模型实验的去留和历史对比报告仍保留为后续决策，
+不把它们误当作当前等待时间的主要来源。
 
 在前置决策确定后讨论的后续分支：
 
