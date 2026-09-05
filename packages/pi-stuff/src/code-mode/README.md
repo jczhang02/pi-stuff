@@ -30,6 +30,8 @@ the effective policy, catalog, approvals, and Session ledger.
   signature.
 - Records stable execution and nested-call IDs in the append-only Session ledger without turning retained bytes into a work quota.
 - Folds only new Session entries during normal branch progress and rebuilds from Pi on branch divergence.
+- Cleans cold Ledger records on their fresh JSON parse without another clone; restores validated scalar results
+  without a second JSON roundtrip. Object and array results retain storage-codec decoding.
 - Treats post-effect serialization or persistence failure as incomplete, blocking later nested calls and automatic replay.
 - Supports durable approval, replay policy, rollback, checkpoints, and saved snippets.
 - Installs and verifies the pinned V8 helper only on first explicit execution.

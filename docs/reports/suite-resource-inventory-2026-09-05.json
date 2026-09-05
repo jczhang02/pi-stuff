@@ -1,5 +1,155 @@
 {
 	"capturedOn": "2026-09-05",
+	"coldLedgerReductions": {
+		"baseCommit": "40101bb24e1576bfab9e530a4e42f5fd0abd75d7",
+		"finalLedgerStateSha256": "0b356163dfcca023f6772041e0d8b6df0d51191a53867f8be7f4bbc0107cf42d",
+		"gatesSha256": "db75fe458f275724b9a030c59395d888c0421d0515c4c6cca01c3e02ad39d677",
+		"observerSources": [
+			{
+				"file": "scripts/benchmark-responsiveness.ts",
+				"sha256": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9"
+			},
+			{
+				"file": "scripts/host-resource-scope.ts",
+				"sha256": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee"
+			},
+			{
+				"file": "scripts/pty-observation.ts",
+				"sha256": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40"
+			},
+			{
+				"file": "test/fixtures/responsiveness-provider.ts",
+				"sha256": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3"
+			},
+			{
+				"file": "test/fixtures/faux-provider.ts",
+				"sha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+			}
+		],
+		"samples": [
+			{
+				"lookup": "kwhsxh",
+				"stage": "baseline",
+				"observerStartedAt": "2026-09-05T09:18:46.863Z",
+				"evidenceSha256": "84b05f0a858708343ba769e11ef943691ae69f156448c44138b4dcb3208d5460",
+				"sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				"gateExitCode": 1,
+				"spinnerMs": 215.33009700000002,
+				"startupInputMs": 14.407672999999704,
+				"inputMs": 88.67299699999967,
+				"selectionMs": 14.64262299999973,
+				"gapMs": 16.794565000000148,
+				"activeAbsenceMs": 0,
+				"activeDurationMs": 12500.592489999999,
+				"activeCaptures": 1015,
+				"cpuUs": 14930017,
+				"rssSnapshotBytes": 671064064,
+				"chargedMemoryCurrentBytes": 654594048,
+				"chargedMemoryPeakBytes": 947732480
+			},
+			{
+				"lookup": "2HKgJF",
+				"stage": "remove-clone",
+				"observerStartedAt": "2026-09-05T09:21:49.629Z",
+				"evidenceSha256": "7cc5d79f34fc35709cc3f10423b3cd06b38f82f990172d8af130eed69dc13848",
+				"sourceDiffSha256": "9c8038482b05dc3285e5a14f6cb2d2f262d95ab3ebfbaf8f924596346b9ea38e",
+				"gateExitCode": 1,
+				"spinnerMs": 192.11659599999984,
+				"startupInputMs": 14.549117000000479,
+				"inputMs": 64.11063799999829,
+				"selectionMs": 26.18593999999939,
+				"gapMs": 17.187880999999834,
+				"activeAbsenceMs": 0,
+				"activeDurationMs": 12484.26799,
+				"activeCaptures": 1012,
+				"cpuUs": 15479745,
+				"rssSnapshotBytes": 643137536,
+				"chargedMemoryCurrentBytes": 627183616,
+				"chargedMemoryPeakBytes": 942825472
+			},
+			{
+				"lookup": "hDcxWB",
+				"stage": "also-direct-non-null-scalars",
+				"observerStartedAt": "2026-09-05T09:25:19.480Z",
+				"evidenceSha256": "dc24fcb75ba57824101f6712208b8b665a18c0e76f84d84c219c0f8d6279009a",
+				"sourceDiffSha256": "52730e77babab7bbfbbb3e768591c10ab66478bcd5e0d254bad5722bfcdd74a2",
+				"gateExitCode": 1,
+				"spinnerMs": 191.045118,
+				"startupInputMs": 14.659897999999885,
+				"inputMs": 25.991824000000634,
+				"selectionMs": 38.24705699999868,
+				"gapMs": 16.876978000000236,
+				"activeAbsenceMs": 0,
+				"activeDurationMs": 12475.659076,
+				"activeCaptures": 1016,
+				"cpuUs": 15040566,
+				"rssSnapshotBytes": 651636736,
+				"chargedMemoryCurrentBytes": 635125760,
+				"chargedMemoryPeakBytes": 935100416
+			},
+			{
+				"lookup": "dLPNEC",
+				"stage": "also-direct-null-before-format",
+				"observerStartedAt": "2026-09-05T09:27:13.690Z",
+				"evidenceSha256": "2bf768fe09e11ede971edb3ec371d27998f330ebaf50852fe4980229c4f72679",
+				"sourceDiffSha256": "1fc7ab540dd534d1aee9affbd8fe822805d4f34f0da40a2bc6ea653ba06a4e9e",
+				"gateExitCode": 1,
+				"spinnerMs": 178.25370499999917,
+				"startupInputMs": 14.825650000000678,
+				"inputMs": 100.15387599999849,
+				"selectionMs": 15.277857999999469,
+				"gapMs": 20.75065900000118,
+				"activeAbsenceMs": 0,
+				"activeDurationMs": 12466.1348,
+				"activeCaptures": 1013,
+				"cpuUs": 15060555,
+				"rssSnapshotBytes": 660881408,
+				"chargedMemoryCurrentBytes": 644648960,
+				"chargedMemoryPeakBytes": 930787328
+			},
+			{
+				"lookup": "uqLq5D",
+				"stage": "final-formatted-source",
+				"observerStartedAt": "2026-09-05T09:30:05.839Z",
+				"evidenceSha256": "45ad3670fecb2436f7a4a0e08dfaaa90d4e9d5a76c4d440ff83c62b9d32afa45",
+				"sourceDiffSha256": "d1cdcd1f8143d6794340e59f84427035a263ca27fe01543f8c5009db9a6b6089",
+				"gateExitCode": 1,
+				"spinnerMs": 177.18032400000084,
+				"startupInputMs": 14.561494999999923,
+				"inputMs": 26.21773800000119,
+				"selectionMs": 16.758938999999373,
+				"gapMs": 17.440929999998843,
+				"activeAbsenceMs": 0,
+				"activeDurationMs": 12486.880799,
+				"activeCaptures": 1011,
+				"cpuUs": 14892743,
+				"rssSnapshotBytes": 680738816,
+				"chargedMemoryCurrentBytes": 665497600,
+				"chargedMemoryPeakBytes": 976285696
+			},
+			{
+				"lookup": "tOUNIh",
+				"stage": "final-source-without-old-ledger",
+				"observerStartedAt": "2026-09-05T09:31:01.521Z",
+				"evidenceSha256": "86541e21e143f31168eb103b0228d8187d799520ab980483784854d727c6db59",
+				"sourceDiffSha256": "d1cdcd1f8143d6794340e59f84427035a263ca27fe01543f8c5009db9a6b6089",
+				"gateExitCode": 0,
+				"spinnerMs": 114.64234299999953,
+				"startupInputMs": 14.300537000000077,
+				"inputMs": 26.275261999999202,
+				"selectionMs": 14.28584299999784,
+				"gapMs": 16.77229399999942,
+				"activeAbsenceMs": 0,
+				"activeDurationMs": 12320.125762,
+				"activeCaptures": 1003,
+				"cpuUs": 14530102,
+				"rssSnapshotBytes": 655007744,
+				"chargedMemoryCurrentBytes": 675483648,
+				"chargedMemoryPeakBytes": 960962560
+			}
+		],
+		"interpretation": "Post-parse clones and scalar storage roundtrips removed. Cold Ledger spinner gates still fail; the same final production Source without old Ledger passes. Single samples do not establish total CPU/allocation savings or complete attribution. See the owning Markdown report for workload, retained functionality, boundaries and remaining acceptance."
+	},
 	"suiteCommit": "02547c8bbf908bec3c4d357a5fe405adf8124bab",
 	"host": {
 		"version": "0.85.0",

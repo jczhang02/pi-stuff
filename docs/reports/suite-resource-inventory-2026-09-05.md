@@ -2,7 +2,7 @@
 
 This 2026-09-05 inventory covers the 16 Capabilities in [suite.json](../../packages/pi-stuff/suite.json) and shared
 loading/status/registration paths at `07d2f473`. It records investigation targets, not permission to remove features.
-The [continuous observer](suite-responsiveness-observer-2026-09-05.md) and the MCP/RTK samples below record workload
+The [continuous observer](suite-responsiveness-observer-2026-09-05.md) and the samples below record workload
 costs; the individual source operations in the table remain unmeasured.
 Repeated source operations are not automatically redundant: discovery, validation, recovery and visible refresh may
 require them. Beads `ps-yon.3` owns the missing measurements under [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md).
@@ -36,7 +36,7 @@ The retention column describes observed safeguards; it does not certify a comple
 | Todo — [overlay](../../packages/pi-stuff/src/todo/todo-overlay.ts) | Changes and rendering filter/count task arrays and retain recent completions. | O(tasks); timed completion retention and disposal cleanup. Repeated scans need timing evidence before consolidation. |
 | BTW — [context](../../packages/pi-stuff/src/btw/btw.ts), [history](../../packages/pi-stuff/src/btw/btw-history.ts) | Invocation converts the effective branch; overflow retry refits it. Hydration scans entries; exchanges copy/filter and bound retained history. | O(B + P); context fitting budget and 1,000-exchange/8 MiB history bound. Session shutdown releases history. |
 | Notification — [runtime](../../packages/pi-stuff/src/notification/runtime.ts) | Qualifying settled work starts one cancellable grace timer; state changes cancel it. | No recurring poll found; delivery reads in-memory settings and emits terminal output. No redundant hotspot established. |
-| Code Mode — [Ledger](../../packages/pi-stuff/src/code-mode/ledger.ts), [normalization](../../packages/pi-stuff/src/code-mode/ledger-state.ts) | First lookup normalizes canonical records and restores values; ordinary branch progress folds only new entries. | Cold O(Ledger bytes), warm O(new tail). Cold Spinner failure reproduced; do not reimplement the already-present warm fix. Clone/JSON roundtrips remain candidates, with Host record ownership and validation intact. |
+| Code Mode — [Ledger](../../packages/pi-stuff/src/code-mode/ledger.ts), [normalization](../../packages/pi-stuff/src/code-mode/ledger-state.ts) | First lookup normalizes canonical records and restores values; ordinary branch progress folds only new entries. | Cold O(Ledger bytes), warm O(new tail). The update below removes the post-parse clone and scalar restoration roundtrip. Cold Spinner gates still fail; Host record ownership and validation remain intact. |
 | Code Mode — [host client](../../packages/pi-stuff/src/code-mode/host/host-client.ts) | Execution builds a Tool map and sends definitions to the shared helper. | O(Tool schemas); one shared startup Deferred. Measure repeated definitions separately from helper execution. |
 
 ## Shared paths
@@ -134,3 +134,42 @@ implementation has no removable work.
 strace changes scheduling. Its read durations are not hashing CPU time, main-thread blocking or Vibe Line liveness;
 returned bytes are not physical storage reads or total allocation. Those dimensions and RTK projection/savings costs
 remain open. No production or verifier change was needed for this attribution.
+
+## First cold Ledger reductions
+
+Two repeated operations were removed from `ledger-state.ts` after the `40101bb2` baseline. `eventFrom()` now lets
+TypeBox clean the fresh JSON parse directly; another clone cannot add isolation from the original Host record.
+`restoreValue()` returns validated JSON scalars directly because they cannot contain binary or bigint envelopes.
+Objects and arrays still pass through the storage codec. External JSON validation, canonicalization, schema checking,
+branch invalidation, approval and replay policies are unchanged. The existing public Ledger tests now also cover
+cleanup ownership, JSON negative-zero canonicalization and cold recovery of a 1,000,001-character result.
+
+The unchanged observer ran sequentially with `--suite --context --code-mode --ledger --resource-scope` and the
+frozen gates. Every run used the certified Pi 0.85.0 binary, 120×40 terminal, 96 canonical Ledger entries with
+24 results of 800,000 characters and zero snippets, fresh private configuration and temporary caches, and isolated
+network/PID namespaces. Each completed three native Context projections, one memory retrieval, and automatic Naming
+and Usage once. No artificial delay or profiler was enabled; the kernel page cache was not reset.
+
+| Candidate, in execution order | Observer start, UTC | Spinner max, ms | Input max, ms | CPU seconds | RSS snapshot, decimal MB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Baseline `kwhsxh` | 09:18:46.863 | 215.330 | 88.673 | 14.930017 | 671.064 |
+| Clone removal `2HKgJF` | 09:21:49.629 | 192.117 | 64.111 | 15.479745 | 643.138 |
+| Also restore non-null scalars directly `hDcxWB` | 09:25:19.480 | 191.045 | 25.992 | 15.040566 | 651.637 |
+| Include null, before formatting `dLPNEC` | 09:27:13.690 | 178.254 | 100.154 | 15.060555 | 660.881 |
+| Final formatted source `uqLq5D` | 09:30:05.839 | 177.180 | 26.218 | 14.892743 | 680.739 |
+
+All five failed the unchanged 164.768 ms Spinner gate; three also failed the 40.465 ms input gate. Each had over
+12 seconds and 1,000 captures of active coverage, no missing active Spinner, and no capture gap above 21 ms.
+The numeric record binds each sample to its raw evidence and source diff; it retains selection, startup-input and
+charged-memory measurements as well. The final source only reformats the preceding candidate's return expression.
+
+The following same-source control `tOUNIh` removed only `--ledger` and passed: Spinner 114.642 ms, input 26.275 ms,
+selection 14.286 ms, gap 16.772 ms and zero active Spinner absence. Context, Code Mode, Naming and Usage remained
+active. This isolates the old-Ledger workload, not its exact remaining blocking operation. All six resource scopes
+were checked after shutdown and reported not-found/inactive/dead.
+
+This is a partial removal of redundant work, not a cold-path fix or demonstrated total resource saving. CPU and RSS
+vary across single samples; the final RSS snapshot and charged-memory peak exceed baseline. Snapshots are not peak
+process-tree RSS, charged memory is not allocation, and the existing I/O/GC/wakeup limitations still apply. Remaining
+cold work needs attribution and bounded scheduling without weakening validation. `ps-yon.3`, `ps-yon.4` and the
+separate Agent stall remain open; complete resource measurements and real-Host gates still block final acceptance.

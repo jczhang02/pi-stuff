@@ -1,10 +1,10 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 9dad9deecece3d0e7d0711471196f416b86edf6e905e178a0159b8145a69980b -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 28f1dcc8379d888c92421f863d923c3baa1b2f330e5c3ddc0e885faf6d94ecf4 -->
 
 # Suite 资源源码清单
 
 这份 2026-09-05 清单覆盖 `07d2f473` 的 [suite.json](../../../../../packages/pi-stuff/suite.json) 中全部 16 个
 Capability，以及共享加载、状态和注册路径。它记录待调查对象，不授权删除功能。
-[连续观察器](suite-responsiveness-observer-2026-09-05.md)及下文 MCP／RTK 样本记录了工作负载成本；
+[连续观察器](suite-responsiveness-observer-2026-09-05.md)及下文样本记录了工作负载成本；
 表中各项源码操作的独立成本仍未量化。
 发现、校验、恢复和可见刷新可能需要重复执行；重复操作不自动等于浪费。
 Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md) 跟踪缺失的测量。
@@ -38,7 +38,7 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 | Todo — [覆盖层](../../../../../packages/pi-stuff/src/todo/todo-overlay.ts) | 状态变化和渲染过滤/统计任务并保留近期完成状态。 | O(任务)；完成保留有时间限制，销毁时清理。合并重复扫描前先测量。 |
 | BTW — [上下文](../../../../../packages/pi-stuff/src/btw/btw.ts)、[历史](../../../../../packages/pi-stuff/src/btw/btw-history.ts) | 调用转换有效分支，超限重试重新适配；恢复扫描条目，交流记录复制/过滤并限制历史。 | O(B + P)；上下文容量限制，历史最多 1,000 次交流/8 MiB。Session 关闭释放历史。 |
 | Notification — [runtime](../../../../../packages/pi-stuff/src/notification/runtime.ts) | 符合条件的工作收尾启动一个可取消宽限定时器，状态变化时取消。 | 未发现循环轮询；投递读取内存设置并输出终端序列。尚无重复热点证据。 |
-| Code Mode — [Ledger](../../../../../packages/pi-stuff/src/code-mode/ledger.ts)、[规范化](../../../../../packages/pi-stuff/src/code-mode/ledger-state.ts) | 首次查找规范化记录并恢复值；普通分支推进只处理新增条目。 | 冷路径随 Ledger 字节增长，热路径随新增尾部增长。已复现冷路径 Spinner 失败，不重做已有热路径修复。克隆/JSON 往返待优化，保留 Host 记录所有权及校验。 |
+| Code Mode — [Ledger](../../../../../packages/pi-stuff/src/code-mode/ledger.ts)、[规范化](../../../../../packages/pi-stuff/src/code-mode/ledger-state.ts) | 首次查找规范化记录并恢复值；普通分支推进只处理新增条目。 | 冷路径随 Ledger 字节增长，热路径随新增尾部增长。下文改动移除了 JSON 解析后的克隆及标量恢复时的 JSON 往返。冷路径 Spinner 仍未达标；Host 记录所有权及校验保持不变。 |
 | Code Mode — [Host 客户端](../../../../../packages/pi-stuff/src/code-mode/host/host-client.ts) | 执行构建工具 Map，并向共享 helper 发送定义。 | 随工具 schema 增长；共享启动 Deferred。重复定义传输与 helper 执行分别测量。 |
 
 ## 共享路径
@@ -127,3 +127,39 @@ RTK 可执行文件读取或执行。这排除了该测量序列中的额外认�
 
 strace 会改变调度。读取持续时间不是哈希 CPU 时间、主线程阻塞或 Vibe Line 活性；返回字节数不是物理
 存储读取量或累计分配量。这些维度，以及 RTK 投影／节省统计的成本，仍待核实。本次归因未修改产品或验证器。
+
+## 首轮 Ledger 冷加载删减
+
+在 `40101bb2` 基线之后，`ledger-state.ts` 移除了两项重复操作。`eventFrom()` 直接让 TypeBox 清理
+JSON 解析产生的新对象；再次克隆不会增加它与原始 Host 记录的隔离程度。`restoreValue()` 直接返回
+已经校验的 JSON 标量，因为这些值不可能包含二进制或 bigint 封装。对象与数组仍经过存储 codec。
+外部 JSON 校验、规范化、schema 检查、分支失效、审批及重放策略保持不变。现有公开 Ledger 测试增加了
+清理时的所有权、JSON 负零规范化，以及 1,000,001 字符结果的冷恢复检查。
+
+未修改的观察器按顺序运行，参数为 `--suite --context --code-mode --ledger --resource-scope`，并使用
+已冻结门槛。每次均使用认证的 Pi 0.85.0、120×40 终端、96 条规范 Ledger 记录，其中包含 24 个
+800,000 字符结果且没有 snippet；配置及临时缓存各自独立，并隔离网络／PID namespace。每次均完成三次
+原生 Context 投影、一次记忆检索，自动 Naming 和 Usage 各一次。没有人为延迟或 profiler；未重置内核页缓存。
+
+| 候选版本，按执行顺序 | 观察器启动，UTC | Spinner 最大值，ms | 输入最大值，ms | CPU 秒 | RSS 快照，十进制 MB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 基线 `kwhsxh` | 09:18:46.863 | 215.330 | 88.673 | 14.930017 | 671.064 |
+| 移除克隆 `2HKgJF` | 09:21:49.629 | 192.117 | 64.111 | 15.479745 | 643.138 |
+| 同时直接恢复非 null 标量 `hDcxWB` | 09:25:19.480 | 191.045 | 25.992 | 15.040566 | 651.637 |
+| 包含 null，格式化前 `dLPNEC` | 09:27:13.690 | 178.254 | 100.154 | 15.060555 | 660.881 |
+| 最终格式化源码 `uqLq5D` | 09:30:05.839 | 177.180 | 26.218 | 14.892743 | 680.739 |
+
+五次均未通过保持不变的 164.768 ms Spinner 门槛，其中三次也未通过 40.465 ms 输入门槛。
+每次活动观察均超过 12 秒和 1,000 次采集，没有活动 Spinner 缺失，也没有超过 21 ms 的采集间隔。
+数值记录将各样本绑定到原始证据与源码 diff，并保留选择、启动输入及记账内存数据。最终源码只对前一版
+返回表达式做了格式化。
+
+随后相同源码的对照 `tOUNIh` 只移除 `--ledger`，通过门槛：Spinner 114.642 ms、输入 26.275 ms、
+选择 14.286 ms、采集间隔 16.772 ms，活动 Spinner 缺失为零。Context、Code Mode、Naming 和 Usage
+仍实际运行。这定位了旧 Ledger 工作负载的影响，但尚未定位剩余阻塞的确切操作。六个资源 scope 均在关闭后
+核对为 not-found／inactive／dead。
+
+这只是移除部分重复工作，不代表冷路径已修复，也没有证明总资源消耗下降。单次样本的 CPU 和 RSS 有波动；
+最终 RSS 快照及记账内存峰值高于基线。快照不是进程树 RSS 峰值，记账内存不是分配量，既有 I/O、GC 及
+唤醒测量限制仍然适用。剩余冷路径需要继续归因，并在不削弱校验的前提下限制单次同步工作量。
+`ps-yon.3`、`ps-yon.4` 及独立的 Agent 卡顿均未完成；完整资源测量及真实 Host 门槛仍阻止最终验收。

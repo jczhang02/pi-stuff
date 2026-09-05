@@ -220,12 +220,15 @@ export function optionalPresentationValue(name: string, value: AgentToolResult<u
 }
 
 function restoreValue(value: StoredValue | undefined): CodemodeValue {
-	return !value || value.kind === "undefined" ? undefined : parseForStorage(JSON.stringify(value.json));
+	if (!value || value.kind === "undefined") return undefined;
+	return value.json === null || !isRuntimeObject(value.json)
+		? value.json
+		: parseForStorage(JSON.stringify(value.json));
 }
 
 export function eventFrom(source: JsonSourceValue): LedgerEvent | undefined {
 	const value = parseJsonValue(JSON.stringify(source));
-	const cleaned = Value.Clean(LEDGER_EVENT_SCHEMA, structuredClone(value));
+	const cleaned = Value.Clean(LEDGER_EVENT_SCHEMA, value);
 	if (!Value.Check(LEDGER_EVENT_SCHEMA, cleaned)) return undefined;
 	// SAFETY: TypeBox validates every discriminated event member before the durable fold consumes it.
 	return cleaned as LedgerEvent;
