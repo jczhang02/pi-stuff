@@ -34,7 +34,7 @@ const COMMENTS = Type.Array(
 );
 const PULL = Type.Object({
 	html_url: TEXT,
-	state: TEXT,
+	state: Type.Union([Type.Literal("open"), Type.Literal("closed")]),
 	merged: Type.Boolean(),
 	draft: Type.Boolean(),
 	body: Type.Union([Type.String(), Type.Null()]),

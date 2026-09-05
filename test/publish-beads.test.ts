@@ -214,3 +214,9 @@ test("a newly mirrored Issue left open by upstream sync is reconciled to canonic
 	publishBeads("ps-root", f.run);
 	expect(f.calls.filter((call) => call[2]?.endsWith("/issues/10") && call.includes("PATCH"))).toHaveLength(1);
 });
+
+test("unknown PR states fail instead of being reported as open", () => {
+	const f = fixture();
+	f.pull.state = "unexpected";
+	expect(() => publishBeads("ps-root", f.run)).toThrow("invalid delivery PR");
+});
