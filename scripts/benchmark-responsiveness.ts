@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readlinkSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
@@ -33,6 +33,7 @@ const { values } = parseArgs({
 		"block-ms": { type: "string", default: "0" },
 		"block-phase": { type: "string", default: "pre-tool" },
 		"cpu-profile": { type: "boolean", default: false },
+		"resource-scope": { type: "boolean", default: false },
 		gates: { type: "string" },
 	},
 	strict: true,
@@ -86,6 +87,52 @@ const PROVIDER_LOG_SCHEMA = Type.Array(
 	}),
 );
 const directory = await mkdtemp(join(tmpdir(), "pi-stuff-responsiveness-"));
+const resourceScope = values["resource-scope"] ? `ps-yon-${basename(directory)}.scope` : undefined;
+
+const systemctl = (...args: string[]): string => {
+	assert(resourceScope);
+	const result = Bun.spawnSync(["systemctl", "--user", ...args, resourceScope], { timeout: 10_000 });
+	assert.equal(result.exitCode, 0, result.stderr.toString());
+	return result.stdout.toString().trim();
+};
+
+async function readResourceScope(parentPid: number) {
+	if (!resourceScope) return undefined;
+	const readStartedMs = performance.now();
+	const cgroup = systemctl("show", "--property=ControlGroup", "--value");
+	assert(cgroup.startsWith("/") && cgroup.endsWith(`/${resourceScope}`), "Unexpected resource scope");
+	assert.equal((await readFile(`/proc/${String(parentPid)}/cgroup`, "utf8")).trim(), `0::${cgroup}`);
+	const [cpuText, currentText] = await Promise.all(
+		["cpu.stat", "memory.current"].map((file) => readFile(`/sys/fs/cgroup${cgroup}/${file}`, "utf8")),
+	);
+	// Read the cumulative peak last so growth cannot make it appear lower than the earlier current value.
+	const peakText = await readFile(`/sys/fs/cgroup${cgroup}/memory.peak`, "utf8");
+	assert(cpuText && currentText && peakText, "Resource counters are missing");
+	const cpu = Object.fromEntries(
+		cpuText
+			.trim()
+			.split("\n")
+			.map((line) => {
+				const [key, value] = line.split(" ");
+				return [key, Number(value)];
+			}),
+	);
+	const counter = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
+	assert(Check(Type.Object({ usage_usec: counter, user_usec: counter, system_usec: counter }), cpu));
+	const memoryCurrentChargedBytes = Number(currentText);
+	const memoryPeakChargedBytes = Number(peakText);
+	assert(Check(counter, memoryCurrentChargedBytes) && Check(counter, memoryPeakChargedBytes));
+	assert(cpu.usage_usec > 0 && memoryCurrentChargedBytes > 0 && memoryPeakChargedBytes >= memoryCurrentChargedBytes);
+	return {
+		unit: resourceScope,
+		boundary: "after-observation-before-host-shutdown",
+		readStartedMs,
+		readCompletedMs: performance.now(),
+		cpuUs: { total: cpu.usage_usec, user: cpu.user_usec, system: cpu.system_usec },
+		memoryCurrentChargedBytes,
+		memoryPeakChargedBytes,
+	};
+}
 
 async function readBackgroundOutcomes(): Promise<number> {
 	const files = (await readdir(join(directory, "sessions"))).filter((name) => name.endsWith(".jsonl"));
@@ -281,6 +328,31 @@ const command = [
 	join(directory, "sessions"),
 	...(seedSession ? ["--session", seedSession] : []),
 ];
+if (resourceScope) {
+	const runtimeDirectory = process.env["XDG_RUNTIME_DIR"];
+	const busAddress = process.env["DBUS_SESSION_BUS_ADDRESS"];
+	assert(runtimeDirectory && busAddress, "Resource scope requires a configured user systemd bus");
+	command.unshift(
+		"env",
+		`XDG_RUNTIME_DIR=${runtimeDirectory}`,
+		`DBUS_SESSION_BUS_ADDRESS=${busAddress}`,
+		"systemd-run",
+		"--user",
+		"--scope",
+		"--quiet",
+		"--collect",
+		"--expand-environment=no",
+		`--unit=${resourceScope}`,
+		"--property=MemoryAccounting=yes",
+		"--property=RuntimeMaxSec=90",
+		// Only the native scope launcher sees the user bus; Pi retains the original isolated environment.
+		"env",
+		"-u",
+		"XDG_RUNTIME_DIR",
+		"-u",
+		"DBUS_SESSION_BUS_ADDRESS",
+	);
+}
 const shellCommand = command.map((part) => `'${part.replaceAll("'", "'\\''")}'`).join(" ");
 let watchdog: UiPtyOwnerWatchdog | undefined;
 const observations: (PtyObservation & { frame: string })[] = [];
@@ -507,15 +579,13 @@ try {
 	assert.equal(parentCompletions.length, 1, "Unexpected parent completion");
 	assert.equal(childCompletions.length, expectedChildren, "Missing child completion");
 	const parentResponse = parentCompletions[0];
+	assert(parentResponse, "Parent completion is missing");
 	const lastChildResponse = childCompletions.at(-1);
 	const parentCompletedWhileChildRunning =
-		agentMode === "background" &&
-		parentResponse !== undefined &&
-		lastChildResponse !== undefined &&
-		parentResponse.atMs < lastChildResponse.atMs;
+		agentMode === "background" && lastChildResponse !== undefined && parentResponse.atMs < lastChildResponse.atMs;
 	if (agentMode === "background") {
 		assert(
-			parentCompletedWhileChildRunning && parentResponse && lastChildResponse,
+			parentCompletedWhileChildRunning && lastChildResponse,
 			"Parent did not finish independently of the background child",
 		);
 		for (const kind of ["input", "selection"])
@@ -607,6 +677,7 @@ try {
 			...actions.filter((action) => action.kind === "selection-setup").map((action) => action.visibleMs),
 		),
 		actionCount: actions.length,
+		resourceScope: await readResourceScope(parentResponse.pid),
 		directory,
 	};
 	console.log(JSON.stringify(summary));
@@ -631,6 +702,15 @@ try {
 		} finally {
 			server?.stop(true);
 			disarmUiPtyOwnerWatchdog(watchdog);
+			if (resourceScope) {
+				// The scope owns only this synthetic Host tree; never stop the caller's service.
+				Bun.spawnSync(["systemctl", "--user", "stop", resourceScope], { timeout: 10_000 });
+				assert.equal(
+					systemctl("show", "--property=ActiveState", "--value"),
+					"inactive",
+					"Resource scope remains active",
+				);
+			}
 		}
 	}
 }

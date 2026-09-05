@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 45d1c3380e3395d68eae92bcb7ad1bd4c103cb97208907e796dc1857a5cf3320 -->
+<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 239472cc0bbf2237004fb258b89f6ad9d1bdeea75c20df6e6fe81986e82cc406 -->
 
 # 连续响应观察器与 Ledger 首次加载复现
 
@@ -152,3 +152,33 @@ Provider 请求数量检查排除观察期间未经请求的父回合；出生�
 双子 Agent 场景验证了 `--repeat-tool`、`--code-mode`、`--ledger` 与后台观察在 120×40 下的组合，其他尺寸待测。
 [Agent 数值证据](../../../../../docs/reports/suite-responsiveness-agents-2026-09-05.json)保留每次源码快照身份。
 这些失败将调查扩展至后台委派，但不证明它与前台停顿具有相同根因。
+
+## 原生资源 scope
+
+在具有 cgroup v2 且已配置用户 systemd bus 的 Linux 上，为原生或 Suite 命令添加 `--resource-scope`。
+现有观察器只把合成 Pi 命令放进新建的临时 scope。scope 与 service 不同，会保留调用者的终端和网络
+命名空间。启动器取得用户 bus 环境；Pi 及其子进程保持原有隔离环境。观察器、tmux 和回环 Usage 服务均在 scope 外。
+
+采集及子进程完成检查结束后，观察器核验父 PID 属于该 scope，再于关闭 Host 前读取 `cpu.stat`、
+`memory.current` 和 `memory.peak`。摘要的 `resourceScope` 记录用户态/内核态/总 CPU 微秒数、当前及峰值
+**记账内存**字节数，以及观察器时钟上的读取区间。累计 CPU 包含已经退出的 scope 内子进程。
+这些是 scope 计数，不是仅父进程 CPU、进程树 RSS、累计分配量或包含关闭阶段的测量；各计数也不是原子快照。
+必需计数缺失或无法访问 bus 时直接报错，不记录为零成本，也不静默改用其他方法。
+
+正常清理会停止这个精确的私有 scope，并核验它已不活动。90 秒 scope 生命周期用于观察器死亡时限制合成
+进程树存活，不改变任何生产 Agent 限制或响应门槛。该方法先用短命忙循环子进程验证：子进程退出后，scope
+累计 CPU 增加 155,364 µs，其中子进程为 154,361 µs；继承终端及隔离命名空间均保持不变。之后确认临时 scope
+已卸载。这验证了计量接口，不代表 Suite 资源效率已经通过验收。
+
+| 样本 | scope 内工作负载 | CPU 秒 | 当前 / 峰值记账内存 MB | 最长 Spinner 帧 ms |
+| --- | --- | ---: | ---: | ---: |
+| `mw5lh2` | Suite Bash | 7.520007 | 445.739 / 989.221 | 117.332 |
+| `VjRlYe` | 原生 Bash 对照 | 1.848497 | 138.158 / 154.403 | 115.950 |
+| `xGbqRM` | Suite 后台 Agent → 子 Bash | 18.242948 | 434.053 / 1477.685 | 177.025 |
+
+前两行顺序运行，Bash 命令、120×40 尺寸、全新私有目录、隔离网络命名空间及最终观察器源码一致，均通过
+锁定响应门槛。差额是加载 Suite 的总成本，包含必要功能，不是可删除浪费的测量。后台行早于这组对照，
+使用更早的计数读取器快照；子 Agent 完成并退出，但 Spinner 门槛失败。这里 MB 采用十进制。
+[数值证据](../../../../../docs/reports/suite-responsiveness-agents-2026-09-05.json)保留精确计数、源码哈希，
+以及最初的原生接入样本 `Wq9PYe`。每个 scope 均在清理后核验不活动且已卸载。
+这些单次运行证明测量方法可用，不构成重复的优化前后基线，也未完成资源效率验收。

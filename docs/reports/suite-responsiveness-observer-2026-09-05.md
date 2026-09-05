@@ -161,3 +161,37 @@ one, one, and two respectively. Parent Naming and Usage each ran once. The two-c
 `--code-mode`, and `--ledger` compose with background observation at 120×40. Other geometries remain to be measured.
 The [Agent numeric evidence](suite-responsiveness-agents-2026-09-05.json) records each source snapshot. These failures
 extend the investigation to background delegation; they do not prove it shares the foreground stall's root cause.
+
+## Native resource scope
+
+On Linux with cgroup v2 and a configured user systemd bus, add `--resource-scope` to either the native or Suite command.
+The existing observer starts only the synthetic Pi command in a fresh transient scope. Unlike a service, the scope
+keeps the caller's terminal and network namespace. The launcher receives the user bus environment; Pi and its children
+retain the original isolated environment. The observer, tmux, and loopback Usage server remain outside the scope.
+
+After capture and child completion checks, the observer verifies the parent PID belongs to that scope, then reads
+`cpu.stat`, `memory.current`, and `memory.peak` before shutting the Host down. The summary's `resourceScope` records
+user/system/total CPU in microseconds, current and peak **charged memory** in bytes, and the read interval on the
+observer's clock. Cumulative CPU includes already-exited scoped children. These are scope counters, not parent-only
+CPU, process-tree RSS, allocation totals, or shutdown-inclusive measurements. Counter reads are not an atomic snapshot.
+Required counters or bus access missing is an error, never a zero-cost result or a silent fallback.
+
+Normal teardown stops the exact owned scope and verifies it is inactive. A 90-second scope lifetime bounds the
+synthetic process tree if its observer dies; this does not change any production Agent limit or responsiveness gate.
+The scope method was first checked with a short-lived busy child: after it exited, scope CPU had grown by 155,364 µs,
+including the child's 154,361 µs, while the inherited terminal and isolated namespace remained intact. The transient
+scope was then confirmed unloaded. This validates the accounting seam, not the Suite's resource efficiency.
+
+| Run | Scoped workload | CPU seconds | Current / peak charged MB | Longest Spinner frame ms |
+| --- | --- | ---: | ---: | ---: |
+| `mw5lh2` | Suite Bash | 7.520007 | 445.739 / 989.221 | 117.332 |
+| `VjRlYe` | Native Bash control | 1.848497 | 138.158 / 154.403 | 115.950 |
+| `xGbqRM` | Suite background Agent → child Bash | 18.242948 | 434.053 / 1477.685 | 177.025 |
+
+The first two rows ran sequentially with the same Bash command, 120×40 geometry, fresh private directories, isolated
+network namespaces, and final observer source. Both passed the frozen responsiveness gates. The difference is total
+loaded-Suite cost, including necessary features, not a measurement of removable waste. The background row precedes
+that pair and uses an earlier counter-reader snapshot; its child completed and exited but its Spinner gate failed.
+MB here is decimal. The [numeric evidence](suite-responsiveness-agents-2026-09-05.json) retains exact counters/source
+hashes and initial native integration run `Wq9PYe`. Every scoped run was verified inactive and unloaded after teardown.
+These single runs establish working measurement, not a repeated before/after baseline or resource-efficiency closure.
