@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: fe5414604ed0c158fcd524fd550686695e68af1bf49fb640788335c18bbb1158 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 413f9e932bd7a6705a120172737461ffbbe51656ee36bc3398e370ff05781ca6 -->
 
 # 贡献指南
 
@@ -20,6 +20,11 @@ bun run check
 ```
 
 测试必须覆盖约定的公开接缝；验证期间必须离线，而且不得调用 LLM 或要求凭据。
+
+连续检查原生 Spinner、输入和命令补全选择时，运行
+`bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN"`。脚本使用隔离的合成 Session，并在仓库外保留原始
+观察记录。[观察器报告](../docs/reports/suite-responsiveness-observer-2026-09-05.md)说明了锁定门槛、故意卡顿
+对照与 Execution Ledger 首次加载复现。这些针对性检查不能替代完整资源或 Capability 验收。
 
 ## Package 变更
 

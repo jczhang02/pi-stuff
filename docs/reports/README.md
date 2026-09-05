@@ -16,6 +16,7 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 
 ## Benchmarks and acceptance
 
+- [Continuous responsiveness observer and cold Ledger reproduction](suite-responsiveness-observer-2026-09-05.md)
 - [Pi 0.85.0 Suite resource baseline](suite-resource-baseline-2026-09-05.md)
 - [Capability Contract Acceptance and Bounded Terminal-Bench Observation](ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)
 - [Magic Context under Effect optimization and recertification](magic-context-effect-optimization-2026-09-02.md)

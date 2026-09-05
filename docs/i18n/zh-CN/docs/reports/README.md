@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 6ae0679539e0fde3bfe2d669c31db09707c8edecbd792df6d43102f5c0b4bbda -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: d9f417164034dfcd4362fd701213f4112f7a02f4122429fcf16e997960b56c5f -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [连续响应观察器与 Ledger 首次加载复现](suite-responsiveness-observer-2026-09-05.md)
 - [Pi 0.85.0 Suite 资源基线](suite-resource-baseline-2026-09-05.md)
 - [Capability Contract 验收与有界 Terminal-Bench 观察](ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)
 - [Effect 下的 Magic Context 优化与重新认证](magic-context-effect-optimization-2026-09-02.md)

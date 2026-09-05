@@ -19,6 +19,12 @@ bun run check
 
 Tests must exercise the agreed public seams, remain offline during verification, and never call an LLM or require credentials.
 
+For continuous native Spinner, input, and autocomplete-selection checks, use
+`bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN"`. It creates an isolated synthetic Session and retains raw
+observations outside the repository. The [observer report](../docs/reports/suite-responsiveness-observer-2026-09-05.md)
+documents frozen gates, negative controls, and the cold Execution Ledger reproduction. These focused checks do not
+replace complete resource or Capability acceptance.
+
 ## Package changes
 
 Pi Stuff has one private local Package. Capability Modules are not independently versioned or published. Update the
