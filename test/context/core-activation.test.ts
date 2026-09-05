@@ -403,6 +403,47 @@ test("keeps Magic ownership and rejects cached or raw history after the engine f
 	expect(loads).toBe(1);
 });
 
+test.each(["session", "input"] as const)(
+	"replaces failed Worker registrations before %s activation",
+	async (trigger) => {
+		const handlers: Handlers = new Map();
+		let reportFatal: ((cause: unknown) => void) | undefined;
+		const starts: number[] = [];
+		const shutdowns: number[] = [];
+		let loads = 0;
+		await piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI, onFatal?: (cause: unknown) => void) => {
+					const worker = ++loads;
+					reportFatal = onFatal;
+					magicApi.on("context", (event) => ({ messages: event.messages }));
+					magicApi.on("session_start", () => {
+						starts.push(worker);
+						if (worker === 1 && loads > 1) throw new Error("closed Worker received Session start");
+					});
+					magicApi.on("session_shutdown", () => {
+						shutdowns.push(worker);
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		reportFatal?.(new Error("Worker closed"));
+		if (trigger === "session") {
+			await emit(handlers, "session_start", { type: "session_start", reason: "switch" }, ctx);
+		} else {
+			await emit(handlers, "input", { type: "input", text: "retry", source: "rpc" }, ctx);
+			await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		}
+		await emit(handlers, "session_start", { type: "session_start", reason: "switch" }, ctx);
+		expect(starts).toEqual([1, 2, 2]);
+		expect(shutdowns).toEqual([1]);
+		expect(loads).toBe(2);
+		expect(getContextCapability(ctx).status().state).toBe("active");
+	},
+);
+
 test("keeps explicit upstream non-registration in native mode", async () => {
 	const handlers: Handlers = new Map();
 	let loads = 0;

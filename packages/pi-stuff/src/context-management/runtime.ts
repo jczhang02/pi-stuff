@@ -244,8 +244,6 @@ export class ContextCapabilityRuntime {
 			this.ownedContexts.delete(previousSessionManager);
 		}
 		this.recovery.clear();
-		if (this.state.state === "degraded" && !this.magicContextHandler)
-			this.state = { state: "loading", engine: "magic-context", trigger: "startup" };
 		this.sessionStart = { ...event };
 		this.sessionContext = ctx;
 		this.projectionRuntime.invalidate(true);
@@ -339,7 +337,17 @@ export class ContextCapabilityRuntime {
 			}
 			if (this.state.state === "active" || this.state.state === "native") return Effect.succeed(this.status());
 			if (this.magicContextHandler) return Effect.succeed(this.status());
-			if (this.state.state === "degraded" && trigger !== "input") return Effect.succeed(this.status());
+			if (this.state.state === "degraded") {
+				if (trigger !== "input" && trigger !== "startup") return Effect.succeed(this.status());
+				return this.handleCommittedFailure(this.state.error, ctx).pipe(
+					Effect.tap(() =>
+						Effect.sync(() => {
+							this.state = { state: "loading", engine: "magic-context", trigger };
+						}),
+					),
+					Effect.andThen(this.activate(ctx, trigger)),
+				);
+			}
 			const current = this.activation;
 			if (current) {
 				if (trigger !== "automatic-turn" && current.trigger === "automatic-turn") current.retryTrigger = trigger;

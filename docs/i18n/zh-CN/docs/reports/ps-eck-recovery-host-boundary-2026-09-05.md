@@ -1,10 +1,10 @@
-<!-- translation-source: docs/reports/ps-eck-recovery-host-boundary-2026-09-05.md; translation-source-sha256: ab60634044523cc72c2f2e2f3b90bff83a815b85825b596acd231dfa1a0eb553 -->
+<!-- translation-source: docs/reports/ps-eck-recovery-host-boundary-2026-09-05.md; translation-source-sha256: 979f66b2abb65ca20215999c5a9d2c427325ed535458585c2f337f4b49fa0009 -->
 
 # ps-eck：Magic 恢复与 Host 取消边界
 
 日期：2026-09-05。状态：实现及验收进行中，不代表发布完成。
 
-分支为 `fix/ps-eck-magic-recovery`，基线 `2610bd42`。身份修复已提交为 `e87a1e33`，其余恢复变更正在审查。
+分支为 `fix/ps-eck-magic-recovery`，基线 `2610bd42`。身份修复已提交为 `e87a1e33`，恢复实现已提交为 `673e6a8b`，最终生命周期修订正在审查。
 接受的契约见 [ADR 0031](../adr/0031-preserve-magic-context-behavior-through-suite-integration.md)。
 
 ## 根因和实现
@@ -17,7 +17,9 @@
 接到 Pi 自定义压缩钩子，返回真实摘要和持久化边界。
 
 真实 Worker 终止测试还暴露了致命错误与压缩路径竞争清理的问题：一次清理会使替代 Worker 的 generation 失效。
-现在致命通知只标记引擎不可用，有界关键恢复路径独占清理和替换。不包含 Pi 或传输策略补丁。
+现在致命通知只标记引擎不可用，有界关键恢复路径负责自动清理和替换。显式输入与新会话激活也必须先清理旧的已提交
+注册，再替换失败的 Worker。回归测试从这两个入口复现旧 Worker 处理器残留，并验证修复后只有替代 Worker 收到
+后续会话事件。不包含 Pi 或传输策略补丁。
 
 ## Host 证据
 
@@ -76,6 +78,6 @@ bun test test/context/magic-recovery-host.test.ts test/context/magic-worker.test
 正常初始化仍属于 Session；取消等待者不会终止健康 Worker。第一轮后续质量审查未发现结构性缺陷，但最终检查与
 连续两轮无发现的完成审查仍待执行。
 
-相关变更保留所属边界：runtime 从 791 行到不足 800 行，projection 从 346 到 282，Worker client 从 421 到 425，
+相关变更保留所属边界：runtime 从 791 行到 796 行，projection 从 346 到 282，Worker client 从 421 到 425，
 Statusline rendering 从 507 到 508。原生预检是提取出的仅原生策略，绝不作为启用 Magic 后的兜底。
 代码不再变化后必须记录最终行数和审查结果。

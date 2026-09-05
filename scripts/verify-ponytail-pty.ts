@@ -344,6 +344,7 @@ function fixtureEnvironment(
 		HOME: paths.project,
 		HF_HOME: paths.cache,
 		HF_HUB_OFFLINE: "1",
+		MAGIC_CONTEXT_PI_SUBAGENT: "1",
 		PI_CODING_AGENT_DIR: paths.agent,
 		PI_OFFLINE: "1",
 		PI_STUFF_PONYTAIL_PTY_BIN: options.piBinary,

@@ -3,7 +3,7 @@
 Date: 2026-09-05. Status: implementation and acceptance in progress; not a release-completion claim.
 
 The branch is `fix/ps-eck-magic-recovery`, based on `2610bd42`. The identity correction is committed as `e87a1e33`;
-the remaining recovery changes are under review. The accepted contract is [ADR 0031](../adr/0031-preserve-magic-context-behavior-through-suite-integration.md).
+the recovery implementation is committed as `673e6a8b`, with the final lifecycle amendment under review. The accepted contract is [ADR 0031](../adr/0031-preserve-magic-context-behavior-through-suite-integration.md).
 
 ## Root causes and implementation
 
@@ -18,7 +18,10 @@ patch connects the existing Historian to Pi's custom-compaction hook with genuin
 
 Actual Worker termination tests also exposed competing fatal-error and compaction cleanup paths. One cleanup could
 invalidate the generation of the replacement Worker. Fatal notifications now only mark the failed engine unavailable;
-the bounded critical recovery path alone owns cleanup and replacement. No Pi or transport policy patch is included.
+the bounded critical recovery path owns automatic cleanup and replacement. Explicit input and new-Session activation
+also clean committed registrations before replacing a failed Worker. Regression tests reproduced stale closed-Worker
+handlers through both entry points and now prove that only the replacement receives subsequent Session events.
+No Pi or transport policy patch is included.
 
 ## Host evidence
 
@@ -82,6 +85,6 @@ and cancellation while waiting for Session initialization received focused regre
 remains Session-owned; cancelling its waiter does not terminate a healthy Worker. No structural defect was found in the
 first subsequent quality round, but final checks and two consecutive clean completion rounds remain outstanding.
 
-Relevant changes preserve the owning seams: runtime 791 to fewer than 800 physical lines, projection 346 to 282, Worker
+Relevant changes preserve the owning seams: runtime 791 to 796 physical lines, projection 346 to 282, Worker
 client 421 to 425, and Statusline rendering 507 to 508. Native preflight is an extracted native-only policy; it is never a
 fallback after an enabled Magic attempt. Final line counts and review results must be recorded after code stops changing.
