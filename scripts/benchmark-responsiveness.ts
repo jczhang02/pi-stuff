@@ -46,14 +46,15 @@ const usage = values.suite;
 const codeMode = values["code-mode"];
 const profileCpu = values["cpu-profile"];
 const agentMode = values.agent;
+const expectedChildren = agentMode ? (values["repeat-tool"] ? 2 : 1) : 0;
 assert(Number.isSafeInteger(columns) && columns >= 40 && columns <= 240, "Invalid terminal width");
 assert(Number.isSafeInteger(rows) && rows >= 20 && rows <= 80, "Invalid terminal height");
 assert(Number.isFinite(blockMs) && blockMs >= 0 && blockMs <= 1_000, "Invalid negative-control duration");
 assert(["startup", "pre-tool", "settlement"].includes(blockPhase), "Invalid negative-control phase");
 assert(!codeMode || usage, "Code Mode requires the Suite");
 assert(
-	agentMode === undefined || (usage && agentMode === "foreground"),
-	"Agent mode requires --suite --agent foreground",
+	agentMode === undefined || (usage && ["foreground", "background"].includes(agentMode)),
+	"Agent mode requires --suite --agent foreground|background",
 );
 assert(!values.snippet || values.ledger, "Saved snippet requires a synthetic Ledger");
 assert(!profileCpu || !values.gates, "A CPU profile is diagnostic, not a responsiveness acceptance sample");
@@ -85,6 +86,31 @@ const PROVIDER_LOG_SCHEMA = Type.Array(
 	}),
 );
 const directory = await mkdtemp(join(tmpdir(), "pi-stuff-responsiveness-"));
+
+async function readBackgroundOutcomes(): Promise<number> {
+	const files = (await readdir(join(directory, "sessions"))).filter((name) => name.endsWith(".jsonl"));
+	assert.equal(files.length, 1, "Expected one parent Session");
+	const file = files[0];
+	assert(file);
+	const entries = (await readFile(join(directory, "sessions", file), "utf8")).trim().split("\n").map(parseJsonValue);
+	const identity = Type.Object({ type: Type.Literal("custom"), customType: Type.Literal("pi-stuff-agent-outcome") });
+	const outcomes = entries.filter((entry) => Check(identity, entry));
+	const completed = Type.Object({
+		data: Type.Object({
+			version: Type.Literal(1),
+			key: Type.String({ minLength: 1 }),
+			count: Type.Literal(1),
+			status: Type.Literal("completed"),
+		}),
+	});
+	const keys = outcomes.map((entry) => {
+		assert(Check(completed, entry), "Background Agent outcome was not completed");
+		return entry.data.key;
+	});
+	assert.equal(outcomes.length, expectedChildren, "Missing or duplicate durable Agent outcomes");
+	assert.equal(new Set(keys).size, expectedChildren, "Repeated Agent outcome identity");
+	return outcomes.length;
+}
 const { binaryPath: piBinary } = await stageCertifiedPiHost(values.pi, directory);
 await Promise.all(["home", "agent", "project", "sessions"].map((name) => mkdir(join(directory, name))));
 await writeFile(
@@ -271,12 +297,17 @@ let agentEndIndex = -1;
 let settledSeenMs: number | undefined;
 let completedAt: number | undefined;
 let responseSeen = false;
+let backgroundCompletionRows = 0;
 let nextActionMs = Infinity;
 let nextAction = 0;
 let lastFrame = "";
 let summary: object | undefined;
-const phase = () =>
-	completedAt !== undefined ? "idle" : agentEndIndex >= 0 ? "settlement" : firstActive >= 0 ? "active" : "startup";
+const phase = () => {
+	if (completedAt !== undefined) return "idle";
+	if (agentMode === "background" && settledSeenMs !== undefined) return "background";
+	if (agentEndIndex >= 0) return "settlement";
+	return firstActive >= 0 ? "active" : "startup";
+};
 try {
 	if (usage) {
 		const parentNamespace = process.env["PSYON_PARENT_NETNS"];
@@ -343,6 +374,11 @@ try {
 		if (agentEndIndex < 0 && frame.includes("PSYON_AGENT_END")) agentEndIndex = observations.length - 1;
 		if (settledSeenMs === undefined && frame.includes("PSYON_SETTLED")) settledSeenMs = capturedMs;
 		responseSeen ||= frame.includes("PSYON_CADENCE_DONE");
+		if (agentMode === "background")
+			backgroundCompletionRows = Math.max(
+				backgroundCompletionRows,
+				[...frame.matchAll(/• Agent finished\b/gu)].length,
+			);
 		if (pending?.visible(frame)) {
 			actions.push({
 				kind: pending.kind,
@@ -366,7 +402,11 @@ try {
 				nextActionMs = capturedMs + 250;
 			}
 		}
-		if (settledSeenMs !== undefined && completedAt === undefined) {
+		if (
+			settledSeenMs !== undefined &&
+			completedAt === undefined &&
+			(agentMode !== "background" || backgroundCompletionRows >= expectedChildren)
+		) {
 			if (
 				!usage ||
 				(usageRequests.length > 0 && (await readFile(providerLogPath, "utf8")).includes('"name-persisted"'))
@@ -441,11 +481,16 @@ try {
 	);
 	const childRequests = providerLog.filter((entry) => entry.type === "agent-request" && entry.role === "child");
 	const childProcesses = providerLog.filter((entry) => entry.type === "fixture-ready" && entry.role === "child");
-	const expectedChildren = agentMode ? (values["repeat-tool"] ? 2 : 1) : 0;
+	const childCompletions = providerLog.filter((entry) => entry.type === "response-complete" && entry.role === "child");
 	assert.equal(childProcesses.length, expectedChildren, "Expected child process evidence is missing");
 	assert.equal(childRequests.length, expectedChildren * 2, "Unexpected child Provider requests");
 	for (const entry of childProcesses) {
 		assert(entry.processStartIdentity, "Child birth identity is missing");
+		assert.equal(
+			childCompletions.filter((completion) => completion.pid === entry.pid).length,
+			1,
+			"Missing or repeated child completion",
+		);
 		assert.deepEqual(
 			childRequests.filter((request) => request.pid === entry.pid).map((request) => request.completedTools),
 			[0, 1],
@@ -456,6 +501,36 @@ try {
 			"Child process was not reaped",
 		);
 	}
+	const parentCompletions = providerLog.filter(
+		(entry) => entry.type === "response-complete" && entry.role === "parent",
+	);
+	assert.equal(parentCompletions.length, 1, "Unexpected parent completion");
+	assert.equal(childCompletions.length, expectedChildren, "Missing child completion");
+	const parentResponse = parentCompletions[0];
+	const lastChildResponse = childCompletions.at(-1);
+	const parentCompletedWhileChildRunning =
+		agentMode === "background" &&
+		parentResponse !== undefined &&
+		lastChildResponse !== undefined &&
+		parentResponse.atMs < lastChildResponse.atMs;
+	if (agentMode === "background") {
+		assert(
+			parentCompletedWhileChildRunning && parentResponse && lastChildResponse,
+			"Parent did not finish independently of the background child",
+		);
+		for (const kind of ["input", "selection"])
+			assert(
+				actions.some(
+					(action) =>
+						action.kind === kind &&
+						action.phase === "background" &&
+						performance.timeOrigin + action.startedMs >= parentResponse.atMs &&
+						performance.timeOrigin + action.startedMs + action.visibleMs < lastChildResponse.atMs,
+				),
+				`Missing ${kind} while the parent was idle and its child was running`,
+			);
+	}
+	const backgroundOutcomes = agentMode === "background" ? await readBackgroundOutcomes() : 0;
 	const firstAgentRow = observations.find((entry) => /• Agent\b.*cadence-agent/u.test(entry.frame));
 	const agentRowObserved = firstAgentRow !== undefined;
 	assert(!agentMode || agentRowObserved, "Agent Tool UI was not observed");
@@ -486,6 +561,8 @@ try {
 		codeMode,
 		agentMode,
 		agentRowObserved,
+		backgroundOutcomes,
+		parentCompletedWhileChildRunning,
 		firstAgentRowMs: firstAgentRow ? firstAgentRow.capturedMs - start : undefined,
 		completedChildTools: childRequests.filter((entry) => entry.completedTools === 1).length,
 		reapedChildProcesses: childProcesses.length,

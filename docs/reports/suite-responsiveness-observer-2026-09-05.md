@@ -91,7 +91,8 @@ diagnostic mode and cannot be combined with `--gates`. No profiler was active in
 This checkpoint retains the reproducer and gates. It does not implement the cold Ledger fix. Observer CPU is reported
 separately and must not be presented as Pi or Suite CPU. Complete process-tree CPU/RSS, allocation/GC, I/O, wakeups,
 and largest main-thread-task accounting remain open. The [16-Capability source inventory](suite-resource-inventory-2026-09-05.md)
-now records owners and measurement targets; background Agent, active Context, and recovery workloads remain open.
+now records owners and measurement targets; active Context and recovery workloads remain open. The foreground and
+background Agent scenarios below cover successful execution, not every Agent lifecycle or its complete resource cost.
 Default-loaded Capabilities are not evidence that those paths executed.
 The shared machine was not CPU-isolated; full responsiveness closure also needs longer repeated workloads.
 Beads `ps-yon.3`, `ps-yon.4`, and `ps-yon.5` retain that work under
@@ -134,3 +135,29 @@ unshare --user --map-root-user --net \
   bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --agent foreground \
   --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
 ```
+
+## Background Agent extension
+
+Use `--agent background` in the same command to observe the parent after it settles while a child continues working.
+Capture ends only after the visible completion rows, automatic Naming/Usage, and another input and selection complete.
+The observer requires input and selection feedback between parent completion and the last child's completion. It reads
+the synthetic parent's native Session file after capture to verify one canonical `pi-stuff-agent-outcome` per child,
+with unique identities and completed status. Provider request counts reject an unsolicited parent turn during the
+observed interval, and birth-bound exit checks cover each child Pi. They do not certify every helper's cleanup.
+
+The background fixture waits six seconds before its final parent/child Provider response instead of four. This keeps
+both the parent-active and parent-idle/child-active observation windows long enough for the existing checks; it changes
+no production scheduling or responsiveness gate. No active Spinner is required while only the background child runs.
+
+| Run | Background workload | Longest Spinner frame ms | Slowest input/setup ms | Disposition |
+| --- | --- | ---: | ---: | --- |
+| `eh1S2n` | One Agent → child Bash | 177.973 | 63.629 | Observer test; retrospective gate breaches |
+| `H1NZud` | Same workload, fresh process | 183.665 | 17.929 | Spinner gate failed |
+| `O2afCg` | Two Agent launches through Code Mode, child Code Mode/Bash, old Ledger | 232.401 | 53.915 | Spinner and input gates failed |
+
+All three runs retained 11.8–13.3 seconds of observation after parent settlement, with complete expected Spinner
+coverage and maximum capture gaps below 22 ms. Every child completed its Tool and exited; canonical outcomes numbered
+one, one, and two respectively. Parent Naming and Usage each ran once. The two-child case verified that `--repeat-tool`,
+`--code-mode`, and `--ledger` compose with background observation at 120×40. Other geometries remain to be measured.
+The [Agent numeric evidence](suite-responsiveness-agents-2026-09-05.json) records each source snapshot. These failures
+extend the investigation to background delegation; they do not prove it shares the foreground stall's root cause.

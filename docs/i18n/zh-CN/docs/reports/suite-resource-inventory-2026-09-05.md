@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: b96c919111f2d5475bf29d5965741431a196558239d2c3ad878ff5553e86b33e -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: ec24b4d75d8430fe99d7e5d324028941d3c7d80825d016d58d580c7e5ea9300c -->
 
 # Suite 资源源码清单
 
@@ -53,6 +53,6 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 这完成了一轮源码清点，不是完整资源审计。每个所有者仍需执行适用的启动、空闲、长 Session、工具/Agent、
 收尾和恢复工作负载，记录成本及处理结论。仅看源码不能关闭疑似热点。统计必须包括子进程和 Context Worker。
 
-连续前台 Agent 观察已到达真实子 Agent 的 Bash 结果，并核验与出生身份绑定的进程退出。
-即使没有 Code Mode 和旧 Ledger，也暴露出另一个门槛失败。后台委派、活动 Context、恢复、完整进程树资源
-计量和优化前后闭环仍未完成。
+连续前台和后台 Agent 观察已到达真实子 Agent 的 Tool 结果，并核验与出生身份绑定的进程退出。
+两种模式在没有 Code Mode 和旧 Ledger 时均出现门槛失败。后台观察还检查父空闲时的输入/选择、规范完成
+记录及通过 Code Mode 的两次启动。活动 Context、恢复、完整进程树资源计量和优化前后闭环仍未完成。

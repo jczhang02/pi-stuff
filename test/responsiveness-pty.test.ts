@@ -56,45 +56,51 @@ test.each(["startup", "pre-tool", "settlement"])(
 	45_000,
 );
 
-test("continuous Suite observation follows a foreground Agent through child Tool execution and process exit", async () => {
-	const child = Bun.spawn(
-		[
-			"unshare",
-			"--user",
-			"--map-root-user",
-			"--net",
-			process.execPath,
-			resolve("scripts/benchmark-responsiveness.ts"),
-			"--pi",
-			process.env["PI_BIN"] ?? "/opt/bin/pi",
-			"--suite",
-			"--agent",
-			"foreground",
-		],
-		{
-			stderr: "pipe",
-			stdout: "pipe",
-			env: { ...process.env, PSYON_PARENT_NETNS: readlinkSync("/proc/self/ns/net") },
-		},
-	);
-	try {
-		const [exitCode, stdout, stderr] = await Promise.all([
-			child.exited,
-			new Response(child.stdout).text(),
-			new Response(child.stderr).text(),
-		]);
-		expect(stderr).toBe("");
-		expect(exitCode).toBe(0);
-		const sample = parseJsonValue(stdout);
-		const schema = Type.Object({
-			agentMode: Type.Literal("foreground"),
-			completedChildTools: Type.Literal(1),
-			reapedChildProcesses: Type.Literal(1),
-			agentRowObserved: Type.Literal(true),
-			automaticUsageRefreshes: Type.Literal(1),
-		});
-		expect(Check(schema, sample)).toBe(true);
-	} finally {
-		if (child.exitCode === null) child.kill("SIGTERM");
-	}
-}, 65_000);
+test.each(["foreground", "background"])(
+	"continuous Suite observation follows a %s Agent through child Tool execution and process exit",
+	async (mode) => {
+		const child = Bun.spawn(
+			[
+				"unshare",
+				"--user",
+				"--map-root-user",
+				"--net",
+				process.execPath,
+				resolve("scripts/benchmark-responsiveness.ts"),
+				"--pi",
+				process.env["PI_BIN"] ?? "/opt/bin/pi",
+				"--suite",
+				"--agent",
+				mode,
+			],
+			{
+				stderr: "pipe",
+				stdout: "pipe",
+				env: { ...process.env, PSYON_PARENT_NETNS: readlinkSync("/proc/self/ns/net") },
+			},
+		);
+		try {
+			const [exitCode, stdout, stderr] = await Promise.all([
+				child.exited,
+				new Response(child.stdout).text(),
+				new Response(child.stderr).text(),
+			]);
+			expect(stderr).toBe("");
+			expect(exitCode).toBe(0);
+			const sample = parseJsonValue(stdout);
+			const schema = Type.Object({
+				agentMode: Type.Literal(mode),
+				completedChildTools: Type.Literal(1),
+				reapedChildProcesses: Type.Literal(1),
+				agentRowObserved: Type.Literal(true),
+				automaticUsageRefreshes: Type.Literal(1),
+				backgroundOutcomes: Type.Literal(mode === "background" ? 1 : 0),
+				parentCompletedWhileChildRunning: Type.Literal(mode === "background"),
+			});
+			expect(Check(schema, sample)).toBe(true);
+		} finally {
+			if (child.exitCode === null) child.kill("SIGTERM");
+		}
+	},
+	65_000,
+);

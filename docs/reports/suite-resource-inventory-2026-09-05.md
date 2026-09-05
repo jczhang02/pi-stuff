@@ -52,6 +52,7 @@ This completes a source inventory pass, not the complete resource audit. For eac
 idle, long-Session, Tool/Agent, settlement and recovery workload. Record measured cost and disposition; source inspection
 alone cannot close a suspected hotspot. Include child processes and Context workers, not only the parent Pi process.
 
-Continuous foreground Agent observation now reaches a real child Bash result and verifies the child's birth-bound
-process exit. It has exposed another gate failure without Code Mode or old Ledger. Background delegation, active Context,
-recovery, complete process-tree resource accounting and before/after closure remain open.
+Continuous foreground and background Agent observation now reaches real child Tool results and verifies birth-bound
+process exit. Both modes expose gate failures without Code Mode or old Ledger. Background observation also checks
+parent-idle input/selection, canonical completion records and two launches through Code Mode. Active Context, recovery,
+complete process-tree resource accounting and before/after closure remain open.

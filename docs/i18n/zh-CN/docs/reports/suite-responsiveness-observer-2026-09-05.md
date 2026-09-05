@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 51c7fd7c73e17611a17b2e1b598219b22232dcf721aeae287c9dc2b2dd50083d -->
+<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 45d1c3380e3395d68eae92bcb7ad1bd4c103cb97208907e796dc1857a5cf3320 -->
 
 # 连续响应观察器与 Ledger 首次加载复现
 
@@ -89,7 +89,8 @@ unshare --user --map-root-user --net \
 本检查点保留复现脚本和门槛，没有实现 Ledger 冷加载修复。观察器 CPU 单独报告，不能当成 Pi 或 Suite 的 CPU。
 完整进程树 CPU/RSS、分配/GC、I/O、唤醒及最大主线程任务统计仍待完成。
 [全部 16 个 Capability 的源码清单](suite-resource-inventory-2026-09-05.md)已记录所有者和待测对象；
-后台 Agent、活动 Context 和恢复工作负载仍待覆盖。默认加载了 Capability，不等于执行过其路径。
+活动 Context 和恢复工作负载仍待覆盖。下文的前台、后台 Agent 场景覆盖成功执行，未覆盖所有 Agent
+生命周期或完整资源成本。默认加载了 Capability，不等于执行过其路径。
 本次使用共享机器，没有隔离 CPU；完整响应验收还需要更长的重复工作负载。
 后续工作由 Beads `ps-yon.3`、`ps-yon.4`、`ps-yon.5` 按
 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md)持续跟踪。
@@ -128,3 +129,26 @@ unshare --user --map-root-user --net \
   bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --agent foreground \
   --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
 ```
+
+## 后台 Agent 扩展
+
+将同一命令改为 `--agent background`，即可观察父 Agent 收尾后、子 Agent 仍在工作时的父 TUI。
+观察器等到可见完成行、自动命名/用量刷新及之后的一次输入和选择均完成才停止采集。
+父响应完成到最后一个子响应完成之间，必须实际完成输入和选择反馈。采集结束后，观察器读取合成父 Session
+的原生文件，确认每个子 Agent 恰有一条身份不重复、状态为 completed 的规范 `pi-stuff-agent-outcome`。
+Provider 请求数量检查排除观察期间未经请求的父回合；出生身份检查核验各子 Pi 退出，但不认证所有 helper 的清理。
+
+后台 fixture 的父、子最终 Provider 响应等待六秒，而非四秒，以保证父活动期和父空闲/子活动期均足够完成
+已有观察要求。这没有改变生产调度或响应门槛。只有后台子 Agent 活动时，不要求父 TUI 存在活动 Spinner。
+
+| 样本 | 后台工作负载 | 最长 Spinner 帧 ms | 最慢输入/补全准备 ms | 结论 |
+| --- | --- | ---: | ---: | --- |
+| `eh1S2n` | 一个 Agent → 子 Bash | 177.973 | 63.629 | 观察器测试；事后比对门槛失败 |
+| `H1NZud` | 相同工作负载，全新进程 | 183.665 | 17.929 | Spinner 门槛失败 |
+| `O2afCg` | Code Mode 启动两个 Agent，子 Code Mode/Bash，带旧 Ledger | 232.401 | 53.915 | Spinner 和输入门槛失败 |
+
+三个样本均在父 Agent 收尾后继续观察 11.8–13.3 秒，应有的 Spinner 无缺失，最大采样间隙低于 22 ms。
+每个子 Agent 均完成 Tool 并退出；规范完成记录分别为一、一、两条。父进程命名和用量刷新各执行一次。
+双子 Agent 场景验证了 `--repeat-tool`、`--code-mode`、`--ledger` 与后台观察在 120×40 下的组合，其他尺寸待测。
+[Agent 数值证据](../../../../../docs/reports/suite-responsiveness-agents-2026-09-05.json)保留每次源码快照身份。
+这些失败将调查扩展至后台委派，但不证明它与前台停顿具有相同根因。

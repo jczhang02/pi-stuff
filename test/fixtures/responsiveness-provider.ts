@@ -35,7 +35,12 @@ function nextToolCall(index: number) {
 	const name = agentMode && !child ? "subagent" : "bash";
 	const args: JsonInputObject =
 		name === "subagent"
-			? { agent: "cadence-agent", task: "PSYON_CHILD_TASK", context: "fresh", foreground: true }
+			? {
+					agent: "cadence-agent",
+					task: "PSYON_CHILD_TASK",
+					context: "fresh",
+					foreground: agentMode === "foreground",
+				}
 			: { command: "sleep 2; printf PSYON_TOOL_RESULT" };
 	const codeMode = process.env["PSYON_TOOL_MODE"] === "codemode";
 	return {
@@ -92,7 +97,8 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 	log({ type: "agent-request", completedTools: results.length });
 	const result = results.at(-1);
 	const completed = results.length >= (!child && process.env["PSYON_REPEAT_TOOL"] === "1" ? 2 : 1);
-	const requiredResult = agentMode && !child ? "PSYON_CHILD_DONE" : "PSYON_TOOL_RESULT";
+	const requiredResult =
+		agentMode && !child ? (agentMode === "background" ? "cadence-agent" : "PSYON_CHILD_DONE") : "PSYON_TOOL_RESULT";
 	if (
 		result &&
 		(result.isError || !result.content.some((part) => part.type === "text" && part.text.includes(requiredResult)))
@@ -102,8 +108,11 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
 	stream.push({ type: "start", partial: pending });
+	// Keep both parent-active and parent-idle/child-active observation windows in the background scenario.
+	const responseDelayMs = completed && agentMode === "background" ? 6_000 : 4_000;
 	setTimeout(() => {
 		if (completed) {
+			log({ type: "response-complete" });
 			const text = child ? "PSYON_CHILD_DONE" : "PSYON_CADENCE_DONE";
 			pending.content.push({ type: "text", text });
 			stream.push({ type: "text_start", contentIndex: 0, partial: pending });
@@ -118,7 +127,7 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 		stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 		stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 		stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
-	}, 4_000);
+	}, responseDelayMs);
 	return stream;
 };
 
