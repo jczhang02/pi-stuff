@@ -56,6 +56,10 @@ when their owning capability needs them.
 Initialization failures propagate to the Host. Runtime problems that can be contained are recorded in the shared
 diagnostics surface and are available through `/diagnostics`.
 
+Shared runtime type guards bind their TypeBox predicates once when the module loads. They preserve JavaScript number
+categories (including `NaN` and infinities) and object categories (including arrays and `null`); finite-number checks
+remain separate.
+
 ## Lifecycle ownership
 
 | Lifecycle | Owner | Responsibility |

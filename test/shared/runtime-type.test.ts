@@ -1,14 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { isRuntimeNumber, isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import {
+	isFiniteRuntimeNumber,
+	isRuntimeNumber,
+	isRuntimeObject,
+} from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 describe("runtime type guards", () => {
-	test("preserve JavaScript number and object categories", () => {
-		for (const value of [0, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+	test("distinguish JavaScript numbers from finite numbers without coercion", () => {
+		for (const value of [-0, 0, 0.5, Number.MAX_VALUE]) {
 			expect(isRuntimeNumber(value)).toBe(true);
+			expect(isFiniteRuntimeNumber(value)).toBe(true);
 		}
-		expect(isRuntimeNumber("0")).toBe(false);
+		for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+			expect(isRuntimeNumber(value)).toBe(true);
+			expect(isFiniteRuntimeNumber(value)).toBe(false);
+		}
+		for (const value of ["0", true, null, undefined, 0n, Object(0), {}]) {
+			expect(isRuntimeNumber(value)).toBe(false);
+			expect(isFiniteRuntimeNumber(value)).toBe(false);
+		}
+	});
 
-		for (const value of [{}, [], null]) expect(isRuntimeObject(value)).toBe(true);
-		expect(isRuntimeObject(() => undefined)).toBe(false);
+	test("preserve null and arrays as objects while rejecting functions and primitives", () => {
+		for (const value of [{}, [], null, Object(0)]) expect(isRuntimeObject(value)).toBe(true);
+		for (const value of [() => undefined, undefined, 0, 0n, false, "", Symbol("fixture")]) {
+			expect(isRuntimeObject(value)).toBe(false);
+		}
 	});
 });

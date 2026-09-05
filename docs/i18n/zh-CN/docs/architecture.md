@@ -1,4 +1,4 @@
-<!-- translation-source: docs/architecture.md; translation-source-sha256: 7f9b3d8f818a1562cccefcc56d9cf920740b79923b2a8af6e48d25afcf0100d2 -->
+<!-- translation-source: docs/architecture.md; translation-source-sha256: 37d622b351790712fdf2f0c654882f6bf38be8e738d8a024820467c5e93a0588 -->
 
 # 架构
 
@@ -52,6 +52,9 @@ Pi 负责编辑器、普通前台 Agent 运行、Session、model 和 Extension �
 外部服务和依赖子进程的可选集成会在所属能力需要时启动。
 
 初始化失败会传回 Host。能够隔离的 runtime 问题会写入共享诊断界面，可通过 `/diagnostics` 查看。
+
+共享 runtime 类型检查函数在模块加载时一次性绑定 TypeBox 判定函数。它们保留 JavaScript 的 number 类别
+（包括 `NaN` 和无穷大）与 object 类别（包括数组和 `null`）；有限数字检查仍单独区分。
 
 ## 生命周期所有权
 
