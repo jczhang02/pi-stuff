@@ -340,3 +340,50 @@ RSS, allocation/GC, wakeups and complete per-owner workload attribution remain o
 [Bun 1.3.14 V8 compatibility implementation](https://github.com/oven-sh/bun/blob/bun-v1.3.14/src/js/node/v8.ts#L54-L79)
 has no cumulative `total_allocated_bytes` and supplies placeholders for several V8-shaped fields. It is not a solution
 to the allocation gap. No production work was optimized in this checkpoint.
+
+## Goal continuation with automatic Naming and Usage
+
+At 07:38 UTC on 2026-09-05, the existing observer completed `/goal PSYON_MEASURE`: one incomplete Assistant response,
+one automatic continuation calling `goal_complete`, and one Goal Final Response. The request sequence was `[0, 0, 1]`
+completed Tools. It observed the successful Goal Tool row and verified that the canonical `goal-state` completion
+preceded the single persisted final response. Automatic Naming and Usage each executed once. Intermediate Goal turns
+do not publish the fixture's final-settlement marker; continuous observation spans the entire continuation.
+
+| Run | CPU seconds | Charged current / peak MB | RSS snapshot MB | Spinner ms | Input/setup ms | Selection ms | Gates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `l2x3bg` | 20.398637 | 669.692 / 934.756 | 651.649 | 125.562 | 17.232 | 19.450 | Passed |
+| `XRUCuA` | 19.062306 | 641.815 / 940.691 | 622.404 | 111.639 | 15.768 | 15.630 | Passed |
+
+Both fresh 120×40 runs used the fixed Host, isolated PID/network namespaces and recorded source snapshots based on
+`4f9f92f4`, without a profiler or injected delay. The final-source run `XRUCuA` at 07:53 UTC also directly verified one
+successful persisted `goal_complete` Tool result between the canonical completed state and the final response. This
+assertion was added after `l2x3bg`. Active coverage in `XRUCuA` was 12.206 seconds across 962 captures, with no missing
+Spinner; the full-trace maximum observation gap was 25.783 ms. The first successful Goal Tool row appeared 18,763.326 ms
+after launch, including startup and two synthetic four-second Provider waits. That elapsed time is not a measure of
+redundant Goal work. The resource read took 35.448 ms after capture; both exact scopes were unloaded. Private caches
+were fresh, but the shared kernel page cache was not reset. These are repeated baselines, not an optimization delta.
+
+The `goalSamples` numeric evidence retains process counters, request counts and source hashes. This custom Provider
+does not certify native Context payload projection or live account access. Goal replay, compaction and recovery costs
+are still unmeasured. There is no native Goal control here and no claim that all recorded CPU or memory is redundant.
+
+```bash
+export PSYON_PARENT_NETNS="$(readlink /proc/self/ns/net)"
+unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc \
+  setsid sh -c '"$@"; exit $?' psyon-pid-init \
+  bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --goal --resource-scope \
+  --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
+```
+
+Goal is currently a separate workload, not combinable with Agent, Context, Code Mode or old Ledger. The public CLI
+regression failed on the missing `--goal` option before implementation. Fixture development also caught insufficient
+completion evidence, an incorrect `objective` field check (the canonical field is `text`), and submission while an
+old autocomplete choice was still visible. The observer now waits for that choice to disappear before submitting any
+measured prompt; no fixed delay was added. Those failed fixture attempts do not certify Goal performance. Reusing the
+existing capture, Provider stream and Session reader adds no new benchmark platform: observer 713→774 lines,
+Provider 316→369, and regression file 118→125. Production behavior remains unchanged.
+
+The focused regression group passed eight tests; Context sample `v3bIJA` failed observer validation with a 62.069 ms
+capture gap, including a 51.963 ms capture call. It remains inconclusive. The same-source isolated Context rerun passed;
+the numeric evidence records both outcomes. These regression runs do not apply product performance gates.
+After the persisted Tool-result assertion was added, the final-source Goal regression passed again (one test, four assertions).

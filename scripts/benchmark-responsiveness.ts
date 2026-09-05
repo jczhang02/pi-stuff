@@ -27,6 +27,7 @@ const { values } = parseArgs({
 		suite: { type: "boolean", default: false },
 		agent: { type: "string" },
 		context: { type: "boolean", default: false },
+		goal: { type: "boolean", default: false },
 		"code-mode": { type: "boolean", default: false },
 		ledger: { type: "boolean", default: false },
 		snippet: { type: "boolean", default: false },
@@ -51,6 +52,7 @@ const codeMode = values["code-mode"];
 const profileCpu = values["cpu-profile"];
 const agentMode = values.agent;
 const contextWork = values.context;
+const goalWork = values.goal;
 const requestedToolCount = values["repeat-tool"] || contextWork ? 2 : 1;
 const expectedChildren = agentMode ? requestedToolCount : 0;
 assert(Number.isSafeInteger(columns) && columns >= 40 && columns <= 240, "Invalid terminal width");
@@ -67,6 +69,10 @@ assert(
 	"Agent mode requires --suite --agent foreground|background",
 );
 assert(!values.snippet || values.ledger, "Saved snippet requires a synthetic Ledger");
+assert(
+	!goalWork || (usage && !contextWork && !agentMode && !codeMode && !values.ledger && !values["repeat-tool"]),
+	"Goal requires --suite without Context, Agent, Code Mode, Ledger or repeat mode",
+);
 assert(!profileCpu || !values.gates, "A CPU profile is diagnostic, not a responsiveness acceptance sample");
 
 const LIMITS_SCHEMA = Type.Object({
@@ -100,12 +106,57 @@ const resourceScope = values["resource-scope"]
 	? new HostResourceScope(`ps-yon-${basename(directory)}.scope`)
 	: undefined;
 
-async function readBackgroundOutcomes(): Promise<number> {
+async function readSessionEntries() {
 	const files = (await readdir(join(directory, "sessions"))).filter((name) => name.endsWith(".jsonl"));
 	assert.equal(files.length, 1, "Expected one parent Session");
 	const file = files[0];
 	assert(file);
-	const entries = (await readFile(join(directory, "sessions", file), "utf8")).trim().split("\n").map(parseJsonValue);
+	return (await readFile(join(directory, "sessions", file), "utf8")).trim().split("\n").map(parseJsonValue);
+}
+
+async function readGoalCompletion(): Promise<boolean> {
+	const entries = await readSessionEntries();
+	const terminal = Type.Object({
+		type: Type.Literal("custom"),
+		customType: Type.Literal("goal-state"),
+		data: Type.Object({
+			goal: Type.Object({ text: Type.Literal("PSYON_MEASURE"), status: Type.Literal("complete") }),
+		}),
+	});
+	const final = Type.Object({
+		type: Type.Literal("message"),
+		message: Type.Object({
+			role: Type.Literal("assistant"),
+			content: Type.Array(Type.Object({ type: Type.String(), text: Type.Optional(Type.String()) })),
+		}),
+	});
+	const terminalIndex = entries.findIndex((entry) => Check(terminal, entry));
+	const successfulTool = Type.Object({
+		type: Type.Literal("message"),
+		message: Type.Object({
+			role: Type.Literal("toolResult"),
+			toolName: Type.Literal("goal_complete"),
+			isError: Type.Literal(false),
+		}),
+	});
+	const results = entries.flatMap((entry, index) => (Check(successfulTool, entry) ? [index] : []));
+	assert.equal(results.length, 1, "Expected one persisted successful Goal completion Tool result");
+	const finals = entries.flatMap((entry, index) =>
+		Check(final, entry) &&
+		entry.message.content.some((part) => part.type === "text" && part.text === "PSYON_CADENCE_DONE")
+			? [index]
+			: [],
+	);
+	assert.equal(finals.length, 1, "Expected one persisted Goal Final Response");
+	assert(
+		terminalIndex >= 0 && terminalIndex < (results[0] ?? -1) && (results[0] ?? Infinity) < (finals[0] ?? -1),
+		"Goal state, successful Tool result and final response were not persisted in order",
+	);
+	return true;
+}
+
+async function readBackgroundOutcomes(): Promise<number> {
+	const entries = await readSessionEntries();
 	const identity = Type.Object({ type: Type.Literal("custom"), customType: Type.Literal("pi-stuff-agent-outcome") });
 	const outcomes = entries.filter((entry) => Check(identity, entry));
 	const completed = Type.Object({
@@ -177,6 +228,7 @@ const env: NodeJS.ProcessEnv = {
 	SHELL: "/bin/sh",
 	TMPDIR: join(directory, "tmp"),
 	PI_OFFLINE: usage ? "0" : "1",
+	PSYON_GOAL: goalWork ? "1" : "0",
 	PI_TELEMETRY: "0",
 	PSYON_NEGATIVE_BLOCK_MS: String(blockMs),
 	PSYON_NEGATIVE_BLOCK_PHASE: blockPhase,
@@ -372,7 +424,7 @@ try {
 		String(rows),
 		shellCommand,
 	);
-	while (performance.now() - start < (agentMode ? 60_000 : 30_000)) {
+	while (performance.now() - start < (agentMode || goalWork ? 60_000 : 30_000)) {
 		const captureStartedMs = performance.now();
 		const frame = tmux("capture-pane", "-p", "-N", "-t", "cadence:0.0");
 		const capturedMs = performance.now();
@@ -392,9 +444,9 @@ try {
 			lastActive = observations.length - 1;
 			if (firstActive < 0) firstActive = lastActive;
 		}
+		responseSeen ||= frame.includes("PSYON_CADENCE_DONE");
 		if (agentEndIndex < 0 && frame.includes("PSYON_AGENT_END")) agentEndIndex = observations.length - 1;
 		if (settledSeenMs === undefined && frame.includes("PSYON_SETTLED")) settledSeenMs = capturedMs;
-		responseSeen ||= frame.includes("PSYON_CADENCE_DONE");
 		if (agentMode === "background")
 			backgroundCompletionRows = Math.max(
 				backgroundCompletionRows,
@@ -447,10 +499,11 @@ try {
 			promptSentMs === undefined &&
 			readySeenMs !== undefined &&
 			!pending &&
+			selected(frame) === undefined &&
 			["input", "selection"].every((kind) => actions.some((action) => action.kind === kind))
 		) {
 			promptSentMs = performance.now();
-			send("-l", "--", "PSYON_MEASURE");
+			send("-l", "--", goalWork ? "/goal PSYON_MEASURE" : "PSYON_MEASURE");
 			send("Enter");
 		}
 		if (!pending && capturedMs >= nextActionMs) {
@@ -498,8 +551,11 @@ try {
 		providerLog
 			.filter((entry) => entry.type === "agent-request" && entry.role === "parent")
 			.map((entry) => entry.completedTools),
-		requestedToolCount === 2 ? [0, 1, 2] : [0, 1],
+		goalWork ? [0, 0, 1] : requestedToolCount === 2 ? [0, 1, 2] : [0, 1],
 	);
+	const goalContinuationRequests = providerLog.filter((entry) => entry.type === "goal-continuation").length;
+	assert.equal(goalContinuationRequests, goalWork ? 1 : 0);
+	assert.equal(providerLog.filter((entry) => entry.type === "goal-final-request").length, goalWork ? 1 : 0);
 	const contextProjections = contextRequests.filter((entry) => !entry.naming);
 	assert.equal(contextProjections.length, contextWork ? 3 : 0, "Native Context requests are missing");
 	const contextRetrievals = providerLog.filter((entry) => entry.type === "context-retrieval").length;
@@ -557,6 +613,8 @@ try {
 	const firstAgentRow = observations.find((entry) => /• Agent\b.*cadence-agent/u.test(entry.frame));
 	const agentRowObserved = firstAgentRow !== undefined;
 	assert(!agentMode || agentRowObserved, "Agent Tool UI was not observed");
+	const firstGoalToolRow = observations.find((entry) => entry.frame.includes("Goal complete · done"));
+	assert(!goalWork || firstGoalToolRow, "Successful Goal Tool UI was not observed");
 	if (usage) {
 		assert.equal(usageRequests.length, 1, "Exactly one automatic usage refresh is expected");
 		assert.equal(
@@ -598,6 +656,9 @@ try {
 		requestedToolCount,
 		contextProjectionRequests: contextProjections.length,
 		contextRetrievals,
+		goalContinuationRequests,
+		firstGoalToolRowMs: firstGoalToolRow ? firstGoalToolRow.capturedMs - start : undefined,
+		goalCompleted: goalWork && (await readGoalCompletion()),
 		negativeBlockMs: blockMs,
 		negativeBlockPhase: blockPhase,
 		automaticUsageRefreshes: usageRequests.length,

@@ -60,3 +60,7 @@ with and without old Ledger. The resource observer also records live direct cgro
 still-running Code Mode helpers; waited-child I/O follows the kernel's aggregation rules. These snapshots do not
 establish cumulative allocation, peak process-tree RSS or each owner's repeated work. Recovery, complete resource
 dimensions and before/after closure remain open; see the [observer report](suite-responsiveness-observer-2026-09-05.md).
+
+Normal Goal continuation now also has two scoped real-Host samples with automatic Naming/Usage, successful Goal Tool UI,
+and canonical completion preceding the final response. Both passed the frozen gates. Their whole-process counters do not
+isolate Goal accounting cost or certify Goal replay, compaction and recovery; those investigations remain open.

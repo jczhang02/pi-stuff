@@ -56,10 +56,10 @@ test.each(["startup", "pre-tool", "settlement"])(
 	45_000,
 );
 
-test.each(["foreground", "background", "context"])(
+test.each(["foreground", "background", "context", "goal"])(
 	"continuous Suite observation verifies %s work through its public results",
 	async (mode) => {
-		const agent = mode !== "context";
+		const agent = mode === "foreground" || mode === "background";
 		const child = Bun.spawn(
 			[
 				"unshare",
@@ -81,7 +81,7 @@ test.each(["foreground", "background", "context"])(
 				"--pi",
 				process.env["PI_BIN"] ?? "/opt/bin/pi",
 				"--suite",
-				...(agent ? ["--agent", mode] : ["--context"]),
+				...(agent ? ["--agent", mode] : [`--${mode}`]),
 			],
 			{
 				stderr: "pipe",
@@ -105,10 +105,17 @@ test.each(["foreground", "background", "context"])(
 				automaticUsageRefreshes: Type.Literal(1),
 				backgroundOutcomes: Type.Literal(mode === "background" ? 1 : 0),
 				parentCompletedWhileChildRunning: Type.Literal(mode === "background"),
-				contextProjectionRequests: Type.Literal(agent ? 0 : 3),
-				contextRetrievals: Type.Literal(agent ? 0 : 1),
+				contextProjectionRequests: Type.Literal(mode === "context" ? 3 : 0),
+				contextRetrievals: Type.Literal(mode === "context" ? 1 : 0),
 			});
 			if (agent) expect(Check(Type.Object({ agentMode: Type.Literal(mode) }), sample)).toBe(true);
+			if (mode === "goal")
+				expect(
+					Check(
+						Type.Object({ goalCompleted: Type.Literal(true), goalContinuationRequests: Type.Literal(1) }),
+						sample,
+					),
+				).toBe(true);
 			expect(Check(schema, sample)).toBe(true);
 		} finally {
 			if (child.exitCode === null) child.kill("SIGTERM");

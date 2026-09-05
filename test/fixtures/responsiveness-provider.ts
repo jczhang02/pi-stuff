@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { appendFileSync } from "node:fs";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { type Context, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	isJsonInputObject,
@@ -14,6 +14,8 @@ const usageUrl = process.env["PSYON_USAGE_URL"];
 const child = process.env["PI_SUBAGENT_CHILD"] === "1";
 const agentMode = process.env["PSYON_AGENT_MODE"];
 const contextWork = process.env["PSYON_CONTEXT"] === "1";
+const goalWork = process.env["PSYON_GOAL"] === "1";
+let goalFinalResponseSent = false;
 const baseMessage = createAssistantMessage(usageUrl ? "openai-codex" : "psyon-cadence", "cadence-model");
 const message: typeof baseMessage = (content, reason, usage) => ({
 	...baseMessage(content, reason, usage),
@@ -182,6 +184,46 @@ async function seedLedger(pi: ExtensionAPI, context: ExtensionContext): Promise<
 	});
 }
 
+function goalResponse(context: Context) {
+	const projected = [
+		context.systemPrompt ?? "",
+		...context.messages.flatMap((entry) =>
+			isRuntimeString(entry.content)
+				? [entry.content]
+				: entry.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+		),
+	].join("\n");
+	if (projected.includes("The Goal is complete. Send the user a concise final response now")) {
+		const result = context.messages.find(
+			(entry) => entry.role === "toolResult" && entry.toolName === "goal_complete",
+		);
+		assert(result?.role === "toolResult" && !result.isError, "Goal completion Tool failed");
+		log({ type: "goal-final-request" });
+		return { type: "text" as const, text: "PSYON_CADENCE_DONE" };
+	}
+	const goalId = [...projected.matchAll(/<goal_id>\s*([^<\s]+)\s*<\/goal_id>/gu)].at(-1)?.[1];
+	assert(goalId, "Goal prompt did not contain its identity");
+	if (!projected.includes("PSYON_GOAL_PROGRESS"))
+		return { type: "text" as const, text: "PSYON_GOAL_PROGRESS: first pass is incomplete." };
+	assert(projected.includes("pi-goal-continuation:"), "Goal did not request automatic continuation");
+	log({ type: "goal-continuation" });
+	return {
+		type: "toolCall" as const,
+		id: "cadence-goal-complete",
+		name: "goal_complete",
+		arguments: {
+			goal_id: goalId,
+			summary: "Synthetic Goal continuation completed and verified.",
+			evidence: [
+				{
+					requirement: "Verify automatic Goal continuation after an incomplete first pass.",
+					proof: "The second Provider request contains PSYON_GOAL_PROGRESS and the native Goal continuation prompt.",
+				},
+			],
+		},
+	};
+}
+
 const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1]["streamSimple"]> = (
 	_model,
 	context,
@@ -199,7 +241,8 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 		agentMode && !child ? (agentMode === "background" ? "cadence-agent" : "PSYON_CHILD_DONE") : "PSYON_TOOL_RESULT";
 	if (
 		result &&
-		(result.isError || !result.content.some((part) => part.type === "text" && part.text.includes(requiredResult)))
+		(result.isError ||
+			(!goalWork && !result.content.some((part) => part.type === "text" && part.text.includes(requiredResult))))
 	) {
 		throw new Error("Cadence Tool failed or omitted its required result");
 	}
@@ -208,10 +251,16 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 	stream.push({ type: "start", partial: pending });
 	// Keep both parent-active and parent-idle/child-active observation windows in the background scenario.
 	const responseDelayMs = completed && agentMode === "background" ? 6_000 : 4_000;
+	const response = goalWork
+		? goalResponse(context)
+		: completed
+			? { type: "text" as const, text: child ? "PSYON_CHILD_DONE" : "PSYON_CADENCE_DONE" }
+			: nextToolCall(results.length);
 	setTimeout(() => {
-		if (completed) {
-			log({ type: "response-complete" });
-			const text = child ? "PSYON_CHILD_DONE" : "PSYON_CADENCE_DONE";
+		if (response.type === "text") {
+			const { text } = response;
+			if (goalWork && text === "PSYON_CADENCE_DONE") goalFinalResponseSent = true;
+			if (text === "PSYON_CHILD_DONE" || text === "PSYON_CADENCE_DONE") log({ type: "response-complete" });
 			pending.content.push({ type: "text", text });
 			stream.push({ type: "text_start", contentIndex: 0, partial: pending });
 			stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
@@ -220,7 +269,7 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 			return;
 		}
 		block("pre-tool");
-		const toolCall = nextToolCall(results.length);
+		const toolCall = response;
 		pending.content.push(toolCall);
 		stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 		stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
@@ -277,8 +326,12 @@ export default async function responsivenessProvider(pi: ExtensionAPI): Promise<
 		block("startup");
 		ctx.ui.notify("PSYON_READY", "info");
 	});
-	pi.on("agent_end", (_event, ctx) => ctx.ui.notify("PSYON_AGENT_END", "info"));
+	pi.on("agent_end", (_event, ctx) => {
+		if (!goalWork || goalFinalResponseSent) ctx.ui.notify("PSYON_AGENT_END", "info");
+	});
 	pi.on("agent_settled", async (_event, ctx) => {
+		// The initial incomplete Goal turn must not end observation of its automatic continuation.
+		if (goalWork && !goalFinalResponseSent) return;
 		if (process.env["PSYON_NEGATIVE_BLOCK_PHASE"] === "settlement") {
 			await new Promise((resolve) => setTimeout(resolve, 100));
 			block("settlement");

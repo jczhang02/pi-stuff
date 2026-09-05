@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 2e18b22ad81031a367d91eff92ad433a1b7e10d9e9df56d3524744b890e551d3 -->
+<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 332599cba540108740a62fa3107d26141222907da970eba4bf97f171567319d0 -->
 
 # 连续响应观察器与 Ledger 首次加载复现
 
@@ -315,3 +315,46 @@ unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc \
 [Bun 1.3.14 V8 兼容实现](https://github.com/oven-sh/bun/blob/bun-v1.3.14/src/js/node/v8.ts#L54-L79)
 没有累计 `total_allocated_bytes`，且若干 V8 形状的字段只是占位值，不能据此补齐分配量缺口。
 本次检查点没有优化生产代码。
+
+## 保留自动 Naming 和 Usage 的 Goal 续跑
+
+2026-09-05 07:38 UTC，现有观察器完成了 `/goal PSYON_MEASURE`：先返回一次未完成的 Assistant 回复，
+再自动续跑并调用 `goal_complete`，最后输出一次 Goal Final Response。各次请求看到的已完成 Tool 数为
+`[0, 0, 1]`。观察器看到了成功的 Goal Tool 行，并验证规范 `goal-state` 完成记录早于唯一持久化的最终回复。
+自动 Naming 和 Usage 各执行一次。中间的 Goal 轮次不发布夹具的最终收尾标记，连续观察覆盖整个续跑过程。
+
+| 样本 | CPU 秒 | 当前 / 峰值记账内存 MB | RSS 快照 MB | Spinner ms | 输入/补全准备 ms | 选择 ms | 门槛 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `l2x3bg` | 20.398637 | 669.692 / 934.756 | 651.649 | 125.562 | 17.232 | 19.450 | 通过 |
+| `XRUCuA` | 19.062306 | 641.815 / 940.691 | 622.404 | 111.639 | 15.768 | 15.630 | 通过 |
+
+两个样本均使用固定 Host、全新目录、120×40 终端、隔离 PID／网络命名空间，以及基于 `4f9f92f4` 记录的
+源码快照，没有 profiler 或人为阻塞。07:53 UTC 的最终源码样本 `XRUCuA` 还直接核验了规范完成状态与
+最终回复之间唯一成功的持久化 `goal_complete` Tool result；这一断言在 `l2x3bg` 之后加入。
+`XRUCuA` 的活动观察覆盖 12.206 秒、962 帧，没有缺失 Spinner；完整轨迹的最大观察间隙为 25.783 ms。
+成功 Goal Tool 行在启动后 18,763.326 ms 出现，其中包含启动和两次合成的四秒 Provider 等待，不能把这段
+总时长当成 Goal 的重复工作。捕获结束后资源读取耗时 35.448 ms；两个对应 scope 均已卸载。私有缓存全新，
+但共享的内核页缓存没有重置。这些是重复基线，不是优化前后差值。
+
+数值证据的 `goalSamples` 保留进程计数、请求次数和源码哈希。该自定义 Provider 不认证原生 Context
+载荷投影或真实账户访问。Goal 重放、压缩和恢复的资源成本仍未测量。此处没有原生 Goal 对照，
+也不声称记录的全部 CPU 或内存都是多余开销。
+
+```bash
+export PSYON_PARENT_NETNS="$(readlink /proc/self/ns/net)"
+unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc \
+  setsid sh -c '"$@"; exit $?' psyon-pid-init \
+  bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --goal --resource-scope \
+  --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
+```
+
+Goal 目前是独立工作负载，不能与 Agent、Context、Code Mode 或旧 Ledger 组合。实现前，公开 CLI 回归因
+不支持 `--goal` 而失败。夹具开发还发现了完成证据不充分、错误检查 `objective` 字段（规范字段是 `text`），
+以及旧补全选项仍可见时就提交输入的问题。观察器现在等选项消失后才提交任何被测提示，没有加入固定延迟。
+这些失败的夹具尝试不能认证 Goal 性能。复用已有捕获、Provider 流和 Session 读取，没有新建基准平台：
+观察器 713→774 行，Provider 316→369 行，回归文件 118→125 行。生产行为未改变。
+
+聚焦回归组中八项通过；Context 样本 `v3bIJA` 因 62.069 ms 捕获间隙未通过观察器校验，其中单次捕获调用
+耗时 51.963 ms，该样本仍为无结论。同一源码的独立 Context 复跑通过；数值证据保留两次结果。
+这些回归运行不应用产品性能门槛。
+加入持久化 Tool result 断言后，最终源码的 Goal 回归再次通过（一项测试、四条断言）。
