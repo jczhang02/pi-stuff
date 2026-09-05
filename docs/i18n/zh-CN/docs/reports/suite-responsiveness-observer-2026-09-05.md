@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 239472cc0bbf2237004fb258b89f6ad9d1bdeea75c20df6e6fe81986e82cc406 -->
+<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: ddb7970f1ace29a8c1a08437fa3af736c1e098b29c6293586dbba8af61b7c315 -->
 
 # 连续响应观察器与 Ledger 首次加载复现
 
@@ -89,7 +89,7 @@ unshare --user --map-root-user --net \
 本检查点保留复现脚本和门槛，没有实现 Ledger 冷加载修复。观察器 CPU 单独报告，不能当成 Pi 或 Suite 的 CPU。
 完整进程树 CPU/RSS、分配/GC、I/O、唤醒及最大主线程任务统计仍待完成。
 [全部 16 个 Capability 的源码清单](suite-resource-inventory-2026-09-05.md)已记录所有者和待测对象；
-活动 Context 和恢复工作负载仍待覆盖。下文的前台、后台 Agent 场景覆盖成功执行，未覆盖所有 Agent
+完整 Context 和恢复工作负载仍待覆盖。下文的前台、后台 Agent 场景覆盖成功执行，未覆盖所有 Agent
 生命周期或完整资源成本。默认加载了 Capability，不等于执行过其路径。
 本次使用共享机器，没有隔离 CPU；完整响应验收还需要更长的重复工作负载。
 后续工作由 Beads `ps-yon.3`、`ps-yon.4`、`ps-yon.5` 按
@@ -182,3 +182,46 @@ Provider 请求数量检查排除观察期间未经请求的父回合；出生�
 [数值证据](../../../../../docs/reports/suite-responsiveness-agents-2026-09-05.json)保留精确计数、源码哈希，
 以及最初的原生接入样本 `Wq9PYe`。每个 scope 均在清理后核验不活动且已卸载。
 这些单次运行证明测量方法可用，不构成重复的优化前后基线，也未完成资源效率验收。
+
+## 通过原生 Provider 请求验证活动 Context
+
+`--suite --context` 现在通过 `ctx_memory` 写入一条项目记忆，再用 `ctx_search` 检索，并在接收请求的回环
+服务端检查三次真实原生 Responses 请求。每次都必须包含简版 Magic Context 指令、投影历史块和带标记的
+用户输入。第三次必须在 Tool 结果里包含检索证据，而不是仅复述先前的写入参数。公开 Tool-result 事件另行
+拒绝错误；观察器要求请求和完成顺序精确匹配、检索一次、自动命名和用量刷新，以及连续输入和选择观察。
+`--code-mode` 包装同样两个 Tool；`--ledger` 加入已有的旧历史种子。服务端在 Pi 之外运行，合成请求正文只
+保存在私有证据目录。每次响应等待四秒以提供观察时间，没有增加生产等待或修改调度。
+
+这暴露了原 fixture 的两个覆盖缺口。自定义 `streamSimple` 从未调用 Pi 的最终 Provider-payload 钩子，
+因此不能认证这一接口。换成原生序列化后，又发现 Context 已降级：即使数据库在全新私有目录，固定版本的
+引擎仍因宿主机进程命名空间中存在其他 Pi 而拒绝迁移。上游缓冲日志明确记录了拒绝原因；临时诊断等待和
+状态读取 import 随即移除。没有绕过数据库保护，也没有停止任何现有 Pi。此前加载 Suite 的样本仍只证明
+其记录的实际工作负载，不能据此认定已测得活动 Context 成本。
+
+运行时除网络隔离外，还需独立 PID 命名空间及其 procfs。shell 让观察器 PID 大于 1，`setsid` 建立本地
+进程组，以保留现有基于出生身份的 watchdog 校验。命名空间退出会终止剩余后代进程。Suite 回归测试采用
+这一启动方式；每次观察还使用私有 `TMPDIR`，临时缓存和引擎日志不再共用机器默认目录。
+
+```bash
+export PSYON_PARENT_NETNS="$(readlink /proc/self/ns/net)"
+unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc \
+  setsid sh -c '"$@"; exit $?' psyon-pid-init \
+  bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --context \
+  --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
+```
+
+基于 `a065ef14` 的最终观察器源码，120×40 样本 `9QTHUI` 通过所有锁定门槛：Spinner 136.050477 ms，
+输入/补全准备 26.604012 ms，选择 15.464966 ms，最大采样间隙 17.825732 ms，应有的活动 Spinner 无缺失。
+活动期 12.281 秒，共 1,005 次采集。`VazQZM` 加入 Code Mode 和旧 Ledger 后，Context、命名和用量刷新
+均完成，但 Spinner 停了 275.024555 ms，未通过原门槛。其采样间隙为 18.455237 ms，因此这是实际捕获的
+停顿，不是缺失观察被误算为通过。
+下一次 `dQOsBi` 保留 Code Mode、只去掉旧 Ledger，以 Spinner 116.146204 ms、输入/补全准备
+26.595219 ms、选择 16.145855 ms、采样间隙 20.577305 ms 通过。各样本均完成三次请求及检索。
+这把冷 Ledger 对照扩展到了活动 Context 工作负载，并没有修复停顿。
+
+[数值证据](../../../../../docs/reports/suite-responsiveness-observer-2026-09-05.json)保留这些源码身份及更早的
+功能样本 `oxxuCd`；后者早于私有 `TMPDIR` 和最终 wire Tool 结果断言。缓存和隔离条件已经变化，不能将
+与旧样本的差值称为资源节省。本次改动没有生产优化。完整 Historian/压缩、中断/恢复、其他已配置功能、
+更长的重复运行和其他终端尺寸仍待测。直接在新 PID 命名空间内试用资源 scope 时，用户 bus 连接失败；
+已确认尝试的 scope 未加载。因此活动 Context 的进程树资源统计仍未完成，不能记为零成本，也不能用此前
+没有 PID 隔离的 scope 样本代替认证。

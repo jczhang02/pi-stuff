@@ -56,22 +56,32 @@ test.each(["startup", "pre-tool", "settlement"])(
 	45_000,
 );
 
-test.each(["foreground", "background"])(
-	"continuous Suite observation follows a %s Agent through child Tool execution and process exit",
+test.each(["foreground", "background", "context"])(
+	"continuous Suite observation verifies %s work through its public results",
 	async (mode) => {
+		const agent = mode !== "context";
 		const child = Bun.spawn(
 			[
 				"unshare",
 				"--user",
 				"--map-root-user",
 				"--net",
+				"--pid",
+				"--fork",
+				"--kill-child",
+				"--mount-proc",
+				// Keep PID > 1 and a namespace-local process group for the existing birth-identity watchdog.
+				"setsid",
+				"sh",
+				"-c",
+				'"$@"; exit $?',
+				"psyon-pid-init",
 				process.execPath,
 				resolve("scripts/benchmark-responsiveness.ts"),
 				"--pi",
 				process.env["PI_BIN"] ?? "/opt/bin/pi",
 				"--suite",
-				"--agent",
-				mode,
+				...(agent ? ["--agent", mode] : ["--context"]),
 			],
 			{
 				stderr: "pipe",
@@ -89,14 +99,16 @@ test.each(["foreground", "background"])(
 			expect(exitCode).toBe(0);
 			const sample = parseJsonValue(stdout);
 			const schema = Type.Object({
-				agentMode: Type.Literal(mode),
-				completedChildTools: Type.Literal(1),
-				reapedChildProcesses: Type.Literal(1),
-				agentRowObserved: Type.Literal(true),
+				completedChildTools: Type.Literal(agent ? 1 : 0),
+				reapedChildProcesses: Type.Literal(agent ? 1 : 0),
+				agentRowObserved: Type.Literal(agent),
 				automaticUsageRefreshes: Type.Literal(1),
 				backgroundOutcomes: Type.Literal(mode === "background" ? 1 : 0),
 				parentCompletedWhileChildRunning: Type.Literal(mode === "background"),
+				contextProjectionRequests: Type.Literal(agent ? 0 : 3),
+				contextRetrievals: Type.Literal(agent ? 0 : 1),
 			});
+			if (agent) expect(Check(Type.Object({ agentMode: Type.Literal(mode) }), sample)).toBe(true);
 			expect(Check(schema, sample)).toBe(true);
 		} finally {
 			if (child.exitCode === null) child.kill("SIGTERM");

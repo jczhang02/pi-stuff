@@ -91,7 +91,7 @@ diagnostic mode and cannot be combined with `--gates`. No profiler was active in
 This checkpoint retains the reproducer and gates. It does not implement the cold Ledger fix. Observer CPU is reported
 separately and must not be presented as Pi or Suite CPU. Complete process-tree CPU/RSS, allocation/GC, I/O, wakeups,
 and largest main-thread-task accounting remain open. The [16-Capability source inventory](suite-resource-inventory-2026-09-05.md)
-now records owners and measurement targets; active Context and recovery workloads remain open. The foreground and
+now records owners and measurement targets; full Context and recovery workloads remain open. The foreground and
 background Agent scenarios below cover successful execution, not every Agent lifecycle or its complete resource cost.
 Default-loaded Capabilities are not evidence that those paths executed.
 The shared machine was not CPU-isolated; full responsiveness closure also needs longer repeated workloads.
@@ -195,3 +195,51 @@ that pair and uses an earlier counter-reader snapshot; its child completed and e
 MB here is decimal. The [numeric evidence](suite-responsiveness-agents-2026-09-05.json) retains exact counters/source
 hashes and initial native integration run `Wq9PYe`. Every scoped run was verified inactive and unloaded after teardown.
 These single runs establish working measurement, not a repeated before/after baseline or resource-efficiency closure.
+
+## Active Context through native Provider requests
+
+`--suite --context` now writes one project memory with `ctx_memory`, retrieves it with `ctx_search`, and checks three
+real native Responses requests at the receiving loopback server. Each request must contain the compact Magic Context
+instructions, the projected history block, and the tagged user input. The third must contain the retrieved evidence
+in a Tool result, not merely echo the earlier write arguments. Public Tool-result events independently reject errors;
+the observer requires the exact request/completion sequence, one retrieval, automatic Naming and Usage, and continuous
+input/selection coverage. `--code-mode` wraps these same two Tools; `--ledger` adds the existing cold-history seed.
+The server runs outside Pi and retains synthetic request bodies only in the private evidence directory. Its four-second
+response waits provide observation time; no production wait or scheduling change was added.
+
+This exposed two gaps in the earlier fixture. Its custom `streamSimple` never called Pi's final Provider-payload hook,
+so it could not certify that boundary. Native serialization then revealed that Context had degraded: the pinned engine
+refused to migrate a fresh private database while unrelated Pi processes were visible in the host process namespace.
+An upstream buffered diagnostic established the refusal; the temporary diagnostic delay and status import were removed.
+No database protection was bypassed and no existing Pi process was stopped. The earlier loaded-Suite samples remain
+valid only for their recorded workloads; they do not establish active Context cost.
+
+Use an isolated PID namespace and its own procfs as well as the network namespace. The shell keeps the observer above
+PID 1, and `setsid` establishes a local process group, preserving the existing birth-identity watchdog checks. Namespace
+exit kills its remaining descendants. Suite regression tests use this launch shape; every observer run also has a private
+`TMPDIR`, so temporary caches and engine logs no longer share the machine default directory.
+
+```bash
+export PSYON_PARENT_NETNS="$(readlink /proc/self/ns/net)"
+unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc \
+  setsid sh -c '"$@"; exit $?' psyon-pid-init \
+  bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --context \
+  --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
+```
+
+On final observer source based on `a065ef14`, sample `9QTHUI` passed every frozen gate at 120×40: Spinner 136.050477 ms,
+input/setup 26.604012 ms, selection 15.464966 ms, maximum capture gap 17.825732 ms, and no missing active Spinner.
+It retained 1,005 active captures over 12.281 seconds. Sample `VazQZM` added Code Mode and the old Ledger: all Context,
+Naming and Usage checks completed, but the Spinner held for 275.024555 ms and failed the unchanged gate. Its capture
+gap was 18.455237 ms, so this is a captured stall, not a missing-observation pass.
+The next run, `dQOsBi`, kept Code Mode and removed only the old Ledger; it passed with a 116.146204 ms Spinner frame,
+26.595219 ms input/setup, 16.145855 ms selection, and 20.577305 ms capture gap. All three requests and the retrieval
+completed in each run. This extends the cold-Ledger comparison to an active Context workload; it does not fix the stall.
+
+The [numeric evidence](suite-responsiveness-observer-2026-09-05.json) retains these source snapshots and the earlier
+functional sample `oxxuCd`, which preceded private `TMPDIR` and final wire-result validation. These cache/isolation
+changes prohibit treating a difference from earlier rows as resource savings. No production optimization is in this change.
+Full Historian/compaction, interrupt/recovery, configured adjuncts, longer repeated runs and other geometries remain open.
+A direct resource-scope probe inside this PID namespace failed to connect to the user bus; the attempted scope was
+verified unloaded. Active Context process-tree accounting is therefore still open, not zero-cost or certified by the
+earlier non-PID-isolated scope samples.

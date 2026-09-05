@@ -12,6 +12,7 @@ import {
 	identityBoundProcessLiveness,
 	probeProcessLiveness,
 } from "../packages/pi-stuff/src/subagents/src/shared/process-identity.js";
+import { respondToContextRequest } from "../test/fixtures/responsiveness-provider.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_RELEASE_BINARY_SHA256 } from "./pi-host-contract.js";
 import { type PtyObservation, summarizePtyObservations } from "./pty-observation.js";
 import { armUiPtyOwnerWatchdog, disarmUiPtyOwnerWatchdog, type UiPtyOwnerWatchdog } from "./ui-pty-owner-watchdog.js";
@@ -24,6 +25,7 @@ const { values } = parseArgs({
 		pi: { type: "string", default: process.env["PI_BIN"] ?? "/opt/bin/pi" },
 		suite: { type: "boolean", default: false },
 		agent: { type: "string" },
+		context: { type: "boolean", default: false },
 		"code-mode": { type: "boolean", default: false },
 		ledger: { type: "boolean", default: false },
 		snippet: { type: "boolean", default: false },
@@ -47,12 +49,18 @@ const usage = values.suite;
 const codeMode = values["code-mode"];
 const profileCpu = values["cpu-profile"];
 const agentMode = values.agent;
-const expectedChildren = agentMode ? (values["repeat-tool"] ? 2 : 1) : 0;
+const contextWork = values.context;
+const requestedToolCount = values["repeat-tool"] || contextWork ? 2 : 1;
+const expectedChildren = agentMode ? requestedToolCount : 0;
 assert(Number.isSafeInteger(columns) && columns >= 40 && columns <= 240, "Invalid terminal width");
 assert(Number.isSafeInteger(rows) && rows >= 20 && rows <= 80, "Invalid terminal height");
 assert(Number.isFinite(blockMs) && blockMs >= 0 && blockMs <= 1_000, "Invalid negative-control duration");
 assert(["startup", "pre-tool", "settlement"].includes(blockPhase), "Invalid negative-control phase");
 assert(!codeMode || usage, "Code Mode requires the Suite");
+assert(
+	!contextWork || (usage && !agentMode && !values["repeat-tool"]),
+	"Context requires --suite without Agent or repeat mode",
+);
 assert(
 	agentMode === undefined || (usage && ["foreground", "background"].includes(agentMode)),
 	"Agent mode requires --suite --agent foreground|background",
@@ -159,7 +167,7 @@ async function readBackgroundOutcomes(): Promise<number> {
 	return outcomes.length;
 }
 const { binaryPath: piBinary } = await stageCertifiedPiHost(values.pi, directory);
-await Promise.all(["home", "agent", "project", "sessions"].map((name) => mkdir(join(directory, name))));
+await Promise.all(["home", "agent", "project", "sessions", "tmp"].map((name) => mkdir(join(directory, name))));
 await writeFile(
 	join(directory, "agent/settings.json"),
 	JSON.stringify({
@@ -209,6 +217,7 @@ const env: NodeJS.ProcessEnv = {
 	LC_ALL: "C.UTF-8",
 	TERM: "xterm-256color",
 	SHELL: "/bin/sh",
+	TMPDIR: join(directory, "tmp"),
 	PI_OFFLINE: usage ? "0" : "1",
 	PI_TELEMETRY: "0",
 	PSYON_NEGATIVE_BLOCK_MS: String(blockMs),
@@ -216,6 +225,7 @@ const env: NodeJS.ProcessEnv = {
 	PSYON_TOOL_MODE: codeMode ? "codemode" : "bash",
 	PSYON_REPEAT_TOOL: values["repeat-tool"] ? "1" : "0",
 	PSYON_AGENT_MODE: agentMode,
+	PSYON_CONTEXT: contextWork ? "1" : "0",
 	PSYON_PROVIDER_LOG: providerLogPath,
 	PSYON_USAGE_URL: "",
 };
@@ -279,6 +289,7 @@ if (values.ledger) {
 }
 await writeFile(providerLogPath, "");
 const usageRequests: { path: string; at: number }[] = [];
+const contextRequests: { body: string; naming: boolean }[] = [];
 let server: ReturnType<typeof Bun.serve> | undefined;
 const git = (...args: string[]): string => {
 	const result = Bun.spawnSync(["git", ...args], { cwd: root });
@@ -395,6 +406,8 @@ try {
 			port: 0,
 			fetch(request) {
 				const path = new URL(request.url).pathname;
+				if (contextWork && path === "/backend-api/responses")
+					return respondToContextRequest(request, codeMode, contextRequests);
 				assert.equal(path, "/backend-api/wham/usage");
 				assert.equal(request.headers.get("authorization"), "Bearer synthetic-fixture-token");
 				assert.equal(request.headers.get("chatgpt-account-id"), "synthetic-fixture-account");
@@ -549,8 +562,12 @@ try {
 		providerLog
 			.filter((entry) => entry.type === "agent-request" && entry.role === "parent")
 			.map((entry) => entry.completedTools),
-		values["repeat-tool"] ? [0, 1, 2] : [0, 1],
+		requestedToolCount === 2 ? [0, 1, 2] : [0, 1],
 	);
+	const contextProjections = contextRequests.filter((entry) => !entry.naming);
+	assert.equal(contextProjections.length, contextWork ? 3 : 0, "Native Context requests are missing");
+	const contextRetrievals = providerLog.filter((entry) => entry.type === "context-retrieval").length;
+	assert.equal(contextRetrievals, contextWork ? 1 : 0, "Context retrieval was not verified");
 	const childRequests = providerLog.filter((entry) => entry.type === "agent-request" && entry.role === "child");
 	const childProcesses = providerLog.filter((entry) => entry.type === "fixture-ready" && entry.role === "child");
 	const childCompletions = providerLog.filter((entry) => entry.type === "response-complete" && entry.role === "child");
@@ -606,7 +623,12 @@ try {
 	assert(!agentMode || agentRowObserved, "Agent Tool UI was not observed");
 	if (usage) {
 		assert.equal(usageRequests.length, 1, "Exactly one automatic usage refresh is expected");
-		assert.equal(providerLog.filter((entry) => entry.type === "naming-request").length, 1);
+		assert.equal(
+			contextWork
+				? contextRequests.filter((entry) => entry.naming).length
+				: providerLog.filter((entry) => entry.type === "naming-request").length,
+			1,
+		);
 		assert(providerLog.some((entry) => entry.type === "name-persisted" && entry.name === "Cadence Resource Fixture"));
 	}
 	const active = summarizePtyObservations(observations.slice(firstActive, agentEndIndex));
@@ -637,7 +659,9 @@ try {
 		completedChildTools: childRequests.filter((entry) => entry.completedTools === 1).length,
 		reapedChildProcesses: childProcesses.length,
 		codeModeHostSha256,
-		requestedToolCount: values["repeat-tool"] ? 2 : 1,
+		requestedToolCount,
+		contextProjectionRequests: contextProjections.length,
+		contextRetrievals,
 		negativeBlockMs: blockMs,
 		negativeBlockPhase: blockPhase,
 		automaticUsageRefreshes: usageRequests.length,
@@ -686,7 +710,15 @@ try {
 		await writeFile(
 			join(directory, "evidence.json"),
 			JSON.stringify(
-				{ summary, observerTimeOriginMs: performance.timeOrigin, observations, actions, limits, source },
+				{
+					summary,
+					observerTimeOriginMs: performance.timeOrigin,
+					observations,
+					actions,
+					contextRequests,
+					limits,
+					source,
+				},
 				null,
 				2,
 			),

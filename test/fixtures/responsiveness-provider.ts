@@ -2,12 +2,18 @@ import assert from "node:assert/strict";
 import { appendFileSync } from "node:fs";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { JsonInputObject } from "../../packages/pi-stuff/src/shared/json-value.js";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	parseJsonValue,
+} from "../../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { createAssistantMessage, createTextStream, registerFixtureProvider } from "./faux-provider.js";
 
 const usageUrl = process.env["PSYON_USAGE_URL"];
 const child = process.env["PI_SUBAGENT_CHILD"] === "1";
 const agentMode = process.env["PSYON_AGENT_MODE"];
+const contextWork = process.env["PSYON_CONTEXT"] === "1";
 const baseMessage = createAssistantMessage(usageUrl ? "openai-codex" : "psyon-cadence", "cadence-model");
 const message: typeof baseMessage = (content, reason, usage) => ({
 	...baseMessage(content, reason, usage),
@@ -49,6 +55,98 @@ function nextToolCall(index: number) {
 		name: codeMode ? "codemode" : name,
 		arguments: codeMode ? { code: `text(await tools.${name}(${JSON.stringify(args)}));` } : args,
 	};
+}
+
+// The observer owns this server, outside the measured Host process tree. Pi uses its native Responses transport.
+export async function respondToContextRequest(
+	request: Request,
+	codeMode: boolean,
+	requests: { body: string; naming: boolean }[],
+): Promise<Response> {
+	assert.equal(new URL(request.url).pathname, "/backend-api/responses");
+	const body = await request.text();
+	const payload = parseJsonValue(body);
+	assert(isJsonInputObject(payload) && payload["model"] === "cadence-model" && payload["stream"] === true);
+	const naming = body.includes("concise semantic labels for coding sessions");
+	requests.push({ body, naming });
+	const index = requests.filter((entry) => !entry.naming).length - 1;
+	if (!naming) {
+		assert(index >= 0 && index <= 2, "Unexpected Context request");
+		const input = payload["input"];
+		assert(Array.isArray(input), "Native Responses input is missing");
+		const text = input
+			.flatMap((entry) => {
+				if (!isJsonInputObject(entry)) return [];
+				const content = entry["content"];
+				return isRuntimeString(content)
+					? [content]
+					: Array.isArray(content)
+						? content.flatMap((part) =>
+								isJsonInputObject(part) && isRuntimeString(part["text"]) ? [part["text"]] : [],
+							)
+						: [];
+			})
+			.join("\n");
+		assert(text.includes("## Magic Context"), "Context instructions are absent from the wire payload");
+		assert(
+			/<session-history-since(?:\s[^>]*)?>[\s\S]*?<\/session-history-since>/u.test(text) &&
+				/^§\d+§ PSYON_MEASURE$/mu.test(text),
+			"User input is absent from active Context projection",
+		);
+		if (index === 2)
+			assert(
+				input.some(
+					(entry) =>
+						isJsonInputObject(entry) &&
+						entry["type"] === "function_call_output" &&
+						isRuntimeString(entry["output"]) &&
+						entry["output"].includes("PSYON_CONTEXT_EVIDENCE"),
+				),
+				"Retrieved Context evidence is absent from the wire payload",
+			);
+		await Bun.sleep(4_000);
+	}
+	const done = naming || index === 2;
+	const name = index === 0 ? "ctx_memory" : "ctx_search";
+	const args =
+		index === 0
+			? { action: "write", category: "PROJECT_RULES", content: "PSYON_CONTEXT_KEY: PSYON_CONTEXT_EVIDENCE" }
+			: { query: "PSYON_CONTEXT_KEY" };
+	const item: JsonInputObject = done
+		? {
+				id: "msg_cadence",
+				type: "message",
+				role: "assistant",
+				status: "completed",
+				content: [
+					{
+						type: "output_text",
+						text: naming ? "Cadence Resource Fixture" : "PSYON_CADENCE_DONE",
+						annotations: [],
+					},
+				],
+			}
+		: {
+				id: `fc_cadence_${String(index)}`,
+				type: "function_call",
+				call_id: `cadence_${String(index)}`,
+				name: codeMode ? "codemode" : name,
+				arguments: JSON.stringify(
+					codeMode ? { code: `text(await tools.${name}(${JSON.stringify(args)}));` } : args,
+				),
+				status: "completed",
+			};
+	const response = { id: `resp_cadence_${String(index)}`, status: "completed", output: [item] };
+	return new Response(
+		[
+			{ type: "response.created", response: { id: response.id, status: "in_progress" } },
+			{ type: "response.output_item.done", output_index: 0, item },
+			{ type: "response.completed", response },
+		]
+			.map((event) => `data: ${JSON.stringify(event)}\n\n`)
+			.join(""),
+		{ headers: { "content-type": "text/event-stream" } },
+	);
 }
 
 async function seedLedger(pi: ExtensionAPI, context: ExtensionContext): Promise<void> {
@@ -141,6 +239,37 @@ export default async function responsivenessProvider(pi: ExtensionAPI): Promise<
 		assert(processStartIdentity, "Child process birth identity is required");
 	}
 	log({ type: "fixture-ready", pid: process.pid, processStartIdentity });
+	if (contextWork && process.env["PSYON_SEED_LEDGER"] !== "1") {
+		let completedTools = 0;
+		pi.on("before_provider_request", () => log({ type: "agent-request", completedTools }));
+		pi.on("tool_result", (event) => {
+			assert.equal(
+				event.toolName,
+				process.env["PSYON_TOOL_MODE"] === "codemode"
+					? "codemode"
+					: completedTools === 0
+						? "ctx_memory"
+						: "ctx_search",
+			);
+			assert(!event.isError, "Context Tool failed");
+			if (completedTools === 1) {
+				assert(
+					event.content.some((part) => part.type === "text" && part.text.includes("PSYON_CONTEXT_EVIDENCE")),
+					"Context search omitted stored evidence",
+				);
+				log({ type: "context-retrieval" });
+			}
+			completedTools++;
+		});
+		pi.on("message_end", ({ message }) => {
+			if (
+				message.role === "assistant" &&
+				message.stopReason === "stop" &&
+				message.content.some((part) => part.type === "text" && part.text === "PSYON_CADENCE_DONE")
+			)
+				log({ type: "response-complete" });
+		});
+	}
 	pi.on("session_start", async (_event, ctx) => {
 		if (process.env["PSYON_SEED_LEDGER"] === "1") return seedLedger(pi, ctx);
 		if (process.env["PSYON_NEGATIVE_BLOCK_PHASE"] === "startup")
@@ -161,13 +290,12 @@ export default async function responsivenessProvider(pi: ExtensionAPI): Promise<
 	if (usageUrl) {
 		const url = new URL(usageUrl);
 		assert(url.hostname === "127.0.0.1" && url.protocol === "http:", "Usage fixture must stay on loopback");
-		pi.registerProvider("openai-codex", {
+		const config: Parameters<ExtensionAPI["registerProvider"]>[1] = {
 			name: "Synthetic Codex account",
 			baseUrl: usageUrl,
 			apiKey: "synthetic-fixture-token",
 			headers: { "chatgpt-account-id": "synthetic-fixture-account" },
 			api: "openai-responses",
-			streamSimple,
 			models: [
 				{
 					id: "cadence-model",
@@ -180,7 +308,9 @@ export default async function responsivenessProvider(pi: ExtensionAPI): Promise<
 					maxTokens: 4_096,
 				},
 			],
-		});
+		};
+		if (!contextWork) config.streamSimple = streamSimple;
+		pi.registerProvider("openai-codex", config);
 	} else registerFixtureProvider(pi, "psyon-cadence", "cadence-model", "Native cadence", streamSimple);
 	pi.on("session_info_changed", (event) => log({ type: "name-persisted", name: event.name }));
 }
