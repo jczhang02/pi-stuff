@@ -164,7 +164,7 @@ extend the investigation to background delegation; they do not prove it shares t
 
 ## Native resource scope
 
-On Linux with cgroup v2 and a configured user systemd bus, add `--resource-scope` to either the native or Suite command.
+On Linux with cgroup v2 and a configured `DBUS_SESSION_BUS_ADDRESS`, add `--resource-scope` to either command.
 The existing observer starts only the synthetic Pi command in a fresh transient scope. Unlike a service, the scope
 keeps the caller's terminal and network namespace. The launcher receives the user bus environment; Pi and its children
 retain the original isolated environment. The observer, tmux, and loopback Usage server remain outside the scope.
@@ -240,6 +240,40 @@ The [numeric evidence](suite-responsiveness-observer-2026-09-05.json) retains th
 functional sample `oxxuCd`, which preceded private `TMPDIR` and final wire-result validation. These cache/isolation
 changes prohibit treating a difference from earlier rows as resource savings. No production optimization is in this change.
 Full Historian/compaction, interrupt/recovery, configured adjuncts, longer repeated runs and other geometries remain open.
-A direct resource-scope probe inside this PID namespace failed to connect to the user bus; the attempted scope was
-verified unloaded. Active Context process-tree accounting is therefore still open, not zero-cost or certified by the
-earlier non-PID-isolated scope samples.
+At `a1e4f9ae`, the direct resource-scope probe inside this PID namespace failed to connect to the user bus; the attempted
+scope was verified unloaded. The following change resolves that measurement failure without changing Context.
+
+## Scoped active Context
+
+The observer now reaches the existing session bus by removing `XDG_RUNTIME_DIR` only from its `systemd-run` and
+`systemctl` commands. With that variable set, systemd selects its private manager socket and rejects the invisible
+peer PID in the child PID namespace. Without it, the existing `DBUS_SESSION_BUS_ADDRESS` selects the supported session
+bus route. See the pinned [connection selection](https://github.com/systemd/systemd/blob/v261.1/src/shared/bus-util.c#L468-L496)
+and [peer-credential check](https://github.com/systemd/systemd/blob/v261.1/src/basic/socket-util.c#L786-L806).
+The Pi environment, PID/network isolation, database migration guard, scoped process tree and counter validation are unchanged.
+
+The same `--suite --context --resource-scope --gates ...` command failed with `No data available` before this change
+and passed afterward. A host-routing attempt with `--machine=<user>@.host` passed a simple inherited-environment probe
+but timed out in the actual fixture (`bkb41L`); that route was removed. The engine's test-data-directory flag was also
+rejected because it changes embedding-provider initialization, not just database isolation.
+
+Add `--resource-scope` to the PID-isolated Context command above. The following runs were sequential on the same final
+observer source based on `a1e4f9ae`, at 120×40, with fresh private directories and no profiler or injected delay:
+
+| Run | Workload | CPU seconds | Current / peak charged MB | Spinner ms | Input/setup ms | Selection ms | Frozen gates |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `iJapzZ` | Context memory write/search | 17.197857 | 633.942 / 1092.932 | 117.574 | 27.504 | 14.959 | Passed |
+| `9Llhi7` | Context through Code Mode, old Ledger | 19.729707 | 671.678 / 1042.964 | 224.959 | 40.879 | 40.681 | Spinner, input, selection failed |
+| `oQNzsy` | Context through Code Mode, no old Ledger | 18.615428 | 653.771 / 1040.478 | 120.522 | 15.870 | 15.465 | Passed |
+| `IXK028` | Native Bash, no Suite | 2.433290 | 167.727 / 194.744 | 118.313 | 15.229 | 15.335 | Passed |
+
+Each Context run completed three verified native requests, one memory retrieval, one automatic naming request and one
+usage refresh. Active coverage exceeded 12 seconds and 970 captures; maximum observation gaps were below 19 ms, with
+no missing active Spinner. The native row checks the same resource route with the Suite absent; its one Bash Tool is
+not an equivalent Context workload. All four exact scopes were verified inactive and unloaded after teardown.
+The [numeric evidence](suite-responsiveness-observer-2026-09-05.json) retains counters, timing and source hashes.
+
+These are pre-optimization measurements. The Code Mode pair changes only the old Ledger seed; a single pair does not
+establish how much CPU is redundant. Charged memory is still not RSS or allocation, and shutdown is outside the counter
+boundary. The cold Ledger still fails the locked responsiveness gates. Full resource dimensions, repeated workloads
+and the remaining Capability/recovery paths stay open in `ps-yon.3`.

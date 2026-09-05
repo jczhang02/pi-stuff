@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: ddb7970f1ace29a8c1a08437fa3af736c1e098b29c6293586dbba8af61b7c315 -->
+<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: a13f8fe8d5cd6ff3aa6eb46fdce3c57dd6bddf87f97b246dd88d48c116bb5d33 -->
 
 # 连续响应观察器与 Ledger 首次加载复现
 
@@ -155,7 +155,7 @@ Provider 请求数量检查排除观察期间未经请求的父回合；出生�
 
 ## 原生资源 scope
 
-在具有 cgroup v2 且已配置用户 systemd bus 的 Linux 上，为原生或 Suite 命令添加 `--resource-scope`。
+在具有 cgroup v2 且已配置 `DBUS_SESSION_BUS_ADDRESS` 的 Linux 上，为原生或 Suite 命令添加 `--resource-scope`。
 现有观察器只把合成 Pi 命令放进新建的临时 scope。scope 与 service 不同，会保留调用者的终端和网络
 命名空间。启动器取得用户 bus 环境；Pi 及其子进程保持原有隔离环境。观察器、tmux 和回环 Usage 服务均在 scope 外。
 
@@ -222,6 +222,38 @@ unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc \
 [数值证据](../../../../../docs/reports/suite-responsiveness-observer-2026-09-05.json)保留这些源码身份及更早的
 功能样本 `oxxuCd`；后者早于私有 `TMPDIR` 和最终 wire Tool 结果断言。缓存和隔离条件已经变化，不能将
 与旧样本的差值称为资源节省。本次改动没有生产优化。完整 Historian/压缩、中断/恢复、其他已配置功能、
-更长的重复运行和其他终端尺寸仍待测。直接在新 PID 命名空间内试用资源 scope 时，用户 bus 连接失败；
-已确认尝试的 scope 未加载。因此活动 Context 的进程树资源统计仍未完成，不能记为零成本，也不能用此前
-没有 PID 隔离的 scope 样本代替认证。
+更长的重复运行和其他终端尺寸仍待测。在 `a1e4f9ae` 中，直接在新 PID 命名空间内试用资源 scope 时，
+用户 bus 连接失败；已确认尝试的 scope 未加载。下面的改动解决了这个测量问题，没有改变 Context。
+
+## 活动 Context 的 scope 资源统计
+
+观察器现在只在 `systemd-run` 和 `systemctl` 命令中移除 `XDG_RUNTIME_DIR`，从而使用已有的会话 bus。
+设置该变量时，systemd 选择管理器的私有 socket；子 PID 命名空间看不到对端 PID，因此校验失败。
+移除后，已有的 `DBUS_SESSION_BUS_ADDRESS` 会选择受支持的会话 bus 路径。参见固定版本的
+[连接选择](https://github.com/systemd/systemd/blob/v261.1/src/shared/bus-util.c#L468-L496)和
+[对端身份检查](https://github.com/systemd/systemd/blob/v261.1/src/basic/socket-util.c#L786-L806)。
+Pi 环境、PID/网络隔离、数据库迁移保护、被统计的进程树和计数校验均不变。
+
+同一条 `--suite --context --resource-scope --gates ...` 命令，改动前以 `No data available` 失败，改动后通过。
+曾尝试 `--machine=<用户>@.host`：它在继承环境的简单探针中通过，但实际 fixture（`bkb41L`）超时，因此
+已移除该路径。引擎的测试数据目录开关也未采用，因为它还会改变 embedding provider 初始化，并非只隔离数据库。
+
+在上面的 PID 隔离 Context 命令中添加 `--resource-scope` 即可运行。以下样本按顺序执行，均使用基于
+`a1e4f9ae` 的同一最终观察器源码、120×40 尺寸和全新私有目录，没有 profiler 或注入等待：
+
+| 样本 | 工作负载 | CPU 秒 | 当前 / 峰值记账内存 MB | Spinner ms | 输入/补全准备 ms | 选择 ms | 锁定门槛 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `iJapzZ` | Context 记忆写入/检索 | 17.197857 | 633.942 / 1092.932 | 117.574 | 27.504 | 14.959 | 通过 |
+| `9Llhi7` | Code Mode 调用 Context，带旧 Ledger | 19.729707 | 671.678 / 1042.964 | 224.959 | 40.879 | 40.681 | Spinner、输入、选择失败 |
+| `oQNzsy` | Code Mode 调用 Context，不带旧 Ledger | 18.615428 | 653.771 / 1040.478 | 120.522 | 15.870 | 15.465 | 通过 |
+| `IXK028` | 原生 Bash，不加载 Suite | 2.433290 | 167.727 / 194.744 | 118.313 | 15.229 | 15.335 | 通过 |
+
+每次 Context 运行均完成三次已核验的原生请求、一次记忆检索、一次自动命名请求和一次用量刷新。活动观察
+超过 12 秒、970 次采集；最大采样间隙低于 19 ms，应有的活动 Spinner 无缺失。原生行验证不加载 Suite 时
+相同资源统计路径可用；它只调用一次 Bash，不能视为等价的 Context 工作负载。四个精确 scope 均在清理后
+核验不活动且已卸载。[数值证据](../../../../../docs/reports/suite-responsiveness-observer-2026-09-05.json)
+保留计数、时序和源码哈希。
+
+这些都是优化前的测量。Code Mode 配对只改变旧 Ledger 种子；单次配对不能确定多少 CPU 属于重复工作。
+记账内存仍不是 RSS 或分配量，关闭阶段也不在计数边界内。冷 Ledger 仍未通过锁定响应门槛。完整资源维度、
+重复工作负载、其余 Capability/恢复路径仍由 `ps-yon.3` 跟进。

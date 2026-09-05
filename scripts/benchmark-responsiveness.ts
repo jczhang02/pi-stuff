@@ -96,10 +96,12 @@ const PROVIDER_LOG_SCHEMA = Type.Array(
 );
 const directory = await mkdtemp(join(tmpdir(), "pi-stuff-responsiveness-"));
 const resourceScope = values["resource-scope"] ? `ps-yon-${basename(directory)}.scope` : undefined;
+// Use the session bus: the manager's private socket rejects its invisible peer PID in a PID namespace.
+const systemctlCommand = ["env", "-u", "XDG_RUNTIME_DIR", "systemctl", "--user"];
 
 const systemctl = (...args: string[]): string => {
 	assert(resourceScope);
-	const result = Bun.spawnSync(["systemctl", "--user", ...args, resourceScope], { timeout: 10_000 });
+	const result = Bun.spawnSync([...systemctlCommand, ...args, resourceScope], { timeout: 10_000 });
 	assert.equal(result.exitCode, 0, result.stderr.toString());
 	return result.stdout.toString().trim();
 };
@@ -340,12 +342,12 @@ const command = [
 	...(seedSession ? ["--session", seedSession] : []),
 ];
 if (resourceScope) {
-	const runtimeDirectory = process.env["XDG_RUNTIME_DIR"];
 	const busAddress = process.env["DBUS_SESSION_BUS_ADDRESS"];
-	assert(runtimeDirectory && busAddress, "Resource scope requires a configured user systemd bus");
+	assert(busAddress, "Resource scope requires a configured user session bus");
 	command.unshift(
 		"env",
-		`XDG_RUNTIME_DIR=${runtimeDirectory}`,
+		"-u",
+		"XDG_RUNTIME_DIR",
 		`DBUS_SESSION_BUS_ADDRESS=${busAddress}`,
 		"systemd-run",
 		"--user",
@@ -358,8 +360,6 @@ if (resourceScope) {
 		"--property=RuntimeMaxSec=90",
 		// Only the native scope launcher sees the user bus; Pi retains the original isolated environment.
 		"env",
-		"-u",
-		"XDG_RUNTIME_DIR",
 		"-u",
 		"DBUS_SESSION_BUS_ADDRESS",
 	);
@@ -736,7 +736,7 @@ try {
 			disarmUiPtyOwnerWatchdog(watchdog);
 			if (resourceScope) {
 				// The scope owns only this synthetic Host tree; never stop the caller's service.
-				Bun.spawnSync(["systemctl", "--user", "stop", resourceScope], { timeout: 10_000 });
+				Bun.spawnSync([...systemctlCommand, "stop", resourceScope], { timeout: 10_000 });
 				assert.equal(
 					systemctl("show", "--property=ActiveState", "--value"),
 					"inactive",

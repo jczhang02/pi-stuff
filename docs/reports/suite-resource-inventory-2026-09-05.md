@@ -54,5 +54,7 @@ alone cannot close a suspected hotspot. Include child processes and Context work
 
 Continuous foreground and background Agent observation now reaches real child Tool results and verifies birth-bound
 process exit. Both modes expose gate failures without Code Mode or old Ledger. Background observation also checks
-parent-idle input/selection, canonical completion records and two launches through Code Mode. Active Context, recovery,
-complete process-tree resource accounting and before/after closure remain open.
+parent-idle input/selection, canonical completion records and two launches through Code Mode. Native Context request
+projection and memory write/retrieval now have scoped CPU and charged-memory measurements, including a Code Mode pair
+with and without old Ledger. These totals do not isolate each owner's repeated work. Recovery, complete resource
+dimensions and before/after closure remain open; see the [observer report](suite-responsiveness-observer-2026-09-05.md).

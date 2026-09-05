@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: ec24b4d75d8430fe99d7e5d324028941d3c7d80825d016d58d580c7e5ea9300c -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 2e93a65c8af8ea60812d9457f8a3bc82f850c812700e8253bf0d59e57d4fb73b -->
 
 # Suite 资源源码清单
 
@@ -55,4 +55,6 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 
 连续前台和后台 Agent 观察已到达真实子 Agent 的 Tool 结果，并核验与出生身份绑定的进程退出。
 两种模式在没有 Code Mode 和旧 Ledger 时均出现门槛失败。后台观察还检查父空闲时的输入/选择、规范完成
-记录及通过 Code Mode 的两次启动。活动 Context、恢复、完整进程树资源计量和优化前后闭环仍未完成。
+记录及通过 Code Mode 的两次启动。原生 Context 请求投影、记忆写入/检索现已有 scope CPU 和记账内存
+测量，包括 Code Mode 带旧 Ledger 和不带旧 Ledger 的配对。这些总量不能隔离各所有者的重复工作。
+恢复、完整资源维度和优化前后闭环仍未完成；参见[观察器报告](suite-responsiveness-observer-2026-09-05.md)。
