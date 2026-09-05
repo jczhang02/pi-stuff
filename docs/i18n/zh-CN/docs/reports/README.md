@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: d9f417164034dfcd4362fd701213f4112f7a02f4122429fcf16e997960b56c5f -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 367876c43dbfd57f11fb4b3875b7cc126a76ffcd7a484ac2023ead5288128202 -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [Suite 资源源码清单](suite-resource-inventory-2026-09-05.md)
 - [连续响应观察器与 Ledger 首次加载复现](suite-responsiveness-observer-2026-09-05.md)
 - [Pi 0.85.0 Suite 资源基线](suite-resource-baseline-2026-09-05.md)
 - [Capability Contract 验收与有界 Terminal-Bench 观察](ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)

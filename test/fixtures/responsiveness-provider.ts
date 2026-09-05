@@ -6,6 +6,8 @@ import type { JsonInputObject } from "../../packages/pi-stuff/src/shared/json-va
 import { createAssistantMessage, createTextStream, registerFixtureProvider } from "./faux-provider.js";
 
 const usageUrl = process.env["PSYON_USAGE_URL"];
+const child = process.env["PI_SUBAGENT_CHILD"] === "1";
+const agentMode = process.env["PSYON_AGENT_MODE"];
 const baseMessage = createAssistantMessage(usageUrl ? "openai-codex" : "psyon-cadence", "cadence-model");
 const message: typeof baseMessage = (content, reason, usage) => ({
 	...baseMessage(content, reason, usage),
@@ -14,14 +16,34 @@ const message: typeof baseMessage = (content, reason, usage) => ({
 
 function log(record: JsonInputObject): void {
 	const path = process.env["PSYON_PROVIDER_LOG"];
-	if (path) appendFileSync(path, `${JSON.stringify(record)}\n`);
+	if (path)
+		appendFileSync(
+			path,
+			`${JSON.stringify({ ...record, pid: process.pid, atMs: performance.timeOrigin + performance.now(), role: child ? "child" : "parent" })}\n`,
+		);
 }
 
 function block(phase: string): void {
+	if (child) return;
 	if ((process.env["PSYON_NEGATIVE_BLOCK_PHASE"] ?? "pre-tool") !== phase) return;
 	const until = performance.now() + Number(process.env["PSYON_NEGATIVE_BLOCK_MS"] ?? 0);
 	// Explicit negative control; never enabled in ordinary responsiveness samples.
 	while (performance.now() < until) {}
+}
+
+function nextToolCall(index: number) {
+	const name = agentMode && !child ? "subagent" : "bash";
+	const args: JsonInputObject =
+		name === "subagent"
+			? { agent: "cadence-agent", task: "PSYON_CHILD_TASK", context: "fresh", foreground: true }
+			: { command: "sleep 2; printf PSYON_TOOL_RESULT" };
+	const codeMode = process.env["PSYON_TOOL_MODE"] === "codemode";
+	return {
+		type: "toolCall" as const,
+		id: `cadence-${name}-${String(index)}`,
+		name: codeMode ? "codemode" : name,
+		arguments: codeMode ? { code: `text(await tools.${name}(${JSON.stringify(args)}));` } : args,
+	};
 }
 
 async function seedLedger(pi: ExtensionAPI, context: ExtensionContext): Promise<void> {
@@ -69,11 +91,11 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 	const results = context.messages.filter((entry) => entry.role === "toolResult");
 	log({ type: "agent-request", completedTools: results.length });
 	const result = results.at(-1);
-	const completed = results.length >= (process.env["PSYON_REPEAT_TOOL"] === "1" ? 2 : 1);
+	const completed = results.length >= (!child && process.env["PSYON_REPEAT_TOOL"] === "1" ? 2 : 1);
+	const requiredResult = agentMode && !child ? "PSYON_CHILD_DONE" : "PSYON_TOOL_RESULT";
 	if (
 		result &&
-		(result.isError ||
-			!result.content.some((part) => part.type === "text" && part.text.includes("PSYON_TOOL_RESULT")))
+		(result.isError || !result.content.some((part) => part.type === "text" && part.text.includes(requiredResult)))
 	) {
 		throw new Error("Cadence Tool failed or omitted its required result");
 	}
@@ -82,7 +104,7 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 	stream.push({ type: "start", partial: pending });
 	setTimeout(() => {
 		if (completed) {
-			const text = "PSYON_CADENCE_DONE";
+			const text = child ? "PSYON_CHILD_DONE" : "PSYON_CADENCE_DONE";
 			pending.content.push({ type: "text", text });
 			stream.push({ type: "text_start", contentIndex: 0, partial: pending });
 			stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
@@ -91,22 +113,7 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 			return;
 		}
 		block("pre-tool");
-		const toolCall =
-			process.env["PSYON_TOOL_MODE"] === "codemode"
-				? {
-						type: "toolCall" as const,
-						id: `cadence-codemode-${String(results.length)}`,
-						name: "codemode",
-						arguments: {
-							code: 'const result = await tools.bash({ command: "sleep 2; printf PSYON_TOOL_RESULT" }); text(result);',
-						},
-					}
-				: {
-						type: "toolCall" as const,
-						id: `cadence-bash-${String(results.length)}`,
-						name: "bash",
-						arguments: { command: "sleep 2; printf PSYON_TOOL_RESULT" },
-					};
+		const toolCall = nextToolCall(results.length);
 		pending.content.push(toolCall);
 		stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 		stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
@@ -115,8 +122,16 @@ const streamSimple: NonNullable<Parameters<ExtensionAPI["registerProvider"]>[1][
 	return stream;
 };
 
-export default function responsivenessProvider(pi: ExtensionAPI): void {
-	log({ type: "fixture-ready", pid: process.pid });
+export default async function responsivenessProvider(pi: ExtensionAPI): Promise<void> {
+	let processStartIdentity: string | undefined;
+	if (child) {
+		const { readProcessStartIdentity } = await import(
+			"../../packages/pi-stuff/src/subagents/src/shared/process-identity.js"
+		);
+		processStartIdentity = readProcessStartIdentity(process.pid);
+		assert(processStartIdentity, "Child process birth identity is required");
+	}
+	log({ type: "fixture-ready", pid: process.pid, processStartIdentity });
 	pi.on("session_start", async (_event, ctx) => {
 		if (process.env["PSYON_SEED_LEDGER"] === "1") return seedLedger(pi, ctx);
 		if (process.env["PSYON_NEGATIVE_BLOCK_PHASE"] === "startup")

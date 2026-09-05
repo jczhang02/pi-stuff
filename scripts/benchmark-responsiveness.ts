@@ -8,6 +8,10 @@ import { parseArgs } from "node:util";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
+import {
+	identityBoundProcessLiveness,
+	probeProcessLiveness,
+} from "../packages/pi-stuff/src/subagents/src/shared/process-identity.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_RELEASE_BINARY_SHA256 } from "./pi-host-contract.js";
 import { type PtyObservation, summarizePtyObservations } from "./pty-observation.js";
 import { armUiPtyOwnerWatchdog, disarmUiPtyOwnerWatchdog, type UiPtyOwnerWatchdog } from "./ui-pty-owner-watchdog.js";
@@ -19,6 +23,7 @@ const { values } = parseArgs({
 	options: {
 		pi: { type: "string", default: process.env["PI_BIN"] ?? "/opt/bin/pi" },
 		suite: { type: "boolean", default: false },
+		agent: { type: "string" },
 		"code-mode": { type: "boolean", default: false },
 		ledger: { type: "boolean", default: false },
 		snippet: { type: "boolean", default: false },
@@ -40,11 +45,16 @@ const blockPhase = values["block-phase"];
 const usage = values.suite;
 const codeMode = values["code-mode"];
 const profileCpu = values["cpu-profile"];
+const agentMode = values.agent;
 assert(Number.isSafeInteger(columns) && columns >= 40 && columns <= 240, "Invalid terminal width");
 assert(Number.isSafeInteger(rows) && rows >= 20 && rows <= 80, "Invalid terminal height");
 assert(Number.isFinite(blockMs) && blockMs >= 0 && blockMs <= 1_000, "Invalid negative-control duration");
 assert(["startup", "pre-tool", "settlement"].includes(blockPhase), "Invalid negative-control phase");
 assert(!codeMode || usage, "Code Mode requires the Suite");
+assert(
+	agentMode === undefined || (usage && agentMode === "foreground"),
+	"Agent mode requires --suite --agent foreground",
+);
 assert(!values.snippet || values.ledger, "Saved snippet requires a synthetic Ledger");
 assert(!profileCpu || !values.gates, "A CPU profile is diagnostic, not a responsiveness acceptance sample");
 
@@ -66,6 +76,10 @@ if (values.gates) {
 const PROVIDER_LOG_SCHEMA = Type.Array(
 	Type.Object({
 		type: Type.String(),
+		role: Type.Union([Type.Literal("parent"), Type.Literal("child")]),
+		pid: Type.Integer({ minimum: 1 }),
+		atMs: Type.Number(),
+		processStartIdentity: Type.Optional(Type.String({ minLength: 1 })),
 		completedTools: Type.Optional(Type.Integer()),
 		name: Type.Optional(Type.String()),
 	}),
@@ -81,6 +95,23 @@ await writeFile(
 		defaultProjectTrust: "always",
 	}),
 );
+if (agentMode) {
+	await mkdir(join(directory, "agent/agents"));
+	await writeFile(
+		join(directory, "agent/agents/cadence-agent.md"),
+		`---
+name: cadence-agent
+description: Deterministic responsiveness child Agent.
+model: openai-codex/cadence-model
+extensions: ${provider}
+systemPromptMode: append
+inheritProjectContext: false
+inheritSkills: false
+---
+Run the deterministic child Tool and return its result.
+`,
+	);
+}
 let codeModeHostSha256: string | undefined;
 if (codeMode) {
 	const helper = process.env["PI_STUFF_CODE_MODE_HOST"];
@@ -111,6 +142,7 @@ const env: NodeJS.ProcessEnv = {
 	PSYON_NEGATIVE_BLOCK_PHASE: blockPhase,
 	PSYON_TOOL_MODE: codeMode ? "codemode" : "bash",
 	PSYON_REPEAT_TOOL: values["repeat-tool"] ? "1" : "0",
+	PSYON_AGENT_MODE: agentMode,
 	PSYON_PROVIDER_LOG: providerLogPath,
 	PSYON_USAGE_URL: "",
 };
@@ -288,7 +320,7 @@ try {
 		String(rows),
 		shellCommand,
 	);
-	while (performance.now() - start < 30_000) {
+	while (performance.now() - start < (agentMode ? 60_000 : 30_000)) {
 		const captureStartedMs = performance.now();
 		const frame = tmux("capture-pane", "-p", "-N", "-t", "cadence:0.0");
 		const capturedMs = performance.now();
@@ -402,9 +434,31 @@ try {
 	const providerLog = (await readFile(providerLogPath, "utf8")).trim().split("\n").map(parseJsonValue);
 	assert(Check(PROVIDER_LOG_SCHEMA, providerLog), "Invalid fixture Provider evidence");
 	assert.deepEqual(
-		providerLog.filter((entry) => entry.type === "agent-request").map((entry) => entry.completedTools),
+		providerLog
+			.filter((entry) => entry.type === "agent-request" && entry.role === "parent")
+			.map((entry) => entry.completedTools),
 		values["repeat-tool"] ? [0, 1, 2] : [0, 1],
 	);
+	const childRequests = providerLog.filter((entry) => entry.type === "agent-request" && entry.role === "child");
+	const childProcesses = providerLog.filter((entry) => entry.type === "fixture-ready" && entry.role === "child");
+	const expectedChildren = agentMode ? (values["repeat-tool"] ? 2 : 1) : 0;
+	assert.equal(childProcesses.length, expectedChildren, "Expected child process evidence is missing");
+	assert.equal(childRequests.length, expectedChildren * 2, "Unexpected child Provider requests");
+	for (const entry of childProcesses) {
+		assert(entry.processStartIdentity, "Child birth identity is missing");
+		assert.deepEqual(
+			childRequests.filter((request) => request.pid === entry.pid).map((request) => request.completedTools),
+			[0, 1],
+		);
+		assert.equal(
+			identityBoundProcessLiveness(entry.pid, entry.processStartIdentity, probeProcessLiveness(entry.pid)),
+			false,
+			"Child process was not reaped",
+		);
+	}
+	const firstAgentRow = observations.find((entry) => /• Agent\b.*cadence-agent/u.test(entry.frame));
+	const agentRowObserved = firstAgentRow !== undefined;
+	assert(!agentMode || agentRowObserved, "Agent Tool UI was not observed");
 	if (usage) {
 		assert.equal(usageRequests.length, 1, "Exactly one automatic usage refresh is expected");
 		assert.equal(providerLog.filter((entry) => entry.type === "naming-request").length, 1);
@@ -430,6 +484,11 @@ try {
 		profile: CERTIFIED_PI_HOST_PROFILE,
 		seededSession: Boolean(seedSession),
 		codeMode,
+		agentMode,
+		agentRowObserved,
+		firstAgentRowMs: firstAgentRow ? firstAgentRow.capturedMs - start : undefined,
+		completedChildTools: childRequests.filter((entry) => entry.completedTools === 1).length,
+		reapedChildProcesses: childProcesses.length,
 		codeModeHostSha256,
 		requestedToolCount: values["repeat-tool"] ? 2 : 1,
 		negativeBlockMs: blockMs,
@@ -478,7 +537,11 @@ try {
 	try {
 		await writeFile(
 			join(directory, "evidence.json"),
-			JSON.stringify({ summary, observations, actions, limits, source }, null, 2),
+			JSON.stringify(
+				{ summary, observerTimeOriginMs: performance.timeOrigin, observations, actions, limits, source },
+				null,
+				2,
+			),
 		);
 		if (profileCpu) {
 			send("C-u");

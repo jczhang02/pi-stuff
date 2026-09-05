@@ -90,8 +90,47 @@ diagnostic mode and cannot be combined with `--gates`. No profiler was active in
 
 This checkpoint retains the reproducer and gates. It does not implement the cold Ledger fix. Observer CPU is reported
 separately and must not be presented as Pi or Suite CPU. Complete process-tree CPU/RSS, allocation/GC, I/O, wakeups,
-and largest main-thread-task accounting remain open, as do the full 16-Capability inventory and Agent Tool, delegated
-Agent, active Context, and recovery workloads. Default-loaded Capabilities are not evidence that those paths executed.
+and largest main-thread-task accounting remain open. The [16-Capability source inventory](suite-resource-inventory-2026-09-05.md)
+now records owners and measurement targets; background Agent, active Context, and recovery workloads remain open.
+Default-loaded Capabilities are not evidence that those paths executed.
 The shared machine was not CPU-isolated; full responsiveness closure also needs longer repeated workloads.
 Beads `ps-yon.3`, `ps-yon.4`, and `ps-yon.5` retain that work under
 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md).
+
+## Foreground Agent extension
+
+The observer now accepts `--suite --agent foreground`. It creates one private named Agent definition, invokes the
+public `subagent` Tool with fresh context, and keeps capturing the parent TUI while a real child Pi executes Bash.
+The child must return the expected Tool result and final marker. Each child Provider request is bound to its PID;
+the observer requires the expected request sequence and verifies process exit against its recorded birth identity.
+Parent automatic Naming and usage refresh remain enabled and must each execute once. `--code-mode` sends both parent
+and child Tools through Code Mode; `--repeat-tool` launches a second child sequentially. The scenario timeout is
+60 seconds to include child startup, without changing any feedback or Spinner gate.
+
+On 2026-09-05, the first no-Code-Mode/no-history foreground sample held a Spinner frame for 888.131 ms before the
+Agent row appeared; input feedback took 779.337 ms. Its lifecycle test passed because the observer captured the complete
+run, not because responsiveness passed. A separate frozen-gate invocation failed again with a 188.750 ms frame and
+40.660 ms startup input. Both children completed and exited, with no missing active Spinner samples or capture gaps
+above 23 ms. The [Agent numeric evidence](suite-responsiveness-agents-2026-09-05.json) retains both failures.
+
+| Run | Workload | Longest Spinner frame ms | Slowest input/setup ms | Disposition |
+| --- | --- | ---: | ---: | --- |
+| `zmHdBv` | Suite foreground Agent → child Bash | 888.131 | 779.337 | Observer test; retrospective gate breaches |
+| `KHWw6O` | Same foreground workload, fresh process | 188.750 | 40.660 | Frozen gates failed |
+| `ewiJgE` | Code Mode → foreground Agent → child Code Mode/Bash, old Ledger | 194.857 | 97.208 | Frozen gates failed |
+| `JN8MPG` | Suite Bash, no Agent or old Ledger | 111.590 | 15.067 | Frozen gates passed |
+
+These runs narrow the investigation but do not establish the new stall's root cause or certify every Agent lifecycle.
+The ordinary Bash control lacks child-process load, so it does not alone distinguish parent launch overhead from
+resource contention. Diagnostic run `hQfUTb` completed two sequential foreground Agents with CPU profiling; it is not
+a responsiveness acceptance sample. Parent and child profiles are separate. The parent samples include tokenizer
+initialization during startup, which is not evidence that tokenizer initialization caused the pre-Agent-UI stall.
+The observer also retains its time origin and first Agent-row timing for later diagnostic correlation.
+
+Reproduce the foreground case in the same isolated network setup used above:
+
+```bash
+unshare --user --map-root-user --net \
+  bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --agent foreground \
+  --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
+```

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: a493b286039f14dade77ab62d3f8f7214e0fbb6edb160bdf1b3c5041726086e3 -->
+<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 51c7fd7c73e17611a17b2e1b598219b22232dcf721aeae287c9dc2b2dd50083d -->
 
 # 连续响应观察器与 Ledger 首次加载复现
 
@@ -87,8 +87,44 @@ unshare --user --map-root-user --net \
 ## 尚未完成的范围
 
 本检查点保留复现脚本和门槛，没有实现 Ledger 冷加载修复。观察器 CPU 单独报告，不能当成 Pi 或 Suite 的 CPU。
-完整进程树 CPU/RSS、分配/GC、I/O、唤醒及最大主线程任务统计仍待完成，全部 16 个 Capability 的清单、
-Agent Tool、委派 Agent、活动 Context 和恢复流程也仍待覆盖。默认加载了 Capability，不等于执行过其路径。
+完整进程树 CPU/RSS、分配/GC、I/O、唤醒及最大主线程任务统计仍待完成。
+[全部 16 个 Capability 的源码清单](suite-resource-inventory-2026-09-05.md)已记录所有者和待测对象；
+后台 Agent、活动 Context 和恢复工作负载仍待覆盖。默认加载了 Capability，不等于执行过其路径。
 本次使用共享机器，没有隔离 CPU；完整响应验收还需要更长的重复工作负载。
 后续工作由 Beads `ps-yon.3`、`ps-yon.4`、`ps-yon.5` 按
 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md)持续跟踪。
+
+## 前台 Agent 扩展
+
+观察器现支持 `--suite --agent foreground`。它创建私有命名 Agent 定义，以 fresh context 调用公开 `subagent`
+Tool，在真实子 Pi 执行 Bash 时持续采集父 TUI。子进程必须返回预期工具结果和结束标记。每个子 Provider
+请求绑定 PID；观察器校验请求顺序，并根据记录的出生身份核验进程退出。
+父进程自动命名和用量刷新保持开启，且各执行一次。`--code-mode` 使父、子 Tool 都经过 Code Mode；
+`--repeat-tool` 顺序启动第二个子 Agent。场景超时为 60 秒，以覆盖子进程启动，不改变任何输入或 Spinner 门槛。
+
+2026-09-05，首个无 Code Mode、无旧历史的前台样本在 Agent 行出现前停帧 888.131 ms，输入反馈耗时
+779.337 ms。生命周期测试通过是因为观察器捕获了完整运行，不是响应性通过。
+独立锁定门槛调用再次失败，停帧 188.750 ms、启动输入 40.660 ms。两个子进程均完成并退出；
+活动 Spinner 无缺失，采样间隙均未超过 23 ms。[Agent 数值证据](../../../../../docs/reports/suite-responsiveness-agents-2026-09-05.json)
+保留这两次失败。
+
+| 样本 | 工作负载 | 最长 Spinner 帧 ms | 最慢输入/补全准备 ms | 结论 |
+| --- | --- | ---: | ---: | --- |
+| `zmHdBv` | Suite 前台 Agent → 子 Bash | 888.131 | 779.337 | 观察器测试；事后比对门槛失败 |
+| `KHWw6O` | 相同前台工作负载，全新进程 | 188.750 | 40.660 | 锁定门槛失败 |
+| `ewiJgE` | Code Mode → 前台 Agent → 子 Code Mode/Bash，带旧 Ledger | 194.857 | 97.208 | 锁定门槛失败 |
+| `JN8MPG` | Suite Bash，无 Agent 或旧 Ledger | 111.590 | 15.067 | 锁定门槛全部通过 |
+
+这些样本缩小了调查范围，但尚未确定新停顿的根因，也没有认证所有 Agent 生命周期。
+普通 Bash 对照缺少子进程负载，不能单独区分父进程启动开销与资源争用。诊断样本 `hQfUTb` 开启 CPU
+profiling，完成两个顺序前台 Agent；它不是响应验收样本。父、子 profile 分开。
+父进程样本包含启动阶段的 tokenizer 初始化，但这不能证明它导致 Agent UI 前的停顿。
+观察器也保留自身时间原点和首个 Agent 行的时间，供后续诊断对照。
+
+沿用前述隔离网络设置复现前台场景：
+
+```bash
+unshare --user --map-root-user --net \
+  bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --agent foreground \
+  --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
+```
