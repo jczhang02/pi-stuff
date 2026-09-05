@@ -7,7 +7,7 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
 
 - Before changing code, read `CONTEXT.md`, the relevant accepted ADRs, and `docs/compatibility.md`.
 - Before quality, refactoring, fork-integration, or source-reduction work, also read `docs/code-quality.md`.
-- For visible surfaces, also read `DESIGN.md` and the owning Module README or ADR. For work items, read
+- For visible surfaces, also read `DESIGN.md` and the owning Module README or ADR. For work items, including delivery or closure through any skill, read
   `docs/agents/issue-tracker.md`.
 - Use the glossary's canonical terms. Record durable terminology or architecture decisions in `CONTEXT.md` or an ADR,
   not only in Session history.
@@ -77,6 +77,9 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
   sensitive Session data into Beads.
 - Never commit credentials, auth, model stores, Sessions, caches, `.env`, machine state, or private absolute paths.
   Installing the Suite remains an explicit maintainer action through `pi install`; Suite code must not install itself.
+
+Before reporting published work complete, require the verified GitHub delivery comment from `bun run beads:publish`,
+with commit/PR references, related Issues, validation, and explicit merge state as defined in the issue-tracker contract.
 
 Beads is the canonical issue tracker; GitHub Issues is its public push-only mirror and external intake. The five
 canonical labels and the single-context domain layout are defined under `docs/agents/`.
