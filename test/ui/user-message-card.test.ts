@@ -135,3 +135,16 @@ test.each([
 test("uses native paragraph classification for leading inline emphasis", () => {
 	expect(content(card("_important_ prompt"))[0]).toBe("  [skill] implement important prompt");
 });
+
+test("keeps native vertical spacing when a Skill prefix precedes a padded Markdown row", () => {
+	for (const prompt of ["hi", "**hi**", "中文🧪"]) {
+		const message = card(prompt, "grill-me");
+		for (const width of [32, 48, 100]) {
+			const rows = message.render(width).map((row) => stripTerminalSequences(row).trimEnd());
+			expect(rows).toEqual(["", `  [skill] grill-me ${prompt.replaceAll("**", "")}`, ""]);
+		}
+		message.setExpanded(true);
+		message.setExpanded(false);
+		expect(message.render(100)).toHaveLength(3);
+	}
+});

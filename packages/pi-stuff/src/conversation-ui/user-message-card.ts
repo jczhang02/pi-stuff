@@ -97,7 +97,7 @@ class PromptContent implements Component {
 		const rows = [...this.markdown.render(width - 2)];
 		if (this.skill) {
 			const label = this.style.quote(`[skill] ${sanitizeOneLine(this.skill.name)}`);
-			const first = this.firstBlock === "paragraph" ? (rows.shift() ?? "") : "";
+			const first = this.firstBlock === "paragraph" ? (rows.shift() ?? "").trimEnd() : "";
 			rows.unshift(...wrapTextWithAnsi(`${label}${first ? ` ${first}` : ""}`, width - 2));
 		}
 		this.cachedWidth = width;
