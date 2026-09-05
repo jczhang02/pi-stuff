@@ -28,6 +28,10 @@ completion, and Tool running timer.
   once per settled Session leaf and model, only while the Host is idle, so Tool and input repaints do not rescan it.
 - Context status progresses from `recovering` to a validated percentage, or `unknown` when the request is aborted.
 - One-line latest-prompt preview and compact Skill labels.
+- User Messages keep their native background and align `` and body text with Tool rows. Skill invocations, including
+  Skill-only input, use one card; native `Ctrl+O` expands instructions after the prompt. The version-bound adapter
+  preserves canonical messages and releases on Session shutdown/reload; exceptional presentation failure keeps native
+  messages, disables further projection for that Session, and reports once through `/diagnostics`.
 - Native-editor input highlighting and slash completion.
 - Host-owned Thinking shown as one latest native Markdown row or the hidden `• thoughts` label, preserving native
   mouse and keyboard visibility controls; plus `chart` or `tree` Markdown projections.

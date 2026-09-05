@@ -176,6 +176,18 @@ fallbacks, terminal detection, or an icon-mode setting. Separators and truncatio
 Capability identity icon, such as Ponytail's `󱖿`, in its owning Dialog instead of introducing a second visual identity.
 A Dialog redesign does not silently change transcript markers or Tool rendering.
 
+User Messages retain the native full-width `userMessageBg` card, horizontal padding, and vertical whitespace. A single
+`` occupies the Tool marker column; text and wrapped continuation lines align with Tool text at the certified
+`outputPad=1` profile. The marker denotes a Provider Prompt, including automatic user-role submissions. It does not
+assert human authorship. Other Host padding values remain configurable without an added alignment guarantee.
+
+Ordinary prompts and Skill invocations share that card. A recognized Skill appears inline as `[skill] <name>` in a
+quieter semantic color before the prompt, without its own background, frame, title, or expansion hint. Skill-only
+invocations use the same layout. Block Markdown starts below the Skill identity; wrapping preserves native Markdown
+hierarchy and terminal-cell alignment. Native `Ctrl+O` and the Host's current expansion state remain authoritative.
+Expanded instructions follow the prompt under a low-emphasis `Skill instructions` label inside the same card, with no
+duplicate marker or prompt. Live and restored regular/fullscreen TUI share this presentation; HTML remains native.
+
 Thinking stays inside the Host-owned Transcript. When visible, every Host Thinking run occupies one row: `• thoughts: `
 followed by the last terminal row from its current native Markdown rendering. Streaming updates replace that row, and
 the settled run keeps its final row. When hidden, the run becomes `• thoughts`. The label uses the Host `thinkingText`

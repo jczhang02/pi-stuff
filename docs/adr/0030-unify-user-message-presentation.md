@@ -1,0 +1,85 @@
+---
+status: accepted
+---
+
+# Unify User Message presentation inside the native Host
+
+## Context
+
+Pi renders a canonical Skill invocation with an appended prompt as separate Skill and User Message components.
+Conversation UI will present that single submission as one User Message while retaining Pi's Session, message role,
+Provider content, editor history, and native Markdown semantics. This decision records the agreed UI and implementation
+direction; it does not claim an implemented or certified contract.
+
+## Decision
+
+### Agreed presentation
+
+- Ordinary User Messages, Skill invocations with a prompt, and Skill-only invocations use the same full-width
+  `userMessageBg` card, retaining native horizontal padding and vertical whitespace.
+- One `` occupies the Tool Transcript marker column. The prompt and wrapped continuation lines start at the Tool
+  text column, retaining the relative indentation of Markdown lists, code, and quotes. The marker denotes a Provider
+  Prompt, including automatically submitted `role:user` messages, rather than claiming human authorship.
+- A recognized Skill invocation appears as ` [skill] implement <prompt>`. Its inline Skill identity uses a quieter
+  semantic theme color; the prompt keeps ordinary text styling. No separate badge background, title, or card is added.
+- Ordinary paragraphs follow the Skill identity inline. Block Markdown starts on the next line within the card;
+  narrow terminal widths wrap naturally. The prompt remains readable without expanding the Skill.
+- Native `Ctrl+O` controls expansion. Expanded Skill instructions follow the prompt inside the same card under a
+  low-emphasis `Skill instructions` label. Expansion never moves the prompt below the instructions or repeats it.
+  The collapsed row omits the expansion hint. The Host's current expansion state remains authoritative.
+- Live and restored regular/fullscreen TUI share this behavior. Alignment certification covers the existing
+  `outputPad=1` profile; other Host padding values remain configurable without a new alignment guarantee. HTML export
+  retains its native presentation.
+
+### Implementation
+
+Use one version-bound presentation patch owned by Conversation UI at the Host's message insertion seam. Call the
+original method first, then validate only the components added by that call. Build the replacement completely before
+atomically replacing the matched components, retaining the original outer message spacing. Never remove an unchecked
+number of trailing children or scan the complete Transcript on each message.
+
+Use Pi's Skill parser and native User Message/Markdown components. Prefer a User Message subclass that preserves
+native card geometry, terminal message markers, theme invalidation, and output-padding updates, while exposing native
+`setExpanded()` behavior. Do not reproduce Markdown parsing, recognize arbitrary Skill mentions, or introduce a
+parallel custom-message stream. The exact composition must first pass real-Host verification; inheritance alone is
+not evidence that those behaviors survive.
+
+Install only for TUI through the existing Session presentation lifecycle, following the ownership and idempotent
+release pattern used by Thinking. Session switches, shutdown, and `/reload` release the patch. Restore the original
+method only while the adapter still owns the patched method. Do not claim compatibility with another extension that
+modifies the same private seam.
+
+### Reliability and failure policy
+
+The target is reliable operation on the exact Host certified in `docs/compatibility.md`, currently Pi 0.85.0.
+Existing executable certification remains authoritative; a matching version string alone does not establish support.
+Validate required Host methods and component contracts before enabling the adapter. Initialization incompatibility
+must propagate rather than leave a partially loaded Suite.
+
+If a presentation-specific structural or rendering failure occurs during work, preserve the native representation,
+disable further User Message projection for that Session, and report once through the existing diagnostic channel.
+Do not interrupt the Agent or rewrite previously successful messages. An explicit `/reload` may attempt installation
+again. Recovery must cover failures after insertion as well as replacement construction; it must not swallow errors
+from the original Host method or turn a failure into an empty message.
+
+Fallback is exceptional containment, not supported behavior for a normal input. Any unexpected fallback in a certified
+acceptance scenario blocks completion. Deliberately injected incompatibility tests must prove safe recovery separately.
+
+### Evidence required before implementation completion
+
+Verify the actual shared Host class identity and insertion seam in the certified executable before expanding the
+implementation. Cover ordinary, Skill-plus-prompt, and Skill-only messages; block Markdown, CJK/emoji, long prompts,
+narrow widths, light/dark themes, expansion, theme/padding changes, replay, Session switching, and `/reload`. Confirm
+that canonical Session content and Provider messages are unchanged, retained prompt placement is stable on expansion,
+and repeated installation/release does not accumulate wrappers or stale Session ownership.
+
+Reuse focused component tests and the real-Host PTY harness. Mock-only evidence cannot certify this private Host seam.
+Run the required repository checks and independent completion reviews against the final implementation.
+
+## Consequences
+
+The public Markdown transformer cannot remove the Host's separate Skill component and spacer. Copying the full Host
+message branch would duplicate history and layout behavior; rewriting canonical messages would change semantics for
+a display concern. A narrow patch avoids both costs but requires recertification whenever the Host changes. ADR 0001 permits
+this limited presentation exception. `DESIGN.md` and the owning Conversation UI documentation define the visual
+contract and retain their Chinese mirrors.

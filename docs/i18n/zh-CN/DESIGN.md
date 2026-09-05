@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: f1546ef81e85495ea8bf6eaab517afed370bba47de646781b9931e5e5353efe6 -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: e1795bfa4f369d11b3c789d40a11c66c9349c3f08d2cfaa7d268ca9580d1217d -->
 
 ---
 version: alpha
@@ -167,6 +167,16 @@ Statusline 只使用 Nerd Font。固定语法依次为：`󱙺` model、`` Th
 设置。`·`、`…` 等分隔和截断符号只是标点，不是语义图标。Capability 的身份图标（如 Ponytail 的 `󱖿`）
 应在它自己的 Dialog 中复用，而不是另造第二个视觉身份。重做 Dialog 时，不能顺手改变 Transcript 标记或
 Tool 渲染。
+
+User Message 保留原生全宽 `userMessageBg` 卡片、横向内边距和上下留白。单个 `` 位于 Tool 标记列；
+在认证的 `outputPad=1` 配置下，正文和折行续行与 Tool 正文对齐。标记表示 Provider Prompt，包括自动提交的
+用户角色消息，不声明由人类输入。其他 Host 内边距仍可设置，但不新增对齐保证。
+
+普通 prompt 和 Skill invocation 共用这张卡片。Host 识别的 Skill 在 prompt 前以较弱的主题语义色显示为
+`[skill] <name>`，没有独立背景、边框、标题或展开提示。纯 Skill 使用相同布局。块级 Markdown 在 Skill 标识
+下方开始；换行保留原生 Markdown 层级和终端单元格对齐。原生 `Ctrl+O` 与 Host 当前展开状态保持权威。
+展开的 instructions 位于同一卡片的 prompt 后面，使用低强调的 `Skill instructions` 标签，不重复标记或
+prompt。实时及恢复后的 regular/fullscreen TUI 共用此呈现；HTML 保持原生行为。
 
 Thinking 始终位于 Host 拥有的 Transcript 内。显示时，每个 Host Thinking run 只占一行：`• thoughts: `
 后面接当前原生 Markdown 渲染的最后一条终端行。流式更新会替换这一行，run 结束后则保留最终行。隐藏时，

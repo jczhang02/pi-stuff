@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 1a296708281a9708b6d8e729330731a5d5eabe4c1a2bf6c8e3f1edbc5040dd23 -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 5e414bbb013908f5b019dd0d275815702061185fcd2f203b5da86c41bfca0b92 -->
 
 # Conversation UI
 
@@ -33,6 +33,10 @@ Pi Stuff 面向 conversation、编辑器、Statusline、Welcome header 与聚焦
   可见性控制；并支持 `chart` 或 `tree` Markdown 投影。
 - 关闭后恢复编辑器草稿的全宽 Command Dialog。
 - 通过 `/diagnostics` 查看有界 Suite 诊断。
+
+User Message 保留原生背景，`` 与正文分别对齐 Tool 行。Skill invocation（包括纯 Skill 输入）共用一张
+卡片；原生 `Ctrl+O` 在 prompt 后展开 instructions。版本约束适配器保留规范消息，并在 Session 关闭或
+reload 时释放。异常展示故障保留原生消息、停用该 Session 后续 projection，并通过 `/diagnostics` 报告一次。
 
 ## 文档
 

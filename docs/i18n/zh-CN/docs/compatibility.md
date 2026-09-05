@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 30d34984d8d7ef62b692055edbf58ffcff6d7514b58f913dddcb2dfe2c0fa1b4 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: b7f2cbf72e9748a2c31eea0b6bda30e362b017a186ead4155dbed23263e5a461 -->
 
 # 兼容性
 
@@ -53,6 +53,10 @@ Pi core import 保持 wildcard peer dependency，因为它们由 Host 提供。�
 依赖补齐精确的 `@earendil-works/pi-server@0.85.0`；Knip 中的单项声明记录了这条由 SDK 拥有的运行时导入。
 SDK 源码和 standalone Host 均不打补丁，已安装的 Suite 也不增加该依赖。后续认证 SDK 正确声明依赖后移除
 这一临时处理。
+
+User Message 呈现适配 Pi 0.85.0 的原生消息插入和重放方法，保留原生卡片与 Markdown 组件。精确的 standalone
+Host 必须通过 Skill＋prompt、纯 Skill、`Ctrl+O`、resize、重放和 reload 验收。结构预检和运行时异常保护保留
+原生消息；正常认证输入发生回退不能算通过。Tool 对齐认证限于 `outputPad=1`；其他值仍可设置。
 
 Pi 0.85.0 将 Thinking 内容放在原生可点击 `MouseRegion` 内。经过版本校验的 Thinking 适配器只投影该容器的
 子组件，保留 Host 的可见性回调和点击路由。真实 Host PTY 验收覆盖鼠标与键盘展开/收起、最新行呈现，以及
