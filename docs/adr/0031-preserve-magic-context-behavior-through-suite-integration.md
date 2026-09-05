@@ -47,10 +47,22 @@ each step makes measurable progress and compressible history remains. All steps 
 No progress ends recovery. If the subsequent Provider retry also overflows, preserve work and stop; do not add another
 foreground retry loop or bypass Pi's consecutive-overflow guard.
 
+## Confirmed recovery budget and input behavior
+
+One recovery phase has a ten-minute total deadline and permits at most one automatic Worker restart. Compression
+steps, transient-failure retries, backoff, and completion verification consume that same deadline; no step resets it.
+Lack of progress stops recovery earlier. The deadline excludes the normal Provider response after recovery succeeds.
+The phase boundaries and cancellation behavior must be validated at the real Host seam.
+
+Ordinary input submitted during recovery follows Pi's existing compaction queue behavior rather than automatically
+interrupting recovery. Explicit cancellation stops recovery. Pi retains responsibility for subsequent queue delivery;
+Pi Stuff must neither clear queued input on recovery failure nor duplicate or automatically resubmit it to restart the
+failed work. Persisted completed work and accepted input remain intact.
+
 ## Open decisions
 
-The interview still needs to settle budget values and accounting, progress measurement, cancellation and queued input
-behavior, and recovery presentation. The confirmed recovery boundaries still require feasibility validation against
+The interview still needs to settle request admission, progress measurement, detailed cancellation boundaries, and recovery
+presentation. The confirmed recovery boundaries still require feasibility validation against
 actual Pi and Magic capabilities before implementation is accepted.
 
 This proposal would replace incompatible fallback and estimate-only rejection policies in

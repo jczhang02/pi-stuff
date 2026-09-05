@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0031-preserve-magic-context-behavior-through-suite-integration.md; translation-source-sha256: 7bd5a7b92cbb29273fe6271ebf7f53fe7018cf6890a9632c04a187df3f9a725c -->
+<!-- translation-source: docs/adr/0031-preserve-magic-context-behavior-through-suite-integration.md; translation-source-sha256: cb360f843de3ac842beef1429687aa13e65fc2decac445512551ced4ea224e07 -->
 
 ---
 status: proposed
@@ -40,9 +40,19 @@ Worker 失败后可以自动重启，并从已持久化的 Pi Session 和 Magic 
 且仍有可压缩历史。所有步骤共享一个有限恢复预算。没有进展则结束恢复。如果随后的 Provider 重试仍然超限，
 必须保留现场并停止，不另建前台重试循环，也不绕过 Pi 对连续超限的限制。
 
+## 已确认恢复预算与输入行为
+
+一次恢复阶段共享十分钟总期限，最多允许自动重启一次 Worker。压缩步骤、暂时故障重试、退避等待和完成状态
+核对均消耗同一期限，进入新步骤不能重新计时。没有进展则提前停止。期限不包括恢复成功后的正常 Provider 回答。
+阶段边界与取消行为必须在真实 Host 接口上验证。
+
+恢复期间提交的普通输入沿用 Pi 的压缩排队行为，不自动打断恢复。明确取消会停止恢复。后续队列投递仍由 Pi
+负责；恢复失败时，Pi Stuff 不得清空排队输入，也不得重复或自动重新提交输入来重启失败的工作。
+已经持久化的完成结果和已接受输入必须保留。
+
 ## 待决事项
 
-讨论仍需确定预算数值与计数方式、进展测量、取消与排队输入行为，以及恢复过程的显示。接受实现之前，
+讨论仍需确定请求放行、进展测量、具体取消边界，以及恢复过程的显示。接受实现之前，
 仍须根据 Pi 和 Magic 的实际能力验证已确认恢复边界的可行性。
 
 本提案拟替换 [ADR 0026](0026-bound-context-managed-provider-requests.md) 中不兼容的兜底和仅凭估计拦截策略。
