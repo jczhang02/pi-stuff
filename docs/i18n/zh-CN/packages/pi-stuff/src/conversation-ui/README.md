@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 5e414bbb013908f5b019dd0d275815702061185fcd2f203b5da86c41bfca0b92 -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 17fb3f0e769fda2d5911c2d1dc0360b38023598f6da241118634b0ceb299d570 -->
 
 # Conversation UI
 
@@ -28,7 +28,8 @@ Pi Stuff 面向 conversation、编辑器、Statusline、Welcome header 与聚焦
   leaf 与 model 的 context usage 只在 Host idle 时读取一次，因此 Tool 与输入 repaint 不会重新扫描它。
 - Context 状态从 `recovering` 进入经验证的百分比；请求中止时显示 `unknown`。
 - 单行 latest-prompt 预览与紧凑 Skill 标签。
-- 原生编辑器输入高亮与 slash 补全。
+- 原生编辑器输入高亮与 slash 补全；Pi 的 spinner 与运行提示只在顶部边框出现一次。Pi 负责 thinking 等级配色、
+  裁剪、动画与清理，弹窗和 reload 保留编辑器行为。
 - Host 拥有的 Thinking，显示为最新一条原生 Markdown 终端行或隐藏态 `• thoughts` 标签，保留原生鼠标和键盘
   可见性控制；并支持 `chart` 或 `tree` Markdown 投影。
 - 关闭后恢复编辑器草稿的全宽 Command Dialog。

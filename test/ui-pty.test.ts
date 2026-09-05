@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { resolve } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import * as flow from "../scripts/ui-pty-interactions.ts";
+import * as pty from "../scripts/ui-pty-session.ts";
 import { verifyUiPty } from "../scripts/verify-ui-pty.ts";
 
 const { PI_BIN = "/opt/bin/pi" } = process.env;
@@ -29,3 +33,65 @@ test("real Pi renders and restores the integrated production UI at all accepted 
 		expect(evidence.verified).toContain(required);
 	}
 }, 120_000);
+
+const WORKING_SPINNER = /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/u;
+
+async function expectEmbeddedStatus(session: pty.TmuxPiSession, columns: number): Promise<void> {
+	const screen = await session.waitFor((value) => WORKING_SPINNER.test(value), "running indicator");
+	const indicators = screen.split("\n").filter((line) => WORKING_SPINNER.test(line));
+	expect(indicators).toHaveLength(1);
+	expect(indicators[0]).toMatch(/^── [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] .+─$/u);
+	flow.verifyTerminalWidth(screen, columns, "embedded working status");
+}
+
+for (const tuiMode of ["regular", "fullscreen"] as const) {
+	for (const theme of ["dark", "light"] as const) {
+		test(`real Pi keeps embedded working status through resize, dialogs, cancellation and reload: ${tuiMode}/${theme}`, async () => {
+			const directory = await mkdtemp(join(tmpdir(), "pi-embedded-status-"));
+			const paths = await pty.createCase(directory, "status", theme, AGGREGATE_PACKAGE);
+			const session = new pty.TmuxPiSession(
+				paths,
+				{ piBinary: PI_BIN, packagePath: AGGREGATE_PACKAGE, tuiMode },
+				100,
+				32,
+			);
+			try {
+				await session.start();
+				await session.waitForStatusline();
+				expect(await flow.verifyVibeLineSpinnerLiveness(session)).toBeLessThanOrEqual(500);
+				await session.waitFor((screen) => !WORKING_SPINNER.test(screen), "idle editor after completion");
+				session.sendLiteral("THOUGHT_PROBE_EMBEDDED");
+				session.sendKey("Enter");
+				await expectEmbeddedStatus(session, 100);
+				session.sendLiteral("UNSENT_DRAFT");
+				session.sendKey("F12");
+				const dialog = await session.waitForText("DRAFT_SURFACE");
+				expect(WORKING_SPINNER.test(dialog)).toBeFalse();
+				session.sendKey("Escape");
+				await session.waitForAbsence("DRAFT_SURFACE");
+				await session.waitForText("UNSENT_DRAFT");
+				await expectEmbeddedStatus(session, 100);
+				session.resize(24, 16);
+				await expectEmbeddedStatus(session, 24);
+				session.resize(100, 32);
+				await expectEmbeddedStatus(session, 100);
+				session.sendKey("Escape");
+				await session.waitFor((screen) => !WORKING_SPINNER.test(screen), "idle editor after cancellation");
+				expect(session.capture()).toContain("UNSENT_DRAFT");
+				session.sendKey("C-u");
+				session.sendLiteral("/reload");
+				session.sendKey("Enter");
+				await flow.waitForFixtureRecords(paths.log, "inventory", 2);
+				await session.waitForStatusline();
+				session.sendLiteral("THOUGHT_PROBE_AFTER_RELOAD");
+				session.sendKey("Enter");
+				await expectEmbeddedStatus(session, 100);
+				await session.waitForText("THOUGHT_DONE_AFTER_RELOAD");
+				await session.waitFor((screen) => !WORKING_SPINNER.test(screen), "idle editor after reload and completion");
+			} finally {
+				session.stop();
+				await rm(directory, { force: true, recursive: true });
+			}
+		}, 60_000);
+	}
+}

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: acbe85fd77627e2c898da0715575216fd2b9ee8aa0de310aac8812d6fea12a31 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 3a6f7beabf7c66a4542902d52d60f9d80752c265e26e053f9972fc735eb57abb -->
 
 # 兼容性
 
@@ -50,6 +50,10 @@ SDK 源码和 standalone Host 均不打补丁，已安装的 Suite 也不增加�
 User Message 呈现适配 Pi 0.85.0 的原生消息插入和重放方法，保留原生卡片与 Markdown 组件。
 行内 Skill 放置观察卡片实例的原生 Markdown token renderer，不使用第二套解析器。精确的 standalone Host 必须通过 Skill＋prompt、纯 Skill、`Ctrl+O`、resize、重放和 reload 验收。结构预检和运行时异常保护保留
 原生消息；正常认证输入发生回退不能算通过。Tool 对齐认证限于 `outputPad=1`；其他值仍可设置。
+
+输入增强编辑器暴露 Pi 0.85.0 的原生内嵌运行状态能力。Host spinner 与运行提示使用顶部边框和原生 thinking
+等级配色，不再重复显示独立运行行。真实 Host PTY 覆盖普通／全屏、深色／浅色、窄窗口缩放、弹窗恢复、取消、
+reload、完成，以及既有的 500 ms Vibe Line Spinner 活性限制。
 
 Pi 0.85.0 将 Thinking 内容放在原生可点击 `MouseRegion` 内。经过版本校验的 Thinking 适配器只投影该容器的
 子组件，保留 Host 的可见性回调和点击路由。真实 Host PTY 验收覆盖鼠标与键盘展开/收起、最新行呈现，以及

@@ -58,6 +58,11 @@ The exact standalone Host must pass Skill-plus-prompt and Skill-only rendering, 
 and reload acceptance. Structural preflight and runtime containment protect native messages; fallback is not a passing
 result for normal certified inputs. Tool alignment is certified at `outputPad=1`; other values remain configurable.
 
+The input-enhancement editor exposes Pi 0.85.0's native embedded working-status capability. The Host spinner and
+working message use the editor's top border and native thinking-level colors, with no duplicate working row. Real-Host
+PTY coverage checks regular/fullscreen and dark/light presentation, narrow resize, dialog restoration, cancellation,
+reload, completion, and the existing 500 ms Vibe Line Spinner liveness limit.
+
 Pi 0.85.0 wraps Thinking content in a native clickable `MouseRegion`. The version-checked Thinking adapter projects
 only that region's child, retaining the Host's visibility callback and click routing. Real-Host PTY acceptance covers
 both mouse and keyboard collapse/expand, latest-row rendering, and unchanged canonical Session content.
