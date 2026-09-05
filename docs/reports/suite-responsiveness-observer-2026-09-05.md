@@ -15,6 +15,12 @@ private configuration/cache directories, one measured Tool call, and no profiler
 exercised automatic Session Naming and one real HTTP usage refresh against a synthetic loopback account in an
 isolated network namespace. No user Sessions, credentials, settings, or running Pi processes were used.
 
+All native-parent samples (`suite: false` in the numeric evidence) use `PI_OFFLINE=1` and `--offline` with a
+deterministic Provider. They exclude automatic Session Naming and usage refresh and cannot certify either path.
+Suite parents use `PI_OFFLINE=0` without `--offline`; their Naming/Usage evidence comes from the synthetic requests
+recorded for those runs, not from live account access. Ledger preparation is a separate offline process outside
+the measured interaction and resource scope, regardless of whether the measured parent loads the Suite.
+
 | Run | History and execution | Longest Spinner frame ms | Slowest input/setup ms | Slowest selection ms | Result |
 | --- | --- | ---: | ---: | ---: | --- |
 | `gjIpTt` | Suite, 24 historical executions, Code Mode → Bash | 198.672 | 39.360 | 14.410 | Spinner gate failed |
@@ -277,3 +283,60 @@ These are pre-optimization measurements. The Code Mode pair changes only the old
 establish how much CPU is redundant. Charged memory is still not RSS or allocation, and shutdown is outside the counter
 boundary. The cold Ledger still fails the locked responsiveness gates. Full resource dimensions, repeated workloads
 and the remaining Capability/recovery paths stay open in `ps-yon.3`.
+
+## Process RSS and I/O snapshots
+
+`--resource-scope` now also records each live direct cgroup member's `/proc/<pid>/io` and `smaps_rollup` RSS after
+the interaction observation ends. [HostResourceScope](../../scripts/host-resource-scope.ts) owns the native launch,
+counter reads and teardown. The UI observer no longer owns bus commands or kernel-counter parsing. Its size changed
+from 785 to 713 lines; the resource owner has 138 lines. The extra source provides I/O/RSS collection and validation.
+
+Each record is bound to a process birth identity checked before and after its reads. Scope membership must match
+before and after the collection, every recorded PID must belong to that scope, and missing or malformed counters
+fail the run. `rssSnapshotBytes` sums the recorded RSS values; it is a post-settlement snapshot, not simultaneous
+aggregate peak RSS. The read interval remains explicit, and no periodic resource poll was added to the capture loop.
+
+Linux reports process I/O together with waited-for children; the process record also includes its threads. `rchar` and
+`wchar` are read/write byte counters, including non-storage I/O, while `syscr` and `syscw` count calls. Storage counters
+are `read_bytes`, `write_bytes` and `cancelled_write_bytes`; they are kept separately. See
+[proc I/O semantics](https://man7.org/linux/man-pages/man5/proc_pid_io.5.html) and the
+[thread-group reader](https://github.com/torvalds/linux/blob/v6.19/fs/proc/base.c#L2855-L2914).
+A separate repository-Bun/Linux probe read and wrote 1,048,576 bytes in a child, then waited for it. The parent's
+`rchar`, `wchar`, `syscr` and `syscw` deltas each included the child's recorded counters. This checks the OS accounting
+rule; the exact Pi samples below exercise the real Host boundary.
+
+| Run | Workload | Live processes | RSS snapshot MB | Sum of rchar / wchar MB | Spinner ms | Input/setup ms | Disposition |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `2FkYA6` | Native Bash | 1 | 154.579 | 0.746 / 0.147 | 117.865 | 16.403 | Resource integration check; no `--gates` |
+| `ajuSTf` | Context through Code Mode | 2 | 621.543 | 53.158 / 24.712 | 117.425 | 25.963 | Frozen gates passed |
+| `BDfa4J` | Same Context workload, old Ledger | 2 | 665.633 | 72.228 / 24.410 | 356.042 | 97.789 | Spinner and input gates failed |
+| `VK9AFF` | Foreground Agent → child Bash | 1 | 634.978 | 162.115 / 26.622 | 865.904 | 586.320 | Spinner and input gates failed |
+
+The rows ran sequentially on the same final source based on `9d892c4b`, with fresh private directories, PID/network
+isolation, the fixed Host and 120×40 geometry. The Context pair completed three native projections, one retrieval,
+Naming and Usage. It includes the still-running Code Mode helper's separate counters. The Agent completed its child
+Tool and verified the child's birth-bound exit; its custom Provider does not certify the native Context payload hook.
+All captures were complete, maximum gaps were below 26 ms, and all four scopes were verified unloaded. The
+[numeric evidence](suite-responsiveness-observer-2026-09-05.json) retains per-process counters and source hashes.
+
+The public CLI check below failed with missing process records before this change and passes afterward. Keep pipe
+failure propagation so a producer failure cannot become a passing consumer assertion:
+
+```bash
+set -o pipefail
+unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc \
+  setsid sh -c '"$@"; exit $?' psyon-pid-init \
+  bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --resource-scope |
+  bun -e 'import assert from "node:assert/strict";
+    const {resourceScope: s} = await Bun.stdin.json();
+    assert(Array.isArray(s.processes) && s.processes.length > 0);
+    assert(s.processes.every(p => p.rssBytes > 0));
+    assert(s.processes.some(p => p.io.rchar > 0 && p.io.wchar > 0));'
+```
+
+The table sums recorded process I/O, not an atomic or universally complete process-tree total. Unwaited/reparented
+descendants and unenumerated nested cgroups can omit I/O; these records cannot certify those cases. Peak process-tree
+RSS, allocation/GC, wakeups and complete per-owner workload attribution remain open. In particular, the fixed
+[Bun 1.3.14 V8 compatibility implementation](https://github.com/oven-sh/bun/blob/bun-v1.3.14/src/js/node/v8.ts#L54-L79)
+has no cumulative `total_allocated_bytes` and supplies placeholders for several V8-shaped fields. It is not a solution
+to the allocation gap. No production work was optimized in this checkpoint.

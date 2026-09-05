@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: a13f8fe8d5cd6ff3aa6eb46fdce3c57dd6bddf87f97b246dd88d48c116bb5d33 -->
+<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 2e18b22ad81031a367d91eff92ad433a1b7e10d9e9df56d3524744b890e551d3 -->
 
 # 连续响应观察器与 Ledger 首次加载复现
 
@@ -16,6 +16,11 @@
 目录，以及一次被测 Tool 调用。没有 profiler 或人为阻塞。Suite 样本在隔离网络命名空间中，使用合成的
 回环账户，执行了自动 Session Naming 和一次真实 HTTP 用量刷新。没有读取用户 Session、凭据、设置，
 也没有操作正在使用的 Pi 进程。
+
+所有原生父进程样本（数值证据中的 `suite: false`）都使用 `PI_OFFLINE=1`、`--offline` 和确定性 Provider。
+这些样本排除了自动 Session Naming 和用量刷新，不能认证这两条路径。Suite 父进程使用 `PI_OFFLINE=0`，
+不传 `--offline`；其 Naming／Usage 证据来自样本记录的合成请求，不是真实账户访问。Ledger 准备阶段是
+另一个离线进程，无论被测父进程是否加载 Suite，都位于交互测量与资源 scope 之外。
 
 | 样本 | 历史与执行方式 | 最长 Spinner 帧 ms | 最慢输入/补全准备 ms | 最慢选择 ms | 结果 |
 | --- | --- | ---: | ---: | ---: | --- |
@@ -257,3 +262,56 @@ Pi 环境、PID/网络隔离、数据库迁移保护、被统计的进程树和�
 这些都是优化前的测量。Code Mode 配对只改变旧 Ledger 种子；单次配对不能确定多少 CPU 属于重复工作。
 记账内存仍不是 RSS 或分配量，关闭阶段也不在计数边界内。冷 Ledger 仍未通过锁定响应门槛。完整资源维度、
 重复工作负载、其余 Capability/恢复路径仍由 `ps-yon.3` 跟进。
+
+## 进程 RSS 与 I/O 快照
+
+`--resource-scope` 现在还会在交互观察结束后，记录 cgroup 当前直接成员各自的 `/proc/<pid>/io` 和
+`smaps_rollup` RSS。[HostResourceScope](../../../../../scripts/host-resource-scope.ts) 统一负责原生启动、
+计数读取和清理。UI 观察器不再负责 bus 命令或内核计数解析，文件从 785 行缩减为 713 行；资源所有者为
+138 行。新增源码用于采集和校验 I/O、RSS。
+
+每条记录均绑定进程出生身份，并在读取前后核验。采集前后的 scope 成员必须相同，每个记录的 PID 必须
+属于该 scope；计数缺失或格式错误直接使运行失败。`rssSnapshotBytes` 是所记录 RSS 的和，表示收尾后的
+快照，不是同时发生的进程树 RSS 峰值。读取区间仍明确保留，采样循环没有新增周期性资源轮询。
+
+Linux 的进程 I/O 包含已经等待回收的子进程，进程记录也包含其线程。`rchar`、`wchar` 是包含非存储 I/O
+在内的读写字节计数，`syscr`、`syscw` 是调用次数。存储相关计数为 `read_bytes`、`write_bytes` 和
+`cancelled_write_bytes`，分别保留。参见[proc I/O 语义](https://man7.org/linux/man-pages/man5/proc_pid_io.5.html)
+和[线程组读取实现](https://github.com/torvalds/linux/blob/v6.19/fs/proc/base.c#L2855-L2914)。独立的仓库 Bun/Linux
+探针让子进程读写 1,048,576 字节，再等待它退出。父进程的 `rchar`、`wchar`、`syscr`、`syscw` 增量均包含
+子进程记录的计数。这验证操作系统记账规则；下面的固定 Pi 样本验证真实 Host 接口。
+
+| 样本 | 工作负载 | 存活进程 | RSS 快照 MB | rchar / wchar 求和 MB | Spinner ms | 输入/补全准备 ms | 结论 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `2FkYA6` | 原生 Bash | 1 | 154.579 | 0.746 / 0.147 | 117.865 | 16.403 | 资源接入检查，未传 `--gates` |
+| `ajuSTf` | Code Mode 调用 Context | 2 | 621.543 | 53.158 / 24.712 | 117.425 | 25.963 | 锁定门槛通过 |
+| `BDfa4J` | 相同 Context 工作负载，带旧 Ledger | 2 | 665.633 | 72.228 / 24.410 | 356.042 | 97.789 | Spinner、输入失败 |
+| `VK9AFF` | 前台 Agent → 子 Bash | 1 | 634.978 | 162.115 / 26.622 | 865.904 | 586.320 | Spinner、输入失败 |
+
+这些样本按顺序运行，均使用基于 `9d892c4b` 的同一最终源码、全新私有目录、PID/网络隔离、固定 Host 和
+120×40 尺寸。Context 配对均完成三次原生投影、一次检索、命名和用量刷新，并记录仍存活的 Code Mode
+辅助进程的独立计数。Agent 完成子 Tool，核验子进程与出生身份绑定的退出；它的自定义 Provider 不认证
+原生 Context payload 钩子。采集均完整，最大间隙低于 26 ms，四个 scope 均已核验卸载。
+[数值证据](../../../../../docs/reports/suite-responsiveness-observer-2026-09-05.json)保留逐进程计数和源码哈希。
+
+下面的公开 CLI 检查在改动前因缺少进程记录而失败，改动后通过。保留管道失败传播，避免生产端失败却被
+消费端断言算成通过：
+
+```bash
+set -o pipefail
+unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc \
+  setsid sh -c '"$@"; exit $?' psyon-pid-init \
+  bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --resource-scope |
+  bun -e 'import assert from "node:assert/strict";
+    const {resourceScope: s} = await Bun.stdin.json();
+    assert(Array.isArray(s.processes) && s.processes.length > 0);
+    assert(s.processes.every(p => p.rssBytes > 0));
+    assert(s.processes.some(p => p.io.rchar > 0 && p.io.wchar > 0));'
+```
+
+表格只对记录的进程 I/O 求和，不是原子快照，也不是任意进程树的完整累计总量。未等待回收、重新托管的
+后代进程，以及未枚举的嵌套 cgroup 可能遗漏 I/O，这些记录不能认证那些情况。进程树 RSS 峰值、分配/GC、
+唤醒和完整的逐所有者工作负载归因仍待完成。固定的
+[Bun 1.3.14 V8 兼容实现](https://github.com/oven-sh/bun/blob/bun-v1.3.14/src/js/node/v8.ts#L54-L79)
+没有累计 `total_allocated_bytes`，且若干 V8 形状的字段只是占位值，不能据此补齐分配量缺口。
+本次检查点没有优化生产代码。

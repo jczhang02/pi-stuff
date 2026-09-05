@@ -13,6 +13,7 @@ import {
 	probeProcessLiveness,
 } from "../packages/pi-stuff/src/subagents/src/shared/process-identity.js";
 import { respondToContextRequest } from "../test/fixtures/responsiveness-provider.js";
+import { HostResourceScope } from "./host-resource-scope.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_RELEASE_BINARY_SHA256 } from "./pi-host-contract.js";
 import { type PtyObservation, summarizePtyObservations } from "./pty-observation.js";
 import { armUiPtyOwnerWatchdog, disarmUiPtyOwnerWatchdog, type UiPtyOwnerWatchdog } from "./ui-pty-owner-watchdog.js";
@@ -95,54 +96,9 @@ const PROVIDER_LOG_SCHEMA = Type.Array(
 	}),
 );
 const directory = await mkdtemp(join(tmpdir(), "pi-stuff-responsiveness-"));
-const resourceScope = values["resource-scope"] ? `ps-yon-${basename(directory)}.scope` : undefined;
-// Use the session bus: the manager's private socket rejects its invisible peer PID in a PID namespace.
-const systemctlCommand = ["env", "-u", "XDG_RUNTIME_DIR", "systemctl", "--user"];
-
-const systemctl = (...args: string[]): string => {
-	assert(resourceScope);
-	const result = Bun.spawnSync([...systemctlCommand, ...args, resourceScope], { timeout: 10_000 });
-	assert.equal(result.exitCode, 0, result.stderr.toString());
-	return result.stdout.toString().trim();
-};
-
-async function readResourceScope(parentPid: number) {
-	if (!resourceScope) return undefined;
-	const readStartedMs = performance.now();
-	const cgroup = systemctl("show", "--property=ControlGroup", "--value");
-	assert(cgroup.startsWith("/") && cgroup.endsWith(`/${resourceScope}`), "Unexpected resource scope");
-	assert.equal((await readFile(`/proc/${String(parentPid)}/cgroup`, "utf8")).trim(), `0::${cgroup}`);
-	const [cpuText, currentText] = await Promise.all(
-		["cpu.stat", "memory.current"].map((file) => readFile(`/sys/fs/cgroup${cgroup}/${file}`, "utf8")),
-	);
-	// Read the cumulative peak last so growth cannot make it appear lower than the earlier current value.
-	const peakText = await readFile(`/sys/fs/cgroup${cgroup}/memory.peak`, "utf8");
-	assert(cpuText && currentText && peakText, "Resource counters are missing");
-	const cpu = Object.fromEntries(
-		cpuText
-			.trim()
-			.split("\n")
-			.map((line) => {
-				const [key, value] = line.split(" ");
-				return [key, Number(value)];
-			}),
-	);
-	const counter = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
-	assert(Check(Type.Object({ usage_usec: counter, user_usec: counter, system_usec: counter }), cpu));
-	const memoryCurrentChargedBytes = Number(currentText);
-	const memoryPeakChargedBytes = Number(peakText);
-	assert(Check(counter, memoryCurrentChargedBytes) && Check(counter, memoryPeakChargedBytes));
-	assert(cpu.usage_usec > 0 && memoryCurrentChargedBytes > 0 && memoryPeakChargedBytes >= memoryCurrentChargedBytes);
-	return {
-		unit: resourceScope,
-		boundary: "after-observation-before-host-shutdown",
-		readStartedMs,
-		readCompletedMs: performance.now(),
-		cpuUs: { total: cpu.usage_usec, user: cpu.user_usec, system: cpu.system_usec },
-		memoryCurrentChargedBytes,
-		memoryPeakChargedBytes,
-	};
-}
+const resourceScope = values["resource-scope"]
+	? new HostResourceScope(`ps-yon-${basename(directory)}.scope`)
+	: undefined;
 
 async function readBackgroundOutcomes(): Promise<number> {
 	const files = (await readdir(join(directory, "sessions"))).filter((name) => name.endsWith(".jsonl"));
@@ -304,6 +260,7 @@ const source = {
 	snapshots: await Promise.all(
 		[
 			"scripts/benchmark-responsiveness.ts",
+			"scripts/host-resource-scope.ts",
 			"scripts/pty-observation.ts",
 			"test/fixtures/responsiveness-provider.ts",
 			"test/fixtures/faux-provider.ts",
@@ -341,30 +298,9 @@ const command = [
 	join(directory, "sessions"),
 	...(seedSession ? ["--session", seedSession] : []),
 ];
-if (resourceScope) {
-	const busAddress = process.env["DBUS_SESSION_BUS_ADDRESS"];
-	assert(busAddress, "Resource scope requires a configured user session bus");
-	command.unshift(
-		"env",
-		"-u",
-		"XDG_RUNTIME_DIR",
-		`DBUS_SESSION_BUS_ADDRESS=${busAddress}`,
-		"systemd-run",
-		"--user",
-		"--scope",
-		"--quiet",
-		"--collect",
-		"--expand-environment=no",
-		`--unit=${resourceScope}`,
-		"--property=MemoryAccounting=yes",
-		"--property=RuntimeMaxSec=90",
-		// Only the native scope launcher sees the user bus; Pi retains the original isolated environment.
-		"env",
-		"-u",
-		"DBUS_SESSION_BUS_ADDRESS",
-	);
-}
-const shellCommand = command.map((part) => `'${part.replaceAll("'", "'\\''")}'`).join(" ");
+const shellCommand = (resourceScope ? resourceScope.command(command) : command)
+	.map((part) => `'${part.replaceAll("'", "'\\''")}'`)
+	.join(" ");
 let watchdog: UiPtyOwnerWatchdog | undefined;
 const observations: (PtyObservation & { frame: string })[] = [];
 const actions: { kind: string; phase: string; startedMs: number; visibleMs: number }[] = [];
@@ -701,7 +637,7 @@ try {
 			...actions.filter((action) => action.kind === "selection-setup").map((action) => action.visibleMs),
 		),
 		actionCount: actions.length,
-		resourceScope: await readResourceScope(parentResponse.pid),
+		resourceScope: await resourceScope?.read(parentResponse.pid),
 		directory,
 	};
 	console.log(JSON.stringify(summary));
@@ -734,15 +670,7 @@ try {
 		} finally {
 			server?.stop(true);
 			disarmUiPtyOwnerWatchdog(watchdog);
-			if (resourceScope) {
-				// The scope owns only this synthetic Host tree; never stop the caller's service.
-				Bun.spawnSync([...systemctlCommand, "stop", resourceScope], { timeout: 10_000 });
-				assert.equal(
-					systemctl("show", "--property=ActiveState", "--value"),
-					"inactive",
-					"Resource scope remains active",
-				);
-			}
+			resourceScope?.stop();
 		}
 	}
 }

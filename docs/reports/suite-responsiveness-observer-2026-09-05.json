@@ -2,6 +2,25 @@
   "date": "2026-09-05",
   "purpose": "permanent observer validation and pre-optimization cold Ledger reproduction; not resource closure",
   "gates": "suite-responsiveness-gates-2026-09-05.json",
+  "offlineExclusions": {
+    "nativeParent": {
+      "selector": "suite=false in every sample array",
+      "PI_OFFLINE": "1",
+      "offlineFlag": true,
+      "excludedCertification": ["automatic Session Naming", "automatic usage refresh"]
+    },
+    "suiteParent": {
+      "selector": "suite=true in every sample array",
+      "PI_OFFLINE": "0",
+      "offlineFlag": false,
+      "evidence": "Deterministic synthetic Provider and loopback Usage requests; no live account certification"
+    },
+    "ledgerPreparation": {
+      "PI_OFFLINE": "1",
+      "offlineFlag": true,
+      "boundary": "Separate preparation process, outside measured interaction and resource scope"
+    }
+  },
   "sampleOrder": [
     "M76mli",
     "rCjOgQ",
@@ -461,6 +480,396 @@
         "idle": 13.714975999999297
       },
       "disposition": "valid sample, all frozen gates passed"
+    }
+  ],
+  "processResourceSamples": [
+    {
+      "lookup": "2FkYA6",
+      "purpose": "observer-validation",
+      "certification": false,
+      "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+      "seededSession": false,
+      "codeMode": false,
+      "agentRowObserved": false,
+      "backgroundOutcomes": 0,
+      "parentCompletedWhileChildRunning": false,
+      "completedChildTools": 0,
+      "reapedChildProcesses": 0,
+      "requestedToolCount": 1,
+      "contextProjectionRequests": 0,
+      "contextRetrievals": 0,
+      "negativeBlockMs": 0,
+      "negativeBlockPhase": "pre-tool",
+      "automaticUsageRefreshes": 0,
+      "suite": false,
+      "columns": 120,
+      "rows": 40,
+      "captureCount": 906,
+      "durationMs": 11296.251384,
+      "maximumCaptureMs": 6.8192199999994045,
+      "maximumObservationGapMs": 17.941773000000012,
+      "maximumSpinnerAbsenceMs": 0,
+      "maximumSpinnerFrameMs": 117.86489600000004,
+      "spinnerChanges": 123,
+      "activeDurationMs": 10006.651478,
+      "activeCaptureCount": 804,
+      "firstSpinnerMs": 984.333536,
+      "firstReadyMs": 759.02813,
+      "firstEditorMs": 657.297807,
+      "promptToSpinnerMs": 28.803492000000006,
+      "startupInputMs": 672.1749209999999,
+      "settledMs": 11001.278363,
+      "postSettlementObservationMs": 303.5816479999994,
+      "observerCpu": {
+        "user": 256206,
+        "system": 328652
+      },
+      "maximumInputMs": 16.402595999999903,
+      "maximumStartupInputMs": 14.785560000000032,
+      "maximumSteadyInputMs": 16.402595999999903,
+      "maximumSelectionMs": 15.437885000001188,
+      "maximumSelectionSetupMs": 16.10453100000086,
+      "actionCount": 58,
+      "resourceScope": {
+        "unit": "ps-yon-pi-stuff-responsiveness-2FkYA6.scope",
+        "boundary": "after-observation-before-host-shutdown",
+        "readStartedMs": 11909.363306,
+        "readCompletedMs": 11923.144254,
+        "cpuUs": {
+          "total": 2382206,
+          "user": 2008980,
+          "system": 373225
+        },
+        "memoryCurrentChargedBytes": 166916096,
+        "memoryPeakChargedBytes": 196710400,
+        "rssSnapshotBytes": 154578944,
+        "processes": [
+          {
+            "pid": 62,
+            "processStartIdentity": "linux:16668656",
+            "rssBytes": 154578944,
+            "io": {
+              "rchar": 745947,
+              "wchar": 147260,
+              "syscr": 1290,
+              "syscw": 270,
+              "read_bytes": 5801984,
+              "write_bytes": 23050,
+              "cancelled_write_bytes": 0
+            }
+          }
+        ]
+      },
+      "sourceCommit": "9d892c4b5ad5440da91a61aba7c369938548685a",
+      "sourceHashes": {
+        "scripts/benchmark-responsiveness.ts": "b49a8038b04de2a4a287edf8d2852a66d68567e68b72ce414f8d01e96bc0d419",
+        "scripts/host-resource-scope.ts": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee",
+        "scripts/pty-observation.ts": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40",
+        "test/fixtures/responsiveness-provider.ts": "413b780586ccdfead791b47aee8d1d7b07a7bbbd2c79719d3d07602ddd93f2f5",
+        "test/fixtures/faux-provider.ts": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+      },
+      "namingRequests": 0,
+      "wireContextRequests": 0,
+      "disposition": "native public CLI RSS/I/O integration GREEN; no --gates flag"
+    },
+    {
+      "lookup": "ajuSTf",
+      "purpose": "observer-validation",
+      "certification": false,
+      "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+      "seededSession": false,
+      "codeMode": true,
+      "agentRowObserved": false,
+      "backgroundOutcomes": 0,
+      "parentCompletedWhileChildRunning": false,
+      "completedChildTools": 0,
+      "reapedChildProcesses": 0,
+      "codeModeHostSha256": "60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8",
+      "requestedToolCount": 2,
+      "contextProjectionRequests": 3,
+      "contextRetrievals": 1,
+      "negativeBlockMs": 0,
+      "negativeBlockPhase": "pre-tool",
+      "automaticUsageRefreshes": 1,
+      "suite": true,
+      "columns": 120,
+      "rows": 40,
+      "captureCount": 1785,
+      "durationMs": 21658.493129,
+      "maximumCaptureMs": 15.338858000000073,
+      "maximumObservationGapMs": 25.433494000000337,
+      "maximumSpinnerAbsenceMs": 0,
+      "maximumSpinnerFrameMs": 117.4249490000002,
+      "spinnerChanges": 151,
+      "activeDurationMs": 12325.311302999999,
+      "activeCaptureCount": 1026,
+      "firstSpinnerMs": 8857.827553,
+      "firstReadyMs": 7625.103707000001,
+      "firstEditorMs": 7477.234682000001,
+      "promptToSpinnerMs": 1085.3990169999997,
+      "startupInputMs": 7491.317788000001,
+      "settledMs": 21217.152879,
+      "postSettlementObservationMs": 449.16451099999904,
+      "observerCpu": {
+        "user": 465083,
+        "system": 560915
+      },
+      "maximumInputMs": 25.96282600000086,
+      "maximumStartupInputMs": 14.152024000000893,
+      "maximumSteadyInputMs": 25.96282600000086,
+      "maximumSelectionMs": 14.166623000000982,
+      "maximumSelectionSetupMs": 14.146867999999813,
+      "actionCount": 78,
+      "resourceScope": {
+        "unit": "ps-yon-pi-stuff-responsiveness-ajuSTf.scope",
+        "boundary": "after-observation-before-host-shutdown",
+        "readStartedMs": 22441.349098,
+        "readCompletedMs": 22472.019647,
+        "cpuUs": {
+          "total": 16029895,
+          "user": 14474730,
+          "system": 1555164
+        },
+        "memoryCurrentChargedBytes": 640995328,
+        "memoryPeakChargedBytes": 1023778816,
+        "rssSnapshotBytes": 621543424,
+        "processes": [
+          {
+            "pid": 67,
+            "processStartIdentity": "linux:16687608",
+            "rssBytes": 612548608,
+            "io": {
+              "rchar": 52994689,
+              "wchar": 24709415,
+              "syscr": 13671,
+              "syscw": 3534,
+              "read_bytes": 59814400,
+              "write_bytes": 24590538,
+              "cancelled_write_bytes": 0
+            }
+          },
+          {
+            "pid": 1232,
+            "processStartIdentity": "linux:16688904",
+            "rssBytes": 8994816,
+            "io": {
+              "rchar": 163450,
+              "wchar": 2775,
+              "syscr": 18,
+              "syscw": 119,
+              "read_bytes": 19517440,
+              "write_bytes": 0,
+              "cancelled_write_bytes": 0
+            }
+          }
+        ]
+      },
+      "sourceCommit": "9d892c4b5ad5440da91a61aba7c369938548685a",
+      "sourceHashes": {
+        "scripts/benchmark-responsiveness.ts": "b49a8038b04de2a4a287edf8d2852a66d68567e68b72ce414f8d01e96bc0d419",
+        "scripts/host-resource-scope.ts": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee",
+        "scripts/pty-observation.ts": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40",
+        "test/fixtures/responsiveness-provider.ts": "413b780586ccdfead791b47aee8d1d7b07a7bbbd2c79719d3d07602ddd93f2f5",
+        "test/fixtures/faux-provider.ts": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+      },
+      "namingRequests": 1,
+      "wireContextRequests": 3,
+      "disposition": "native Context via Code Mode with live helper RSS/I/O; all frozen gates passed"
+    },
+    {
+      "lookup": "BDfa4J",
+      "purpose": "observer-validation",
+      "certification": false,
+      "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+      "seededSession": true,
+      "codeMode": true,
+      "agentRowObserved": false,
+      "backgroundOutcomes": 0,
+      "parentCompletedWhileChildRunning": false,
+      "completedChildTools": 0,
+      "reapedChildProcesses": 0,
+      "codeModeHostSha256": "60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8",
+      "requestedToolCount": 2,
+      "contextProjectionRequests": 3,
+      "contextRetrievals": 1,
+      "negativeBlockMs": 0,
+      "negativeBlockPhase": "pre-tool",
+      "automaticUsageRefreshes": 1,
+      "suite": true,
+      "columns": 120,
+      "rows": 40,
+      "captureCount": 1878,
+      "durationMs": 24880.679587,
+      "maximumCaptureMs": 12.30936500000098,
+      "maximumObservationGapMs": 22.591749999999593,
+      "maximumSpinnerAbsenceMs": 0,
+      "maximumSpinnerFrameMs": 356.04203300000154,
+      "spinnerChanges": 153,
+      "activeDurationMs": 12778.057575000003,
+      "activeCaptureCount": 955,
+      "firstSpinnerMs": 11781.594317,
+      "firstReadyMs": 10154.493688999999,
+      "firstEditorMs": 9954.669897,
+      "promptToSpinnerMs": 1517.3143010000003,
+      "startupInputMs": 9969.631803,
+      "settledMs": 24570.117065000002,
+      "postSettlementObservationMs": 321.6460589999988,
+      "observerCpu": {
+        "user": 746269,
+        "system": 931921
+      },
+      "maximumInputMs": 97.78931100000045,
+      "maximumStartupInputMs": 16.51942600000075,
+      "maximumSteadyInputMs": 97.78931100000045,
+      "maximumSelectionMs": 16.853296000001137,
+      "maximumSelectionSetupMs": 18.469694999999774,
+      "actionCount": 81,
+      "resourceScope": {
+        "unit": "ps-yon-pi-stuff-responsiveness-BDfa4J.scope",
+        "boundary": "after-observation-before-host-shutdown",
+        "readStartedMs": 26805.514074,
+        "readCompletedMs": 26833.801482,
+        "cpuUs": {
+          "total": 22236831,
+          "user": 20131702,
+          "system": 2105128
+        },
+        "memoryCurrentChargedBytes": 647700480,
+        "memoryPeakChargedBytes": 916463616,
+        "rssSnapshotBytes": 665632768,
+        "processes": [
+          {
+            "pid": 80,
+            "processStartIdentity": "linux:16702469",
+            "rssBytes": 656613376,
+            "io": {
+              "rchar": 72064635,
+              "wchar": 24407017,
+              "syscr": 13808,
+              "syscw": 3546,
+              "read_bytes": 60974592,
+              "write_bytes": 24266812,
+              "cancelled_write_bytes": 0
+            }
+          },
+          {
+            "pid": 1418,
+            "processStartIdentity": "linux:16704085",
+            "rssBytes": 9019392,
+            "io": {
+              "rchar": 163450,
+              "wchar": 2775,
+              "syscr": 18,
+              "syscw": 119,
+              "read_bytes": 22638592,
+              "write_bytes": 0,
+              "cancelled_write_bytes": 0
+            }
+          }
+        ]
+      },
+      "sourceCommit": "9d892c4b5ad5440da91a61aba7c369938548685a",
+      "sourceHashes": {
+        "scripts/benchmark-responsiveness.ts": "b49a8038b04de2a4a287edf8d2852a66d68567e68b72ce414f8d01e96bc0d419",
+        "scripts/host-resource-scope.ts": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee",
+        "scripts/pty-observation.ts": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40",
+        "test/fixtures/responsiveness-provider.ts": "413b780586ccdfead791b47aee8d1d7b07a7bbbd2c79719d3d07602ddd93f2f5",
+        "test/fixtures/faux-provider.ts": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+      },
+      "namingRequests": 1,
+      "wireContextRequests": 3,
+      "disposition": "native Context via Code Mode plus old Ledger; frozen Spinner and input gates failed"
+    },
+    {
+      "lookup": "VK9AFF",
+      "purpose": "observer-validation",
+      "certification": false,
+      "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+      "seededSession": false,
+      "codeMode": false,
+      "agentMode": "foreground",
+      "agentRowObserved": true,
+      "backgroundOutcomes": 0,
+      "parentCompletedWhileChildRunning": false,
+      "firstAgentRowMs": 17200.13343,
+      "completedChildTools": 1,
+      "reapedChildProcesses": 1,
+      "requestedToolCount": 1,
+      "contextProjectionRequests": 0,
+      "contextRetrievals": 0,
+      "negativeBlockMs": 0,
+      "negativeBlockPhase": "pre-tool",
+      "automaticUsageRefreshes": 1,
+      "suite": true,
+      "columns": 120,
+      "rows": 40,
+      "captureCount": 3133,
+      "durationMs": 40816.68414,
+      "maximumCaptureMs": 7.26734999999826,
+      "maximumObservationGapMs": 23.885560999999143,
+      "maximumSpinnerAbsenceMs": 0,
+      "maximumSpinnerFrameMs": 865.9044780000004,
+      "spinnerChanges": 323,
+      "activeDurationMs": 27167.933691,
+      "activeCaptureCount": 2093,
+      "firstSpinnerMs": 13117.153695,
+      "firstReadyMs": 11430.809975,
+      "firstEditorMs": 11259.606372,
+      "promptToSpinnerMs": 1517.7007900000008,
+      "startupInputMs": 11288.150957,
+      "settledMs": 40295.49445699999,
+      "postSettlementObservationMs": 533.885715000004,
+      "observerCpu": {
+        "user": 1106593,
+        "system": 1498479
+      },
+      "maximumInputMs": 586.3195750000014,
+      "maximumStartupInputMs": 28.317453999999998,
+      "maximumSteadyInputMs": 586.3195750000014,
+      "maximumSelectionMs": 17.424159999998665,
+      "maximumSelectionSetupMs": 28.275251000000935,
+      "actionCount": 157,
+      "resourceScope": {
+        "unit": "ps-yon-pi-stuff-responsiveness-VK9AFF.scope",
+        "boundary": "after-observation-before-host-shutdown",
+        "readStartedMs": 41513.87693,
+        "readCompletedMs": 41542.654491,
+        "cpuUs": {
+          "total": 38475980,
+          "user": 34209621,
+          "system": 4266359
+        },
+        "memoryCurrentChargedBytes": 653479936,
+        "memoryPeakChargedBytes": 1564332032,
+        "rssSnapshotBytes": 634978304,
+        "processes": [
+          {
+            "pid": 63,
+            "processStartIdentity": "linux:16714516",
+            "rssBytes": 634978304,
+            "io": {
+              "rchar": 162115350,
+              "wchar": 26622051,
+              "syscr": 36020,
+              "syscw": 5445,
+              "read_bytes": 133860864,
+              "write_bytes": 26430804,
+              "cancelled_write_bytes": 0
+            }
+          }
+        ]
+      },
+      "sourceCommit": "9d892c4b5ad5440da91a61aba7c369938548685a",
+      "sourceHashes": {
+        "scripts/benchmark-responsiveness.ts": "b49a8038b04de2a4a287edf8d2852a66d68567e68b72ce414f8d01e96bc0d419",
+        "scripts/host-resource-scope.ts": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee",
+        "scripts/pty-observation.ts": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40",
+        "test/fixtures/responsiveness-provider.ts": "413b780586ccdfead791b47aee8d1d7b07a7bbbd2c79719d3d07602ddd93f2f5",
+        "test/fixtures/faux-provider.ts": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+      },
+      "namingRequests": 1,
+      "wireContextRequests": 0,
+      "disposition": "foreground Agent child completed and reaped; frozen Spinner and input gates failed; custom Provider does not certify native Context payload hook"
     }
   ],
   "scopedContextSamples": [
