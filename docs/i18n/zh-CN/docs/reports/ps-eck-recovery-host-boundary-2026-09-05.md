@@ -1,10 +1,11 @@
-<!-- translation-source: docs/reports/ps-eck-recovery-host-boundary-2026-09-05.md; translation-source-sha256: 777fa5de9e2a5787dcd16f8905f15add20992e6589c7f1e16a37214c9df7ceab -->
+<!-- translation-source: docs/reports/ps-eck-recovery-host-boundary-2026-09-05.md; translation-source-sha256: c1df3a09c665a53f95bb44fce2f2192869efcdf5750c905347fc91b5e6e53dc7 -->
 
 # ps-eck：Magic 恢复与 Host 取消边界
 
-日期：2026-09-05。状态：实现及验收进行中，不代表发布完成。
+日期：2026-09-05。状态：实现已提交，最终在线验收被 Provider 额度阻塞，尚不具备发布条件。
 
-分支为 `fix/ps-eck-magic-recovery`，基线 `2610bd42`。身份修复已提交为 `e87a1e33`，恢复实现已提交为 `673e6a8b`，最终生命周期修订正在审查。
+分支为 `fix/ps-eck-magic-recovery`，基线 `2610bd42`。签名检查点为 `e87a1e33`（身份）、`673e6a8b`（恢复）、
+`c833a3fc`（失败 Worker 注册清理）、`143b7e5f`（增量身份清理与 no-op 记账）。均已推送，未合并或安装。
 接受的契约见 [ADR 0031](../adr/0031-preserve-magic-context-behavior-through-suite-integration.md)。
 
 ## 根因和实现
@@ -41,8 +42,9 @@
 bun test test/context/magic-recovery-host.test.ts test/context/magic-worker.test.ts test/context-pty.test.ts
 ```
 
-最终取消清理修订前，认证产物上 21 项测试通过。它们使用隔离的一次性会话与确定性 Provider，执行真实 Magic 压缩
-和真实 Worker 终止。注入的超限消息证明控制流程，不证明远端容量上限。
+认证 Host 上 14 项 RPC/PTY 测试通过：12 项恢复场景与 2 项 Context TUI 场景。另有 8 项真实 Worker 回归在仓库
+Bun 运行时通过。测试使用隔离的一次性会话与确定性 Provider，执行真实 Magic 压缩和真实 Worker 终止。
+注入的超限消息证明控制流程，不证明远端容量上限。
 
 | 场景 | 观察结果 |
 | --- | --- |
@@ -81,10 +83,29 @@ bun test test/context/magic-recovery-host.test.ts test/context/magic-worker.test
 历史不可见。恢复现在连续处理可运行分块并核验进展，每次边界读取独立绑定读取器，实际超限使用 Magic 紧急尾部策略。
 确定性 Host 的 `multi-step` 回归保护此行为。夹具本身不证明真实容量。
 
-两次早期 Astra 草稿审查和两次后续 Astra 审查已检查实现。取消清理及等待会话初始化时取消均增加了聚焦回归。
-正常初始化仍属于 Session；取消等待者不会终止健康 Worker。第一轮后续质量审查未发现结构性缺陷，但最终检查与
-连续两轮无发现的完成审查仍待执行。
+最终源码提交 `143b7e5f` 连续通过两轮独立 Astra 正确性与 Thermo-Nuclear 审查，范围为完整 diff 及受影响 Capability。
+早期无发现结论在后续修改后失效；最终两轮包含增量身份修正及 no-op 记账修订，均无阻塞项。第一轮还运行了 136 项
+Context 测试及 12 项认证 Host 恢复测试；第二轮独立审阅完整源码，避免与验收进程争抢资源。
 
-相关变更保留所属边界：runtime 从 791 行到 796 行，projection 从 346 到 282，Worker client 从 421 到 425，
-Statusline rendering 从 507 到 508。原生预检是提取出的仅原生策略，绝不作为启用 Magic 后的兜底。
-代码不再变化后必须记录最终行数和审查结果。
+最终日志审计还发现上游记账缺陷：三个分块前 Historian no-op 返回保留初始 `failed` 状态。补丁在这些分支完成清理后
+将其记为 `noop`，实际失败分支仍保留失败。真实 Provider 的严格门槛没有放宽，也不忽略失败记录。此前验收已完成
+压力、取消、会话切换、冷恢复和隔离流程，随后才因这些 no-op 记录被拒。
+
+最新在线运行触及 Provider 额度上限。一次最终补丁运行完成真实 Historian 发布，随后连续性检索收到额度错误；
+下一次在初始化阶段收到相同明确错误。因此最终源码 `143b7e5f` 上的完整在线门槛尚未通过。此前真实超限恢复和普通
+验收成功仍属于有日期的证据，不代表最终源码在线认证。另一次真实模型切换探针从 Terra 切到 Spark 成功，两个模型的
+出站请求均保留完整当前输入。请求观测只记录模型 ID、字节数和输入存在布尔值。
+
+本地日志保留已知测试中断：依赖安装时 SDK 文件短暂缺失、重型验收并发时 PTY 进程失败、schema 夹具短暂遇到 SQLite
+锁。失败的隔离测试在安装完成后串行复验，不通过放宽生产策略使夹具通过。Goal/Ponytail/工具分组夹具明确选择各自
+原生 Context 范围；Goal 夹具使用既有固定 Code Mode Host 路径，不再为每个临时缓存重新下载。
+
+最终离线结果：`check:fast` 通过。最后一次 `bun run check` 执行全部 294 个隔离测试文件，292 个通过；两个被中断
+文件随后串行补跑通过。之后 Goal 检查、Tool Activity 基准和打包 Package 认证均在最终源码上串行通过。这是多次运行
+合起来的完整组成项证据，不代表原先整条命令以成功状态退出。两轮最终无发现审查后没有再修改代码。
+
+实际行数为 runtime 791 到 796、projection 346 到 282、Worker client 421 到 425、Statusline rendering 507 到 508。
+原生预检（89 行）是提取出的仅原生策略；recovery（51 行）负责共享关键阶段额度。原生预检绝不作为启用 Magic 后的兜底。
+
+身份修复子项 `ps-5r4` 已在 Beads 关闭。较大的 `ps-eck` 保持进行中，直到 Provider 额度不再阻塞最终在线验收且所有必需门槛均记录。
+会话、载荷、凭据和私人运行路径不进入本报告或 Git；临时认证副本已删除。

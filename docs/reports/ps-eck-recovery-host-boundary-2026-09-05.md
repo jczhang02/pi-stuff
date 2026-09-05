@@ -1,9 +1,11 @@
 # ps-eck: Magic recovery and the Host cancellation boundary
 
-Date: 2026-09-05. Status: implementation and acceptance in progress; not a release-completion claim.
+Date: 2026-09-05. Status: implementation committed; final online acceptance blocked by Provider quota. Not release-ready.
 
-The branch is `fix/ps-eck-magic-recovery`, based on `2610bd42`. The identity correction is committed as `e87a1e33`;
-the recovery implementation is committed as `673e6a8b`, with the final lifecycle amendment under review. The accepted contract is [ADR 0031](../adr/0031-preserve-magic-context-behavior-through-suite-integration.md).
+The branch is `fix/ps-eck-magic-recovery`, based on `2610bd42`. Signed checkpoints are `e87a1e33` (identity),
+`673e6a8b` (recovery), `c833a3fc` (failed Worker registrations), and `143b7e5f` (incremental identity cleanup and no-op
+accounting). They are pushed; no merge or installation was performed. The accepted contract is
+[ADR 0031](../adr/0031-preserve-magic-context-behavior-through-suite-integration.md).
 
 ## Root causes and implementation
 
@@ -47,9 +49,10 @@ Run with `PI_BIN` pointing to that verified executable:
 bun test test/context/magic-recovery-host.test.ts test/context/magic-worker.test.ts test/context-pty.test.ts
 ```
 
-Twenty-one tests passed on the certified artifact before the final cancellation cleanup amendment. They use isolated,
-disposable Sessions and a deterministic Provider. Actual Magic compaction and actual Worker death are exercised; the
-injected overflow message proves control flow, not a remote capacity limit.
+Fourteen RPC/PTY tests passed on the certified Host: twelve recovery cases and two Context TUI cases. Eight additional
+real Worker regressions passed under the repository Bun runtime. Tests use isolated, disposable Sessions and a
+deterministic Provider. Actual Magic compaction and actual Worker death are exercised; injected overflow proves
+control flow, not a remote capacity limit.
 
 | Scenario | Observed result |
 | --- | --- |
@@ -91,11 +94,40 @@ provider around the Historian allowed its cleanup to hide remaining history. Rec
 progress checks, scopes each boundary read independently, and uses Magic's emergency tail on actual overflow. The
 `multi-step` deterministic Host regression protects this behavior. No live-capacity claim follows from fixtures alone.
 
-Two initial Astra draft reviews and two subsequent Astra reviews inspected the implementation. Cancellation cleanup
-and cancellation while waiting for Session initialization received focused regressions. Healthy Session initialization
-remains Session-owned; cancelling its waiter does not terminate a healthy Worker. No structural defect was found in the
-first subsequent quality round, but final checks and two consecutive clean completion rounds remain outstanding.
+Final source commit `143b7e5f` passed two consecutive independent Astra correctness and Thermo-Nuclear reviews of the
+complete diff and affected capability. Earlier clean reviews were invalidated by subsequent changes; the final two
+rounds include the incremental identity and no-op accounting amendments. Both reported no blockers. The first final
+review also ran 136 Context tests and the twelve certified Host recovery cases; the second independently inspected the
+complete source without competing with the ongoing acceptance processes.
 
-Relevant changes preserve the owning seams: runtime 791 to 796 physical lines, projection 346 to 282, Worker
-client 421 to 425, and Statusline rendering 507 to 508. Native preflight is an extracted native-only policy; it is never a
-fallback after an enabled Magic attempt. Final line counts and review results must be recorded after code stops changing.
+Final log auditing also exposed an upstream accounting defect: three pre-chunk Historian no-op exits retained the
+initial `failed` status. The patch records those explicit no-op returns as `noop`, after their cleanup; actual failure
+paths remain failures. The strict real Provider gate is retained rather than ignoring failed rows. The older gate had
+completed pressure, cancellation, Session switching, cold resume, and isolation before rejecting these no-op records.
+
+The latest online runs reached the Provider's usage limit. One final-patch run completed real Historian publication,
+then continuity retrieval received quota errors; the next stopped during setup with the same explicit quota error.
+Consequently the complete online gate has not passed at final source commit `143b7e5f`. Earlier successful live overflow
+and ordinary acceptance runs remain dated evidence, not a claim of final-source online certification. A separate real
+model-switch probe passed from Terra to Spark, with each complete current input observed in the selected model's
+outbound request. Request instrumentation records model IDs, byte counts, and input-presence booleans only.
+
+Known test-run interruptions are retained in the local logs: an SDK file was temporarily absent during dependency
+installation, PTY processes failed during overlapping heavy acceptance runs, and a schema fixture briefly encountered
+SQLite locking. Failed isolated tests are rechecked serially after installation. No production policy is relaxed to
+make those fixtures pass. Goal/Ponytail/Tool-grouping fixtures explicitly select their native Context scope; the Goal
+fixture uses the existing fixed Code Mode host path instead of downloading into every disposable cache.
+
+Final offline results: `check:fast` passed. The last `bun run check` executed all 294 isolated test files: 292 passed;
+the two interrupted files passed their subsequent serial reruns. Goal checks, the Tool Activity benchmark, and packed
+Package certification then all passed serially against the final source. This is complete component evidence across
+those runs, not a claim that the original monolithic command exited successfully. No further code changed after the
+two clean final reviews.
+
+Relevant physical line counts are runtime 791 to 796, projection 346 to 282, Worker client 421 to 425, and Statusline
+rendering 507 to 508. Native preflight (89 lines) is an extracted native-only policy; recovery (51 lines) owns the shared
+critical-phase budget. Native preflight is never a fallback after an enabled Magic attempt.
+
+The identity child `ps-5r4` is closed in Beads. The broader `ps-eck` remains in progress until the final online
+acceptance can run without the Provider quota block and all required gates are recorded. Sessions, payloads, credentials,
+and private operational paths are excluded from this report and Git; disposable authentication copies were removed.
