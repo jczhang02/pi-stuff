@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 72d78a39124c1b8a9ee84f9cc318cc09c407f2a26261fb4acc10cd28e7fbfd16 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 0b0aa62182d22f34490c607c9e2da5b441296a38b68a9354d03214f65f9e52a0 -->
 
 # Agents
 
@@ -55,6 +55,9 @@ Agent 定义与任务正文的摘要。最终构建阶段解析启动输入，�
 隔离 worktree 的操作仅在请求该功能时加载。Session 重试快照的操作仅在任务继承了 Session 文件且至少有两个候选
 模型时加载。必要的恢复记录、writer 所有权与初始状态仍在 child 执行之前提交；重试快照仍在首次模型尝试之前冻结
 Session。
+
+当前 Session governor 事务使用异步的稳定 inode 内核锁。获取锁时不再重写诊断用 owner 记录，也不强制刷盘；
+互斥与进程退出后的释放仍由内核保证。规范账本的提交方式与旧版本锁的处理保持不变。
 
 ## 文档
 
