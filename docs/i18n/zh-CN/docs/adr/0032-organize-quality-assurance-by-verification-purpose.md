@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: eeb5990905ac1f76db654ca0caea29f52034b9b60fca670fc0c3825ddc4bb292 -->
+<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: 9f35e7ce272ddab085e0620efcfc9e5feff7d852c5b184674e04ad0ee8cd3380 -->
 
 ---
 status: accepted
@@ -26,7 +26,7 @@ status: accepted
 - Static Checks 覆盖格式、Lint、类型、依赖、架构、生成物、包结构，以及代码漏洞、依赖漏洞、凭据泄露扫描。先复用现有工具，增加扫描器必须明确对象并证明有效性。
 - 每项 Capability 明确适用的正常、错误、取消、恢复、持久化及资源清理行为，将主要覆盖责任分配给合适层级。高层补充真实连接和完整流程证据，不机械重复低层场景。
 - Benchmarks 按评测范围分为 Capability Benchmark 和 Suite Outcome Evaluation 两个分支，定义如下。两类独立运行，都没有阻断 PR 的权利。
-- Reviews 覆盖需求、架构、代码、安全、测试有效性和评测方法；检查重复断言与实现耦合。普通修改做范围内审查，跨 Capability 或架构改动做独立审查。保留现有 Thermo-Nuclear 要求，并明确包含测试质量。
+- Reviews 覆盖需求、架构、代码、安全、测试有效性和评测方法；检查重复断言与实现耦合。普通修改做范围内审查，跨 Capability 或架构改动需要独立判断。`docs/code-quality.md` 中的当前 Thermo-Nuclear 标准负责完成审查，明确包含测试质量。
 
 ### Benchmark 范围
 
@@ -60,3 +60,11 @@ status: accepted
 ## 后果
 
 每次变更执行一次全部验证容易描述，但反馈慢，也会将所需证据与无关执行成本混为一谈。按目的组织和按风险调度需要明确边界与选择规则。具体性能测试门槛、执行细节和迁移计划留待后续实施规划。在同时更新当前主管文档和实现以落实本决定之前，现有仓库检查仍然有效。
+
+### 第一阶段迁移：2026-09-05
+
+Astra 指令审查采用针对性本地检查、复用同一版本所需 CI 证据，以及一次完整受影响范围审查。发现问题后修复并复审修改及受影响范围；重复运行未变化的成功检查或规定固定审查轮数不会增加证据。仓库指令规定质量标准，不规定 Agent 委派角色或调度。
+
+现有发布器验证绑定提交的 CI 证据，不再只信任验证文字。共享路径分类器在既有文档豁免中加入 Package/Module README 和贡献指南。Runtime Resource 及未知变更在 PR 中仍要求 Acceptance。直接推送与手动运行的政策保持区别并明确展示。
+
+按 Capability 选择测试、迁移测试目录和性能门槛分类留待后续。现有 Tool Activity benchmark，以及源码／解包 Package 的 Host 检查，在该工作确定有依据的替代方案前继续保留在可执行检查中。本阶段减少重复执行，不声称整套测试更快，也不改变已认证 Host 的覆盖范围。

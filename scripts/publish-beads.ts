@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import { verifyDeliveryChecks } from "./beads-delivery-checks.ts";
 
 const ID = Type.String({ pattern: "^ps-[a-z0-9]+(?:\\.[0-9]+)*$" });
 const TEXT = Type.String({ minLength: 1, pattern: "\\S" });
@@ -37,10 +38,12 @@ const PULL = Type.Object({
 	state: Type.Union([Type.Literal("open"), Type.Literal("closed")]),
 	merged: Type.Boolean(),
 	draft: Type.Boolean(),
+	changed_files: Type.Integer({ minimum: 0 }),
 	body: Type.Union([Type.String(), Type.Null()]),
 	head: Type.Object({ sha: TEXT }),
 	base: Type.Object({ repo: Type.Object({ full_name: TEXT }) }),
 });
+const PR_FILE = Type.Object({ filename: TEXT, previous_filename: Type.Optional(TEXT) });
 type Bead = Static<typeof BEAD>;
 export type GithubMutation = { readonly body: string } | { readonly state: "open" | "closed"; readonly title: string };
 type Run = (command: readonly string[], input?: GithubMutation) => string;
@@ -96,7 +99,19 @@ function github(run: Run, repository: string, path: string, method = "GET", inpu
 	return run(command, input);
 }
 
-function deliveryLines(bead: Bead, repository: string, number: number, run: Run): string[] {
+function pullPaths(repository: string, number: number, count: number, run: Run): string[] {
+	const files: unknown = JSON.parse(
+		run(["gh", "api", `repos/${repository}/pulls/${number}/files?per_page=100`, "--paginate", "--slurp"]),
+	);
+	if (!Check(Type.Array(Type.Array(PR_FILE)), files)) throw new Error(`Invalid files for PR #${number}`);
+	const records = files.flat();
+	if (records.length !== count) throw new Error(`PR #${number}: file listing is incomplete; retry publication`);
+	return records.flatMap((file) =>
+		file.previous_filename ? [file.previous_filename, file.filename] : [file.filename],
+	);
+}
+
+function deliveryLines(bead: Bead, repository: string, run: Run): string[] {
 	const delivery = bead.metadata?.github_delivery;
 	if (!delivery) return ["Delivery has not been recorded yet."];
 	const lines = [
@@ -114,18 +129,34 @@ function deliveryLines(bead: Bead, repository: string, number: number, run: Run)
 			throw new Error(`${bead.id}: commit verification failed`);
 		lines.push(`- Commit: https://github.com/${repository}/commit/${sha}`);
 	}
+	if (delivery.kind === "no-code") {
+		lines.push(
+			`- No PR: ${delivery.no_pr_reason}`,
+			"- CI: not required for no-code delivery.",
+			"- Merge state: not applicable.",
+		);
+		return lines;
+	}
 	if (!delivery.pull_request) {
-		lines.push(`- No PR: ${delivery.no_pr_reason}`, "- Merge state: not verified by this publication.");
+		const target = delivery.commits.at(-1);
+		if (!target) throw new Error(`${bead.id}: code delivery requires a final commit`);
+		lines.push(
+			`- No PR: ${delivery.no_pr_reason}`,
+			...verifyDeliveryChecks(repository, target, undefined, run).map((line) => `- CI: ${line}`),
+			"- Merge state: not verified by this publication.",
+		);
 		return lines;
 	}
 	const pull: unknown = JSON.parse(github(run, repository, `pulls/${delivery.pull_request}`));
 	if (!Check(PULL, pull) || pull.base.repo.full_name !== repository)
 		throw new Error(`${bead.id}: invalid delivery PR`);
-	if (!(pull.body ?? "").includes(`https://github.com/${repository}/issues/${number}`)) {
+	if (!(pull.body ?? "").includes(`https://github.com/${repository}/issues/${issueNumber(bead, repository)}`)) {
 		throw new Error(`${bead.id}: PR body must reference the full Issue URL before publication`);
 	}
 	if (!delivery.commits.includes(pull.head.sha))
 		throw new Error(`${bead.id}: delivery commits must include the current PR head`);
+	const paths = pullPaths(repository, delivery.pull_request, pull.changed_files, run);
+	for (const line of verifyDeliveryChecks(repository, pull.head.sha, paths, run)) lines.push(`- CI: ${line}`);
 	const state = pull.merged
 		? "merged"
 		: pull.state === "closed"
@@ -138,10 +169,10 @@ function deliveryLines(bead: Bead, repository: string, number: number, run: Run)
 }
 
 function commentBody(bead: Bead, repository: string, run: Run): string {
-	const number = issueNumber(bead, repository);
+	issueNumber(bead, repository);
 	const lines = [marker(bead.id), `# Beads delivery: ${bead.id}`, "", `Canonical status: **${bead.status}**.`, ""];
 	if (bead.status === "closed") lines.push("## Closure", bead.close_reason ?? "", "");
-	lines.push(...deliveryLines(bead, repository, number, run), "", "## Related work");
+	lines.push(...deliveryLines(bead, repository, run), "", "## Related work");
 	const related = ["down", "up"].flatMap((direction) => {
 		const records: unknown = JSON.parse(run(["bd", "dep", "list", bead.id, "--direction", direction, "--json"]));
 		if (!Check(Type.Array(RELATION), records)) throw new Error(`${bead.id}: invalid Beads relationships`);
@@ -207,6 +238,7 @@ export function publishBeads(id: string, run: Run): string[] {
 	if (!login) throw new Error("GitHub publishing identity unavailable");
 	const before = publicationScope(id, run);
 	for (const bead of before) validateDelivery(bead);
+	for (const bead of before) deliveryLines(bead, repository, run);
 	const sync = ["bd", "github", "sync", "--push-only", "--prefer-local", "--parent", id];
 	run([...sync, "--dry-run"]);
 	run(sync);

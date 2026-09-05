@@ -1,41 +1,25 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: fe5414604ed0c158fcd524fd550686695e68af1bf49fb640788335c18bbb1158 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: de7794c373ca73d46d15937633202fb0f06af12f321db5156b76e020e9890e0d -->
 
 # 贡献指南
 
 ## 开始之前
 
-1. 阅读 `AGENTS.md`、`CONTEXT.md` 和相关 ADR。
-2. 使用 Beads 管理已经接受的工作，并在实现前认领一个 ready issue。
-3. 让变更始终处于 Pi 原生 Package 与 Extension 契约之内。
-
-外部缺陷与功能请求可以先从 GitHub issue 表单进入。维护者会在实现前把接受的工作纳入 Beads。
+阅读 `AGENTS.md`、`CONTEXT.md`、`docs/compatibility.md` 及相关 ADR 或 Module README。已接受的共享工作使用 Beads，并在实现前认领 ready issue；外部请求先由维护者接纳。变更须处于 Pi 原生 Package 与 Extension 契约之内。
 
 ## 开发
 
-使用 Bun 1.4.0：
-
-```bash
-bun install --frozen-lockfile --ignore-scripts
-bun run check
-```
-
-测试必须覆盖约定的公开接缝；验证期间必须离线，而且不得调用 LLM 或要求凭据。
+使用仓库固定的 Bun 版本。开发时运行聚焦检查和 `bun run check:fast`；PR 准备前在最终 revision 运行必要 CI 检查。测试应覆盖约定的公开 seam，保持离线，不调用 LLM 或要求凭据。影响未知的变更需要完整检查。
 
 ## Package 变更
 
-Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版本或发布。当行为变化需要持久的用户可见
-记录时，更新 `docs/releases/` 中的发布说明。详细变更历史由 Git 保留。
-
-不要只手工修改生成的组合输出。请修改 `packages/pi-stuff/suite.json`，运行 `bun run suite:generate`，再用
-`bun run pack:verify` 验证提取后的本地 Package。本仓库没有 registry 发布或 Changesets 流程。
+Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版本或发布。行为需要持久用户记录时更新 `docs/releases/`。修改 `packages/pi-stuff/suite.json`，运行 `bun run suite:generate`，并用 `bun run pack:verify` 验证；不得只编辑生成输出。
 
 ## 提交
 
 使用带签名的 Conventional Commit：
 
 ```text
-<type>(<scope>): <祈使句主题>
+<type>(<scope>): <imperative subject>
 ```
 
-维护者可以把已经验证的提交直接 push 到 `main`。外部贡献应以 pull request 作为代码交付和审查界面；接受
-的范围与状态仍按[问题跟踪契约](../docs/agents/issue-tracker.md)记录在 Beads 中。禁止 force-push 或删除 `main`。
+维护者可以把已验证的提交 push 到 `main`。外部贡献以 pull request 交付和审查；接受的范围与状态按 [issue-tracker 契约](../docs/agents/issue-tracker.md)记录在 Beads。禁止 force-push 或删除 `main`。

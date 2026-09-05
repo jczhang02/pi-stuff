@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 6bcc1dacd21d2efa8f6f33fee856de8343c47658e1a7f20d0ff0d84014258856 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: c4df86db822aece847c203df06d78f1d7d37867fc321d2f459a8b47a77df71fd -->
 
 # 报告
 
@@ -38,6 +38,7 @@
 
 ## 设计与迁移
 
+- [Astra 指令与交付审查](astra-instruction-delivery-review-2026-09-05.md)
 - [单 Package 迁移](single-package-migration.md)
 - [生命周期性能](pi-stuff-lifecycle-performance.md)
 - [Context 提交并发](context-submit-concurrency-research-2026-08-14.md)

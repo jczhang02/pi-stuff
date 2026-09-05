@@ -1,0 +1,69 @@
+# Astra instruction and delivery review — 2026-09-05
+
+The instruction migration reduces repeated reading, verification, and completion rules while retaining Pi ownership,
+source-quality limits, real-Host acceptance, and the Beads delivery contract. It does not change runtime model defaults.
+
+## Basis and scope
+
+[OpenAI's Astra guidance](https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices) recommends
+reviewing Agent instructions and skills for conflicting guidance and calibrating clarification, delegation, output,
+and testing to the workflow. The local change emphasizes autonomous completion of authorized work and risk-based
+verification. It introduces no model-specific configuration or API migration.
+
+The reviewed instruction chain includes root AGENTS, code quality, compatibility, contribution guidance, the tracked
+Beads skill, issue tracking, ADR 0032, and their Chinese mirrors. Global Codex instructions and installed skills remain
+outside the edit boundary. In particular, global delegation rules still prescribe roles, context inheritance, and
+waiting; changing repository instructions does not remove those global rules.
+
+## Verification decisions
+
+| Finding | Decision |
+| --- | --- |
+| A local full check followed by equivalent CI repeats execution | Run focused development checks and reuse required CI evidence for the same revision |
+| Fixed clean-review rounds repeat a completed judgment | Review the complete affected scope once; fix findings and revisit the changed and affected scope |
+| Package and Module READMEs unnecessarily triggered Acceptance | Extend the existing prose whitelist; retain full checks for runtime resources and unknown changes |
+| A rename could hide executable source behind a prose path | Classify both old and new paths in local CI and PR publication |
+| Tool Activity thresholds and duplicate Host starts need deeper evidence | Retain existing benchmark and source/extracted-Package verification; do not remove protection based on cost assumptions |
+| Validation text could claim checks that never passed | Verify the target commit against the actual CI workflow and exact run attempt before publishing |
+
+The isolated test runner is serial and starts a fresh process per file. Package verification also runs real Host/PTY
+scenarios against source and extracted content. These are cost indicators, not measured bottlenecks. This review does
+not claim elapsed-time improvements or eliminate the different defects caught by those layers.
+
+## Delivery enforcement and limits
+
+The publisher requires successful applicable jobs from the latest eligible CI workflow run for the target commit.
+PRs use their current head and the complete file list; branch-only records put the final target last. Documentation
+PRs and direct pushes retain Fast-only policy, while manual runs require both checks. Missing or failed required
+checks block publication. The comment links the Actions attempt, and exact comment/Issue readback remains mandatory.
+
+CI evidence does not establish review quality, commit signatures, branch protection, merge authorization, or live
+Provider acceptance. Those remain explicit criteria where applicable. No-code work needs its existing evidence and
+reason, rather than fabricated CI. Missing historical Actions evidence blocks re-certification when republishing.
+
+## Validation at implementation
+
+- The focused publisher, CI-evidence, and scope tests passed: 19 tests, 0 failures.
+- The complete `check:fast` passed, including repository safety and translation SHA validation.
+- Read-only checks against real GitHub Actions accepted a successful direct-push Fast result and rejected a known
+  failed run. No publication or merge claim is inferred from those historical records.
+- Final review, branch CI, and public delivery evidence are recorded with Bead `ps-8l7`; this report does not substitute
+  for their terminal results.
+
+## Physical line counts
+
+Counts compare the source revision `6ddb5cfa` with this implementation snapshot. Added validation protects an external
+trust boundary; smaller instruction files are not a reason to omit required evidence.
+
+| File | Before | After |
+| --- | ---: | ---: |
+| `AGENTS.md` | 85 | 54 |
+| `docs/code-quality.md` | 59 | 41 |
+| `.github/CONTRIBUTING.md` | 42 | 31 |
+| `.agents/skills/beads/SKILL.md` | 65 | 31 |
+| `scripts/publish-beads.ts` | 266 | 298 |
+| `scripts/beads-delivery-checks.ts` | 0 | 75 |
+| `scripts/ci-acceptance-scope.ts` | 60 | 70 |
+| `test/publish-beads.test.ts` | 222 | 298 |
+| `test/beads-delivery-checks.test.ts` | 0 | 90 |
+| `test/ci-acceptance-scope.test.ts` | 30 | 43 |
