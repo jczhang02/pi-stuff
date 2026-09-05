@@ -240,7 +240,7 @@ export async function runPublicAgent(
 			);
 		}
 	}
-	const { deriveLaunchRunId, resolveLegacyAgentParams, resolveResumeTargetRunId } = await loadSubagentExecutorModule();
+	const { deriveLaunchRunId, loadAgentControls } = await loadSubagentExecutorModule();
 	if (sessionChanged(runtime, requestedRoot.sessionEpoch, requestedSessionId)) {
 		return projectPublicAgentFailure(params, "Agent request cancelled because the parent session ended or changed.");
 	}
@@ -259,18 +259,29 @@ export async function runPublicAgent(
 	const invocationEpoch = launchRoot.sessionEpoch;
 	const invocationSessionId = runtime.state.currentSessionId;
 	let targetParams = params;
+	let controls: Awaited<ReturnType<typeof loadAgentControls>> | undefined;
 	if (params.action === "resume" || params.action === "steer" || params.action === "stop") {
+		controls = await loadAgentControls();
+		if (sessionChanged(runtime, invocationEpoch, invocationSessionId)) {
+			return projectPublicAgentFailure(
+				params,
+				"Agent request cancelled because the parent session ended or changed.",
+			);
+		}
 		try {
-			targetParams = resolveLegacyAgentParams(params, runtime.state);
+			targetParams = controls.resolveLegacyAgentParams(params, runtime.state);
 		} catch (error) {
 			return projectPublicAgentFailure(params, error instanceof Error ? error.message : String(error));
 		}
 	}
 	const nestedControl = await routeLiveNestedAgentControl(targetParams, runtime.state, signal, { parentRunOrigin });
 	if (nestedControl) return projectEngineResult(params, nestedControl);
+	if (sessionChanged(runtime, invocationEpoch, invocationSessionId)) {
+		return projectPublicAgentFailure(params, "Agent request cancelled because the parent session ended or changed.");
+	}
 	let resumeTargetRunId: string | undefined;
 	try {
-		resumeTargetRunId = resolveResumeTargetRunId(targetParams, runtime.state);
+		resumeTargetRunId = controls?.resolveResumeTargetRunId(targetParams, runtime.state);
 	} catch (error) {
 		return projectPublicAgentFailure(params, error instanceof Error ? error.message : String(error));
 	}

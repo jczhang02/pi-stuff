@@ -51,6 +51,12 @@ execution or recovery records or hashing Agent definitions and task bodies. Fina
 inputs and creates their digests, model metadata, and recovery record once. Planning projections are not cached across
 launches or reused as finalized child contracts.
 
+New launches and existing-target controls have separate loading boundaries. A launch loads its selected execution
+engine on first use; foreground execution does not load detached-runner launch machinery. Isolated-worktree operations
+load only when requested. Session fallback snapshot operations load only when a task has an inherited Session file
+and at least two model candidates. Required recovery records, writer ownership, and initial status are still committed
+before child execution; fallback snapshots still freeze the Session before the first model attempt.
+
 ## Documentation
 
 - [Agents guide](../../../../docs/capabilities/subagents.md)

@@ -6,7 +6,7 @@ import {
 	buildWriterProcessEnv,
 	ponytailWriterEnvironmentOverrides,
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.js";
-import { ponytailLaunchSnapshot } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/subagent-executor.js";
+import { ponytailLaunchSnapshot } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/launch-builders.js";
 
 const owners: object[] = [];
 

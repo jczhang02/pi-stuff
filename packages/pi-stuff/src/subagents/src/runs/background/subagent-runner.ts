@@ -24,12 +24,10 @@ import {
 	type RunnerAgentTask,
 } from "../shared/parallel-utils.ts";
 import { acquireSessionLease } from "../shared/session-lease.ts";
-import { createWorktrees, type WorktreeSetup } from "../shared/worktree.ts";
-import { runResolvedTask } from "./child-task-runner.ts";
 import { createInitialStatus, type BackgroundRunnerStatus as RunnerStatus } from "./initial-status.ts";
 import { markProcessTerminalCandidateLeaseRelease } from "./process-terminal.ts";
 import { BackgroundRunControl } from "./runner-control.ts";
-import { finalizeConfiguredRun } from "./runner-finalization.ts";
+import { finalizeConfiguredRun, type PreparedWorktrees } from "./runner-finalization.ts";
 import { appendDiagnosticEvent, boundRunResultOutputs } from "./runner-output.ts";
 import {
 	failedResult,
@@ -56,6 +54,8 @@ export {
 	captureWriterProcessStartIdentity,
 	ponytailWriterEnvironmentOverrides,
 } from "./writer-process-lifecycle.ts";
+
+let taskRunnerModulePromise: Promise<typeof import("./child-task-runner.ts")> | undefined;
 
 function runConfiguredWork(
 	config: BackgroundRunnerConfig,
@@ -88,41 +88,59 @@ function runConfiguredWork(
 					catch: (error) => error,
 				});
 				yield* control.install();
-				let worktreeSetup: WorktreeSetup | undefined;
+				let worktreeSetup: PreparedWorktrees | undefined;
 				const results = yield* Effect.gen(function* () {
 					if (config.work.mode === "parallel" && config.work.group.worktree) {
 						const group = config.work.group;
-						worktreeSetup = yield* Effect.try({
+						const operations = yield* Effect.tryPromise({
+							try: () => import("../shared/worktree.ts"),
+							catch: (error) => error,
+						});
+						const setup = yield* Effect.try({
 							try: () =>
-								createWorktrees(config.cwd, config.id, group.tasks.length, {
+								operations.createWorktrees(config.cwd, config.id, group.tasks.length, {
 									agents: group.tasks.map((task) => task.agent),
 								}),
 							catch: (error) => error,
 						});
+						worktreeSetup = { setup, operations };
 					}
 					const taskResults = yield* runBackgroundWork(
 						config.work,
 						(task, index) =>
-							Effect.tryPromise({
-								try: () =>
-									runResolvedTask({
-										config,
-										task,
-										index,
-										taskCwd: worktreeSetup?.worktrees[index]?.agentCwd ?? task.cwd,
-										status,
-										statusPath,
-										eventsPath,
-										activeControls: control.activeControls,
-										consumeScheduledStop: (index) => control.consumeScheduledStop(index),
-										onWriterProcess: onWriterProcess ? (writer) => onWriterProcess(index, writer) : undefined,
-									}),
-								catch: (error) => error,
-							}).pipe(
-								Effect.tapError((error) =>
-									Effect.sync(() => terminalizeRejectedStep(status, statusPath, eventsPath, index, error)),
-								),
-							),
+							Effect.gen(function* () {
+								if (!taskRunnerModulePromise) yield* Effect.yieldNow;
+								return yield* Effect.tryPromise({
+									try: async () => {
+										if (!taskRunnerModulePromise) {
+											taskRunnerModulePromise = import("./child-task-runner.ts").catch((error) => {
+												taskRunnerModulePromise = undefined;
+												throw error;
+											});
+										}
+										const { runResolvedTask } = await taskRunnerModulePromise;
+										return runResolvedTask({
+											config,
+											task,
+											index,
+											taskCwd: worktreeSetup?.setup.worktrees[index]?.agentCwd ?? task.cwd,
+											status,
+											statusPath,
+											eventsPath,
+											activeControls: control.activeControls,
+											consumeScheduledStop: (index) => control.consumeScheduledStop(index),
+											onWriterProcess: onWriterProcess
+												? (writer) => onWriterProcess(index, writer)
+												: undefined,
+										});
+									},
+									catch: (error) => error,
+								}).pipe(
+									Effect.tapError((error) =>
+										Effect.sync(() => terminalizeRejectedStep(status, statusPath, eventsPath, index, error)),
+									),
+								);
+							}),
 						{ runId: config.id, terminalCause: () => control.preStartTerminalCause() },
 					);
 					return yield* Effect.try({ try: () => boundRunResultOutputs(taskResults), catch: (error) => error });

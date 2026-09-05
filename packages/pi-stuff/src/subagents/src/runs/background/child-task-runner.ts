@@ -32,7 +32,6 @@ import {
 	type ChildRuntimeControl,
 	type WriterProcess,
 } from "./child-process-engine.ts";
-import { createSessionFallbackSnapshot } from "./fallback-session.ts";
 import type {
 	BackgroundRunnerStatus as RunnerStatus,
 	BackgroundRunnerStatusStep as RunnerStatusStep,
@@ -314,7 +313,13 @@ async function runAttempts(
 ): Promise<AttemptSummary> {
 	const candidates = input.task.modelCandidates?.length ? input.task.modelCandidates : [input.task.model];
 	const summary: AttemptSummary = { attempts: [], attemptedModels: [], writerProcesses: [], final: undefined };
-	const fallbackSnapshot = createSessionFallbackSnapshot(input.task.sessionFile, candidates.length);
+	const fallbackSnapshot =
+		input.task.sessionFile && candidates.length >= 2
+			? (await import("./fallback-session.ts")).createSessionFallbackSnapshot(
+					input.task.sessionFile,
+					candidates.length,
+				)
+			: undefined;
 	const usageGovernor = workUsageGovernor(input.task);
 	try {
 		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {

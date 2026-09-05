@@ -13,8 +13,9 @@ import {
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
 	type SubagentState,
 } from "../../shared/types.ts";
-import { type BackgroundRecoveryDescriptor, persistRecoveries } from "../background/async-execution.ts";
 import { createInitialStatus } from "../background/initial-status.ts";
+import { persistRecoveries } from "../background/recovery-descriptor.ts";
+import type { BackgroundRecoveryDescriptor } from "../background/resolved-task.ts";
 import { initializeWriterProcessRegistry } from "../background/writer-process-registry.ts";
 import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
 import type { runForegroundConfig } from "./execution.ts";

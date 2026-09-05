@@ -2,7 +2,6 @@
 
 import * as path from "node:path";
 import * as Effect from "effect/Effect";
-import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
 import { claimPreparedRunDirectory, ensurePrivateDirectory } from "../../shared/private-directory.ts";
@@ -34,6 +33,7 @@ import {
 import type { BackgroundRunnerConfig, BackgroundRunnerWork } from "../shared/parallel-utils.ts";
 import { resolvePiPackageRoot, resolveStandalonePiHostExecutable } from "../shared/pi-spawn.ts";
 import type { SessionLeaseIntent } from "../shared/session-lease.ts";
+import { persistRecoveries } from "./recovery-descriptor.ts";
 import type { AsyncExecutionContext, BackgroundRecoveryDescriptor } from "./resolved-task.ts";
 import { type SpawnedRunnerLifecycle, spawnRunner } from "./runner-process.ts";
 import type { AsyncParallelRunnerWorkBuildParams, AsyncSingleRunnerWorkBuildParams } from "./runner-work.ts";
@@ -343,19 +343,6 @@ function emitStarted(input: {
 	} catch (error) {
 		reportAgentDiagnostic(`Async Agent start observer failed for '${input.id}':`, error);
 	}
-}
-
-export function persistRecoveries(asyncDir: string, recoveries: BackgroundRecoveryDescriptor[]): void {
-	if (recoveries.length === 1) {
-		const recovery = recoveries[0];
-		if (!recovery) throw new Error("Background recovery descriptor is missing.");
-		writePrivateAtomicJson(path.join(asyncDir, "recovery-descriptor.json"), recovery);
-		return;
-	}
-	writePrivateAtomicJson(path.join(asyncDir, "recovery-descriptors.json"), {
-		version: 2,
-		children: recoveries,
-	});
 }
 
 function persistRecoveriesOrError(

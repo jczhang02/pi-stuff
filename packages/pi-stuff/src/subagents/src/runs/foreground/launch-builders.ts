@@ -6,12 +6,9 @@ import { getPonytailMode } from "../../../../ponytail/state.js";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { type Details, resolveChildMaxSubagentDepth, wrapForkTask } from "../../shared/types.ts";
-import {
-	type AsyncParallelTaskInput,
-	buildAsyncParallelRunnerWork,
-	buildAsyncSingleRunnerWork,
-	isAsyncAvailable,
-} from "../background/async-execution.ts";
+import type { AsyncParallelTaskInput } from "../background/resolved-task.ts";
+import { buildAsyncParallelRunnerWork, buildAsyncSingleRunnerWork } from "../background/runner-work.ts";
+import { resolveBunRuntimeCommand } from "../shared/bun-runtime.ts";
 import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
 import {
 	type AgentToolResult,
@@ -131,7 +128,7 @@ export async function launchBackground(
 	engines: ExecutorEngines,
 	hooks?: SubagentExecutionHooks,
 ): Promise<AgentToolResult<Details>> {
-	if (!isAsyncAvailable()) {
+	if (resolveBunRuntimeCommand() === undefined) {
 		return errorResult(
 			data.mode,
 			"Background Agents are unavailable because the bundled TypeScript runner was not found.",

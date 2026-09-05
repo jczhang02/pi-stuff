@@ -11,7 +11,6 @@ import { discoverAgents } from "../agents/agents.ts";
 import {
 	createSubagentExecutor,
 	deriveLaunchRunId,
-	resolveResumeTargetRunId,
 	type SubagentExecutionHooks,
 	type SubagentParamsLike,
 } from "../runs/foreground/subagent-executor.ts";
@@ -209,14 +208,7 @@ class FanoutChildRuntime {
 		const identity = this.boundLaunchIdentity;
 		if (!identity) return { ok: false, message: "Nested Agent governor is not bound." };
 		const launchRunId = deriveLaunchRunId(id, identity);
-		let resumeTargetRunId: string | undefined;
-		try {
-			resumeTargetRunId = resolveResumeTargetRunId(params, this.state);
-		} catch (error) {
-			return { ok: false, message: error instanceof Error ? error.message : String(error) };
-		}
 		const prepareInput = { launchRunId, params } satisfies AgentPrepareInput;
-		if (resumeTargetRunId) Object.assign(prepareInput, { resumeTargetRunId });
 		const prepared = await this.executionGovernor.prepare(prepareInput);
 		if (!prepared.ok) return prepared;
 		return prepared.invocation
