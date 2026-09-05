@@ -59,11 +59,33 @@ interrupting recovery. Explicit cancellation stops recovery. Pi retains responsi
 Pi Stuff must neither clear queued input on recovery failure nor duplicate or automatically resubmit it to restart the
 failed work. Persisted completed work and accepted input remain intact.
 
+## Confirmed request admission and presentation
+
+Local token estimates guide proactive Magic compaction but are not, by themselves, grounds to abort a request. A high
+or unavailable estimate does not prove Provider overflow. A valid Magic projection covering the current input and
+completed Tool results may be sent; an actual Provider overflow enters recovery. Failure to obtain a correct projection
+requires recovery or an explained stop, never substitution of raw history.
+
+Use the existing Context display authority for concise recovery state and the current phase. Successful recovery
+returns to ordinary display without appending a message for every step. Failure explains the cause once and states
+that input is preserved. Technical details belong in `/diagnostics`, outside model context.
+
+## No proactive interruption
+
+Pi Stuff must not introduce proactive actions that interrupt an otherwise viable Agent run. Estimate thresholds,
+cache maintenance, optimization, and background maintenance do not authorize foreground cancellation. Optional
+maintenance failure alone is not proof that the active projection or foreground run has failed. Ordinary Magic
+compaction must preserve continuation rather than terminate work and require resubmission.
+
+The ten-minute deadline applies only to an actual fault-recovery phase. It is not a timer for normal Agent execution,
+ordinary proactive compaction, or a normal Provider response. A retry or maintenance operation must not reset, replace,
+or cancel the foreground run merely to simplify adapter implementation.
+
 ## Open decisions
 
-The interview still needs to settle request admission, progress measurement, detailed cancellation boundaries, and recovery
-presentation. The confirmed recovery boundaries still require feasibility validation against
-actual Pi and Magic capabilities before implementation is accepted.
+The remaining policy clarification is how the prohibition on proactive interruption relates to the previously
+confirmed stops for actual unrecoverable failures. Progress measurement and detailed cancellation propagation remain
+engineering validation work, not assumed capabilities. The design still awaits final shared-understanding confirmation.
 
 This proposal would replace incompatible fallback and estimate-only rejection policies in
 [ADR 0026](0026-bound-context-managed-provider-requests.md). Until the design is accepted and implemented, current

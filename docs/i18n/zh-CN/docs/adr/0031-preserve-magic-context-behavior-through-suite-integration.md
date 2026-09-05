@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0031-preserve-magic-context-behavior-through-suite-integration.md; translation-source-sha256: cb360f843de3ac842beef1429687aa13e65fc2decac445512551ced4ea224e07 -->
+<!-- translation-source: docs/adr/0031-preserve-magic-context-behavior-through-suite-integration.md; translation-source-sha256: 23554fcb9c39c0d8c8cc4c0539bb8873c56154e281e5cf7369733fb286a20570 -->
 
 ---
 status: proposed
@@ -50,10 +50,28 @@ Worker 失败后可以自动重启，并从已持久化的 Pi Session 和 Magic 
 负责；恢复失败时，Pi Stuff 不得清空排队输入，也不得重复或自动重新提交输入来重启失败的工作。
 已经持久化的完成结果和已接受输入必须保留。
 
+## 已确认请求放行与显示
+
+本地 token 估计用于指导 Magic 主动压缩，但不能单独作为中止请求的依据。估计偏高或未知并不能证明 Provider
+会超限。Magic 正确生成覆盖当前输入及已完成工具结果的上下文后，可以发送；Provider 实际返回超限时进入恢复。
+无法获得正确投影时应恢复或说明原因后停止，绝不能改发原始历史。
+
+沿用现有 Context 显示位置，简洁显示恢复状态和当前阶段。成功后恢复正常显示，不为每一步追加消息。
+失败时说明一次原因并告知输入已保留。技术细节放在 `/diagnostics`，不进入模型上下文。
+
+## 禁止主动制造运行中断
+
+Pi Stuff 不得通过主动动作打断本可继续的 Agent 运行。估计阈值、缓存维护、优化或后台维护都不构成取消前台
+工作的依据。可选维护失败本身不能证明当前投影或前台运行已经失败。普通 Magic 压缩必须保持继续执行能力，
+不能终止工作后要求重新提交输入。
+
+十分钟期限只适用于实际故障恢复阶段，不是正常 Agent 执行、普通主动压缩或正常 Provider 回答的计时器。
+不得仅为简化适配层实现，通过重试或维护操作重置、替换或取消前台运行。
+
 ## 待决事项
 
-讨论仍需确定请求放行、进展测量、具体取消边界，以及恢复过程的显示。接受实现之前，
-仍须根据 Pi 和 Magic 的实际能力验证已确认恢复边界的可行性。
+剩余的政策澄清是：禁止主动制造中断，与此前确认的实际不可恢复故障停止条件之间如何衔接。
+进展测量和具体取消传播仍是工程验证工作，不能当作已经具备的能力。设计仍等待最终共同理解确认。
 
 本提案拟替换 [ADR 0026](0026-bound-context-managed-provider-requests.md) 中不兼容的兜底和仅凭估计拦截策略。
 在设计被接受并实现之前，当前行为仍单独记录；本草案不表示 Magic 独占恢复已经交付。
