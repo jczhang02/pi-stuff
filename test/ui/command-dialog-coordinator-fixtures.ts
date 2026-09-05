@@ -5,6 +5,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionContext,
 	type ExtensionUIContext,
+	initTheme,
 	ModelRegistry,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
@@ -173,6 +174,10 @@ class UiHarness {
 	readonly tui = new UiHarnessTui(this.renderRequests);
 	readonly workingWrites: boolean[] = [];
 	private editorFactory: EditorFactory | undefined;
+
+	constructor() {
+		initTheme("dark");
+	}
 
 	get currentHost(): CommandDialogComponent {
 		const host = this.hostCalls.at(-1)?.component;

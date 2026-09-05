@@ -118,7 +118,7 @@ function transcriptContainsUserMessage(frame: string, text: string): boolean {
 	const lines = frame.split("\n");
 	for (let index = 1; index + 1 < lines.length; index += 1) {
 		if (
-			(lines[index] ?? "").trim() === text &&
+			(lines[index] ?? "").trim() === ` ${text}` &&
 			(lines[index - 1] ?? "").trim() === "" &&
 			(lines[index + 1] ?? "").trim() === ""
 		) {
