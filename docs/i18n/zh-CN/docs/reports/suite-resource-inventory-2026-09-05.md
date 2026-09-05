@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: e80d363128361564d74d08fdd87e1a0912b0e4430e7ca0bcce46550aac3574f0 -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 31af9bda5fe46355488a671880d346096fd053bf791a16ad027a1f0f730da199 -->
 
 # Suite 资源源码清单
 
@@ -279,6 +279,39 @@ Spinner 缺失为零，采集间隔低于 17 ms。关闭后所有 scope 均已�
 和 40.465 ms 输入门槛，不能据此声称整个 Host 的 CPU、内存或延迟改善；已测得的节省限于上述辅助函数。
 精确原生 Host 的集成 UI 和聚焦编辑器检查通过。数值记录的 `commandInvocationMatching` 保存全部轮次、
 源码及证据哈希、资源快照和限制。首次 Agent 导入停顿与其余整个 Suite 验收仍未完成。
+
+## 子进程跳过不启用的根 Agents 管理实现
+
+在 `396e1cfc`，Agents 入口静态导入根管理实现，随后其工厂在 child Host 中立即返回。child 没有使用该实现的
+任何注册，却仍承担了导入成本。`ps-yon.14` 在导入之前检查已有的 child 标志；显式依赖覆盖仍进入原工厂，
+parent 在 Suite 安装阶段加载根实现，嵌套委派仍由独立的 child Extension 负责。没有新增缓存、加载器、定时器
+或依赖。入口从 1 行增至 12 行，加上 33 行导入边界回归测试，Source 净增 44 行。该测试在旧入口失败，在候选版通过。
+
+三个普通样本使用未修改的精确 Pi 观察器，参数包括 `--suite --agent foreground --resource-scope` 和
+`--repeat-tool`。每个 parent 启动两个 child，使用相同的 fresh-context Bash 工作负载。配置与临时缓存均为私有
+新建，未清理内核页缓存。各次顺序运行，没有测试、scout 或性能剖析竞争资源。下表观察器启动时间均为
+2026-09-05 UTC。
+
+| 样本 | 启动时间，UTC | Spinner，ms | 输入，ms | parent rchar，字节 | 作用域 CPU，秒 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 对照 `B9o4KB` | 23:29:07.019 | 212.506 | 147.220 | 256,145,210 | 22.589544 |
+| 候选 `dMRIAb` | 23:31:57.701 | 197.750 | 110.127 | 241,984,013 | 22.358168 |
+| 候选 `9z3isy` | 23:34:47.499 | 220.744 | 73.380 | 241,993,644 | 22.083298 |
+
+两个候选的 parent `/proc` 计数均少读约 14.15 MB，其中包含已等待退出的 child I/O。这是返回给进程的字节，
+不是物理存储读取量，也不是根管理文件的精确读取字节。三个样本不足以证明完整 Host 的 CPU 或 RSS 稳定下降。
+各次均未通过冻结的 Spinner 与输入门槛；没有缺失 Spinner 观察，采集间隙均低于 17 ms。parent 冷导入停顿仍未解决。
+
+另有两个带标记的诊断样本直接确认被删除的工作：对照 `XYbzCx` 于 23:36:38.077 UTC 启动，候选 `oyCJtj`
+于 23:37:45.069 UTC 启动。根 Module 中的临时 performance mark 和 child Provider 的计数显示，对照的两个
+child 各导入根实现一次，候选均为零；每个 child 的两次请求都得到相同结果。这证明候选 child 没有求值根实现，
+不表示所有共享依赖都消失了。两个诊断样本也未通过冻结的 Spinner／输入门槛。测量后已删除两处探针。
+
+全部五次均完成并回收两个 child，自动 Naming 各请求并持久化一次，Usage 各刷新一次，所属资源作用域均已卸载。
+现有真实 Host 执行矩阵在候选版通过，包括实际嵌套委派及其 Tool 权限检查。连同 parent Package 加载、根组合及
+导入边界回归测试，聚焦命令共通过 12 个测试、88 个断言。数值记录的 `childRootModuleLoading` 保留五次结果、
+源码／fixture／证据哈希和测量限制。内存记账峰值与最终 RSS 快照不能表示分配、GC 或进程树 RSS 峰值；完整资源
+审计与响应验收仍然必须完成。
 
 ## 只读取选中 Skill 的元数据
 

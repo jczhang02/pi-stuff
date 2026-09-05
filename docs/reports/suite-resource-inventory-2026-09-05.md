@@ -301,6 +301,45 @@ latency improvement; the measured saving is the helper work above. The exact nat
 checks pass. `commandInvocationMatching` in the numeric record retains the trials, Source and evidence hashes, resource
 snapshots and limits. First-Agent import stalls and the remaining whole-Suite acceptance stay open.
 
+## Skip the inactive root Agents implementation in children
+
+At `396e1cfc`, the Agents entrypoint statically imported the root management implementation. Its factory then returned
+immediately in a child Host. The child paid for that import despite using none of its registrations. `ps-yon.14` checks
+the existing child flag before importing the root. Explicit dependency overrides still reach the original factory;
+the parent loads the root during Suite installation, and nested delegation keeps its separate child Extension.
+No cache, loader, timer or dependency was added. The entrypoint grows from 1 to 12 lines; a 33-line import-boundary
+regression brings the Source delta to +44 lines. It fails on the old entrypoint and passes on the candidate.
+
+Three ordinary runs used the unchanged exact-Pi observer with `--suite --agent foreground --resource-scope` and
+`--repeat-tool`. Each parent launched two children with the same fresh-context Bash workload. Configuration and
+temporary caches were private and fresh; the kernel page cache was not reset. Runs were sequential, without competing
+tests, scouts or profiling. Observer starts below are on 2026-09-05 UTC.
+
+| Sample | Start, UTC | Spinner, ms | Input, ms | Parent rchar, bytes | Scoped CPU, seconds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Control `B9o4KB` | 23:29:07.019 | 212.506 | 147.220 | 256,145,210 | 22.589544 |
+| Candidate `dMRIAb` | 23:31:57.701 | 197.750 | 110.127 | 241,984,013 | 22.358168 |
+| Candidate `9z3isy` | 23:34:47.499 | 220.744 | 73.380 | 241,993,644 | 22.083298 |
+
+Both candidates read about 14.15 MB less according to parent `/proc` accounting, which includes waited-child I/O.
+These are returned bytes, not physical storage reads or an exact count of bytes from root-management files. Three
+samples do not establish stable whole-Host CPU or RSS improvement. Every run failed the frozen Spinner and input
+gates, with no missing Spinner observations and capture gaps below 17 ms. The parent cold-import stall remains open.
+
+Two separate marked diagnostics verify the removed work directly. Control `XYbzCx` started at 23:36:38.077 UTC;
+candidate `oyCJtj` followed at 23:37:45.069 UTC. A temporary performance mark in the root Module and a child Provider
+counter showed one root import in each control child and zero in each candidate child, at both requests per child.
+This proves the root was not evaluated in those candidate children, not that every shared dependency disappeared.
+These marked runs also failed the frozen Spinner/input gates. Both probes were removed afterward.
+
+All five runs completed and reaped both children, requested and persisted automatic Naming once, and refreshed Usage
+once; their owned resource scopes were unloaded. The existing real-Host execution matrix passed with the candidate,
+including actual nested delegation and its Tool authority checks. Together with parent Package loading, root
+composition and the import-boundary regression, the focused command passed 12 tests and 88 assertions. The numeric
+record's `childRootModuleLoading` retains all five runs, source/fixture/evidence hashes and measurement limits. Charged
+memory and final RSS snapshots do not measure allocation, GC or peak process-tree RSS; complete resource and
+responsiveness acceptance remain required.
+
 ## Read only selected Skill metadata
 
 At `f8398ab2`, Agent Skill discovery read every candidate Markdown file to attach descriptions that its consumers

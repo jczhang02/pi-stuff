@@ -46,6 +46,9 @@ Continue independent work after launch. Open `/agents` to inspect, steer, stop, 
 
 ## Launch preparation
 
+Child Hosts skip the root Agents management implementation, which registers nothing in those processes. The parent
+loads it during Suite installation; authorized nested delegation keeps its existing child Extension.
+
 Planning validates Skills, model candidates, Tool budgets and timeouts, and capability/MCP constraints without creating
 execution or recovery records or hashing Agent definitions and task bodies. Final construction resolves the launch
 inputs and creates their digests, model metadata, and recovery record once. Planning projections are not cached across

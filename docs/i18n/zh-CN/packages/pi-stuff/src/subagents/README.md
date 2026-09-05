@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: b3c2f2cf7b2d9eace9359247744cbe5e5e5f34d9de7406bd721d158eead18f9b -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 31b82c696bf69ddefa6c65fbc6fb9a006d1d8b9394e06f50e6bb26f9d6504027 -->
 
 # Agents
 
@@ -46,6 +46,9 @@
 保留结果遵循验收报告优先规则，不会被后续普通 assistant 文本替换。
 
 ## 启动准备
+
+child Host 不加载根 Agents 管理实现，因为该实现在这些进程中不注册任何内容。parent 在 Suite 安装阶段加载它；
+获准的嵌套委派仍由现有 child Extension 负责。
 
 规划阶段校验 Skills、候选模型、Tool 预算与超时，以及 capability/MCP 约束，但不创建执行或恢复记录，也不计算
 Agent 定义与任务正文的摘要。最终构建阶段解析启动输入，并一次性生成对应摘要、模型元数据和恢复记录。

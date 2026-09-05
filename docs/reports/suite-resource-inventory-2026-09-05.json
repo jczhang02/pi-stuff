@@ -1,4 +1,277 @@
 {
+	"childRootModuleLoading": {
+		"bead": "ps-yon.14",
+		"base": "396e1cfcc107e39d33b9b1f292fb2c02cfa54310",
+		"date": "2026-09-06",
+		"change": "Check the existing child exclusion at the Agents entrypoint before loading the unused root implementation; preserve explicit root dependency overrides and native parent/fanout registration.",
+		"sourceLines": {
+			"entrypoint": {
+				"before": 1,
+				"after": 12
+			},
+			"regression": {
+				"before": 0,
+				"after": 33
+			},
+			"net": 44
+		},
+		"entrypointSha256": {
+			"control": "4beedf3087fc1054b50a35e9bd4601c64be71312124d86a180c64ef5a262cd9f",
+			"candidate": "445ac084fb103c6476ed642b173140533212dc694a5e2fbf29a620339979f5ac"
+		},
+		"command": "bun scripts/benchmark-responsiveness.ts --pi <certified-pi> --suite --agent foreground --resource-scope --gates docs/reports/suite-responsiveness-gates-2026-09-05.json --repeat-tool",
+		"isolation": "Fresh private Host configuration and temporary caches; same exact Pi 0.85.0 binary, 120x40 terminal and parent/two-child workload in isolated network/PID namespaces. Runs sequential; no tests, profiler or scouts competed. Kernel page cache not reset.",
+		"fixtures": [
+			{
+				"file": "scripts/benchmark-responsiveness.ts",
+				"sha256": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9"
+			},
+			{
+				"file": "scripts/host-resource-scope.ts",
+				"sha256": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee"
+			},
+			{
+				"file": "scripts/pty-observation.ts",
+				"sha256": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40"
+			},
+			{
+				"file": "test/fixtures/responsiveness-provider.ts",
+				"sha256": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3"
+			},
+			{
+				"file": "test/fixtures/faux-provider.ts",
+				"sha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+			}
+		],
+		"diagnostic": {
+			"method": "Temporary root-module performance mark and child Provider mark count; both probes identical across control/candidate and removed afterward.",
+			"providerSha256": "0afd426e1e600570ea17965bfd6820fafbd17aa2a27880aa5f135b7665be02f5"
+		},
+		"runs": [
+			{
+				"sample": "B9o4KB",
+				"variant": "control",
+				"diagnostic": false,
+				"observerStartUtc": "2026-09-05T23:29:07.019Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"steady-input"
+				],
+				"evidenceSha256": "dabd2d7391aba90d73d665840db6fe85a8dcb21aeeb8bf246fa7040d8fa04318",
+				"providerSha256": "6042c24705272065355d3da5e7448e9613e98b02cdc03b7ddc6aec374320b4e4",
+				"sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				"spinnerMs": 212.50618600000053,
+				"steadyInputMs": 147.21987799999988,
+				"selectionMs": 27.06807800000024,
+				"startupInputMs": 13.895603999999366,
+				"observationGapMs": 16.62864399999944,
+				"spinnerAbsenceMs": 0,
+				"activeDurationMs": 36867.586423999994,
+				"activeCaptures": 3107,
+				"cpuUs": 22589544,
+				"peakChargedBytes": 1276076032,
+				"rssSnapshotBytes": 599945216,
+				"parentIo": {
+					"rchar": 256145210,
+					"wchar": 27467175,
+					"syscr": 22932,
+					"syscw": 7295,
+					"read_bytes": 0,
+					"write_bytes": 27206580,
+					"cancelled_write_bytes": 0
+				},
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"automaticUsageRefreshes": 1,
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "dMRIAb",
+				"variant": "candidate",
+				"diagnostic": false,
+				"observerStartUtc": "2026-09-05T23:31:57.701Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"steady-input"
+				],
+				"evidenceSha256": "d8d34e88da7a8505795a7bef8a8004e55ef26eb81d0d272685cd2efbe65800ba",
+				"providerSha256": "849323c1d59788ab81a4b2bace2b70cc4b35ae66d78016974c223ab69676aa59",
+				"sourceDiffSha256": "d5be8697d5c3eb9eeee5121062e5ecb7cce9c079b44f1a72d45aee7d0c0f4d7e",
+				"spinnerMs": 197.74954900000012,
+				"steadyInputMs": 110.12702200000058,
+				"selectionMs": 14.753268999999818,
+				"startupInputMs": 13.757692000000134,
+				"observationGapMs": 16.53905500000019,
+				"spinnerAbsenceMs": 0,
+				"activeDurationMs": 36759.859037999995,
+				"activeCaptures": 3100,
+				"cpuUs": 22358168,
+				"peakChargedBytes": 1273602048,
+				"rssSnapshotBytes": 597729280,
+				"parentIo": {
+					"rchar": 241984013,
+					"wchar": 27466261,
+					"syscr": 22026,
+					"syscw": 7293,
+					"read_bytes": 0,
+					"write_bytes": 27207128,
+					"cancelled_write_bytes": 0
+				},
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"automaticUsageRefreshes": 1,
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "9z3isy",
+				"variant": "candidate",
+				"diagnostic": false,
+				"observerStartUtc": "2026-09-05T23:34:47.499Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"steady-input"
+				],
+				"evidenceSha256": "552af49ffe2efd2c836477c5aad8a220061fd5856e53cdfaa02e99539d7bcece",
+				"providerSha256": "a2c51393ffb43c5ca7d19a942fc44e64095b74a340db829e7cc3182f0e0aa02f",
+				"sourceDiffSha256": "d5be8697d5c3eb9eeee5121062e5ecb7cce9c079b44f1a72d45aee7d0c0f4d7e",
+				"spinnerMs": 220.74351200000092,
+				"steadyInputMs": 73.37951800000155,
+				"selectionMs": 13.973352000000887,
+				"startupInputMs": 13.943829999999252,
+				"observationGapMs": 15.882258999999976,
+				"spinnerAbsenceMs": 0,
+				"activeDurationMs": 36767.295783,
+				"activeCaptures": 3103,
+				"cpuUs": 22083298,
+				"peakChargedBytes": 1268068352,
+				"rssSnapshotBytes": 602873856,
+				"parentIo": {
+					"rchar": 241993644,
+					"wchar": 27465485,
+					"syscr": 22008,
+					"syscw": 7291,
+					"read_bytes": 0,
+					"write_bytes": 27207264,
+					"cancelled_write_bytes": 0
+				},
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"automaticUsageRefreshes": 1,
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "XYbzCx",
+				"variant": "control",
+				"diagnostic": true,
+				"observerStartUtc": "2026-09-05T23:36:38.077Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"steady-input"
+				],
+				"evidenceSha256": "eccee7a6a5d6bce2f4c501aa3619c9774bb0ddc297173fac797c9c3f996ff1d0",
+				"providerSha256": "83f5d2144026118d5ace137f1220bcb68e556d94e2d7febb44fc93fe8120bea5",
+				"sourceDiffSha256": "9a6d3027ef3ebfdde34b2f8da99eb32bcb7a853eeac959f6e1450b1d78fec343",
+				"spinnerMs": 270.06338499999947,
+				"steadyInputMs": 110.82878399999936,
+				"selectionMs": 14.242925999998988,
+				"startupInputMs": 25.973312000000078,
+				"observationGapMs": 19.09040399999958,
+				"spinnerAbsenceMs": 0,
+				"activeDurationMs": 36834.93219,
+				"activeCaptures": 3109,
+				"cpuUs": 22343926,
+				"peakChargedBytes": 1286365184,
+				"rssSnapshotBytes": 620331008,
+				"parentIo": {
+					"rchar": 256140775,
+					"wchar": 27467517,
+					"syscr": 22976,
+					"syscw": 7291,
+					"read_bytes": 0,
+					"write_bytes": 27207156,
+					"cancelled_write_bytes": 0
+				},
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"automaticUsageRefreshes": 1,
+				"namingRequests": 1,
+				"namingPersisted": 1,
+				"rootModuleImportCountsByChildRequest": [
+					[
+						1,
+						1
+					],
+					[
+						1,
+						1
+					]
+				]
+			},
+			{
+				"sample": "oyCJtj",
+				"variant": "candidate",
+				"diagnostic": true,
+				"observerStartUtc": "2026-09-05T23:37:45.069Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"steady-input"
+				],
+				"evidenceSha256": "7e1d82f0ce415f5f340eb2b9ede145eb0b98d1cc4c3c57d280268c50f0e73022",
+				"providerSha256": "ce00d31bb934a6491859d9bf94c625640061bed561b7a6263359d6c633f3033a",
+				"sourceDiffSha256": "21b112ff40f6fa298b7e821e7966c7075c205535e6dd968ea2dc281ec7772425",
+				"spinnerMs": 209.98217599999953,
+				"steadyInputMs": 134.42873999999938,
+				"selectionMs": 13.968165999998746,
+				"startupInputMs": 13.632966000000124,
+				"observationGapMs": 21.646864000000278,
+				"spinnerAbsenceMs": 0,
+				"activeDurationMs": 36736.908687,
+				"activeCaptures": 3100,
+				"cpuUs": 22249389,
+				"peakChargedBytes": 1259798528,
+				"rssSnapshotBytes": 606224384,
+				"parentIo": {
+					"rchar": 241977417,
+					"wchar": 27466452,
+					"syscr": 21883,
+					"syscw": 7283,
+					"read_bytes": 0,
+					"write_bytes": 27207842,
+					"cancelled_write_bytes": 0
+				},
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"automaticUsageRefreshes": 1,
+				"namingRequests": 1,
+				"namingPersisted": 1,
+				"rootModuleImportCountsByChildRequest": [
+					[
+						0,
+						0
+					],
+					[
+						0,
+						0
+					]
+				]
+			}
+		],
+		"limits": [
+			"All frozen Spinner/input verdicts FAIL; savings do not certify responsiveness or the full Suite audit.",
+			"Parent /proc I/O includes waited-child accounting and unrelated reads; rchar is returned bytes, not physical disk bytes or exact root-module-only reads.",
+			"Cgroup CPU covers the scoped workload, not exclusive JS time; charged memory is not peak process-tree RSS, allocation or GC. Three ordinary samples do not prove stable total CPU or RSS improvement.",
+			"Native marks prove this root Module was not evaluated in two candidate children, not that every shared dependency was absent or every child workload has the same savings.",
+			"The import-hook regression is repository-runtime evidence; native parent/fanout functional acceptance and responsiveness observations are separate."
+		]
+	},
 	"skillMetadataResolution": {
 		"bead": "ps-yon.13",
 		"baseCommit": "f8398ab25d3d387317902c5e19517488a74845eb",
