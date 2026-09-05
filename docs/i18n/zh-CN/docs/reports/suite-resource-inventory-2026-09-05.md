@@ -1,10 +1,11 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 2454904df7def4c793e712b18336f7afbe38098608bea54eb5a6ee47f8bd5f6e -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 8e7b7481a8d1ee104b823f62f45325e163c214d5cae6af40c4b006ae889c3451 -->
 
 # Suite 资源源码清单
 
 这份 2026-09-05 清单覆盖 `07d2f473` 的 [suite.json](../../../../../packages/pi-stuff/suite.json) 中全部 16 个
 Capability，以及共享加载、状态和注册路径。它记录待调查对象，不授权删除功能。
-除[Ledger 冷加载复现](suite-responsiveness-observer-2026-09-05.md)外，下列路径的成本尚未量化。
+[连续观察器](suite-responsiveness-observer-2026-09-05.md)及下文 MCP／RTK 样本记录了工作负载成本；
+表中各项源码操作的独立成本仍未量化。
 发现、校验、恢复和可见刷新可能需要重复执行；重复操作不自动等于浪费。
 Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md) 跟踪缺失的测量。
 
@@ -64,3 +65,45 @@ I/O，包含仍存活的 Code Mode 辅助进程；已等待回收子进程的 I/
 普通 Goal 续跑也已取得两个真实 Host scope 样本，包含自动 Naming／Usage、成功的 Goal Tool UI，
 以及先持久化规范完成状态再输出最终回复。两个样本均通过锁定门槛。其整进程计数不能分离 Goal 记账成本，
 也不能认证 Goal 重放、压缩和恢复；这些调查仍未完成。
+
+## 复用 MCP 和 RTK 验证器的测量
+
+在 `02547c8b`，未修改的 [MCP 验证器](../../../../../scripts/verify-mcp-pty.ts)和
+[RTK 验证器](../../../../../scripts/verify-rtk-pty.ts)均在精确认证的 Pi 0.85.0 可执行文件上通过。
+外部 Bun 1.4.0 读取器继承 PTY 描述符，等待每个 Pi 子进程退出后读取 `child.resourceUsage()`。
+现有验证器、连续观察器及产品源码均未改变。[数值记录](../../../../../docs/reports/suite-resource-inventory-2026-09-05.json)
+用可执行文件、验证器、fixture 和读取器哈希绑定样本。第一次尝试因缺少 GNU `time`，在 Pi 启动前失败，
+没有产生资源样本；随后改用已安装 Bun 的 API 取得计数。
+
+执行命令为 `bun scripts/verify-mcp-pty.ts` 和 `bun scripts/verify-rtk-pty.ts`，`PI_BIN` 指向调用认证
+Host 的外部读取器，`RTK_BIN` 选择认证 RTK 0.45.0。每个验证器均运行于
+`unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc`；MCP 只启用新网络命名空间的
+loopback。私有配置和合成 Session 未触及正在运行的用户 Pi。
+
+| 工作负载，按执行顺序 | 开始时间，UTC | CPU 秒数 | 子进程存活秒数 | Bun maxRSS，十进制 MB |
+| --- | --- | ---: | ---: | ---: |
+| MCP 浅色设置 | 08:26:44.840 | 6.279 | 7.808 | 734.966 |
+| MCP 深色设置 | 08:26:52.707 | 5.011 | 6.521 | 737.624 |
+| MCP 连接、工具和历史 Session | 08:27:05.025 | 10.384 | 12.831 | 835.863 |
+| RTK 新会话执行 | 08:33:18.935 | 20.309 | 14.027 | 927.912 |
+| RTK 重启和恢复 | 08:33:33.042 | 7.201 | 7.204 | 687.849 |
+
+RTK 单独的 `--version` 预检消耗 0.498 秒 CPU，未加载 Suite。六个 Pi 子进程退出码均为零。
+MCP 执行了本地 stdio 工具、HTTP 发现及正常终止、连接失败、经确认的配置修改，以及切换 Session 后
+显示预置历史 Tool 结果；也断言打开对话框不会连接两个服务器。历史为预置数据，不是崩溃恢复轨迹。
+RTK 执行了三条改写后的 Bash 命令和一条 1,600 行 ANSI 输出命令，再用新 Host 打开同一 Session，
+验证原始历史未变，且有界模型投影完全相同。
+
+这些是整段 Host 工作负载的计数，不是 MCP／RTK 成本归因或优化对比。
+[Bun API](https://bun.sh/docs/runtime/child-process#resource-usage)以微秒报告 CPU、以字节报告 maxRSS。
+原生已等待后代计账可能包含子进程工作；读取器、Expect、`script` 及同级 HTTP fixture 服务不在边界内。
+maxRSS 不是进程树 RSS 总和的峰值；文件系统计数是操作数而非字节，上下文切换不是唤醒次数。
+[Linux 计账契约](https://man7.org/linux/man-pages/man2/getrusage.2.html)说明了这些限制。
+墙钟时间包含验证器主动等待交互的时间，不能当作界面卡顿指标。
+
+两个验证器都使用离线 Provider；RTK 还显式禁用 Naming，并预先批准 Bash。它们不认证自动 Naming／Usage、
+真实 OAuth、原生 Context 载荷或连续 Vibe Line／输入／选择门槛。
+MCP 使用新的私有 HOME／XDG／Agent／项目／Session 目录，但未重置环境临时目录及源码缓存。
+RTK 使用新的私有 HOME／XDG／TMPDIR，新会话和恢复共用 fixture 状态。两者均未重置内核页缓存。
+不同主题及新会话／恢复工作负载不是成对优化样本。各所有者的重复工作、规模增长、崩溃恢复、分配／GC
+及完整资源维度仍未完成。

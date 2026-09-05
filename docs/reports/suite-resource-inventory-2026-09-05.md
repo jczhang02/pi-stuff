@@ -2,7 +2,8 @@
 
 This 2026-09-05 inventory covers the 16 Capabilities in [suite.json](../../packages/pi-stuff/suite.json) and shared
 loading/status/registration paths at `07d2f473`. It records investigation targets, not permission to remove features.
-Except for the [cold Ledger reproduction](suite-responsiveness-observer-2026-09-05.md), the costs below are unmeasured.
+The [continuous observer](suite-responsiveness-observer-2026-09-05.md) and the MCP/RTK samples below record workload
+costs; the individual source operations in the table remain unmeasured.
 Repeated source operations are not automatically redundant: discovery, validation, recovery and visible refresh may
 require them. Beads `ps-yon.3` owns the missing measurements under [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md).
 
@@ -64,3 +65,47 @@ dimensions and before/after closure remain open; see the [observer report](suite
 Normal Goal continuation now also has two scoped real-Host samples with automatic Naming/Usage, successful Goal Tool UI,
 and canonical completion preceding the final response. Both passed the frozen gates. Their whole-process counters do not
 isolate Goal accounting cost or certify Goal replay, compaction and recovery; those investigations remain open.
+
+## Existing MCP and RTK verifier measurements
+
+At `02547c8b`, the unchanged [MCP verifier](../../scripts/verify-mcp-pty.ts) and
+[RTK verifier](../../scripts/verify-rtk-pty.ts) both passed on the exact certified Pi 0.85.0 executable. An external
+Bun 1.4.0 reader inherited the PTY descriptors, waited for each Pi child to exit, then read `child.resourceUsage()`.
+Existing verifier, continuous-observer and product Source were unchanged. The
+[numeric record](suite-resource-inventory-2026-09-05.json) binds the samples
+to executable, verifier, fixture and reader hashes. The first attempt failed before Pi started because GNU `time`
+was absent; it produced no resource sample. The installed Bun API supplied the counters instead.
+
+The two commands were `bun scripts/verify-mcp-pty.ts` and `bun scripts/verify-rtk-pty.ts`, with `PI_BIN` pointing to
+the external reader around the certified Host and `RTK_BIN` selecting certified RTK 0.45.0. Each verifier ran under
+`unshare --user --map-root-user --net --pid --fork --kill-child --mount-proc`; MCP enabled only the new namespace's
+loopback interface. Their private configuration and synthetic Sessions did not touch the running user Pi.
+
+| Workload, in execution order | Start, UTC | CPU seconds | Child lifetime seconds | Bun maxRSS, decimal MB |
+| --- | --- | ---: | ---: | ---: |
+| MCP light setup | 08:26:44.840 | 6.279 | 7.808 | 734.966 |
+| MCP dark setup | 08:26:52.707 | 5.011 | 6.521 | 737.624 |
+| MCP connection, Tool and historical Session | 08:27:05.025 | 10.384 | 12.831 | 835.863 |
+| RTK fresh execution | 08:33:18.935 | 20.309 | 14.027 | 927.912 |
+| RTK restart and resume | 08:33:33.042 | 7.201 | 7.204 | 687.849 |
+
+RTK's separate `--version` preflight used 0.498 CPU seconds and did not load the Suite. All six Pi children exited
+with status zero. MCP exercised local stdio Tool execution, HTTP discovery and graceful termination, a failed
+connection, confirmed configuration changes, and display of a seeded historical Tool result after Session switching.
+It also asserted that opening the dialog did not connect either server. The resumed history was seeded, not a
+crash-recovery trace. RTK executed three rewritten Bash commands and one 1,600-line ANSI-output command, then started
+a new Host on the same Session and verified unchanged raw history and identical bounded model projection.
+
+These are whole-Host workload counters, not MCP/RTK attribution or optimization comparisons. The
+[Bun API](https://bun.sh/docs/runtime/child-process#resource-usage) reports CPU microseconds and maxRSS bytes.
+Native waited-descendant accounting can include child work; the reader, Expect, `script` and sibling HTTP fixture
+server are outside this boundary. maxRSS is not aggregate peak process-tree RSS, filesystem counters are operations
+rather than bytes, and context switches are not wakeups. The [Linux accounting contract](https://man7.org/linux/man-pages/man2/getrusage.2.html)
+describes these limits. Wall time includes deliberate verifier interaction waits and is not an interface-stall metric.
+
+Both verifiers use offline Providers; RTK additionally disables Naming explicitly and uses preapproved Bash. They
+do not certify automatic Naming/Usage, live OAuth, native Context payloads or continuous Vibe Line/input/selection
+gates. MCP uses fresh private HOME/XDG/Agent/project/Session directories; its ambient temporary and source caches
+were not reset. RTK uses a fresh private HOME/XDG/TMPDIR, but fresh/resume share their fixture state. The kernel page
+cache was not reset for either verifier. Different themes and fresh/resume workloads are not paired optimization
+samples. Per-owner repetition, scale, crash recovery, allocation/GC and complete resource dimensions remain open.

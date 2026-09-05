@@ -1,0 +1,250 @@
+{
+	"capturedOn": "2026-09-05",
+	"suiteCommit": "02547c8bbf908bec3c4d357a5fe405adf8124bab",
+	"host": {
+		"version": "0.85.0",
+		"embeddedBun": "1.3.14",
+		"sha256": "0cfd1bf3e9468f1052d172502fa388e8e8e53dcdeb9fa97f1ef828fdd7757072"
+	},
+	"resourceReader": {
+		"bun": "1.4.0",
+		"bunSha256": "33d56b070be6a9e3da0ab013038b43d1645d0534ca811ecdba4472599117eb4b",
+		"wrapperSha256": "cbe7b7a541bfeb40505114848166ad8b722012c8e82d0d16f769136767de03b5",
+		"rawRecordsSha256": "93104320c49c7defe041ee07ab64d6efeb48648f3567a2e12d0c418beeffda00",
+		"method": "Bun.spawn with inherited PTY descriptors; await child.exited, then read child.resourceUsage(). No sampling during Host work.",
+		"cpu": "cpuTime in microseconds, including native waited-descendant accounting; wrapper/verifier and sibling fixture server are excluded.",
+		"maxRss": "Bun-reported maxRSS bytes for the waited Host; not sum-RSS or peak process-tree RSS. Raw field largestProcessMaxRssBytes is retained as maxRssBytes below.",
+		"io": "Filesystem operation counters, not bytes or all read/write syscalls.",
+		"contextSwitches": "Voluntary and involuntary scheduler switches, not wakeups.",
+		"wall": "Whole child lifetime including verifier-controlled interaction waits; not maximum UI delay or removable work."
+	},
+	"common": {
+		"sourceChanges": false,
+		"externalNetworkIsolated": true,
+		"pidNamespaceIsolated": true,
+		"namespaceShutdownKillsRemainingChildren": true,
+		"kernelPageCacheReset": false,
+		"continuousLivenessGatesRun": false,
+		"sourceCacheResetClaimed": false,
+		"suiteManifestSha256": "99867b607fa1e7aa2ef90851d3cc811e1fffbe8add4627e1446ffddc6b6f4202",
+		"sharedProviderSha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+	},
+	"workloads": [
+		{
+			"id": "mcp",
+			"entrypoint": "scripts/verify-mcp-pty.ts",
+			"verifierSha256": "5ec457dcbd98b0388d8c02ebb425d943de63798f0a7e626f2fa946b23b9b2e15",
+			"providerSha256": "a120e5df51ccc4cd2070448e47caea71b5f6616380ce34d312199970aad86cad",
+			"runnerSha256": "df806b4ca99fe84538c8c770a2561c68c07a3145b16083981eedb60755c81d10",
+			"stdioServerSha256": "904aa6e2b202858190b4751ab49cc22c11a18660ed0b349deb20a85993423dbf",
+			"httpServerSha256": "c8c5a114ce92b830fac00326a3fc6b9ba20e19dd950114786da2d6f2997634cd",
+			"verifierExitStatus": 0,
+			"geometry": {
+				"default": [
+					64,
+					28
+				],
+				"narrow": [
+					48,
+					28
+				],
+				"lowSetup": [
+					48,
+					12
+				]
+			},
+			"sampleIds": [
+				"mcp-light-setup",
+				"mcp-dark-setup",
+				"mcp-tool-and-history"
+			],
+			"settings": "PI_OFFLINE=1 and --offline; fake Provider; fresh private HOME, XDG directories, Agent settings, project and Session directories for each Host. Only loopback networking enabled. Ambient TMPDIR and source caches were not reset.",
+			"verified": [
+				"Light/dark setup with confirmed configuration writes only",
+				"Opening dialog performs no stdio/HTTP connection",
+				"Connection policy persistence, connection failure, stdio and HTTP discovery",
+				"One real local MCP Tool call and rendered successful Tool row",
+				"Seeded historical Session switch renders original Tool row without raw result",
+				"stdio graceful exit and missing PID; HTTP DELETE session termination"
+			],
+			"excluded": [
+				"Live OAuth/account flows",
+				"Automatic Naming and Usage execution",
+				"Native Provider Context payload",
+				"Crash or large-metadata recovery"
+			]
+		},
+		{
+			"id": "rtk",
+			"entrypoint": "scripts/verify-rtk-pty.ts",
+			"verifierSha256": "5b3fa4095edf7742d62a192c4c6a79df6792dde45ea5e464b77642999efc5d51",
+			"providerSha256": "770d902371f38765b1692f489ed11abc968fd96333af55d59f61cee5cb2716da",
+			"runnerSha256": "fb66cbe5bb5a7ebeba7bf40d1d91c83792470e59f0ddc8c05973fb865d67ce40",
+			"rtkVersion": "0.45.0",
+			"rtkSha256": "99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535",
+			"verifierExitStatus": 0,
+			"geometry": [
+				100,
+				28
+			],
+			"sampleIds": [
+				"rtk-version-preflight",
+				"rtk-fresh",
+				"rtk-resume"
+			],
+			"settings": "PI_BIN external reader; RTK_BIN certified executable. PI_OFFLINE=1, --offline, --approve, explicit test-only Naming disable. Fresh private HOME/XDG/TMPDIR; fresh and resume share the verifier-created Agent, project and Session directories. Version preflight is a separate child and does not load Suite.",
+			"verified": [
+				"Real RTK-rewritten git status, rg --files, and rg -n",
+				"1600-line ANSI output retains raw Session data and has bounded sanitized model projection",
+				"New Host resumes the actual fresh Session; raw result and model projection are identical",
+				"RTK dialog reports runtime, rewriting, projection and savings"
+			],
+			"excluded": [
+				"Automatic Naming and Usage execution",
+				"Native Provider Context payload",
+				"Unapproved permission interaction",
+				"Crash recovery or large Session scaling"
+			]
+		}
+	],
+	"samples": [
+		{
+			"id": "mcp-light-setup",
+			"order": 1,
+			"startedAt": "2026-09-05T08:26:44.840Z",
+			"wallMs": 7807.966895,
+			"cpuUs": {
+				"user": 5301318,
+				"system": 977683,
+				"total": 6279001
+			},
+			"maxRssBytes": 734965760,
+			"contextSwitches": {
+				"voluntary": 16292,
+				"involuntary": 3403
+			},
+			"filesystemOperations": {
+				"in": 54866,
+				"out": 27265
+			},
+			"exitStatus": 0
+		},
+		{
+			"id": "mcp-dark-setup",
+			"order": 2,
+			"startedAt": "2026-09-05T08:26:52.707Z",
+			"wallMs": 6520.521824,
+			"cpuUs": {
+				"user": 4312196,
+				"system": 698997,
+				"total": 5011193
+			},
+			"maxRssBytes": 737624064,
+			"contextSwitches": {
+				"voluntary": 15651,
+				"involuntary": 2999
+			},
+			"filesystemOperations": {
+				"in": 6821,
+				"out": 27156
+			},
+			"exitStatus": 0
+		},
+		{
+			"id": "mcp-tool-and-history",
+			"order": 3,
+			"startedAt": "2026-09-05T08:27:05.025Z",
+			"wallMs": 12830.665127,
+			"cpuUs": {
+				"user": 8838522,
+				"system": 1545001,
+				"total": 10383523
+			},
+			"maxRssBytes": 835862528,
+			"contextSwitches": {
+				"voluntary": 42881,
+				"involuntary": 7209
+			},
+			"filesystemOperations": {
+				"in": 399188,
+				"out": 36707
+			},
+			"exitStatus": 0
+		},
+		{
+			"id": "rtk-version-preflight",
+			"order": 4,
+			"startedAt": "2026-09-05T08:33:18.431Z",
+			"wallMs": 405.487952,
+			"cpuUs": {
+				"user": 425375,
+				"system": 72995,
+				"total": 498370
+			},
+			"maxRssBytes": 143507456,
+			"contextSwitches": {
+				"voluntary": 517,
+				"involuntary": 245
+			},
+			"filesystemOperations": {
+				"in": 671,
+				"out": 0
+			},
+			"exitStatus": 0
+		},
+		{
+			"id": "rtk-fresh",
+			"order": 5,
+			"startedAt": "2026-09-05T08:33:18.935Z",
+			"wallMs": 14026.796624,
+			"cpuUs": {
+				"user": 18268478,
+				"system": 2040184,
+				"total": 20308662
+			},
+			"maxRssBytes": 927911936,
+			"contextSwitches": {
+				"voluntary": 58201,
+				"involuntary": 12626
+			},
+			"filesystemOperations": {
+				"in": 774466,
+				"out": 42431
+			},
+			"exitStatus": 0
+		},
+		{
+			"id": "rtk-resume",
+			"order": 6,
+			"startedAt": "2026-09-05T08:33:33.042Z",
+			"wallMs": 7203.669627,
+			"cpuUs": {
+				"user": 6179843,
+				"system": 1020717,
+				"total": 7200560
+			},
+			"maxRssBytes": 687849472,
+			"contextSwitches": {
+				"voluntary": 23855,
+				"involuntary": 4571
+			},
+			"filesystemOperations": {
+				"in": 494055,
+				"out": 372
+			},
+			"exitStatus": 0
+		}
+	],
+	"unresolved": [
+		"No per-owner cost or redundant-work attribution",
+		"No Suite-absent comparison or optimization delta",
+		"No steady or aggregate peak process-tree RSS",
+		"No cumulative allocation/GC or wakeups",
+		"No largest main-thread task or continuous pre-Tool UI gate",
+		"Remaining Capability, scale and recovery workloads"
+	],
+	"sources": [
+		"https://bun.sh/docs/runtime/child-process#resource-usage",
+		"https://man7.org/linux/man-pages/man2/getrusage.2.html"
+	]
+}
