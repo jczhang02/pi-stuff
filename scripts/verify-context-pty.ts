@@ -716,29 +716,30 @@ async function verifyIsolationAndNative(fixture: ContextFixture, sessionId: stri
 	}
 }
 
-async function verifyFailOpen(fixture: ContextFixture): Promise<void> {
-	const sessionDirectory = join(fixture.temporaryDirectory, "fail-open-sessions");
-	const log = join(fixture.temporaryDirectory, "fail-open.jsonl");
+async function verifyUnavailable(fixture: ContextFixture): Promise<void> {
+	const sessionDirectory = join(fixture.temporaryDirectory, "unavailable-sessions");
+	const log = join(fixture.temporaryDirectory, "unavailable.jsonl");
 	await mkdir(sessionDirectory);
 	await writeFile(log, "");
 	const output = runExpect(
-		simpleProgram("fail-open"),
+		simpleProgram("unavailable"),
 		{
 			...fixture.baseEnvironment,
-			PI_STUFF_CONTEXT_PTY_INITIAL_PROMPT: "CONTEXT_FAIL_OPEN",
+			PI_STUFF_CONTEXT_PTY_INITIAL_PROMPT: "CONTEXT_UNAVAILABLE",
 			PI_STUFF_CONTEXT_PTY_LOG: log,
 			PI_STUFF_CONTEXT_PTY_SESSIONS: sessionDirectory,
-			PI_STUFF_CONTEXT_PTY_SESSION_ID: "context-fail-open",
+			PI_STUFF_CONTEXT_PTY_SESSION_ID: "context-unavailable",
 			XDG_DATA_HOME: "/dev/null",
 		},
-		"fail-open",
+		"unavailable",
 		fixture.projectDirectory,
 	);
-	if (!output.includes("CONTEXT_FAIL_OPEN_DONE")) fail("native fail-open response was not rendered");
+	if (!output.includes("Context could not recover")) fail("Context failure explanation was not rendered");
 	const records = (await readRecords(log)).filter((record) => record.type === "request");
-	if (records.length !== 1 || records[0]?.hasHistory !== false) {
-		fail("storage failure did not cleanly degrade to Pi native context");
-	}
+	if (records.length !== 0) fail("storage failure allowed a raw-history Provider request");
+	const sessions = (await readdir(sessionDirectory)).filter((file) => file.endsWith(".jsonl"));
+	const transcripts = await Promise.all(sessions.map((file) => readFile(join(sessionDirectory, file), "utf8")));
+	if (!transcripts.some((text) => text.includes("CONTEXT_UNAVAILABLE"))) fail("storage failure lost accepted input");
 }
 
 export async function verifyContextPty(options: ContextPtyVerificationOptions): Promise<void> {
@@ -751,7 +752,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		const records = await runResumedSession(fixture, sessionFile);
 		const sessionId = await verifyResumeRequests(fixture, records);
 		await verifyIsolationAndNative(fixture, sessionId);
-		await verifyFailOpen(fixture);
+		await verifyUnavailable(fixture);
 	} finally {
 		await rm(fixture.temporaryDirectory, { recursive: true, force: true });
 	}
@@ -761,6 +762,6 @@ if (import.meta.main) {
 	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 	await verifyContextPty({ piBinary: PI_BIN, packagePath: join(root, "packages/pi-stuff") });
 	console.log(
-		"Certified Magic Context in a real 64x28 Pi TUI, including project isolation, native-compaction adoption, lexical recall, resume, and fail-open",
+		"Certified Magic Context in a real 64x28 Pi TUI, including project isolation, native-compaction adoption, lexical recall, resume, and unavailable",
 	);
 }

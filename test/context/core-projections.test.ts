@@ -187,6 +187,8 @@ test("coalesces concurrent projections and releases joiners when invalidated", a
 
 	const first = projectCurrentContext("agent-fresh", ctx);
 	const joined = projectCurrentContext("agent-fresh", ctx);
+	const firstRejected = first.catch(String);
+	const joinedRejected = joined.catch(String);
 	await firstEntered;
 	expect(transforms).toBe(1);
 
@@ -194,10 +196,10 @@ test("coalesces concurrent projections and releases joiners when invalidated", a
 	const fresh = projectCurrentContext("agent-fresh", ctx);
 	await secondEntered;
 	expect(transforms).toBe(2);
-	expect(await joined).toEqual({ source: "native", text: "", truncated: false });
+	expect(String(await joinedRejected)).toContain("raw history was not substituted");
 
 	releaseFirst?.();
-	expect(await first).toEqual({ source: "native", text: "", truncated: false });
+	expect(String(await firstRejected)).toContain("raw history was not substituted");
 	releaseSecond?.();
 	expect(await fresh).toMatchObject({ source: "magic-context", text: expect.stringContaining("turn-2") });
 	expect(await projectCurrentContext("agent-fresh", ctx)).toMatchObject({

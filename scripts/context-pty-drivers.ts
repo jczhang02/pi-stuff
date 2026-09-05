@@ -16,7 +16,7 @@ proc must_expect {pattern} {
 const SIMPLE_PROGRAMS = {
 	automatic: { done: "CONTEXT_FIRST_DONE", label: "Automatic Context", wait: "automatic Context turn" },
 	direct: { done: "CONTEXT_FIRST_DONE", label: "Direct Context", wait: "direct Context turn" },
-	"fail-open": { done: "CONTEXT_FAIL_OPEN_DONE", label: "Fail-open", wait: "native fail-open response" },
+	unavailable: { done: "Context could not recover", label: "Unavailable", wait: "Context failure explanation" },
 	isolation: { done: "CONTEXT_ISOLATION_DONE", label: "Isolated Context", wait: "isolated Context search" },
 } as const;
 

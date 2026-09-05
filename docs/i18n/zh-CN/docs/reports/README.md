@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 9d212478c0c2e8523d57169d19d92b41a79b64f28d4e10a09848d87e04cb13b3 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 6bcc1dacd21d2efa8f6f33fee856de8343c47658e1a7f20d0ff0d84014258856 -->
 
 # 报告
 
@@ -43,3 +43,5 @@
 - [Context 提交并发](context-submit-concurrency-research-2026-08-14.md)
 
 原始 JSON、ANSI、文本和图像证据与所属报告放在一起。历史版本、路径和哈希保持原样，便于确认当时的环境。
+
+- [ps-eck 恢复和 Host 边界（2026-09-05）](ps-eck-recovery-host-boundary-2026-09-05.md)

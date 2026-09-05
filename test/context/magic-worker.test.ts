@@ -357,7 +357,7 @@ test("Magic worker Tool events do not traverse irrelevant payloads", () => {
 	expect(toolResult.event.input).toEqual({});
 });
 
-test("the pinned direct engine keeps signal-blind lifecycle work outside Agent cancellation", async () => {
+test("the pinned engine cancels explicit compaction while ordinary lifecycle work survives Agent cancellation", async () => {
 	const harness = await createMagicWorkerHarness();
 	const { commands, contextForSession, handlers, pi } = harness;
 	try {
@@ -369,12 +369,12 @@ test("the pinned direct engine keeps signal-blind lifecycle work outside Agent c
 
 		const eventSignal = new AbortController();
 		eventSignal.abort(new Error("compaction consumer cancelled"));
-		expect(
-			await requireHandler(handlers, "session_before_compact")(
+		await expect(
+			requireHandler(handlers, "session_before_compact")(
 				beforeCompactEvent("direct-entry", eventSignal.signal),
 				context,
 			),
-		).toEqual({ cancel: true });
+		).rejects.toThrow("compaction consumer cancelled");
 
 		context.abort();
 		const statusCommand = commands.get("ctx-status");
@@ -415,19 +415,16 @@ test("the isolated engine matches pinned cancellation and keeps ordinary turns i
 		await requireHandler(handlers, "session_start")(sessionStart, context);
 		expect(state.branchReads).toBe(1);
 
-		const beforeCompact = beforeCompactEvent();
+		const beforeCompact = { ...beforeCompactEvent(), reason: "threshold" as const };
 		expect(await requireHandler(handlers, "session_before_compact")(beforeCompact, context)).toEqual({
 			cancel: true,
 		});
 		expect(state.branchReads).toBe(1);
 		const cancelled = new AbortController();
 		cancelled.abort(new Error("already cancelled"));
-		expect(
-			await requireHandler(handlers, "session_before_compact")(
-				{ ...beforeCompact, signal: cancelled.signal },
-				context,
-			),
-		).toEqual({ cancel: true });
+		await expect(
+			requireHandler(handlers, "session_before_compact")({ ...beforeCompact, signal: cancelled.signal }, context),
+		).rejects.toThrow("already cancelled");
 
 		const inFlightTagged = assistantMessage("§1§ WORKER_IN_FLIGHT_INTERRUPT_EVIDENCE");
 		const inFlightProjected = assistantMessage("WORKER_IN_FLIGHT_INTERRUPT_EVIDENCE");

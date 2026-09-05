@@ -5,7 +5,7 @@ import { verifyContextPty } from "../scripts/verify-context-pty.ts";
 
 const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 
-test("real Pi TUI activates Magic Context, resumes it, owns compaction, and fails open", async () => {
+test("real Pi TUI activates Magic Context, resumes it, owns compaction, and preserves input when Context is unavailable", async () => {
 	await verifyContextPty({
 		piBinary: PI_BIN,
 		packagePath: resolve(import.meta.dir, "../packages/pi-stuff"),

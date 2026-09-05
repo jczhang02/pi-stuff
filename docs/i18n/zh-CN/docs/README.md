@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: 13333d7e208f5eaf822b80889c6841b4005cc8799237da065f13a6ca7a634ee0 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: 90d003fb779e0dd8dbbf6faa09e6127c649274d4166f2ad9b322341d36fbb927 -->
 
 # 文档
 
@@ -91,6 +91,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0028](adr/0028-bound-tool-display-before-projection.md) | 在 projection 前限制 Tool Display |
 | [0029](adr/0029-keep-work-independent-of-retention-quotas.md) | 让生产性工作不受内部保留配额支配 |
 | [0030](adr/0030-unify-user-message-presentation.md) | 在原生 Host 内统一 User Message 呈现 |
+| [0031](adr/0031-preserve-magic-context-behavior-through-suite-integration.md) | 在 Suite 集成中保留 Magic Context 行为 |
 
 ## 证据与历史
 

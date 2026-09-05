@@ -200,10 +200,11 @@ projects its anchor and later updates after resume. It is not a Tool call, Diagn
 _Avoid_: Context Tool Activity, Context notification, Context status
 
 **Bounded Context Projection**:
-A derived model-request context that Context Management has established is within the selected model's local capacity
-bound. It is the only context eligible for a Provider request while Context is active; it does not guarantee Provider
-acceptance or content correctness.
-_Avoid_: Safe Context, compressed context
+A derived context projection shaped by Context Management for its requesting audience. Local capacity estimates guide
+display and proactive compaction; they do not establish Provider acceptance or authorize foreground cancellation.
+With Magic enabled, foreground requests use Magic's projection, while BTW and Agents retain their bounded reference
+contracts. Unrecoverable projection failure preserves input and stops without substituting raw history.
+_Avoid_: Safe Context, validated capacity guarantee
 
 **Prompt Contribution**:
 A marker-delimited, Capability-owned system-prompt fragment that Context Management orders and reconciles on every

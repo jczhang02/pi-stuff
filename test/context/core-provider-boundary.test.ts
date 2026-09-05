@@ -16,7 +16,24 @@ import {
 
 afterEach(cleanupContextCoreFixtures);
 
-test("aborts oversized provider requests when Context cannot establish a Bounded Context Projection", async () => {
+test("unknown estimates and unserializable multimodal payloads do not interrupt a valid Magic request", async () => {
+	const handlers: Handlers = new Map();
+	const api = apiFor(handlers);
+	piStuffContext(api, { loadMagicContext: async () => magicModule() });
+	const ctx = createExtensionCommandContext();
+	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+	await emitResults(handlers, "context", { type: "context", messages: [taggedMessage("current input")] }, ctx);
+	for (const payload of [
+		{ messages: [{ role: "user", content: [{ type: "image", data: "fixture", mimeType: "image/png" }] }] },
+		{ messages: [], unmeasurable: 1n },
+	]) {
+		await emit(handlers, "before_provider_request", { type: "before_provider_request", payload }, ctx);
+		expect(ctx.signal?.aborted).toBe(false);
+		expect(getContextStatusChannel(api).source.getSnapshot()).toEqual({ state: "unknown" });
+	}
+});
+
+test("allows a high local estimate without interrupting the Agent", async () => {
 	const handlers: Handlers = new Map();
 	const notifications: string[] = [];
 	const api = apiFor(handlers);
@@ -41,6 +58,7 @@ test("aborts oversized provider requests when Context cannot establish a Bounded
 		ui: { notify: (message) => notifications.push(message) },
 	});
 	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+	await emitResults(handlers, "context", { type: "context", messages: [taggedMessage("current input")] }, ctx);
 
 	await emit(
 		handlers,
@@ -52,15 +70,12 @@ test("aborts oversized provider requests when Context cannot establish a Bounded
 		ctx,
 	);
 
-	expect(ctx.signal?.aborted).toBe(true);
-	expect(notifications).toHaveLength(1);
-	expect(notifications[0]).toContain(
-		"Provider request was stopped because Context could not establish a Bounded Context Projection",
-	);
-	expect(contextStatus.source.getSnapshot()).toEqual({ state: "unknown" });
+	expect(ctx.signal?.aborted).toBe(false);
+	expect(notifications).toEqual([]);
+	expect(contextStatus.source.getSnapshot()).toMatchObject({ state: "validated", contextWindow: 100 });
 });
 
-test("publishes projection recovery, validation, then clears after a successful assistant message", async () => {
+test("keeps healthy projection out of recovery display and clears estimates after a successful response", async () => {
 	const handlers: Handlers = new Map();
 	const api = apiFor(handlers);
 	const contextStatus = getContextStatusChannel(api);
@@ -90,7 +105,7 @@ test("publishes projection recovery, validation, then clears after a successful 
 	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
 	await emitResults(handlers, "context", { type: "context", messages: [taggedMessage("project")] }, ctx);
-	expect(statusDuringProjection).toEqual({ state: "recovering" });
+	expect(statusDuringProjection).toBeUndefined();
 
 	await emit(
 		handlers,
@@ -124,7 +139,7 @@ test("publishes projection recovery, validation, then clears after a successful 
 	expect(contextStatus.source.getSnapshot()).toBeUndefined();
 });
 
-test("reuses a validated projection when Pi retries the same raw messages array", async () => {
+test("lets Magic project every retry even when the raw messages are unchanged", async () => {
 	const handlers: Handlers = new Map();
 	let magicContexts = 0;
 	piStuffContext(apiFor(handlers), {
@@ -164,8 +179,8 @@ test("reuses a validated projection when Pi retries the same raw messages array"
 	);
 	const retry = await emitResults(handlers, "context", { type: "context", messages: [rawMessage] }, ctx);
 
-	expect(magicContexts).toBe(1);
-	expect(retry[0]).toBe(first[0]);
+	expect(magicContexts).toBe(2);
+	expect(retry[0]).toEqual(first[0]);
 
 	await emitResults(
 		handlers,
@@ -173,10 +188,10 @@ test("reuses a validated projection when Pi retries the same raw messages array"
 		{ type: "context", messages: [rawMessage, taggedMessage("new trailing message")] },
 		ctx,
 	);
-	expect(magicContexts).toBe(2);
+	expect(magicContexts).toBe(3);
 });
 
-test("recomputes a validated projection when an earlier message object changes", async () => {
+test("reprojects an earlier message changed in place without relying on object identity", async () => {
 	const handlers: Handlers = new Map();
 	let magicContexts = 0;
 	piStuffContext(apiFor(handlers), {
@@ -216,7 +231,8 @@ test("recomputes a validated projection when an earlier message object changes",
 		ctx,
 	);
 
-	const changedEarlierMessage = taggedMessage("changed earlier");
+	firstMessage.content[0] = { type: "text", text: "changed earlier" };
+	const changedEarlierMessage = firstMessage;
 	const recomputed = await emitResults(
 		handlers,
 		"context",

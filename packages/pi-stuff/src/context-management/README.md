@@ -19,7 +19,7 @@ Context projection, retrieval, memory, notes, compaction, and pressure handling 
 ```
 
 The dialog shows Context usage, compartments, memory, notes, pending maintenance, Historian state, cache, history
-tokens, current errors, and whether native-compaction fallback is available.
+tokens, current errors, and whether Pi will invoke automatic Magic overflow recovery.
 
 ## Highlights
 
@@ -29,10 +29,12 @@ tokens, current errors, and whether native-compaction fallback is available.
 - Runs the Context engine in a Worker without transferring Pi's input, Agent-turn, or Session lifecycle ownership.
 - Sends only the pinned engine's required Tool-event fields across the Worker boundary.
 - Projects derived context while Pi Session JSONL remains the raw record.
-- Uses Pi's native context and compaction only during startup or degraded operation when the engine is unavailable, and reports degraded continuity when that fallback is disabled.
-- Once active, the Host-managed `before_provider_request` adapter is fail-closed and requires 95% final-payload validation.
-- Reuses a validated projection only when every ordered raw-message identity, provider/model, and context window match.
-- Pi owns retry, continuation, and compaction; direct provider calls that bypass the Host hook are excluded.
+- Keeps projection and compaction exclusively in Magic when enabled, including recovery after failure.
+- Treats local estimates as display information; high or unavailable estimates do not block a valid projection.
+- Calls Magic on every foreground Context event, including unchanged-input retries.
+- Returns genuine Magic summaries through Pi's public compaction hook; Pi owns retry and queue delivery.
+- Bounds actual recovery to ten minutes and one Worker restart, checks durable completion, and preserves accepted input
+  and completed Tool results. Full `/ctx recomp` remains explicit.
 
 ## Documentation
 

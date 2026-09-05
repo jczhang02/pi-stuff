@@ -1,14 +1,16 @@
 diff --git a/dist/index-0jgz8yja.js b/dist/index-0jgz8yja.js
-index f574d21a61cffa52fce1952d7d4aa0d4700eb70c..2fdf431135ce7b7917ad6752df443d567a044245 100644
 --- a/dist/index-0jgz8yja.js
 +++ b/dist/index-0jgz8yja.js
-@@ -8885,4 +8885,4 @@ import { existsSync as existsSync3, readFileSync as readFileSync2, realpathSync
+@@ -8885,7 +8885,7 @@
  import { createRequire } from "node:module";
  import { homedir as homedir3 } from "node:os";
  import { dirname as dirname2, join as join2, resolve } from "node:path";
 -import { pathToFileURL } from "node:url";
 +import { fileURLToPath, pathToFileURL } from "node:url";
-@@ -9009,13 +9009,18 @@ function tokenizerPackageRoots() {
+ 
+ // ../plugin/src/shared/commit-detection.ts
+ var HASH_HEX = "[0-9a-f]{7,12}";
+@@ -9009,13 +9009,18 @@
      }
      candidates.push(join2(root, "node_modules", "ai-tokenizer"));
    }
@@ -33,6 +35,23 @@ index f574d21a61cffa52fce1952d7d4aa0d4700eb70c..2fdf431135ce7b7917ad6752df443d56
 +    }
    }
    return [...new Set(candidates)];
+ }
+@@ -16071,7 +16076,7 @@
+ function isPendingPiCompactionMarker(value) {
+   return typeof value === "object" && value !== null && typeof value.firstKeptEntryId === "string" && typeof value.endMessageId === "string" && typeof value.ordinal === "number" && typeof value.tokensBefore === "number" && typeof value.summary === "string" && typeof value.publishedAt === "number";
+ }
+-function getPendingPiCompactionMarkerState(db, sessionId) {
++function getPendingPiCompactionMarkerState(db, sessionId, strict = false) {
+   const row = db.prepare("SELECT pending_pi_compaction_marker_state FROM session_meta WHERE session_id = ?").get(sessionId);
+   const raw = row?.pending_pi_compaction_marker_state;
+   if (raw === null || raw === undefined || raw === "")
+@@ -16082,6 +16087,7 @@
+       return parsed;
+     }
+   } catch {}
++  if (strict) throw new Error("Magic compaction completion marker is invalid; completion is uncertain.");
+   db.prepare("UPDATE session_meta SET pending_pi_compaction_marker_state = NULL WHERE session_id = ? AND pending_pi_compaction_marker_state = ?").run(sessionId, raw);
+   return null;
  }
 diff --git a/dist/index.js b/dist/index.js
 --- a/dist/index.js
@@ -74,7 +93,15 @@ diff --git a/dist/index.js b/dist/index.js
        kind: draft.kind,
        tokens,
        uTokens,
-@@ -24412,47 +24412,6 @@
+@@ -22215,6 +22215,7 @@
+         rollbackDrainReservation();
+         return;
+       }
++      signal?.throwIfAborted();
+       let published = false;
+       db.exec("BEGIN IMMEDIATE");
+       try {
+@@ -24412,47 +24413,6 @@
    else
      lookup.entryIdsByFingerprint.set(fingerprint, [row.id]);
  }
@@ -122,7 +149,7 @@ diff --git a/dist/index.js b/dist/index.js
  function stripMcOwnedPiCompactionSummary(messages, entryIds, branchEntries) {
    const summaryMessage = messages[0];
    if (summaryMessage?.role !== "compactionSummary")
-@@ -24483,8 +24442,7 @@
+@@ -24483,8 +24443,7 @@
      return cached;
    const lookup = {
      entryIdByMessageRef: new Map,
@@ -132,7 +159,7 @@ diff --git a/dist/index.js b/dist/index.js
    };
    for (const entry of entries)
      addPiBranchEntryToLookup(lookup, entry);
-@@ -24834,9 +24792,9 @@
+@@ -24834,9 +24793,9 @@
        const unregisterRaw = setRawMessageProvider(sessionId, rawMessageProvider);
        rawMessageProviderUnregistersBySession.set(sessionId, unregisterRaw);
        scheduleReconciliation(options.db, sessionId, readRawSessionMessages);
@@ -145,7 +172,104 @@ diff --git a/dist/index.js b/dist/index.js
        const strictEntryIds = resolvedEntryIds ? [...resolvedEntryIds] : null;
        if (strictEntryIds && branchEntries && options.injection && !options.compactionOff && stripMcOwnedPiCompactionSummary(event.messages, strictEntryIds, branchEntries)) {
          logTransformTiming(sessionId, "mcCompactionSummarySuppression", tEntryBranch);
-@@ -30623,6 +30581,7 @@
+@@ -30347,6 +30306,96 @@
+   signalPiDeferredHistoryRefresh(sessionId);
+   signalPiDeferredMaterialization(sessionId);
+ }
++function readPiRecoveryCompaction(db, sessionId, event, ctx) {
++  const pending = getPendingPiCompactionMarkerState(db, sessionId, true);
++  if (!pending) return;
++  const entries = ctx.sessionManager.getBranch();
++  const matches = getCompartmentsByEndMessageId(db, sessionId, pending.endMessageId);
++  if (matches.length !== 1 || matches[0].endMessage !== pending.ordinal)
++    throw new Error("Magic compaction completion cannot be verified against its durable compartments.");
++  const firstKeptEntryId = findFirstKeptEntryId(entries, pending.ordinal);
++  if (!firstKeptEntryId || firstKeptEntryId !== pending.firstKeptEntryId)
++    throw new Error("Magic compaction retained boundary no longer matches this Session.");
++  const latest = findLatestCompactionFirstKept(entries);
++  if (latest && findEntryIndex(entries, latest) >= findEntryIndex(entries, firstKeptEntryId)) {
++    clearPendingPiCompactionMarkerStateIf(db, sessionId, pending);
++    return;
++  }
++  const compartments = getCompartments(db, sessionId).filter((entry) => entry.endMessage <= pending.ordinal);
++  const summary = renderDecayedCompartments({ compartments, historyBudgetTokens: DEFAULT_HISTORY_BUDGET_TOKENS });
++  if (!summary.trim()) throw new Error("Magic compaction produced no conversation summary.");
++  event.signal.throwIfAborted();
++  // Keep the marker until Pi persists its returned result. The existing drain then CAS-clears it.
++  return { compaction: { summary, firstKeptEntryId, tokensBefore: event.preparation.tokensBefore,
++    details: { source: "magic-context", lastCompactedOrdinal: pending.ordinal } } };
++}
++async function recoverPiCompaction({ db, ctx, event, historian }) {
++  const sessionId = resolveSessionId(ctx);
++  if (!sessionId) throw new Error("Magic compaction requires an active Session.");
++  if (event.reason === "overflow")
++    event = { ...event, signal: AbortSignal.any([event.signal, AbortSignal.timeout(600000)]) };
++  await resolveBeforeAbort(awaitInFlightHistorians(sessionId), event.signal, () => undefined);
++  event.signal.throwIfAborted();
++  if (!historian?.model) throw new Error("Magic Historian is not configured.");
++  const readBranchEntries = resolvePiReadBranchEntries(ctx);
++  const provider = { readMessages: () => convertEntriesToRawMessages(readBranchEntries()) };
++  const contextLimit = resolvePiContextLimit(ctx, db, sessionId);
++  // A real overflow is pressure even when the previous response reported low usage.
++  const inputTokens = Math.max(event.preparation.tokensBefore, event.reason === "overflow" ? contextLimit : 0);
++  const usage = { percentage: inputTokens / contextLimit * 100, inputTokens };
++  const executeThresholdPercentage = resolveExecuteThreshold(historian.executeThresholdPercentage ?? 65,
++    ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined, 65,
++    { contextLimit, sessionId, tokensConfig: historian.executeThresholdTokens });
++  // Actual rejection uses Magic's existing emergency tail; stale usage cannot size an ordinary tail reliably.
++  const emergencyTailScale = event.reason === "overflow" ? 0.25 : undefined;
++  const resolveBoundary = () => withRawMessageProvider(sessionId, provider, () => resolveProtectedTailBoundary(resolveBoundaryContext({
++    db, sessionId, mode: "pi-trigger", contextLimit, executeThresholdPercentage, usage,
++    usageSource: "live", providerShapeVersion: "pi-folded-v1", cacheNamespace: `pi:${sessionId}`, emergencyTailScale
++  })));
++  const holderId = crypto3.randomUUID();
++  while (!acquireCompartmentLease(db, sessionId, holderId)) {
++    await sleepWithAbort(1000, event.signal);
++    event.signal.throwIfAborted();
++  }
++  const renewal = startPiCompartmentLeaseRenewal(db, sessionId, holderId);
++  try {
++    event.signal.throwIfAborted();
++    if (ctx.sessionManager.getSessionId() !== sessionId) throw new Error("Magic compaction Session changed.");
++    let result = readPiRecoveryCompaction(db, sessionId, event, ctx);
++    let boundary = resolveBoundary();
++    if (result && !hasRunnableCompartmentWindow(boundary)) return result;
++    if (!hasRunnableCompartmentWindow(boundary))
++      throw new Error("Magic has no remaining compressible history before the protected current input.");
++    while (hasRunnableCompartmentWindow(boundary)) {
++      const before = getLastCompartmentEndMessage(db, sessionId);
++      await runPiHistorian({ db, sessionId, directory: ctx.cwd, provider,
++        runner: historian.runner, historianModel: historian.model, fallbackModels: historian.fallbackModels,
++        fallbackModelId: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
++        historianChunkTokens: historian.historianChunkTokens, boundarySnapshot: boundary,
++        currentContextLimit: contextLimit, historianTimeoutMs: historian.timeoutMs,
++        temperature: historian.temperature, maxOutputTokens: historian.maxOutputTokens,
++        twoPass: historian.twoPass, thinkingLevel: historian.thinkingLevel,
++        memoryEnabled: historian.memoryEnabled, allowHomeProject: historian.allowHomeProject,
++        autoPromote: historian.autoPromote, userMemoriesEnabled: historian.userMemoriesEnabled,
++        language: historian.language, compartmentLeaseHolderId: holderId,
++        readBranchEntries, forceDrainQuota: true, forceKeepLastCompartment: true, signal: event.signal,
++        onPublished: () => { signalPiDeferredHistoryRefresh(sessionId); signalPiDeferredMaterialization(sessionId); }
++      });
++      event.signal.throwIfAborted();
++      if (getLastCompartmentEndMessage(db, sessionId) <= before)
++        throw new Error(`Magic compaction made no forward progress: ${getHistorianFailureState(db, sessionId).lastError ?? "no history was published"}`);
++      result = readPiRecoveryCompaction(db, sessionId, event, ctx);
++      if (!result) throw new Error("Magic published history but its retained boundary cannot be verified.");
++      boundary = resolveBoundary();
++    }
++    return result;
++  } finally {
++    clearInterval(renewal);
++    releaseCompartmentLease(db, sessionId, holderId);
++  }
++}
++
++
+ async function handlePiSessionBeforeCompact(args) {
+   try {
+     const sessionId = args.ctx.sessionManager?.getSessionId?.();
+@@ -30623,6 +30672,7 @@
      log(`${PREFIX2} in-process subagent child detected; skipping full extension registration`);
      return;
    }
@@ -153,3 +277,17 @@ diff --git a/dist/index.js b/dist/index.js
    const unregisterPiSubagentInitContext = registerPiSubagentInitContext(pi);
    registerPiSubagentInitContextCleanup(pi, unregisterPiSubagentInitContext);
    beginBootQuietPeriod();
+@@ -31322,7 +31372,12 @@
+       log(`tool_result hook failed (continuing): ${err instanceof Error ? err.message : String(err)}`);
+     }
+   });
+-  pi.on("session_before_compact", async (_event, ctx) => handlePiSessionBeforeCompact({ db, compactionOff, ctx }));
++  pi.on("session_before_compact", async (event, ctx) => {
++    if (!compactionOff && (event.reason === "overflow" || event.reason === "manual")) {
++      return recoverPiCompaction({ db, ctx, event, historian: resolveCurrentProjectDeps(ctx).historianConfig });
++    }
++    return handlePiSessionBeforeCompact({ db, compactionOff, ctx });
++  });
+   pi.on("message_end", async (event, ctx) => {
+     try {
+       const msg = event.message;

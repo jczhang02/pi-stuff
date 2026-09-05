@@ -25,7 +25,7 @@ afterEach(cleanupContextCoreFixtures);
 const ACTIVE_CONTEXT_STATUS = {
 	continuity: "degraded",
 	continuityDetail:
-		"Pi native auto-compaction is disabled. Run /settings and enable auto-compaction so Pi can recover if Magic Context becomes unavailable.",
+		"Pi auto-compaction is disabled, so Pi will not invoke automatic Magic overflow recovery. Ordinary Magic compaction remains enabled.",
 	engine: "magic-context",
 	state: "active",
 	trigger: "input",
@@ -273,7 +273,7 @@ test("gives only interactive input one Host paint turn before Context without re
 				sequence.push("activate");
 				magicApi.on("context", (event) => {
 					sequence.push("transform");
-					return event;
+					return { messages: [taggedMessage("<session-history>preserved</session-history>"), ...event.messages] };
 				});
 			},
 		}),
