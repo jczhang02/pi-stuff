@@ -107,6 +107,68 @@ coverage from retained reports alone.
   duplicate assertions, obsolete scenarios, and checks that merely freeze private implementation shape for removal or
   revision. Similar flows at different levels remain justified when they detect different defects.
 
+### Command responsibilities
+
+- `bun run check` owns all Static Checks; `bun run test` owns dynamic Tests; `bun run benchmark:...` owns independent
+  Benchmarks. `bun run verify` combines Static Checks with conservatively selected dynamic Tests for daily verification
+  and never invokes Benchmarks. Reviews remain a review process rather than an empty symmetry-driven command.
+- Tests expose five stable level entries: `test:unit`, `test:component-integration`, `test:system`,
+  `test:system-integration`, and `test:acceptance`. Capability, file, and test-name selection refine these entries;
+  do not create a command for every combination of Capability and level.
+- Ordinary `check`, `test`, and `verify` execution is offline, credential-free, and makes no live model calls. It may
+  require real local Pi, RTK, or PTY tools. Live model and external-Service verification require explicit selection
+  and environment preflight, rather than an ambiguous `real` label determining whether calls occur.
+- This migration organizes existing checks and Capability Benchmarks. Record the Suite Outcome Evaluation interface
+  boundary, but implement its public-task runner as separate work; do not expose an empty command or treat historical
+  reports as a runnable evaluation.
+
+### Default scope and command discovery
+
+- With no arguments, `bun run test` runs all applicable offline dynamic Tests across the five levels, excluding Static
+  Checks, Benchmarks, and live services. Use level or Capability selection for focused development.
+- `verify` uses the PR target comparison base in CI and the merge base with `origin/main` locally, including staged,
+  unstaged, and untracked changes. Allow `--base <ref>` to override the base. Display the base and selected scope before
+  execution. Missing bases, uncertain impact, or a clean main branch without selectable changes fall back to the complete
+  applicable test suite.
+- Repository test, verification, and benchmark entry points provide `--help` without executing work and `--list` to
+  preview selected checks or scenarios and their environment requirements. Unknown arguments and explicit selections
+  matching nothing fail visibly. Before execution, summarize scope, network/model use, and report location.
+- Extend existing scripts only as needed for this interface; do not introduce a generic CLI framework.
+
+### Naming, mutation, and result conventions
+
+- Name specialized benchmark commands `benchmark:capability:<name>`. Reserve `benchmark:suite` for the later public-task
+  runner without registering a placeholder. Require an explicit evaluation target; no default command starts every live
+  model benchmark.
+- `check` and `verify` do not rewrite source, configuration, snapshots, or expected results. An explicit `fix` command
+  performs formatting and safe lint fixes; generated composition and snapshot updates remain separate explicit actions.
+  Logs, caches, and reports may be written during verification.
+- Use concise terminal summaries with detailed local evidence where needed, reusing native reporters rather than
+  introducing a reporting framework. Report the actual scope, pass/failure/not-run status, elapsed time, and evidence
+  paths. Default generated reports to ignored `.artifacts/`, with explicit output overrides; do not automatically replace
+  retained research reports under `docs/reports/`.
+- Checks and Tests return nonzero for unmet requirements or missing required environments, with distinguishable
+  diagnostics. Benchmarks return success for a completed valid experiment even when measured outcomes are poor;
+  experiment setup errors, runner crashes, and incomplete required data return nonzero. A task failure or timeout scored
+  by the declared protocol is a valid outcome, not automatically an incomplete experiment. Neither benchmark exit status
+  nor measured outcomes acquire PR-blocking authority.
+- Use explicit `bun run <script>` for repository workflows; `bun test` remains the native focused-testing tool and does
+  not imply execution of repository orchestration. Use Bun's script listing and native filtering/reporters where they
+  satisfy the agreed interface. Remove redundant script aliases when migrating all callers and documentation together.
+
+### Public practice references
+
+The exact names above are repository conventions, not a universal software-testing standard. Reviewed on 2026-09-05:
+
+- [VS Code scripts](https://github.com/microsoft/vscode/blob/main/package.json) expose distinct test environments and
+  performance entries, illustrating explicit responsibilities rather than a single indiscriminate runner.
+- [Vite scripts](https://github.com/vitejs/vite/blob/main/package.json) provide named project workflows; adopt consistent
+  namespaces here without copying unrelated build or publication commands.
+- [Biome CLI](https://biomejs.dev/reference/cli/) makes writes explicit with `--write`; preserve that distinction between
+  verification and repair.
+- [Bun runtime](https://bun.com/docs/runtime) distinguishes native commands from package scripts and forwards script
+  arguments; [Bun reporters](https://bun.com/docs/test/reporters) supply native console and JUnit reporting.
+
 ## Consequences
 
 A single full verification run for every change is easy to specify but gives slow feedback and conflates evidence with

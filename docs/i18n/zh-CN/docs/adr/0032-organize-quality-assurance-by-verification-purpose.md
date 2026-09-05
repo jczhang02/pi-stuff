@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: 9f35e7ce272ddab085e0620efcfc9e5feff7d852c5b184674e04ad0ee8cd3380 -->
+<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: 7da2c5b98e8c62712369740537083c9600b7902c02fffc95e07b48fe27e89426 -->
 
 ---
 status: accepted
@@ -56,6 +56,37 @@ status: accepted
 
 - 删除某项有效关键行为的唯一测试后，使用更简单可靠的测试，或复用合适的集成、验收证据。要求本身不成立时修正规范，而不是重建有缺陷的测试。删除从来不代表该行为已通过。
 - 根据独立检错价值保留测试，不设置测试数量、代码覆盖率或层级比例的硬性配额。优先删除或改写重复断言、过时场景和仅锁定私有实现形状的检查。不同层级的相似流程能发现不同缺陷时，可以保留。
+
+### 命令职责
+
+- `bun run check` 负责全部 Static Checks；`bun run test` 负责动态 Tests；`bun run benchmark:...` 负责独立 Benchmarks。`bun run verify` 将静态检查与保守选择的动态测试组合为日常验证，绝不调用 Benchmarks。Reviews 保持审查流程，不为形式对称创建空命令。
+- Tests 提供五个稳定层级入口：`test:unit`、`test:component-integration`、`test:system`、`test:system-integration`、`test:acceptance`。使用 Capability、文件和测试名称筛选进一步缩小范围，不为每个 Capability 与层级组合创建命令。
+- 普通 `check`、`test`、`verify` 执行离线、无需凭据、不调用真实模型，可以要求真实本地 Pi、RTK 或 PTY 工具。真实模型与外部 Service 验证必须显式选择并预检环境，不能由含糊的 `real` 标签决定是否发起调用。
+- 本次迁移整理现有检查和 Capability Benchmarks。记录 Suite Outcome Evaluation 的接口边界，公开任务执行器另立工作实现；不暴露空命令，也不把历史报告当成可运行评测。
+
+### 默认范围与命令发现
+
+- 无参数 `bun run test` 运行五层中全部适用的离线动态 Tests，不包含静态检查、Benchmarks 或真实服务调用。开发时通过层级或 Capability 筛选缩小范围。
+- `verify` 在 CI 使用 PR 目标比较基准，本地使用与 `origin/main` 的共同祖先，并包含暂存、未暂存和未跟踪变更。允许 `--base <ref>` 覆盖基准，执行前显示基准与选中范围。基准缺失、影响不明，或干净主分支没有可选择变更时，回退到完整适用测试。
+- 仓库测试、验证和评测入口提供不执行工作的 `--help`，以及预览选中检查或场景和环境要求的 `--list`。未知参数和显式筛选未匹配任何项目时明确失败。真正执行前简要显示范围、联网或模型调用情况及报告位置。
+- 仅按接口需要扩展现有脚本，不引入通用 CLI 框架。
+
+### 命名、修改和结果约定
+
+- 专项评测命令统一命名为 `benchmark:capability:<name>`。为后续公开任务执行器保留 `benchmark:suite`，但不注册占位命令。明确选择评测对象，不提供默认启动全部真实模型评测的命令。
+- `check` 和 `verify` 不改写源码、配置、快照或预期结果。显式 `fix` 命令执行格式化及安全 Lint 修复；生成组合与快照更新仍为独立的显式操作。验证过程中可以写日志、缓存和报告。
+- 终端输出简短摘要，按需保留本地详细证据；复用原生 reporter，不引入报告框架。显示实际范围、通过／失败／未运行、耗时和证据路径。生成报告默认进入忽略的 `.artifacts/`，允许显式覆盖输出位置；不自动替换 `docs/reports/` 的留存研究报告。
+- Checks 和 Tests 在要求不满足或必要环境缺失时返回非零，并给出可区分的诊断。Benchmarks 在有效实验完成时返回成功，即使结果不好；实验准备错误、执行器崩溃和必要数据不完整返回非零。按既定协议计分的任务失败或超时属于有效结果，不自动意味着实验未完成。Benchmark 的退出状态和测量结果都不具备 PR 阻断权。
+- 仓库工作流显式使用 `bun run <script>`；`bun test` 保留为原生聚焦测试工具，不表示执行了仓库编排。Bun 的脚本列表、筛选和 reporter 满足约定接口时直接复用。迁移时同步更新调用方与文档，删除冗余脚本别名。
+
+### 公开实践参考
+
+上述具体名称是仓库约定，不是通用软件测试标准。于 2026-09-05 核对：
+
+- [VS Code scripts](https://github.com/microsoft/vscode/blob/main/package.json) 提供不同测试环境和性能入口，体现明确职责划分。
+- [Vite scripts](https://github.com/vitejs/vite/blob/main/package.json) 提供具名项目工作流；本项目采用一致命名空间，不照搬无关构建和发布命令。
+- [Biome CLI](https://biomejs.dev/reference/cli/) 通过 `--write` 显式启用修改；保留验证与修复的区分。
+- [Bun runtime](https://bun.com/docs/runtime) 区分原生命令和 package scripts，并转发脚本参数；[Bun reporters](https://bun.com/docs/test/reporters) 提供原生终端与 JUnit 报告。
 
 ## 后果
 
