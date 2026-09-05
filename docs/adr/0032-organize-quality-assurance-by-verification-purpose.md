@@ -10,7 +10,9 @@ The quality-assurance design interview started on 2026-09-05 to address unclear 
 feedback, redundant verification, and repeated investigation of failures. The overall architecture was accepted on 2026-09-05.
 This ADR defines the migration target; current checks and certification policy remain in force until migrated.
 
-## Agreed constraints
+## Decision
+
+### Agreed constraints
 
 - Cover requirements and design through implementation, installation, upgrade, release acceptance, and regression
   verification of problems found in use. Operational problems supply evidence without requiring a monitoring platform.
@@ -22,7 +24,7 @@ This ADR defines the migration target; current checks and certification policy r
   expensive verification may run for relevant changes, periodically, or before release. Unverified behavior must remain
   explicit and must never be reported as passed.
 
-## Agreed organization and coverage
+### Agreed organization and coverage
 
 - Tests use five levels: Component (Unit), Component Integration, System, System Integration, and Acceptance.
   Within a level, organize by Capability and scenario. Do not invent tests for empty categories; acceptance may reuse
@@ -47,7 +49,7 @@ This ADR defines the migration target; current checks and certification policy r
   and architecture changes receive independent review. Existing Thermo-Nuclear review requirements remain applicable,
   with test quality explicitly in scope.
 
-## Benchmark scope
+### Benchmark scope
 
 - **Capability Benchmark** evaluates one Capability or a limited group of Capabilities for performance, resource use,
   or behavioral effectiveness. Examples include Ponytail, Skill Discovery, and Code Mode evaluations. A specialized
@@ -66,7 +68,7 @@ Existing software performance and specialized behavior benchmarks must be classi
 not moved wholesale into Tests. This decision does not restore historical public-task runners or claim current runnable
 coverage from retained reports alone.
 
-## Source installation and performance requirements
+### Source installation and performance requirements
 
 - Pi Stuff is installed from a repository checkout through `pi install ./packages/pi-stuff`; a Pi Package is a resource
   organization unit, not a requirement to produce a distribution archive. Acceptance targets the selected repository
@@ -81,7 +83,7 @@ coverage from retained reports alone.
   environment problem can each cause repeated failures; flakiness alone does not identify which is responsible. The
   agreed repair and deletion policy is recorded below.
 
-## Agreed execution and failure policy
+### Agreed execution and failure policy
 
 - Use development, pre-merge PR, and periodic/on-demand execution plans. Full installation and runtime acceptance of
   a selected source revision is on demand; no separate release-stage pipeline is currently required.
@@ -96,7 +98,7 @@ coverage from retained reports alone.
 - Benchmarks run independently and have no authority to block PRs. Performance tests within Tests may block when they
   verify explicit performance requirements. Benchmark results remain evaluation evidence rather than PR gates.
 
-## Agreed test retention criteria
+### Agreed test retention criteria
 
 - Preserve valid critical behavior when deleting its only test: use a simpler reliable test or reuse suitable integration
   or acceptance evidence. Correct an invalid requirement rather than recreating a defective test. Deletion is never
@@ -105,7 +107,7 @@ coverage from retained reports alone.
   duplicate assertions, obsolete scenarios, and checks that merely freeze private implementation shape for removal or
   revision. Similar flows at different levels remain justified when they detect different defects.
 
-## Trade-off and implementation status
+## Consequences
 
 A single full verification run for every change is easy to specify but gives slow feedback and conflates evidence with
 unrelated execution costs. Purpose-based organization and risk-based scheduling require explicit boundaries and
