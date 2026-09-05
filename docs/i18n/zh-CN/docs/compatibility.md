@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: c60ee774bddf492be59a60a264cd56bb814ceaa5a32d89b5c42f08303c7009e7 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 3f5e3599d2ceb1e367f6f5a7ae12c13d2709f905e25683d3d4c89063b5a9e79f -->
 
 # 兼容性
 
@@ -24,7 +24,7 @@
 以及保留空格的原生设置搜索。仅匹配版本还不够：Host 还必须通过适用的真实 Host 能力验收。Pi Stuff 不重建或
 分发 Pi Host。
 
-CI 提供两个稳定检查。`Fast` 始终验证冻结依赖图、格式、anti-slop lint、类型接口、未使用代码分析、生成组合和公开发布安全。PR 的范围分类器对可执行或影响未知的变更启动 `Acceptance`。Beads 元数据、根 Markdown、文档证据、Package/Module README 和 `.github/CONTRIBUTING.md` 仅需 `Fast`；Runtime Skill、Prompt Template、配置和可执行示例不属于普通文档豁免。重命名同时按旧、新路径分类。直接推送到 `main` 仅运行 `Fast`；手动触发运行两者。
+CI 提供两个稳定检查。`Fast` 始终验证冻结依赖图、格式、anti-slop lint、类型接口、未使用代码分析、生成组合和公开发布安全。PR 的范围分类器对可执行或影响未知的变更启动 `Acceptance`。Beads 元数据、根 Markdown、文档证据、Package/Module README 和 `.github/CONTRIBUTING.md` 仅需 `Fast`；Runtime Skill、Prompt Template、配置和可执行示例不属于普通文档豁免。重命名同时按旧、新路径分类。直接推送到 `main` 仅运行 `Fast`；手动触发运行两者。PTY 验证器使用可选 tmux 服务器设置前先探测支持情况；Ubuntu 基线必须在没有 `extended-keys-format` 时正常运行。
 
 `Acceptance` 获取受支持的 Pi Host、Code Mode Host 和 RTK runtime，然后在网络隔离命名空间中运行隔离测试、真实 TUI 验证、Tool Activity benchmark 和 Package 验证。逐文件进程隔离避免重进程或 PTY 测试污染后续测试。按[验证政策](code-quality.md#risk-based-verification)复用同一版本所需 CI 证据；仅 `Fast` 通过不认证完整 Host 验收。[交付发布器](agents/issue-tracker.md#verified-ci-evidence)在报告交付前核对适用检查。另有每周上游观察任务报告 npm `latest` 是否超过受支持 Host，但不会自动改变支持范围。
 

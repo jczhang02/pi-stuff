@@ -67,3 +67,11 @@ trust boundary; smaller instruction files are not a reason to omit required evid
 | `test/publish-beads.test.ts` | 222 | 298 |
 | `test/beads-delivery-checks.test.ts` | 0 | 90 |
 | `test/ci-acceptance-scope.test.ts` | 30 | 43 |
+
+## Acceptance follow-up — 2026-09-06
+
+The first [branch Acceptance run](https://github.com/jczhang02/pi-stuff/actions/runs/33976280826) passed Fast but failed
+`test/goal-pty.test.ts`: Ubuntu's tmux 3.4 rejected `extended-keys-format`. The Goal verifier was the only matching
+PTY setup that set this optional option without probing. The same test reproduced the error locally with real tmux
+3.4 in under one second. Reusing the existing server-option probe fixed it; the complete Goal PTY test then passed on
+both tmux 3.4 and 3.6a with Pi 0.85.0. This repairs verification setup without changing Goal behavior or assertions.

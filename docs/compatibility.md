@@ -28,7 +28,8 @@ type surfaces, unused-code analysis, generated composition, and public-release s
 starts `Acceptance` for executable or unknown-impact changes. Beads metadata, root Markdown, documentation evidence,
 Package/Module READMEs, and `.github/CONTRIBUTING.md` use `Fast` only; Runtime Skills, Prompt Templates, configuration,
 and executable examples remain outside the prose exemption. Renames include both old and new paths in classification.
-A direct push to `main` runs `Fast` only; manual dispatch runs both checks.
+A direct push to `main` runs `Fast` only; manual dispatch runs both checks. PTY verifiers probe optional tmux server
+settings before using them; the Ubuntu baseline must work without `extended-keys-format`.
 
 `Acceptance` obtains the supported Pi Host, Code Mode host, and RTK runtime, then runs isolated tests, real TUI
 verification, the Tool Activity benchmark, and package verification in a network-isolated namespace. Per-file process
