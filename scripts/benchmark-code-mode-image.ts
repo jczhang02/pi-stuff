@@ -23,7 +23,7 @@ import {
 } from "./code-mode-image-benchmark-core.js";
 import { waitForDetachedProcess } from "./detached-process.js";
 import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
-import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
+import { verifyPiHostVersion } from "./verify-pi-host-provenance.js";
 
 const root = resolve(import.meta.dir, "..");
 const observerExtension = join(root, "test/fixtures/code-mode-image-benchmark-observer.ts");
@@ -381,7 +381,7 @@ function parseArguments(arguments_: readonly string[]): BenchmarkArguments {
 
 if (import.meta.main) {
 	const options = parseArguments(process.argv.slice(2));
-	await verifyPiHostProvenance(PI_BINARY);
+	await verifyPiHostVersion(PI_BINARY);
 	const baselinePackage = packageTree(options.baselineRoot, BASELINE_COMMIT);
 	const candidatePackage = packageTree(root, CANDIDATE_COMMIT);
 	await verifyPackageImport(options.baselineRoot, "baseline");

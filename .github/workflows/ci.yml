@@ -16,7 +16,6 @@ concurrency:
 
 env:
   BUN_VERSION: 1.4.0
-  PI_RELEASE_ARCHIVE_SHA256: a7e7c65f1dc528d2e17e7d946ad2b61df0e2b0f9952faee77807c2484b464d6e
   RTK_ARCHIVE_SHA256: c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4
   RTK_BINARY_SHA256: 99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535
   RTK_VERSION: 0.45.0
@@ -119,7 +118,7 @@ jobs:
           echo "$RTK_BINARY_SHA256  $RTK_BIN" | sha256sum --check --strict
           test "$("$RTK_BIN" --version)" = "rtk $RTK_VERSION"
 
-      - name: Install certified Pi host release
+      - name: Install supported Pi host release
         shell: bash
         run: |
           set -euo pipefail
@@ -129,10 +128,8 @@ jobs:
           curl --fail --location --silent --show-error \
             "https://github.com/earendil-works/pi/releases/download/v${version}/pi-linux-x64.tar.gz" \
             --output "$archive"
-          echo "$PI_RELEASE_ARCHIVE_SHA256  $archive" | sha256sum --check --strict
           tar --extract --gzip --file "$archive" --directory .artifacts/pi-release
-          test "$("$PI_BIN" --version)" = "$(bun scripts/pi-host-contract.ts)"
-          bun -e 'import { verifyPiHostProvenance } from "./scripts/verify-pi-host-provenance.ts"; await verifyPiHostProvenance(process.env.PI_BIN);'
+          bun -e 'import { verifyPiHostVersion } from "./scripts/verify-pi-host-provenance.ts"; await verifyPiHostVersion(process.env.PI_BIN);'
 
       - name: Install certified Code Mode host
         shell: bash

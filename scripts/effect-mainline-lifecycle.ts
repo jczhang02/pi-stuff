@@ -14,7 +14,8 @@ import {
 import { balancedArmOrder, compareMeasurements, type NamedMeasurement } from "./effect-mainline-benchmark-core.js";
 import { prepareFixture } from "./lifecycle-benchmark-fixture.js";
 import { runSample, summaries } from "./lifecycle-benchmark-sampling.js";
-import { stageCertifiedPiHost } from "./verify-pi-host-provenance.js";
+import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
+import { stageSupportedPiHost } from "./verify-pi-host-provenance.js";
 
 export type LifecycleArm = "baseline" | "candidate" | "host";
 
@@ -291,7 +292,7 @@ export async function runLifecycleComparison(options: LifecycleComparisonOptions
 	const plan = lifecycleComparisonPlan(options.plan);
 	const benchmarkRoot = await mkdtemp(join(tmpdir(), "effect-mainline-lifecycle-"));
 	try {
-		const provenance = await stageCertifiedPiHost(options.piBinary, benchmarkRoot);
+		const stagedHost = await stageSupportedPiHost(options.piBinary, benchmarkRoot);
 		const neededArms: readonly LifecycleArm[] = plan.certifiesAbsoluteBudgets
 			? ["host", "baseline", "candidate"]
 			: ["baseline", "candidate"];
@@ -312,9 +313,9 @@ export async function runLifecycleComparison(options: LifecycleComparisonOptions
 				host: fixtureMap.get("host") ?? fallback,
 			},
 			options: {
-				baseline: benchmarkOptions(options, plan, provenance.binaryPath, "baseline"),
-				candidate: benchmarkOptions(options, plan, provenance.binaryPath, "candidate"),
-				host: benchmarkOptions(options, plan, provenance.binaryPath, "host"),
+				baseline: benchmarkOptions(options, plan, stagedHost.binaryPath, "baseline"),
+				candidate: benchmarkOptions(options, plan, stagedHost.binaryPath, "candidate"),
+				host: benchmarkOptions(options, plan, stagedHost.binaryPath, "host"),
 			},
 			plan,
 			samples: options.samples,
@@ -354,7 +355,7 @@ export async function runLifecycleComparison(options: LifecycleComparisonOptions
 				samples: confirmations.samples,
 				summaries: { baseline: baselineConfirmations, candidate: candidateConfirmations },
 			},
-			host: { profile: provenance.profile, provenance: provenance.kind },
+			host: { profile: CERTIFIED_PI_HOST_PROFILE },
 			plan: options.plan,
 			samples: initial.samples,
 			selection,

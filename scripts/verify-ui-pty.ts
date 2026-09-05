@@ -6,7 +6,7 @@ import { THOUGHT_PHASES, TODO_PTY_READY } from "../test/fixtures/ui-pty-provider
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import * as flow from "./ui-pty-interactions.js";
 import * as pty from "./ui-pty-session.js";
-import { stageCertifiedPiHost } from "./verify-pi-host-provenance.js";
+import { stageSupportedPiHost } from "./verify-pi-host-provenance.js";
 
 export { sanitizePtyEvidence } from "./ui-pty-interactions.js";
 
@@ -464,7 +464,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 	try {
 		options = {
 			...options,
-			piBinary: (await stageCertifiedPiHost(options.piBinary, temporaryDirectory)).binaryPath,
+			piBinary: (await stageSupportedPiHost(options.piBinary, temporaryDirectory)).binaryPath,
 		};
 		pty.verifyHostVersion(options.piBinary);
 		pty.commandOutput("tmux", ["-V"]);
@@ -561,7 +561,7 @@ export async function verifyThemeLifecyclePty(
 	try {
 		options = {
 			...options,
-			piBinary: (await stageCertifiedPiHost(options.piBinary, temporaryDirectory)).binaryPath,
+			piBinary: (await stageSupportedPiHost(options.piBinary, temporaryDirectory)).binaryPath,
 		};
 		pty.verifyHostVersion(options.piBinary);
 		pty.commandOutput("tmux", ["-V"]);

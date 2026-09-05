@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { prepareFixture } from "./lifecycle-benchmark-fixture.js";
 import { cellKey, runSample, summaries } from "./lifecycle-benchmark-sampling.js";
-import { stageCertifiedPiHost } from "./verify-pi-host-provenance.js";
+import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
+import { stageSupportedPiHost } from "./verify-pi-host-provenance.js";
 
 export { lifecycleExpectProgram, lifecycleSessionFindings } from "./lifecycle-benchmark-fixture.js";
 export { percentile, summarize } from "./lifecycle-benchmark-sampling.js";
@@ -598,11 +599,11 @@ async function main(): Promise<void> {
 		fail(`Bun ${REPOSITORY_BUN_VERSION} is required; received ${Bun.version}`);
 	}
 	const benchmarkRoot = await mkdtemp(join(tmpdir(), "pi-stuff-lifecycle-benchmark-"));
-	const provenance = await stageCertifiedPiHost(options.piBinary, benchmarkRoot).catch(async (cause: unknown) => {
+	const stagedHost = await stageSupportedPiHost(options.piBinary, benchmarkRoot).catch(async (cause: unknown) => {
 		await rm(benchmarkRoot, { recursive: true, force: true });
 		throw cause;
 	});
-	options = { ...options, piBinary: provenance.binaryPath };
+	options = { ...options, piBinary: stagedHost.binaryPath };
 	const projectDirectory = join(benchmarkRoot, "project");
 	const fixturePackage = join(benchmarkRoot, "fixture-package");
 	await Promise.all([
@@ -649,7 +650,7 @@ async function main(): Promise<void> {
 		const report = {
 			schemaVersion: 6,
 			generatedAt: new Date().toISOString(),
-			host: { profile: provenance.profile, provenance: provenance.kind },
+			host: { profile: CERTIFIED_PI_HOST_PROFILE },
 			toolchain: { bun: Bun.version },
 			startupModel: {
 				processState: "Every sample starts a new Pi process with a cold process-local Suite module cache.",

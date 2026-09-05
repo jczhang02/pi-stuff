@@ -26,6 +26,7 @@ start from the [documentation index](../README.md).
 - [Pi latest Markdown transform](pi-latest-markdown-transform-20260820.md)
 - [Pi XDG base-directory behavior](pi-xdg-base-directory-20260811.md)
 - [tmux/Kitty image feasibility](pi-tmux-kitty-images-feasibility-20260815.md)
+- [Pi 0.85.0 compatibility assessment](pi-085-compatibility-20260905.md)
 
 ## Product and interface references
 
