@@ -1,16 +1,24 @@
 import { expect, test } from "bun:test";
-import { getMarkdownTheme, InteractiveMode, initTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
+import {
+	getMarkdownTheme,
+	InteractiveMode,
+	initTheme,
+	SessionManager,
+	UserMessageComponent,
+} from "@earendil-works/pi-coding-agent";
 import { Container, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import { DiagnosticChannel } from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
 import { installUserMessageDisplay } from "../../packages/pi-stuff/src/conversation-ui/user-message-display.js";
 
+const manager = SessionManager.inMemory();
+
 test("supports overlapping owners and restores the native insertion method after release", () => {
 	initTheme("dark");
 	const original = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "addMessageToChat");
-	const first = installUserMessageDisplay(new DiagnosticChannel());
+	const first = installUserMessageDisplay(new DiagnosticChannel(), manager);
 	let second: (() => void) | undefined;
 	try {
-		second = installUserMessageDisplay(new DiagnosticChannel());
+		second = installUserMessageDisplay(new DiagnosticChannel(), manager);
 		first();
 		expect(Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "addMessageToChat")).not.toEqual(original);
 	} finally {
@@ -30,7 +38,7 @@ test("rejects an incompatible native renderer before installing a patch", () => 
 	};
 	try {
 		expect(() => {
-			release = installUserMessageDisplay(new DiagnosticChannel());
+			release = installUserMessageDisplay(new DiagnosticChannel(), manager);
 		}).toThrow("incompatible native renderer");
 		expect(Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "addMessageToChat")).toEqual(insertion);
 	} finally {
@@ -42,7 +50,7 @@ test("rejects an incompatible native renderer before installing a patch", () => 
 test("contains projection faults once, retries on reinstall, and propagates original Host errors", () => {
 	initTheme("dark");
 	const prototype = InteractiveMode.prototype;
-	const names = ["addMessageToChat", "getMarkdownThemeWithSettings", "getMarkdownTransformers"];
+	const names = ["addMessageToChat", "getMarkdownThemeWithSettings", "getMarkdownTransformers", "sessionManager"];
 	const descriptors = names.map((name) => Object.getOwnPropertyDescriptor(prototype, name));
 	const chatContainer = new Container();
 	// SAFETY: fault injection supplies the certified fields/accessors and never starts a synthetic Host runtime.
@@ -51,6 +59,7 @@ test("contains projection faults once, retries on reinstall, and propagates orig
 		outputPad: 1,
 		toolOutputExpanded: false,
 	}) as InteractiveMode;
+	Object.defineProperty(prototype, "sessionManager", { configurable: true, get: () => manager });
 	let invalid = true;
 	let nativeError = false;
 	Object.defineProperty(prototype, "addMessageToChat", {
@@ -73,7 +82,7 @@ test("contains projection faults once, retries on reinstall, and propagates orig
 		method.call(host, { role: "user", content: "Original visible text", timestamp: 0 });
 	};
 	try {
-		release = installUserMessageDisplay(diagnostics);
+		release = installUserMessageDisplay(diagnostics, manager);
 		insert();
 		insert();
 		expect(chatContainer.render(80).join("\n")).toContain("Original visible text");
@@ -81,7 +90,12 @@ test("contains projection faults once, retries on reinstall, and propagates orig
 		release();
 		invalid = false;
 		chatContainer.clear();
-		release = installUserMessageDisplay(diagnostics);
+		chatContainer.addChild(new UserMessageComponent("Other Session prompt"));
+		release = installUserMessageDisplay(diagnostics, SessionManager.inMemory());
+		expect(stripTerminalSequences(chatContainer.render(80).join("\n"))).not.toContain("");
+		release();
+		chatContainer.clear();
+		release = installUserMessageDisplay(diagnostics, manager);
 		insert();
 		expect(stripTerminalSequences(chatContainer.render(80).join("\n"))).toContain("  Original visible text");
 		nativeError = true;

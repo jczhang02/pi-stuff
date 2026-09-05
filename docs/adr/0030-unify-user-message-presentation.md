@@ -56,7 +56,8 @@ modifies the same private seam.
 
 Pi 0.85.0 replays replacement Sessions before emitting `session_start`. Retain only a weak reference to the native
 InteractiveMode across release, with no retained Session context or diagnostic channel. At the next TUI binding,
-reconcile already-rendered native User and Skill components once through the same projection. Skip cards already
+reconcile already-rendered native User and Skill components once through the same projection, only if the remembered
+Host's current SessionManager is identical to the binding's SessionManager. Skip cards already
 projected by this adapter. This avoids keeping the patch installed after release or rebuilding other Transcript state.
 
 ### Reliability and failure policy

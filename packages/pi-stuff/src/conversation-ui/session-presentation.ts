@@ -186,7 +186,7 @@ export function installUiSessionPresentation(
 	repeatGoalClock?: StatuslineClock,
 ): UiSessionPresentation | undefined {
 	if (ctx.mode !== "tui") return undefined;
-	const releaseUserMessage = installUserMessageDisplay(diagnostics);
+	const releaseUserMessage = installUserMessageDisplay(diagnostics, ctx.sessionManager);
 	let releaseThinkingLine: (() => void) | undefined;
 	try {
 		releaseThinkingLine = installThinkingLineDisplay();

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: 6f38934cb399b9bcc910c0393e2df674162d9776511da11712c294b3d737a756 -->
+<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: 8a276af9f334a2a4568b4183df737a2090799feac1f1afc1f6e3eec1320eb5bf -->
 
 ---
 status: accepted
@@ -51,7 +51,8 @@ Session 切换、关闭和 `/reload` 释放 patch。仅在适配器仍拥有被�
 
 Pi 0.85.0 在发出 `session_start` 前回放替换后的 Session。释放时仅保留对原生 InteractiveMode 的弱引用，
 不保留 Session context 或诊断通道。下次 TUI 绑定时，通过同一 projection 补齐已经渲染的原生 User 和
-Skill 组件，仅执行一次，并跳过适配器已处理的卡片。这避免在释放后继续安装 patch，也无需重建其他
+Skill 组件，先确认所记住 Host 的当前 SessionManager 与本次绑定的 SessionManager 是同一实例；
+仅执行一次，并跳过适配器已处理的卡片。这避免在释放后继续安装 patch，也无需重建其他
 Transcript 状态。
 
 ### 可靠性与失败策略

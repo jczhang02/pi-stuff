@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
+	type ExtensionContext,
 	getMarkdownTheme,
 	InteractiveMode,
 	type MarkdownTransformer,
@@ -140,12 +141,16 @@ function projectMessage(host: HostPresentation, first: number, fail: (error: Err
 	children.splice(first, count, card);
 }
 
-function adoptReplayedMessages(state: PatchState): void {
+function adoptReplayedMessages(state: PatchState, sessionManager: ExtensionContext["sessionManager"]): void {
 	const reference: unknown = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, LAST_HOST)?.value;
 	if (!(reference instanceof WeakRef)) return;
 	const host: unknown = reference.deref();
 	if (!(host instanceof InteractiveMode)) return;
 	try {
+		const readManager = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "sessionManager")?.get;
+		if (!readManager) throw new Error("User Message presentation lost the Pi SessionManager accessor");
+		const manager: unknown = readManager.call(host);
+		if (manager !== sessionManager) return;
 		const presentation = hostPresentation(host);
 		// Pi reload replays before session_start. Reconcile once at binding, never on redraw or each insertion.
 		for (let index = 0; index < presentation.chatContainer.children.length; index += 1) {
@@ -160,6 +165,9 @@ function adoptReplayedMessages(state: PatchState): void {
 }
 
 function preflight(): void {
+	if (!isRuntimeFunction(Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "sessionManager")?.get)) {
+		throw new Error("User Message presentation requires the certified Pi SessionManager accessor");
+	}
 	for (const method of ["getMarkdownThemeWithSettings", "getMarkdownTransformers"]) {
 		if (!isRuntimeFunction(Object.getOwnPropertyDescriptor(InteractiveMode.prototype, method)?.value)) {
 			throw new Error(`User Message presentation requires InteractiveMode.${method}()`);
@@ -261,7 +269,10 @@ function createPatch(
 }
 
 /** Install a display-only adapter at the one native user insertion and replay seam. */
-export function installUserMessageDisplay(diagnostics: DiagnosticChannel): () => void {
+export function installUserMessageDisplay(
+	diagnostics: DiagnosticChannel,
+	sessionManager: ExtensionContext["sessionManager"],
+): () => void {
 	// ponytail: Pi 0.85.0 has no public User Message renderer; replace this patch when the Host exposes one.
 	const prototype = InteractiveMode.prototype;
 	const descriptor = Object.getOwnPropertyDescriptor(prototype, "addMessageToChat");
@@ -284,7 +295,7 @@ export function installUserMessageDisplay(diagnostics: DiagnosticChannel): () =>
 		Object.defineProperty(prototype, "addMessageToChat", { ...descriptor, value: state.patched });
 	}
 	state.owners += 1;
-	if (state.owners === 1) adoptReplayedMessages(state);
+	if (state.owners === 1) adoptReplayedMessages(state, sessionManager);
 	let released = false;
 	return () => {
 		if (released) return;
