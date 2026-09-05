@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: 14b8d923db6492a91669bda6d587373008adc685dd15b9c7797b07643d9c09c0 -->
+<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: dc28ca6f3f6bfc51f63ed2770ad4182c7fdd3247b456de16817d1209ce25ad0a -->
 
 ---
 status: accepted
@@ -20,17 +20,17 @@ status: accepted
 
 - Tests 采用组件（单元）、组件集成、系统、系统集成、验收五层。层内按 Capability 和场景组织；不为填充空类别创造测试，验收可复用已有证据，每个场景有一个主要归属。
 - 系统测试的被测系统是加载完整 Suite 的真实 Pi Host。模型服务、MCP 服务和外部工具属于外部依赖；系统集成测试专门验证与它们的真实互操作。Host 接口兼容性可单独验证，仅启动 Pi 不决定测试分类。
-- Tests 与 Benchmarks 按主要目的分类。Tests 验证明确要求，包括硬性性能承诺；Benchmarks 测量和比较表现，不能阻断 PR。共用测量能力，不能仅凭断言决定归类。现有 spinner 的 200ms 门槛是否属于产品承诺仍需确认。
+- Tests 负责软件行为与性能验证，包括启动、重载、响应和资源增长。Benchmarks 是独立的顶层类别，专指完整 Agent 的任务效果评测，不收纳软件性能检查。现有 spinner 的 200ms 门槛是否属于有依据的要求仍需确认；诊断测量本身不构成阻断要求。
 - Static Checks 覆盖格式、Lint、类型、依赖、架构、生成物、包结构，以及代码漏洞、依赖漏洞、凭据泄露扫描。先复用现有工具，增加扫描器必须明确对象并证明有效性。
 - 每项 Capability 明确适用的正常、错误、取消、恢复、持久化及资源清理行为，将主要覆盖责任分配给合适层级。高层补充真实连接和完整流程证据，不机械重复低层场景。
-- Benchmarks 分为性能与资源测量、Agent 任务效果评测。前者覆盖启动、重载、响应和资源增长；后者覆盖完成率、质量、成本和耗时。先比较原生 Pi 与完整 Suite，需要解释效果来源时才做单项 Capability 消融。
+- Benchmarks 采用 [FrontierHarness Eval](https://runta.com/blog/introducing-frontierharness-eval/) 所示的任务集评测形式：让完整 Agent 执行确定的任务集，报告完成率、结果质量、Token 用量、成本和耗时。Pi Stuff 遵循已有 Suite Outcome Evaluation 契约：固定 Host、模型、任务、环境和资源预算，比较原生 Pi 与完整 Suite；需要解释效果来源时才做单项 Capability 消融。任务验证器用于评判 benchmark 任务结果；这些结果不认证单项 Capability 契约，也不阻断 PR。
 - Reviews 覆盖需求、架构、代码、安全、测试有效性和评测方法；检查重复断言与实现耦合。普通修改做范围内审查，跨 Capability 或架构改动做独立审查。保留现有 Thermo-Nuclear 要求，并明确包含测试质量。
 
 ## 源码安装与性能要求
 
 - Pi Stuff 从仓库检出目录通过 `pi install ./packages/pi-stuff` 安装；Pi Package 是资源组织单位，不要求生成分发归档。验收对象是指定仓库版本，以及它在隔离环境中按文档安装、加载、重载和运行时的可观察行为。
 - 现有验证器中的归档创建和解压属于待审查删除或替换的实现选择；调整时应保留有价值的真实 Host 验证。验收按需安排，不要求打包或独立发布流水线。
-- 逐项审查现有性能门槛的需求来源、测量稳定性和适用环境，再决定属于硬性验收要求还是比较基准。不得默默删除依据不明的门槛，也不得仅为满足无法解释的限制而修改产品。
+- 逐项审查现有性能门槛的需求来源、测量稳定性和适用环境，再决定是否足以成为阻断性的性能测试，或仅作为 Tests 内的诊断测量。不得默默删除依据不明的门槛，也不得仅为满足无法解释的限制而修改产品。
 - 对反复失败，应区分不稳定现象和根因。测试缺陷、产品缺陷或环境问题都可能造成反复失败；仅凭不稳定性不能归因。已同意的修复与删除政策记录如下。
 
 ## 已同意的执行与失败政策

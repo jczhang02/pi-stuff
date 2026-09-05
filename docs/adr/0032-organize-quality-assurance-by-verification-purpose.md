@@ -30,19 +30,22 @@ This ADR defines the migration target; current checks and certification policy r
 - For system testing, the system under test is the real Pi Host with the complete Suite loaded. Model services, MCP
   services, and external tools are external dependencies. System integration targets actual interoperability with those
   dependencies. Host interface compatibility may be checked separately; merely launching Pi does not classify a test.
-- Classify Tests and Benchmarks by primary purpose. Tests verify explicit requirements, including hard performance
-  commitments. Benchmarks measure and compare performance and never block pull requests. Share measurement support;
-  an assertion alone does not determine classification. Whether the existing 200 ms spinner limit is a product
-  commitment remains to be established.
+- Tests own software behavior and performance verification, including startup, reload, responsiveness, and resource
+  growth. Benchmarks are a separate top-level category reserved for complete Agent task-outcome evaluation, not a
+  container for software performance checks. Whether the existing 200 ms spinner limit is a justified requirement
+  remains to be established; a diagnostic measurement alone does not create a blocking requirement.
 - Static Checks cover formatting, lint, types, dependencies, architecture, generated output, package structure, and
   code-vulnerability, dependency-vulnerability, and credential-leak scanning. Reuse existing tools first; adding a scanner
   requires an explicit target and evidence of usefulness.
 - Each Capability identifies applicable normal, error, cancellation, recovery, persistence, and resource-cleanup
   behavior. Assign primary coverage at the appropriate level; higher levels add actual connection and complete-flow
   evidence without mechanically repeating every lower-level scenario.
-- Benchmarks comprise performance/resource measurement and Agent task-outcome evaluation. The former covers startup,
-  reload, responsiveness, and resource growth; the latter covers completion, quality, cost, and elapsed time. Compare
-  native Pi with the complete Suite first; use individual Capability ablations when attribution is needed.
+- Benchmarks follow the kind of task-set evaluation illustrated by
+  [FrontierHarness Eval](https://runta.com/blog/introducing-frontierharness-eval/): run complete Agents on a defined task
+  set and report task completion, result quality, token usage, cost, and elapsed time. For Pi Stuff, use the existing
+  Suite Outcome Evaluation contract: hold the Host, model, tasks, environment, and resource budget fixed while comparing
+  native Pi with the complete Suite. Use individual Capability ablations when attribution is needed. Task verifiers
+  score benchmark outcomes; those outcomes do not certify individual Capability contracts or block PRs.
 - Reviews cover requirements, architecture, code, security, test effectiveness, and evaluation methodology. Reviewers
   examine redundant assertions and implementation coupling. Ordinary changes receive scoped review; cross-Capability
   and architecture changes receive independent review. Existing Thermo-Nuclear review requirements remain applicable,
@@ -57,8 +60,8 @@ This ADR defines the migration target; current checks and certification policy r
   replacement. Preserve valuable real-Host verification when changing that path. Acceptance is scheduled on demand
   without requiring packaging or a separate release pipeline.
 - Audit existing performance thresholds for their requirement source, measurement stability, and applicable environment
-  before deciding whether each is a hard acceptance requirement or a comparative benchmark. Do not silently delete
-  uncertain thresholds or change product code merely to satisfy an unexplained limit.
+  before deciding whether each justifies a blocking performance test or only diagnostic measurement within Tests.
+  Do not silently delete uncertain thresholds or change product code merely to satisfy an unexplained limit.
 - Repeated failures require distinguishing unstable outcomes from root causes. A defective test, product defect, or
   environment problem can each cause repeated failures; flakiness alone does not identify which is responsible. The
   agreed repair and deletion policy is recorded below.
