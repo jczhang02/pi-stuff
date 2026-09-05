@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: b7f2cbf72e9748a2c31eea0b6bda30e362b017a186ead4155dbed23263e5a461 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 63766889c809f1c54956c6162c2a0e9577ca2f05d70adce0323fff9c28d028a0 -->
 
 # 兼容性
 
@@ -54,8 +54,8 @@ Pi core import 保持 wildcard peer dependency，因为它们由 Host 提供。�
 SDK 源码和 standalone Host 均不打补丁，已安装的 Suite 也不增加该依赖。后续认证 SDK 正确声明依赖后移除
 这一临时处理。
 
-User Message 呈现适配 Pi 0.85.0 的原生消息插入和重放方法，保留原生卡片与 Markdown 组件。精确的 standalone
-Host 必须通过 Skill＋prompt、纯 Skill、`Ctrl+O`、resize、重放和 reload 验收。结构预检和运行时异常保护保留
+User Message 呈现适配 Pi 0.85.0 的原生消息插入和重放方法，保留原生卡片与 Markdown 组件。
+行内 Skill 放置观察卡片实例的原生 Markdown token renderer，不使用第二套解析器。精确的 standalone Host 必须通过 Skill＋prompt、纯 Skill、`Ctrl+O`、resize、重放和 reload 验收。结构预检和运行时异常保护保留
 原生消息；正常认证输入发生回退不能算通过。Tool 对齐认证限于 `outputPad=1`；其他值仍可设置。
 
 Pi 0.85.0 将 Thinking 内容放在原生可点击 `MouseRegion` 内。经过版本校验的 Thinking 适配器只投影该容器的

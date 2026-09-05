@@ -44,6 +44,11 @@ native card geometry, terminal message markers, theme invalidation, and output-p
 parallel custom-message stream. The exact composition must first pass real-Host verification; inheritance alone is
 not evidence that those behaviors survive.
 
+Determine inline Skill placement from the first non-space block type emitted by the card's native Markdown token
+renderer. Observe that card-local method while passing every token and argument unchanged to Pi; do not patch the
+Markdown prototype or maintain a second block classifier. Preflight this version-bound component signal as well as
+the insertion seam, and route an incompatible runtime signal through the same native fallback.
+
 Install only for TUI through the existing Session presentation lifecycle, following the ownership and idempotent
 release pattern used by Thinking. Session switches, shutdown, and `/reload` release the patch. Restore the original
 method only while the adapter still owns the patched method. Do not claim compatibility with another extension that

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: bec1d3fb013cb2d130369e3d302e804ad1e0508eac3280f899f28198bc64e52d -->
+<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: 6f38934cb399b9bcc910c0393e2df674162d9776511da11712c294b3d737a756 -->
 
 ---
 status: accepted
@@ -40,6 +40,10 @@ Conversation UI 将把这次提交显示为一条 User Message，同时保留 Pi
 几何、终端消息标记、主题失效处理和输出内边距更新，同时支持原生 `setExpanded()` 行为。不重新实现
 Markdown 解析，不识别任意 Skill 提及，不引入平行的 custom-message 流。具体组合必须先通过真实 Host
 验证；仅有继承关系不能证明这些行为得到保留。
+
+通过卡片原生 Markdown token renderer 发出的首个非空白块类型决定 Skill 是否行内显示。仅观察当前
+卡片实例的方法，向 Pi 原样传递全部 token 和参数；不修改 Markdown prototype，也不维护第二套块分类
+规则。与消息插入位置一起预检这一受版本约束的组件信号，运行时信号不兼容仍走同一原生回退路径。
 
 仅在 TUI 中通过现有 Session presentation 生命周期安装，沿用 Thinking 的所有权和幂等释放模式。
 Session 切换、关闭和 `/reload` 释放 patch。仅在适配器仍拥有被替换方法时恢复原方法。不声明与其他修改

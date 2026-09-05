@@ -171,7 +171,7 @@ function preflight(): void {
 		content: "Instructions",
 		userMessage: undefined,
 	});
-	readSkill(nativeSkill);
+	const skill = readSkill(nativeSkill);
 	nativeSkill.render(40);
 	const sample = new UserMessageComponent("User Message preflight", getMarkdownTheme(), 1);
 	readPrompt(sample);
@@ -182,7 +182,7 @@ function preflight(): void {
 		markdownTheme: getMarkdownTheme(),
 		outputPad: 1,
 		transformers: [],
-		skill: null,
+		skill,
 		fallback,
 		fail: (error) => {
 			throw error;

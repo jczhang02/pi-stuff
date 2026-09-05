@@ -61,7 +61,8 @@ the standalone Host is patched, and the dependency is not added to the installed
 later certified SDK declares its dependency correctly.
 
 User Message presentation adapts Pi 0.85.0's native insertion/replay method, retaining native card and Markdown
-components. The exact standalone Host must pass Skill-plus-prompt and Skill-only rendering, `Ctrl+O`, resize, replay,
+components. Inline Skill placement observes the card-local native Markdown token renderer without a second parser.
+The exact standalone Host must pass Skill-plus-prompt and Skill-only rendering, `Ctrl+O`, resize, replay,
 and reload acceptance. Structural preflight and runtime containment protect native messages; fallback is not a passing
 result for normal certified inputs. Tool alignment is certified at `outputPad=1`; other values remain configurable.
 

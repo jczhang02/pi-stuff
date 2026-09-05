@@ -131,3 +131,7 @@ test.each([
 		.filter((row) => row.trim());
 	expect(content(message).map((row) => row.replace(/^  /, "   "))).toEqual(native);
 });
+
+test("uses native paragraph classification for leading inline emphasis", () => {
+	expect(content(card("_important_ prompt"))[0]).toBe("  [skill] implement important prompt");
+});
