@@ -15,6 +15,8 @@ start from the [documentation index](../README.md).
 
 ## Architecture and feasibility
 
+- [Test framework overview and inventory](test-framework-inventory-20260905.md)
+
 - [Code Mode image benchmark](code-mode-image-benchmark-20260827.md)
 - [Skill Discovery startup-bounded real-model confirmation](skill-discovery-startup-bounded-confirmation-20260830.md)
 - [Skill Discovery isolated real-model confirmation](skill-discovery-isolated-confirmation-20260830.md)

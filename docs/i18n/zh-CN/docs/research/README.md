@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: 9d82fc772085d9d9961b755a15223fa614c132db1b3d7a4f4973813c42a5e5e1 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 17a0f2366178df361c8bb802821e952ffde9ea42e95d404a311aa442b8d3e4ca -->
 
 # 研究
 
@@ -15,6 +15,8 @@
 </p>
 
 ## 架构与可行性
+
+- [测试框架概览与全量清单](test-framework-inventory-20260905.md)
 
 - [Code Mode 图像基准](code-mode-image-benchmark-20260827.md)
 - [Skill Discovery 启动有界真实模型确认](skill-discovery-startup-bounded-confirmation-20260830.md)
