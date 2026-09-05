@@ -8,7 +8,7 @@ import { writePtyEvidence } from "../scripts/ui-pty-interactions.js";
 import { createCase, TmuxPiSession } from "../scripts/ui-pty-session.js";
 import { stageCertifiedPiHost } from "../scripts/verify-pi-host-provenance.js";
 
-const PROMPT = "USER_MESSAGE_PTY_PROMPT 中文🧪";
+const PROMPT = "USER_MESSAGE_PTY_PROMPT 中文🧪 /skill:humanizer-zh";
 const LABEL = "  /skill:humanizer-zh";
 
 function userRows(screen: string): string[] {
@@ -101,7 +101,7 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 					.find((row) => stripTerminalSequences(row).includes(LABEL));
 				expect(coloredRow).toBeDefined();
 				expect(new Set(coloredRow?.match(/\[38;[^m]+m/gu)).size).toBeGreaterThanOrEqual(6);
-				expect(coloredRow).toContain(PROMPT);
+				expect(coloredRow?.split("\u001b[38;2;178;129;214m/")).toHaveLength(3);
 				await writePtyEvidence(PI_STUFF_UI_PTY_ARTIFACT_DIR, `user-message-${tuiMode}-${theme}-collapsed`, session);
 				session.sendKey("C-o");
 				screen = await session.waitForText("Skill instructions");

@@ -7,8 +7,8 @@ import {
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { highlightSkillCommands } from "../../packages/pi-stuff/src/conversation-ui/skill-command-style.js";
 import { UserMessageCard } from "../../packages/pi-stuff/src/conversation-ui/user-message-card.js";
-import { testTheme } from "../fixtures/extension-context.js";
 
 function card(prompt: string, skillName = "implement", failures?: Error[]): UserMessageCard {
 	initTheme("dark");
@@ -23,7 +23,6 @@ function card(prompt: string, skillName = "implement", failures?: Error[]): User
 	}
 	return new UserMessageCard(prompt, {
 		markdownTheme: getMarkdownTheme(),
-		getTheme: () => testTheme,
 		outputPad: 1,
 		transformers: [],
 		skill,
@@ -119,7 +118,6 @@ test.each([
 	fallback.addChild(new UserMessageComponent(prompt));
 	const message = new UserMessageCard(prompt, {
 		markdownTheme: getMarkdownTheme(),
-		getTheme: () => testTheme,
 		outputPad: 1,
 		transformers: [],
 		skill: null,
@@ -149,5 +147,38 @@ test("keeps native vertical spacing when a Skill prefix precedes a padded Markdo
 		message.setExpanded(true);
 		message.setExpanded(false);
 		expect(message.render(100)).toHaveLength(3);
+	}
+});
+
+test("colors every inline Skill command with the Powerline palette before native wrapping", () => {
+	const prompt = "hi /skill:ponytail-help then **/skill:to-spec**";
+	const message = card(prompt, "ponytail-help");
+	for (const width of [24, 32, 100]) {
+		const rendered = message.render(width).join("\n");
+		expect(rendered.split("\u001b[38;2;178;129;214m/")).toHaveLength(4);
+		expect(stripTerminalSequences(rendered).replace(/\s/gu, "")).toBe(
+			"/skill:ponytail-helphi/skill:ponytail-helpthen/skill:to-spec",
+		);
+	}
+});
+
+test("preserves native Markdown links while coloring visible Skill labels", () => {
+	const message = card("[/skill:to-spec](https://example.com/skill:untouched) tail");
+	const rendered = message.render(100).join("\n");
+	expect(stripTerminalSequences(rendered)).toContain("/skill:to-spec");
+	expect(rendered).toContain("https://example.com/skill:untouched");
+	expect(rendered).toContain("\u001b[38;2;178;129;214m/");
+});
+
+test("restores compound SGR foregrounds without confusing background RGB values for colors", () => {
+	for (const [control, expected] of [
+		["1;31", "31"],
+		["1;38;2;10;20;30", "38;2;10;20;30"],
+		["38;5;123;1", "38;5;123"],
+		["31;48;2;0;32;39;1", "31"],
+		["31;0;1", "39"],
+	]) {
+		const rendered = highlightSkillCommands(`\u001b[${control}m/skill:one tail`);
+		expect(rendered.endsWith(`\u001b[${expected}m tail`)).toBe(true);
 	}
 });

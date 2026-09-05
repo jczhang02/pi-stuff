@@ -2,7 +2,6 @@ import {
 	type MarkdownTransformer,
 	type parseSkillBlock,
 	SkillInvocationMessageComponent,
-	type Theme,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -15,6 +14,7 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import { highlightSkillCommands, rainbowSkillCommand } from "./skill-command-style.js";
 import { sanitizeOneLine } from "./terminal-text.js";
 import { TRANSCRIPT_CONTINUATION } from "./transcript.js";
 
@@ -22,7 +22,6 @@ type SkillBlock = NonNullable<ReturnType<typeof parseSkillBlock>>;
 
 export interface UserMessageCardOptions {
 	readonly markdownTheme: MarkdownTheme;
-	readonly getTheme: () => Theme;
 	readonly outputPad: number;
 	readonly transformers: readonly MarkdownTransformer[];
 	readonly skill: SkillBlock | null;
@@ -67,28 +66,38 @@ function observeBlocks(markdown: Markdown, observe: (type: string) => void): voi
 	});
 }
 
+// Color native inline output before Pi wraps it; Markdown syntax and hyperlink targets stay native.
+function highlightInlineSkills(markdown: Markdown): void {
+	const method: unknown = Object.getOwnPropertyDescriptor(Markdown.prototype, "renderInlineTokens")?.value;
+	if (!isRuntimeFunction(method))
+		throw new Error("User Message presentation requires the certified Pi inline renderer");
+	// SAFETY: forward the certified method's opaque arguments unchanged, and validate its rendered string.
+	const render = method as (this: Markdown, ...args: unknown[]) => string;
+	Object.defineProperty(markdown, "renderInlineTokens", {
+		configurable: true,
+		value: function (this: Markdown, ...args: unknown[]): string {
+			const text: unknown = render.apply(this, args);
+			if (!isRuntimeString(text)) throw new Error("User Message inline rendering returned non-text");
+			return highlightSkillCommands(text);
+		},
+	});
+}
+
 class PromptContent implements Component {
 	private readonly markdown: Markdown;
 	private readonly skill: SkillBlock | null;
 	private readonly style: MarkdownTheme;
 	private readonly marker: boolean;
-	private readonly getTheme: () => Theme;
 	private firstBlock: string | undefined;
 	private cachedWidth: number | undefined;
 	private cachedRows: string[] | undefined;
 
-	constructor(
-		markdown: Markdown,
-		skill: SkillBlock | null,
-		style: MarkdownTheme,
-		getTheme: () => Theme,
-		marker = true,
-	) {
+	constructor(markdown: Markdown, skill: SkillBlock | null, style: MarkdownTheme, marker = true) {
 		this.markdown = markdown;
 		this.skill = skill;
 		this.style = style;
 		this.marker = marker;
-		this.getTheme = getTheme;
+		if (marker) highlightInlineSkills(markdown);
 		if (skill)
 			observeBlocks(markdown, (type) => {
 				this.firstBlock ??= type;
@@ -106,19 +115,7 @@ class PromptContent implements Component {
 		this.firstBlock = undefined;
 		const rows = [...this.markdown.render(width - 2)];
 		if (this.skill) {
-			const theme = this.getTheme();
-			const colors = [
-				"error",
-				"syntaxString",
-				"warning",
-				"success",
-				"accent",
-				"syntaxKeyword",
-				"thinkingXhigh",
-			] as const;
-			const label = Array.from(`/skill:${sanitizeOneLine(this.skill.name)}`, (character, index) =>
-				theme.fg(colors[index % colors.length] ?? "accent", character),
-			).join("");
+			const label = rainbowSkillCommand(`/skill:${sanitizeOneLine(this.skill.name)}`);
 			const first = this.firstBlock === "paragraph" ? (rows.shift() ?? "").trimEnd() : "";
 			rows.unshift(...wrapTextWithAnsi(`${label}${first ? ` ${first}` : ""}`, width - 2));
 		}
@@ -147,7 +144,7 @@ export class UserMessageCard extends UserMessageComponent {
 	private compose(): void {
 		const { box, markdown } = nativeBody(this);
 		box.clear();
-		box.addChild(new PromptContent(markdown, this.options.skill, this.options.markdownTheme, this.options.getTheme));
+		box.addChild(new PromptContent(markdown, this.options.skill, this.options.markdownTheme));
 		if (this.expanded && this.options.skill) {
 			box.addChild(new Spacer(1));
 			box.addChild(
@@ -156,15 +153,7 @@ export class UserMessageCard extends UserMessageComponent {
 				}),
 			);
 			const instructions = new UserMessageComponent(this.options.skill.content, this.options.markdownTheme, 0);
-			box.addChild(
-				new PromptContent(
-					nativeBody(instructions).markdown,
-					null,
-					this.options.markdownTheme,
-					this.options.getTheme,
-					false,
-				),
-			);
+			box.addChild(new PromptContent(nativeBody(instructions).markdown, null, this.options.markdownTheme, false));
 		}
 	}
 

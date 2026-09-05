@@ -562,7 +562,7 @@ test("rejects raw console output from Host source", async () => {
 	]);
 });
 
-test("rejects literal Host colors but permits browser-owned palettes", async () => {
+test("rejects literal Host colors outside the explicit palette owners", async () => {
 	const root = await createRepository();
 	await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
 	await writeFile(
@@ -576,6 +576,11 @@ test("rejects literal Host colors but permits browser-owned palettes", async () 
 	await writeFile(
 		join(root, "packages", "pi-stuff", "src", "goal", "style.ts"),
 		`export const style = (code: "1" | "3" | "7", text: string) => \`\\x1b[\${code}m\${text}\\x1b[0m\`;\n`,
+	);
+	await writeFixture(
+		root,
+		"packages/pi-stuff/src/conversation-ui/skill-command-style.ts",
+		'export const color = "38;2;178;129;214";\n',
 	);
 	expect(await auditRepositoryFiles(root)).toEqual([
 		{ path: "packages/pi-stuff/src/goal/ansi.ts", rule: "hard-coded-host-color" },

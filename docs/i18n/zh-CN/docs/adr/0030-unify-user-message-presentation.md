@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: efc5c435936e48b62a1a274577dfcb4c8f70fc0f903ab9f9bea361fcf3aa8037 -->
+<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: b4b3b21bece871da1350e1215803c4458eac596dace727493b324b1ab2325be1 -->
 
 ---
 status: accepted
@@ -20,7 +20,7 @@ Conversation UI 将把这次提交显示为一条 User Message，同时保留 Pi
   卡片，保留原生横向内边距和上下留白。
 - 一个 `` 占据 Tool Transcript 的标记列。prompt 和折行续行从 Tool 正文列开始，保留 Markdown 列表、
   代码和引用的相对缩进。标记表示 Provider Prompt，包括自动提交的 `role:user` 消息，不声明由人类输入。
-- Host 识别的 Skill invocation 显示为 ` /skill:implement <prompt>`。行内 Skill 标识保留原生调用形式，采用当前 Pi 主题的静态逐字彩虹色，prompt 保留正常正文样式。不增加独立 badge 背景、标题或卡片。
+- Host 识别的 Skill invocation 显示为 ` /skill:implement <prompt>`。行内 Skill 标识保留原生调用形式，采用固定的 Powerline footer 彩虹配色，prompt 保留正常正文样式。不增加独立 badge 背景、标题或卡片。
 - 普通段落紧接 Skill 标识。块级 Markdown 在同一卡片内另起一行；窄终端自然换行。无需展开 Skill 即可阅读
   prompt。
 - 原生 `Ctrl+O` 控制展开。完整 Skill instructions 在同一卡片的 prompt 后面展开，使用低强调的
@@ -37,7 +37,7 @@ Conversation UI 将把这次提交显示为一条 User Message，同时保留 Pi
 
 使用 Pi 的 Skill parser 产生的元数据和原生 User Message/Markdown 组件。优先采用 User Message 子类，保留原生卡片
 几何、终端消息标记、主题失效处理和输出内边距更新，同时支持原生 `setExpanded()` 行为。不重新实现
-Markdown 解析，不识别任意 Skill 提及，不引入平行的 custom-message 流。具体组合必须先通过真实 Host
+Markdown 解析，不将文字中的 Skill 提及解释为调用，不引入平行的 custom-message 流。具体组合必须先通过真实 Host
 验证；仅有继承关系不能证明这些行为得到保留。
 
 通过卡片原生 Markdown token renderer 发出的首个非空白块类型决定 Skill 是否行内显示。仅观察当前
@@ -84,3 +84,8 @@ projection，并通过现有诊断通道报告一次。不打断 Agent，不重�
 布局行为；重写规范消息则会为展示需求改变语义。狭窄 patch 避免这两种代价，但每次 Host 变化都需要重新
 认证。ADR 0001 允许这个受限的展示例外；`DESIGN.md` 和 Conversation UI 所有的文档定义视觉契约，
 并保留中文镜像。
+
+行内命令着色观察卡片自身的原生 `renderInlineTokens` 输出，在原生换行前应用配色。参数原样转发，
+返回值验证为字符串，保留终端超链接控制序列，并在每个命令后恢复先前的前景色。围栏代码保持原生呈现。
+这只是装饰，不新增 Skill 调用、instructions 或 Provider 内容。固定配色来自 pi-agent 的 `c2018703`
+提交中 `packages/jc-powerline-footer/theme.ts`：紫、粉、橙、黄、绿、青、蓝、紫。

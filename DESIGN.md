@@ -4,7 +4,7 @@ name: Pi Stuff
 description: Conversation-first terminal capabilities that remain inside the native Pi Host.
 omitted:
   - section: colors
-    reason: Pi Host semantic theme tokens are normative; Pi Stuff has no fixed CSS or ANSI palette.
+    reason: Pi Host semantic theme tokens are normative; The inline Skill command palette is the sole fixed ANSI exception.
   - section: typography
     reason: The Host and terminal own the font family, size, and cell metrics.
   - section: rounded
@@ -38,7 +38,9 @@ only when they help the user act or when an explicit raw/debug view is opened.
 ## Colors
 
 Color comes only from the active Pi theme. Use semantic roles such as text, muted, dim, border, accent, success,
-warning, and error; never hard-code an ANSI palette or choose values for one personal theme.
+warning, and error. The sole terminal palette exception is inline Skill command decoration, which retains the
+explicitly requested historical Powerline footer rainbow colors. Other surfaces must not hard-code an ANSI palette
+or choose values for one personal theme.
 
 Accent identifies focus or the one active interaction. Routine information stays in ordinary or muted text. Success,
 warning, and error colors reinforce explicit icons and words; color is never the only evidence of state. Every visible
@@ -182,9 +184,10 @@ User Messages retain the native full-width `userMessageBg` card, horizontal padd
 assert human authorship. Other Host padding values remain configurable without an added alignment guarantee.
 
 Ordinary prompts and Skill invocations share that card. A recognized Skill appears inline as `/skill:<name>` with
-static per-character rainbow colors from the active Pi theme before the prompt, without its own background, frame,
+the static Powerline footer rainbow palette before the prompt, without its own background, frame,
 title, or expansion hint. Skill-only
-invocations use the same layout. Block Markdown starts below the Skill identity; wrapping preserves native Markdown
+invocations use the same layout. Inline `/skill:<name>` text throughout a User Message uses the same palette,
+without changing invocation semantics or adding instructions for textual mentions. Block Markdown starts below the Skill identity; wrapping preserves native Markdown
 hierarchy and terminal-cell alignment. Native `Ctrl+O` and the Host's current expansion state remain authoritative.
 Expanded instructions follow the prompt under a low-emphasis `Skill instructions` label inside the same card, with no
 duplicate marker or prompt. Live and restored regular/fullscreen TUI share this presentation; HTML remains native.
@@ -221,7 +224,7 @@ remains the only message authority, and Thinking never becomes a visualization.
 ### Don't
 
 - **Don't** create another CLI, TUI shell, floating modal system, or permanent Package dashboard.
-- **Don't** hard-code colors, fonts, or a personal terminal theme.
+- **Don't** hard-code colors outside the documented Skill palette exception, fonts, or a personal terminal theme.
 - **Don't** make two columns look like two separate Dialogs; keep one continuous structural surface.
 - **Don't** frame individual sections or add nested indentation to simulate hierarchy.
 - **Don't** reuse `›` or the Transcript's `•` as lifecycle state. A Transcript notice may use `•` only as its record

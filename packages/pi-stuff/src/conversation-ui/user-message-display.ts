@@ -6,7 +6,6 @@ import {
 	type MarkdownTransformer,
 	type parseSkillBlock,
 	SkillInvocationMessageComponent,
-	type Theme,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Container, type MarkdownTheme, Spacer } from "@earendil-works/pi-tui";
@@ -109,12 +108,7 @@ function readPrompt(component: UserMessageComponent): string {
 	return text;
 }
 
-function projectMessage(
-	host: HostPresentation,
-	first: number,
-	getTheme: () => Theme,
-	fail: (error: Error) => void,
-): void {
+function projectMessage(host: HostPresentation, first: number, fail: (error: Error) => void): void {
 	const children = host.chatContainer.children;
 	const component = children[first];
 	if (component instanceof UserMessageCard) return;
@@ -137,7 +131,6 @@ function projectMessage(
 	for (const child of children.slice(first, first + count)) fallback.addChild(child);
 	const card = new UserMessageCard(prompt, {
 		markdownTheme: host.markdownTheme,
-		getTheme,
 		outputPad: host.outputPad,
 		transformers: host.transformers,
 		skill,
@@ -148,11 +141,7 @@ function projectMessage(
 	children.splice(first, count, card);
 }
 
-function adoptReplayedMessages(
-	state: PatchState,
-	sessionManager: ExtensionContext["sessionManager"],
-	getTheme: () => Theme,
-): void {
+function adoptReplayedMessages(state: PatchState, sessionManager: ExtensionContext["sessionManager"]): void {
 	const reference: unknown = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, LAST_HOST)?.value;
 	if (!(reference instanceof WeakRef)) return;
 	const host: unknown = reference.deref();
@@ -167,7 +156,7 @@ function adoptReplayedMessages(
 		for (let index = 0; index < presentation.chatContainer.children.length; index += 1) {
 			const component = presentation.chatContainer.children[index];
 			if (component instanceof UserMessageComponent || component instanceof SkillInvocationMessageComponent) {
-				projectMessage(presentation, index, getTheme, (error) => disable(state, error));
+				projectMessage(presentation, index, (error) => disable(state, error));
 			}
 		}
 	} catch (error) {
@@ -175,7 +164,7 @@ function adoptReplayedMessages(
 	}
 }
 
-function preflight(getTheme: () => Theme): void {
+function preflight(): void {
 	if (!isRuntimeFunction(Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "sessionManager")?.get)) {
 		throw new Error("User Message presentation requires the certified Pi SessionManager accessor");
 	}
@@ -199,7 +188,6 @@ function preflight(getTheme: () => Theme): void {
 	fallback.addChild(sample);
 	const card = new UserMessageCard("User Message preflight", {
 		markdownTheme: getMarkdownTheme(),
-		getTheme,
 		outputPad: 1,
 		transformers: [],
 		skill,
@@ -250,7 +238,6 @@ function createPatch(
 	original: InsertMessage,
 	descriptor: PropertyDescriptor,
 	diagnostics: DiagnosticChannel,
-	getTheme: () => Theme,
 ): PatchState {
 	const state: PatchState = { original, descriptor, patched: original, owners: 0, enabled: true, diagnostics };
 	state.patched = function (message, options): void {
@@ -272,7 +259,7 @@ function createPatch(
 		try {
 			const first = start + (start > 0 ? 1 : 0);
 			if (first < presentation.chatContainer.children.length) {
-				projectMessage(presentation, first, getTheme, (error) => disable(state, error));
+				projectMessage(presentation, first, (error) => disable(state, error));
 			}
 		} catch (error) {
 			disable(state, error instanceof Error ? error : new Error("User Message projection failed"));
@@ -285,7 +272,6 @@ function createPatch(
 export function installUserMessageDisplay(
 	diagnostics: DiagnosticChannel,
 	sessionManager: ExtensionContext["sessionManager"],
-	getTheme: () => Theme,
 ): () => void {
 	// ponytail: Pi 0.85.0 has no public User Message renderer; replace this patch when the Host exposes one.
 	const prototype = InteractiveMode.prototype;
@@ -302,14 +288,14 @@ export function installUserMessageDisplay(
 		}
 		state = existing;
 	} else {
-		preflight(getTheme);
+		preflight();
 		// SAFETY: the certified Host method is callable and its insertion signature is fixed by Pi 0.85.0.
-		state = createPatch(method as InsertMessage, descriptor, diagnostics, getTheme);
+		state = createPatch(method as InsertMessage, descriptor, diagnostics);
 		Object.defineProperty(prototype, USER_MESSAGE_PATCH, { configurable: true, value: state });
 		Object.defineProperty(prototype, "addMessageToChat", { ...descriptor, value: state.patched });
 	}
 	state.owners += 1;
-	if (state.owners === 1) adoptReplayedMessages(state, sessionManager, getTheme);
+	if (state.owners === 1) adoptReplayedMessages(state, sessionManager);
 	let released = false;
 	return () => {
 		if (released) return;

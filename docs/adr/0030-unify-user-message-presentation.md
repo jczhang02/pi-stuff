@@ -21,7 +21,7 @@ direction; it does not claim an implemented or certified contract.
   text column, retaining the relative indentation of Markdown lists, code, and quotes. The marker denotes a Provider
   Prompt, including automatically submitted `role:user` messages, rather than claiming human authorship.
 - A recognized Skill invocation appears as ` /skill:implement <prompt>`. Its inline Skill command retains the native
-  `/skill:<name>` spelling and uses static per-character rainbow colors from the active Pi theme; the prompt keeps
+  `/skill:<name>` spelling and uses the static Powerline footer rainbow palette; the prompt keeps
   ordinary text styling. No separate badge background, title, or card is added.
 - Ordinary paragraphs follow the Skill identity inline. Block Markdown starts on the next line within the card;
   narrow terminal widths wrap naturally. The prompt remains readable without expanding the Skill.
@@ -41,7 +41,7 @@ number of trailing children or scan the complete Transcript on each message.
 
 Use the metadata produced by Pi's Skill parser and native User Message/Markdown components. Prefer a User Message subclass that preserves
 native card geometry, terminal message markers, theme invalidation, and output-padding updates, while exposing native
-`setExpanded()` behavior. Do not reproduce Markdown parsing, recognize arbitrary Skill mentions, or introduce a
+`setExpanded()` behavior. Do not reproduce Markdown parsing, interpret textual Skill mentions as invocations, or introduce a
 parallel custom-message stream. The exact composition must first pass real-Host verification; inheritance alone is
 not evidence that those behaviors survive.
 
@@ -49,6 +49,12 @@ Determine inline Skill placement from the first non-space block type emitted by 
 renderer. Observe that card-local method while passing every token and argument unchanged to Pi; do not patch the
 Markdown prototype or maintain a second block classifier. Preflight this version-bound component signal as well as
 the insertion seam, and route an incompatible runtime signal through the same native fallback.
+
+Observe the card-local native `renderInlineTokens` result to color inline `/skill:<name>` text before native wrapping.
+Forward its arguments unchanged, validate the returned string, preserve terminal hyperlink controls and restore the
+preceding foreground after each command. Fenced code remains native. This is decoration only: no additional Skill
+invocations, instructions, or Provider content are synthesized. The fixed palette follows pi-agent commit `c2018703`,
+`packages/jc-powerline-footer/theme.ts`: purple, pink, orange, yellow, green, teal, blue, purple.
 
 Install only for TUI through the existing Session presentation lifecycle, following the ownership and idempotent
 release pattern used by Thinking. Session switches, shutdown, and `/reload` release the patch. Restore the original
