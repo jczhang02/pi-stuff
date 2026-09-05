@@ -17,12 +17,12 @@ import {
 	beginSuiteNativeCompactionPreflight,
 	reportDiagnostic,
 	type SuiteAgentMessageOptions,
-} from "../conversation-ui/index.js";
-import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
-import { isRuntimeObject } from "../shared/runtime-type.js";
-import { registerSuiteOwnedTool, registerSuiteToolActivityMetadata } from "../tool-display/index.js";
-import { MAGIC_TOOL_LABELS, MAGIC_TOOL_NAME_SET, MAGIC_TOOL_NAMES } from "./activity.js";
-import { ContextCommandRuntime, type MagicCommandDefinition } from "./command-runtime.js";
+} from "../conversation-ui/index.ts";
+import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.ts";
+import { isRuntimeObject } from "../shared/runtime-type.ts";
+import { registerSuiteOwnedTool, registerSuiteToolActivityMetadata } from "../tool-display/index.ts";
+import { MAGIC_TOOL_LABELS, MAGIC_TOOL_NAME_SET, MAGIC_TOOL_NAMES } from "./activity.ts";
+import { ContextCommandRuntime, type MagicCommandDefinition } from "./command-runtime.ts";
 import {
 	addCompactMagicContextPrompt,
 	CANCELLED_EVENT_RESULT_SCHEMA,
@@ -38,18 +38,18 @@ import {
 	magicPiAdapter,
 	type NativeCompactionSettings,
 	quietMagicContext,
-} from "./magic-runtime.js";
-import type { ContextProjection, ContextProjectionAudience, ContextProjectionOptions } from "./projection.js";
-import { ContextProjectionRuntime, type MagicContextEventResult, type MagicContextHandler } from "./projection.js";
-import { applyContextPromptContributions, stripContextPromptContributions } from "./prompt-contributions.js";
+} from "./magic-runtime.ts";
+import type { ContextProjection, ContextProjectionAudience, ContextProjectionOptions } from "./projection.ts";
+import { ContextProjectionRuntime, type MagicContextEventResult, type MagicContextHandler } from "./projection.ts";
+import { applyContextPromptContributions, stripContextPromptContributions } from "./prompt-contributions.ts";
 import {
 	type ContextActivationTrigger,
 	type ContextCapabilityState,
 	type ContextStatusSnapshot,
 	contextStatusWithContinuity,
 	nativeContextStatus,
-} from "./status.js";
-import { magicToolPresentation } from "./tool-presentation.js";
+} from "./status.ts";
+import { magicToolPresentation } from "./tool-presentation.ts";
 
 export interface ContextCapability {
 	status(): ContextStatusSnapshot;

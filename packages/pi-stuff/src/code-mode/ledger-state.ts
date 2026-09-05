@@ -1,12 +1,12 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { type Static, type TProperties, Type } from "typebox";
 import { Value } from "typebox/value";
-import { type JsonSourceValue, type JsonValue, parseJsonValue } from "../shared/json-value.js";
-import { isRuntimeObject } from "../shared/runtime-type.js";
-import { type CodemodeValue, parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
-import type { Snippet } from "./cloudflare/snippet.js";
-import { unwrapSuiteToolResult } from "./connector.js";
-import { isCodeModeToolContent } from "./presentation.js";
+import { type JsonSourceValue, type JsonValue, parseJsonValue } from "../shared/json-value.ts";
+import { isRuntimeObject } from "../shared/runtime-type.ts";
+import { type CodemodeValue, parseForStorage, stringifyForStorage } from "./cloudflare/codec.ts";
+import type { Snippet } from "./cloudflare/snippet.ts";
+import { unwrapSuiteToolResult } from "./connector.ts";
+import { isCodeModeToolContent } from "./presentation.ts";
 
 const SCHEMA_VERSION = 1;
 export const MAX_DURABLE_INPUT_BYTES = 1_000_000;

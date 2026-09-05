@@ -2,8 +2,8 @@
 
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
-import type { PonytailMode } from "../../../../ponytail/types.js";
+import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.ts";
+import type { PonytailMode } from "../../../../ponytail/types.ts";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";

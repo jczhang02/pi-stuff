@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parseJsonValue } from "../../../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import { parseJsonValue } from "../../../../shared/json-value.ts";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { type DurableClaim, tryAcquireDurableClaim } from "../../shared/durable-claim.ts";
 import { assertPrivateDirectoryWithin, readBoundedOwnedFile } from "../../shared/private-directory.ts";

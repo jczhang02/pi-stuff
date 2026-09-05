@@ -3,10 +3,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { projectCurrentContext } from "../../../context-management/index.js";
-import { installEffectFoundation } from "../../../shared/effect-foundation.js";
-import { isRuntimeFunction } from "../../../shared/runtime-type.js";
-import { registerSuiteOwnedTool } from "../../../tool-display/index.js";
+import { projectCurrentContext } from "../../../context-management/index.ts";
+import { installEffectFoundation } from "../../../shared/effect-foundation.ts";
+import { isRuntimeFunction } from "../../../shared/runtime-type.ts";
+import { registerSuiteOwnedTool } from "../../../tool-display/index.ts";
 import { discoverAgents } from "../agents/agents.ts";
 import {
 	createSubagentExecutor,

@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
-import { isRuntimeNumber } from "../../../../shared/runtime-type.js";
+import { isRuntimeNumber } from "../../../../shared/runtime-type.ts";
 import type { ChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import type { AgentContextUsage, ProtocolOutputLimit, Usage } from "../../shared/types.ts";

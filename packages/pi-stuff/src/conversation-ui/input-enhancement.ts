@@ -18,8 +18,8 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
-import { sanitizeTerminalText, styleKnownInvocations } from "./input-highlighting.js";
+import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.ts";
+import { sanitizeTerminalText, styleKnownInvocations } from "./input-highlighting.ts";
 
 const COMMAND_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/u;
 const BACKSPACE_INPUT = "\u007f";

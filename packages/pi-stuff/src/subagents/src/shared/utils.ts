@@ -7,10 +7,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import { getAgentDir as getPiAgentDir } from "@earendil-works/pi-coding-agent";
-import { type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
-import type { ToolArguments } from "../../../tool-display/activity.js";
-import { boundTerminalLine } from "../../../tool-display/index.js";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.ts";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.ts";
+import type { ToolArguments } from "../../../tool-display/activity.ts";
+import { boundTerminalLine } from "../../../tool-display/index.ts";
 import {
 	assertPrivateDirectory,
 	readBoundedOwnedFileSnapshot,

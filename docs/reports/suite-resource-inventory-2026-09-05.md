@@ -229,3 +229,42 @@ profile/probe/UI scopes were verified not-found/inactive/dead after shutdown. Pr
 363 to 367 lines; its public regression file grew from 601 to 615, with no new test framework or production state.
 This is a cold-normalization optimization, not completion of `ps-yon.4`. Agent Tool gates, remaining resource dimensions,
 recovery workloads and attribution of the residual stall still block final acceptance.
+
+## Resolve imports directly to shipped Source
+
+On 2026-09-05, native-bundle inspection found a repeated loading cost: the Host resolver tries nonexistent relative
+`.js` paths and extension candidates before falling back to the actual `.ts` file. Constructing and catching those
+resolution errors includes another caught, unsupported Bun V8 snapshot probe. This is unnecessary path lookup,
+not evidence that every module is compiled twice. A separate-Extension loading-only probe has a different module
+graph from real Agent execution and is not used as the production comparison below.
+
+The candidate changes 1,383 module specifiers across 412 Package files to their existing TypeScript targets. An AST
+comparison against `bd095042` verifies that all other production text is unchanged; physical lines stay at 116,365
+across those files. Real JavaScript targets remain unchanged. The existing composition generator emits exact Source
+paths, and the existing repository import audit rejects missing relative targets, including type imports, re-exports
+and dynamic imports. No new runtime state, preload, delay, dependency or Host-loader modification is introduced.
+
+An initial Agents-only experiment changed 208 specifiers. Alternating control/candidate/control/candidate runs
+`ByJ2gp`/`KRwpGS`/`7vr5kE`/`8J3ShW` measured Spinner maxima of 210.213/174.840/244.813/174.682 ms.
+All failed the frozen Spinner and input gates. The subsequent full-Package comparison used the unchanged observer
+with `--suite --agent foreground --resource-scope` and the frozen gates:
+
+| Variant, in execution order | CPU seconds | Charged-memory peak, decimal MB | Editor-ready ms | Spinner max, ms | Steady-input max, ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Candidate `bMyejB` | 16.918412 | 1,281.737 | 4,580.923 | 209.014 | 85.629 |
+| Control `vHqx4o` | 21.707431 | 1,577.697 | 6,073.108 | 222.030 | 158.163 |
+| Candidate `9vUUxp` | 16.888435 | 1,279.054 | 4,640.689 | 211.430 | 86.543 |
+
+Each fresh Host used the same certified Pi 0.85.0 binary, offline Providers, 120×40 terminal, private HOME/XDG/TMPDIR
+and isolated network/PID namespaces. Each completed and reaped one real child Tool run and performed automatic Usage,
+Naming request and Name persistence once. Active observation exceeded 20 seconds and 1,700 captures, with no Spinner
+absence and no capture gap above 23 ms. Tests and other benchmarks did not run concurrently; the kernel page cache was
+not reset. All three scopes were verified unloaded after shutdown.
+
+These samples demonstrate lower total scoped CPU and charged-memory peaks in this workload, not a completed liveness
+fix: all three still fail the unchanged 164.768 ms Spinner and 40.465 ms steady-input gates. Charged memory is not
+allocated bytes or peak process-tree RSS; the final RSS and I/O snapshots do not isolate individual import costs.
+Allocation/GC, wakeups, scale, recovery and every-Capability execution remain separate acceptance work. The numeric
+record's `explicitSourceImports` section retains all seven samples, raw evidence and Provider hashes, source-diff
+identities, exact maxima and measurement limits. `ps-yon.11` owns this optimization; `ps-yon.6` and final acceptance
+remain open.

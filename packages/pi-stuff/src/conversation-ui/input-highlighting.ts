@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { sanitizeTerminalText as sanitizeUntrustedTerminalText, terminalControlEnd } from "../shared/terminal-text.js";
+import { sanitizeTerminalText as sanitizeUntrustedTerminalText, terminalControlEnd } from "../shared/terminal-text.ts";
 
 const MAX_DESCRIPTION_CODE_UNITS = 320;
 

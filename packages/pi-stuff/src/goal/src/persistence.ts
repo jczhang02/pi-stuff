@@ -3,12 +3,12 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
-import { isJsonInputValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import { readSettingsFileSync, writeSettingsFileSync } from "../../shared/settings-io/file.js";
-import { resolveSettingsLockPath } from "../../shared/settings-io/paths.js";
-import { isNonNegativeFiniteNumber, nonNegativeFiniteNumber, normalizeTokenBudget } from "./accounting.js";
-import type { GoalStatus } from "./prompts.js";
+import { isJsonInputValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.ts";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.ts";
+import { readSettingsFileSync, writeSettingsFileSync } from "../../shared/settings-io/file.ts";
+import { resolveSettingsLockPath } from "../../shared/settings-io/paths.ts";
+import { isNonNegativeFiniteNumber, nonNegativeFiniteNumber, normalizeTokenBudget } from "./accounting.ts";
+import type { GoalStatus } from "./prompts.ts";
 
 const GOAL_STATE_ENTRY_TYPE = "goal-state";
 const LEGACY_GOALS_STATE_ENTRY_TYPE = "goals-state";
@@ -355,7 +355,7 @@ function legacyStateLock(path: string, owner: string): Effect.Effect<void, Error
 	if (!Object.hasOwn(process.versions, "bun")) return Effect.void;
 	return Effect.flatMap(
 		Effect.tryPromise({
-			try: () => import("../../shared/settings-io/lock.js"),
+			try: () => import("../../shared/settings-io/lock.ts"),
 			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
 		}),
 		({ acquireSettingsLockEffect }) => acquireSettingsLockEffect(resolveSettingsLockPath(path), owner),

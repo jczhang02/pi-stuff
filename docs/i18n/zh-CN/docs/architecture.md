@@ -1,4 +1,4 @@
-<!-- translation-source: docs/architecture.md; translation-source-sha256: 37d622b351790712fdf2f0c654882f6bf38be8e738d8a024820467c5e93a0588 -->
+<!-- translation-source: docs/architecture.md; translation-source-sha256: 8600c8c031f3f507b0215a9904b71ddb9663fb62d9ccbfe2759a4314028b2412 -->
 
 # 架构
 
@@ -47,6 +47,10 @@ Pi 负责编辑器、普通前台 Agent 运行、Session、model 和 Extension �
 组合变化时先修改 manifest，再重新生成。Capability 实现位于 `packages/pi-stuff/src/<capability>/`。
 
 ## Runtime 加载
+
+Package 内的相对导入直接写出交付文件的名称：TypeScript 导入使用 `.ts`，真实 JavaScript 模块保留其自身后缀。
+生成的组合代码遵循同一规则。仓库导入检查会拒绝不存在的目标，避免 Host 反复查找不存在的 `.js` 路径后，
+再回退到 TypeScript 源码。
 
 导入 Package 时会注册 Extension factory。Session 启动阶段读取用户配置，并在编辑器就绪前初始化已配置的能力。
 外部服务和依赖子进程的可选集成会在所属能力需要时启动。

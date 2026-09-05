@@ -1,6 +1,6 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import type { NamingMessage } from "./prompt.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.ts";
+import type { NamingMessage } from "./prompt.ts";
 
 export const SESSION_NAMING_STATE_ENTRY_TYPE = "pi-stuff-session-naming-state";
 export const LEGACY_AUTONAME_STATE_ENTRY_TYPE = "pi-autoname-state";

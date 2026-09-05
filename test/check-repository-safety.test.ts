@@ -408,21 +408,22 @@ test("rejects ranged development dependencies and extra workspaces", async () =>
 test("enforces the documented internal Module dependency direction", async () => {
 	const root = await createRepository();
 	await mkdir(join(root, "packages", "pi-stuff", "src", "conversation-ui"), { recursive: true });
-	await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
+	await writeFixture(root, "packages/pi-stuff/src/goal/index.ts", "export default {};\n");
 	await mkdir(join(root, "packages", "pi-stuff", "src", "subagents"), { recursive: true });
 	await mkdir(join(root, "packages", "pi-stuff", "src", "code-mode"), { recursive: true });
 	await writeFile(
 		join(root, "packages", "pi-stuff", "src", "conversation-ui", "index.ts"),
-		'import goal from "../goal/index.js";\nexport default goal;\n',
+		'import goal from "../goal/index.ts";\nexport default goal;\n',
 	);
 	await writeFile(
 		join(root, "packages", "pi-stuff", "src", "subagents", "index.ts"),
-		'import context from "../context-management/index.js";\nexport default context;\n',
+		'import context from "../context-management/index.ts";\nexport default context;\n',
 	);
 	await writeFile(
 		join(root, "packages", "pi-stuff", "src", "code-mode", "index.ts"),
-		'import context from "../context-management/index.js";\nimport type { Contract } from "../tool-display/contract.js";\nexport type Mode = Contract;\nexport default context;\n',
+		'import context from "../context-management/index.ts";\nimport type { Contract } from "../tool-display/contract.ts";\nexport type Mode = Contract;\nexport default context;\n',
 	);
+	await writeFixture(root, "packages/pi-stuff/src/tool-display/contract.ts", "export type Contract = {};\n");
 
 	expect(await auditRepositoryFiles(root)).toEqual([
 		{

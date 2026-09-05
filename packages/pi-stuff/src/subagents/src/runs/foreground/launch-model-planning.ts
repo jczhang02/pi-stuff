@@ -10,7 +10,7 @@ import {
 	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import { isRuntimeFunction, isRuntimeNumber } from "../../../../shared/runtime-type.js";
+import { isRuntimeFunction, isRuntimeNumber } from "../../../../shared/runtime-type.ts";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { findModelInfo, type ModelInfo } from "../../shared/model-info.ts";

@@ -1,6 +1,6 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AgentWorkOrigin } from "../../../conversation-ui/index.js";
+import type { AgentWorkOrigin } from "../../../conversation-ui/index.ts";
 import type { SubagentExecutionHooks, SubagentParamsLike } from "../runs/foreground/executor-contract.ts";
 import { PI_STUFF_AGENT_PATH_ENV } from "../runs/shared/pi-args.ts";
 import {

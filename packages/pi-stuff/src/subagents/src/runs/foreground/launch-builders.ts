@@ -2,7 +2,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
-import { getPonytailMode } from "../../../../ponytail/state.js";
+import { getPonytailMode } from "../../../../ponytail/state.ts";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { type Details, resolveChildMaxSubagentDepth, wrapForkTask } from "../../shared/types.ts";

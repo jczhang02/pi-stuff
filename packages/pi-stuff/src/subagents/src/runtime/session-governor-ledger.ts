@@ -3,8 +3,8 @@ import * as nodeFs from "node:fs/promises";
 import * as path from "node:path";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { parseJsonValue } from "../../../shared/json-value.js";
-import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+import { parseJsonValue } from "../../../shared/json-value.ts";
+import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { type AsyncDurableClaim, tryAcquireKernelClaimAsync } from "../shared/durable-claim.ts";
 import {

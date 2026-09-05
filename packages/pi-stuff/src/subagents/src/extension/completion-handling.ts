@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import type { CommandDialogCoordinator } from "../../../conversation-ui/index.js";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
-import { CachedToolRow } from "../../../tool-display/index.js";
+import type { CommandDialogCoordinator } from "../../../conversation-ui/index.ts";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.ts";
+import { CachedToolRow } from "../../../tool-display/index.ts";
 import type { CompletionNotification } from "../runs/background/notify.ts";
 import { sessionArtifactMatches } from "../shared/session-identity.ts";
 import type { SubagentState } from "../shared/types.ts";

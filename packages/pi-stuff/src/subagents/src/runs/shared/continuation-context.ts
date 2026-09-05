@@ -5,9 +5,9 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { JsonInputObject, JsonInputValue } from "../../../../shared/json-value.js";
-import { estimateProviderPayloadTokens, type ProviderPayloadModel } from "../../../../shared/provider-payload.js";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import type { JsonInputObject, JsonInputValue } from "../../../../shared/json-value.ts";
+import { estimateProviderPayloadTokens, type ProviderPayloadModel } from "../../../../shared/provider-payload.ts";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.ts";
 import { SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV } from "./pi-args.ts";
 
 const CHILD_INPUT_RESERVE_RATIO = 0.25;
@@ -21,7 +21,7 @@ const TASK_PREFIX = /(?:^|\s)Task:\s*/gu;
 const TASK_FINGERPRINT = /^[a-f0-9]{64}$/u;
 
 export type ChildProviderRequestPhase = "launch" | "continuation";
-export type { ProviderPayloadModel } from "../../../../shared/provider-payload.js";
+export type { ProviderPayloadModel } from "../../../../shared/provider-payload.ts";
 
 type ChildMessage = ContextEvent["messages"][number];
 

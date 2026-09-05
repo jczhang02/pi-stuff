@@ -1,7 +1,7 @@
 import type { AgentToolResult as CoreAgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ContextEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { projectCurrentContext } from "../../../../context-management/index.js";
-import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import type { projectCurrentContext } from "../../../../context-management/index.ts";
+import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.ts";
 import type { AgentConfig, AgentScope } from "../../agents/agents.ts";
 import type { ModelInfo } from "../../shared/model-info.ts";
 import type {

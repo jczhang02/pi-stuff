@@ -49,6 +49,10 @@ Change the manifest and regenerate when composition changes. Capability implemen
 
 ## Runtime loading
 
+Relative Package imports name the shipped file directly: TypeScript imports use `.ts`, while real JavaScript modules
+retain their own extension. Generated composition follows the same rule. The repository import audit rejects missing
+targets so the Host does not repeatedly search nonexistent `.js` paths before falling back to TypeScript Source.
+
 Package import registers the extension factory. Session startup reads user configuration and initializes configured
 capabilities before the editor becomes ready. Optional external services and subprocess-backed integrations start only
 when their owning capability needs them.

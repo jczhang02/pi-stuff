@@ -3,15 +3,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as Effect from "effect/Effect";
-import { normalizePonytailMode } from "../../../../ponytail/types.js";
-import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
+import { normalizePonytailMode } from "../../../../ponytail/types.ts";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.ts";
 import {
 	isRuntimeBoolean,
 	isRuntimeNumber,
 	isRuntimeObject,
 	isRuntimeString,
 	runtimeErrorCode,
-} from "../../../../shared/runtime-type.js";
+} from "../../../../shared/runtime-type.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";

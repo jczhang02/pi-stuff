@@ -2,7 +2,7 @@
 
 import * as path from "node:path";
 import * as Effect from "effect/Effect";
-import { runtimeErrorCode } from "../../../../shared/runtime-type.js";
+import { runtimeErrorCode } from "../../../../shared/runtime-type.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import type { NestedRunSummary } from "../../shared/types.ts";
