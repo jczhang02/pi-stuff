@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: b4b3b21bece871da1350e1215803c4458eac596dace727493b324b1ab2325be1 -->
+<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: 0c7c211bc48d3df1403ddce82f015272334ddbbcbbffd1674fe70698b519a2ba -->
 
 ---
 status: accepted
@@ -20,7 +20,7 @@ Conversation UI 将把这次提交显示为一条 User Message，同时保留 Pi
   卡片，保留原生横向内边距和上下留白。
 - 一个 `` 占据 Tool Transcript 的标记列。prompt 和折行续行从 Tool 正文列开始，保留 Markdown 列表、
   代码和引用的相对缩进。标记表示 Provider Prompt，包括自动提交的 `role:user` 消息，不声明由人类输入。
-- Host 识别的 Skill invocation 显示为 ` /skill:implement <prompt>`。行内 Skill 标识保留原生调用形式，采用固定的 Powerline footer 彩虹配色，prompt 保留正常正文样式。不增加独立 badge 背景、标题或卡片。
+- Host 识别的 Skill invocation 显示为 ` /skill:implement <prompt>`。行内 Skill 标识保留原生调用形式，采用固定的 workflow 演示中的静态彩虹配色，prompt 保留正常正文样式。不增加独立 badge 背景、标题或卡片。
 - 普通段落紧接 Skill 标识。块级 Markdown 在同一卡片内另起一行；窄终端自然换行。无需展开 Skill 即可阅读
   prompt。
 - 原生 `Ctrl+O` 控制展开。完整 Skill instructions 在同一卡片的 prompt 后面展开，使用低强调的
@@ -87,5 +87,6 @@ projection，并通过现有诊断通道报告一次。不打断 Agent，不重�
 
 行内命令着色观察卡片自身的原生 `renderInlineTokens` 输出，在原生换行前应用配色。参数原样转发，
 返回值验证为字符串，保留终端超链接控制序列，并在每个命令后恢复先前的前景色。围栏代码保持原生呈现。
-这只是装饰，不新增 Skill 调用、instructions 或 Provider 内容。固定配色来自 pi-agent 的 `c2018703`
-提交中 `packages/jc-powerline-footer/theme.ts`：紫、粉、橙、黄、绿、青、蓝、紫。
+这只是装饰，不新增 Skill 调用、instructions 或 Provider 内容。固定 ANSI 256 色环来自 `pi-dynamic-workflows` 的 `56489683` 提交中
+`src/workflow-editor.ts`。每个命令从紫色（色环索引 26）开始，每个字符前进一色；Transcript 保持静态，
+不安装动画计时器。

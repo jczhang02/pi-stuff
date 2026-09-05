@@ -39,7 +39,7 @@ only when they help the user act or when an explicit raw/debug view is opened.
 
 Color comes only from the active Pi theme. Use semantic roles such as text, muted, dim, border, accent, success,
 warning, and error. The sole terminal palette exception is inline Skill command decoration, which retains the
-explicitly requested historical Powerline footer rainbow colors. Other surfaces must not hard-code an ANSI palette
+explicitly requested workflow demo rainbow colors. Other surfaces must not hard-code an ANSI palette
 or choose values for one personal theme.
 
 Accent identifies focus or the one active interaction. Routine information stays in ordinary or muted text. Success,
@@ -184,7 +184,7 @@ User Messages retain the native full-width `userMessageBg` card, horizontal padd
 assert human authorship. Other Host padding values remain configurable without an added alignment guarantee.
 
 Ordinary prompts and Skill invocations share that card. A recognized Skill appears inline as `/skill:<name>` with
-the static Powerline footer rainbow palette before the prompt, without its own background, frame,
+the static workflow demo rainbow palette before the prompt, without its own background, frame,
 title, or expansion hint. Skill-only
 invocations use the same layout. Inline `/skill:<name>` text throughout a User Message uses the same palette,
 without changing invocation semantics or adding instructions for textual mentions. Block Markdown starts below the Skill identity; wrapping preserves native Markdown

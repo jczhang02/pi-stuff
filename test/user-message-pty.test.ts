@@ -101,7 +101,7 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 					.find((row) => stripTerminalSequences(row).includes(LABEL));
 				expect(coloredRow).toBeDefined();
 				expect(new Set(coloredRow?.match(/\[38;[^m]+m/gu)).size).toBeGreaterThanOrEqual(6);
-				expect(coloredRow?.split("\u001b[38;2;178;129;214m/")).toHaveLength(3);
+				expect(coloredRow?.split("\u001b[38;5;93m/")).toHaveLength(3);
 				await writePtyEvidence(PI_STUFF_UI_PTY_ARTIFACT_DIR, `user-message-${tuiMode}-${theme}-collapsed`, session);
 				session.sendKey("C-o");
 				screen = await session.waitForText("Skill instructions");

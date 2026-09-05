@@ -1,24 +1,16 @@
 import { terminalControlEnd } from "../shared/terminal-text.js";
 
-// pi-agent Powerline footer, c2018703, packages/jc-powerline-footer/theme.ts.
+// pi-dynamic-workflows, 56489683, src/workflow-editor.ts. Freeze the violet phase for transcript text.
 const RAINBOW = [
-	"178;129;214",
-	"215;135;175",
-	"254;188;56",
-	"228;192;15",
-	"137;210;129",
-	"0;175;175",
-	"23;143;185",
-	"178;129;214",
+	196, 160, 202, 166, 208, 172, 214, 178, 220, 184, 226, 190, 118, 82, 46, 47, 48, 49, 50, 51, 45, 39, 33, 27, 21, 57,
+	93, 129, 165, 201, 198, 197,
 ];
 
 export function rainbowSkillCommand(text: string, restore = "\u001b[39m"): string {
-	let index = 0;
 	return (
-		Array.from(text, (character) => {
-			if (character === ":" || character === " ") return character;
-			const color = RAINBOW[index++ % RAINBOW.length];
-			return `\u001b[38;2;${color}m${character}`;
+		Array.from(text, (character, index) => {
+			const color = RAINBOW[(index + 26) % RAINBOW.length];
+			return `\u001b[38;5;${color}m${character}`;
 		}).join("") + restore
 	);
 }

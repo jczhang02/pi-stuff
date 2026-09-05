@@ -58,7 +58,7 @@ const HOST_STREAM_WRITE_ALLOWLIST = new Set([
 	"packages/pi-stuff/src/notification/transport.ts",
 ]);
 const HOST_LITERAL_COLOR_ALLOWLIST = new Set([
-	// DESIGN.md explicitly retains the requested historical Powerline palette for inline Skill commands.
+	// DESIGN.md explicitly retains the requested workflow rainbow palette for inline Skill commands.
 	"packages/pi-stuff/src/conversation-ui/skill-command-style.ts",
 	// Browser documents cannot consume Pi's terminal Theme API.
 	"packages/pi-stuff/src/mcp/runtime/implementation.ts",

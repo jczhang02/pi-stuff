@@ -150,12 +150,12 @@ test("keeps native vertical spacing when a Skill prefix precedes a padded Markdo
 	}
 });
 
-test("colors every inline Skill command with the Powerline palette before native wrapping", () => {
+test("colors every inline Skill command with the workflow palette before native wrapping", () => {
 	const prompt = "hi /skill:ponytail-help then **/skill:to-spec**";
 	const message = card(prompt, "ponytail-help");
 	for (const width of [24, 32, 100]) {
 		const rendered = message.render(width).join("\n");
-		expect(rendered.split("\u001b[38;2;178;129;214m/")).toHaveLength(4);
+		expect(rendered.split("\u001b[38;5;93m/")).toHaveLength(4);
 		expect(stripTerminalSequences(rendered).replace(/\s/gu, "")).toBe(
 			"/skill:ponytail-helphi/skill:ponytail-helpthen/skill:to-spec",
 		);
@@ -167,7 +167,7 @@ test("preserves native Markdown links while coloring visible Skill labels", () =
 	const rendered = message.render(100).join("\n");
 	expect(stripTerminalSequences(rendered)).toContain("/skill:to-spec");
 	expect(rendered).toContain("https://example.com/skill:untouched");
-	expect(rendered).toContain("\u001b[38;2;178;129;214m/");
+	expect(rendered).toContain("\u001b[38;5;93m/");
 });
 
 test("restores compound SGR foregrounds without confusing background RGB values for colors", () => {

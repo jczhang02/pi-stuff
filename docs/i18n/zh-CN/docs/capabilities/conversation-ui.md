@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: 4c27dbb7b909b702b6cdc65ff88c2423ee0c21359ef5e74803559dea42de9fec -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: 29770cb0f179fc2a16eed614428df6e1eb4ea3417a7eb198c4b784d83ab08cbe -->
 
 # Conversation UI
 
@@ -67,7 +67,7 @@ User Message 保留 Pi 全宽卡片底色和间距。在认证的 `outputPad=1` 
 prompt 和续行正文与 Tool 正文对齐。标记表示 Provider Prompt，包括自动用户角色消息，不声明由人类输入。
 
 提交 `/skill:implement <prompt>` 后，`/skill:implement` 与 prompt 一起显示在这张卡片中。纯 Skill 使用
-相同呈现。Skill 调用文字采用固定的 Powerline footer 彩虹配色；列表、引用和代码块在需要时从它的下方开始，保留原生 Markdown 结构。
+相同呈现。Skill 调用文字采用固定的 workflow 演示中的静态彩虹配色；列表、引用和代码块在需要时从它的下方开始，保留原生 Markdown 结构。
 原生 `Ctrl+O` 在 prompt 后的 `Skill instructions` 标签下展开完整 Skill instructions，不重复 prompt，
 不创建另一张卡片。prompt 中各处的行内 `/skill:<name>` 文本在原位采用相同配色。此装饰不会执行 Skill
 或为文字提及添加 instructions；围栏代码和超链接目标保留原生呈现。

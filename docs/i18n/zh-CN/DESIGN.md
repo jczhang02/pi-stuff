@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 868620d5fa1a502ba18ea7d62287d57156b800cdd96de987803e0f7d68f5f67c -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: 84e1408aa0d236b3665a42e1f7c6dbf1b4d337fd4738e1b66fe61ff8c3da366e -->
 
 ---
 version: alpha
@@ -42,8 +42,7 @@ Claude Code 是可读层级、克制的信息密度和清楚生命周期的主�
 ## 颜色
 
 颜色只能来自当前启用的 Pi 主题。使用 `text`、`muted`、`dim`、`border`、`accent`、`success`、
-`warning`、`error` 等语义角色。唯一的终端色板例外是行内 Skill 命令装饰，按明确要求保留历史 Powerline
-footer 彩虹色。其他界面不得硬编码 ANSI 色板，也不得按照某个人的终端主题选定颜色值。
+`warning`、`error` 等语义角色。唯一的终端色板例外是行内 Skill 命令装饰，按明确要求保留workflow 演示中的彩虹色。其他界面不得硬编码 ANSI 色板，也不得按照某个人的终端主题选定颜色值。
 
 `accent` 只标出焦点或当前唯一活跃的交互。普通信息使用常规文本色或弱化文本色。成功、警告和错误色
 用来辅助明确的图标和文字，不能成为判断状态的唯一依据。所有可见界面在 Host 的亮色和暗色主题下都
@@ -173,7 +172,7 @@ User Message 保留原生全宽 `userMessageBg` 卡片、横向内边距和上�
 在认证的 `outputPad=1` 配置下，正文和折行续行与 Tool 正文对齐。标记表示 Provider Prompt，包括自动提交的
 用户角色消息，不声明由人类输入。其他 Host 内边距仍可设置，但不新增对齐保证。
 
-普通 prompt 和 Skill invocation 共用这张卡片。Host 识别的 Skill 在 prompt 前以固定的 Powerline footer 彩虹配色显示为
+普通 prompt 和 Skill invocation 共用这张卡片。Host 识别的 Skill 在 prompt 前以固定的 workflow 演示中的静态彩虹配色显示为
 `/skill:<name>`，没有独立背景、边框、标题或展开提示。纯 Skill 使用相同布局。User Message 中各处的行内 `/skill:<name>` 文本采用相同配色，
 不改变调用语义，也不为文字提及添加 instructions。块级 Markdown 在 Skill 标识
 下方开始；换行保留原生 Markdown 层级和终端单元格对齐。原生 `Ctrl+O` 与 Host 当前展开状态保持权威。
