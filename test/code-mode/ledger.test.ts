@@ -167,7 +167,7 @@ test("cold ledger normalization preserves canonical Session records and owns its
 			code: "text(1)",
 			description: "Saved program",
 			savedAt: 1,
-			inputSchema: { minimum: -0 },
+			inputSchema: { minimum: -0, constructor: "keep in Session only" },
 			extra: "keep nested data too",
 		},
 	};
@@ -183,8 +183,22 @@ test("cold ledger normalization preserves canonical Session records and owns its
 	expect(source.extra).toBe("keep in Session");
 	expect(source.snippet.extra).toBe("keep nested data too");
 	expect(source.snippet.inputSchema.minimum).toBe(-0);
+	expect(source.snippet.inputSchema.constructor).toBe("keep in Session only");
 	expect(snippet).not.toBe(source.snippet);
 	expect(snippet?.inputSchema).not.toBe(source.snippet.inputSchema);
+});
+
+test("cold ledger ignores unknown event kinds and invalid known events", () => {
+	const { context, ledger, branch } = fixture();
+	for (const [index, data] of [
+		null,
+		{},
+		{ kind: "future-event", at: 1, schemaVersion: 1 },
+		{ kind: "snippet-saved", at: 1, schemaVersion: 1, snippet: { name: "missing-fields" } },
+	].entries()) {
+		branch.push({ customType: CODE_MODE_LEDGER_ENTRY_TYPE, data, id: String(index), type: "custom" });
+	}
+	expect(ledger.snippets(context)).toEqual([]);
 });
 
 test("the Session ledger replays completed values and preserves binary, bigint, history, and snippets", () => {

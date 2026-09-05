@@ -228,8 +228,12 @@ function restoreValue(value: StoredValue | undefined): CodemodeValue {
 
 export function eventFrom(source: JsonSourceValue): LedgerEvent | undefined {
 	const value = parseJsonValue(JSON.stringify(source));
-	const cleaned = Value.Clean(LEDGER_EVENT_SCHEMA, value);
-	if (!Value.Check(LEDGER_EVENT_SCHEMA, cleaned)) return undefined;
+	if (!isRuntimeObject(value) || value === null || !("kind" in value)) return undefined;
+	const schema = LEDGER_EVENT_SCHEMA.anyOf.find((candidate) => candidate.properties.kind.const === value["kind"]);
+	if (!schema) return undefined;
+	// Preserve TypeBox's unsafe-key filtering without trying and cloning unrelated event kinds.
+	const cleaned = Value.Clean(schema, Value.Clone(value));
+	if (!Value.Check(schema, cleaned)) return undefined;
 	// SAFETY: TypeBox validates every discriminated event member before the durable fold consumes it.
 	return cleaned as LedgerEvent;
 }

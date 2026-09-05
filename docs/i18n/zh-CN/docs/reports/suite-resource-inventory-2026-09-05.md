@@ -1,11 +1,11 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 28f1dcc8379d888c92421f863d923c3baa1b2f330e5c3ddc0e885faf6d94ecf4 -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 70c81a5342b43abdf1521070f6ebc9b0c8a2af9900f41a0ff0741f6a5a48f0a6 -->
 
 # Suite 资源源码清单
 
 这份 2026-09-05 清单覆盖 `07d2f473` 的 [suite.json](../../../../../packages/pi-stuff/suite.json) 中全部 16 个
 Capability，以及共享加载、状态和注册路径。它记录待调查对象，不授权删除功能。
 [连续观察器](suite-responsiveness-observer-2026-09-05.md)及下文样本记录了工作负载成本；
-表中各项源码操作的独立成本仍未量化。
+下文带日期的记录区分已测量操作和仍待验证的源码调查对象。
 发现、校验、恢复和可见刷新可能需要重复执行；重复操作不自动等于浪费。
 Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md) 跟踪缺失的测量。
 
@@ -38,7 +38,7 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 | Todo — [覆盖层](../../../../../packages/pi-stuff/src/todo/todo-overlay.ts) | 状态变化和渲染过滤/统计任务并保留近期完成状态。 | O(任务)；完成保留有时间限制，销毁时清理。合并重复扫描前先测量。 |
 | BTW — [上下文](../../../../../packages/pi-stuff/src/btw/btw.ts)、[历史](../../../../../packages/pi-stuff/src/btw/btw-history.ts) | 调用转换有效分支，超限重试重新适配；恢复扫描条目，交流记录复制/过滤并限制历史。 | O(B + P)；上下文容量限制，历史最多 1,000 次交流/8 MiB。Session 关闭释放历史。 |
 | Notification — [runtime](../../../../../packages/pi-stuff/src/notification/runtime.ts) | 符合条件的工作收尾启动一个可取消宽限定时器，状态变化时取消。 | 未发现循环轮询；投递读取内存设置并输出终端序列。尚无重复热点证据。 |
-| Code Mode — [Ledger](../../../../../packages/pi-stuff/src/code-mode/ledger.ts)、[规范化](../../../../../packages/pi-stuff/src/code-mode/ledger-state.ts) | 首次查找规范化记录并恢复值；普通分支推进只处理新增条目。 | 冷路径随 Ledger 字节增长，热路径随新增尾部增长。下文改动移除了 JSON 解析后的克隆及标量恢复时的 JSON 往返。冷路径 Spinner 仍未达标；Host 记录所有权及校验保持不变。 |
+| Code Mode — [Ledger](../../../../../packages/pi-stuff/src/code-mode/ledger.ts)、[规范化](../../../../../packages/pi-stuff/src/code-mode/ledger-state.ts) | 首次查找规范化记录并恢复值；普通分支推进只处理新增条目。 | 冷路径随 Ledger 字节增长，热路径随新增尾部增长。按事件类型直接选择 schema，移除了重复清理；下文带日期的对比量化了冷读取节省。保留一次 TypeBox 克隆以过滤危险属性名。残留停顿及完整资源验收仍未完成。 |
 | Code Mode — [Host 客户端](../../../../../packages/pi-stuff/src/code-mode/host/host-client.ts) | 执行构建工具 Map，并向共享 helper 发送定义。 | 随工具 schema 增长；共享启动 Deferred。重复定义传输与 helper 执行分别测量。 |
 
 ## 共享路径
@@ -130,8 +130,9 @@ strace 会改变调度。读取持续时间不是哈希 CPU 时间、主线程�
 
 ## 首轮 Ledger 冷加载删减
 
-在 `40101bb2` 基线之后，`ledger-state.ts` 移除了两项重复操作。`eventFrom()` 直接让 TypeBox 清理
-JSON 解析产生的新对象；再次克隆不会增加它与原始 Host 记录的隔离程度。`restoreValue()` 直接返回
+在 `40101bb2` 基线之后，`fbc9c5dd` 的 `ledger-state.ts` 移除了两项重复操作。`eventFrom()` 让 TypeBox
+清理 JSON 解析产生的新对象，不再额外执行 `structuredClone`；那次克隆没有增加与原始 Host 记录的隔离。
+`restoreValue()` 直接返回
 已经校验的 JSON 标量，因为这些值不可能包含二进制或 bigint 封装。对象与数组仍经过存储 codec。
 外部 JSON 校验、规范化、schema 检查、分支失效、审批及重放策略保持不变。现有公开 Ledger 测试增加了
 清理时的所有权、JSON 负零规范化，以及 1,000,001 字符结果的冷恢复检查。
@@ -163,3 +164,55 @@ JSON 解析产生的新对象；再次克隆不会增加它与原始 Host 记录
 最终 RSS 快照及记账内存峰值高于基线。快照不是进程树 RSS 峰值，记账内存不是分配量，既有 I/O、GC 及
 唤醒测量限制仍然适用。剩余冷路径需要继续归因，并在不削弱校验的前提下限制单次同步工作量。
 `ps-yon.3`、`ps-yon.4` 及独立的 Agent 卡顿均未完成；完整资源测量及真实 Host 门槛仍阻止最终验收。
+
+## 按事件类型选择 Ledger 冷加载规范化路径
+
+下一版候选根据记录声明的 `kind`，从现有 `LEDGER_EVENT_SCHEMA` 中选出 schema，再清理和检查该成员。
+09:45:56 UTC 启动的 `fbc9c5dd` 原生 CPU profile `t0ss9o` 指向
+`execute → snippets → loadSnapshot → eventFrom → TypeBox Clean/Check`。TypeBox 1.3.10 的 `FromUnion`
+每尝试一个成员，都会先克隆和清理记录再检查。事件类型已经指明所需成员，其余尝试没有用途。
+本次没有新增 schema 注册表、缓存或异步接口。
+
+完全去掉 TypeBox 克隆并不等价：它还递归过滤 `__proto__`、`constructor` 和 `prototype` 属性。
+首版候选省略这项过滤时，公开 Ledger 所有权回归测试失败；清理前保留一次 `Value.Clone` 后通过。
+未知事件类型及无效的已知记录仍被拒绝；JSON 规范化、Host 记录隔离及存储解码保持不变。
+TypeBox 直接返回原始字符串，因此不能据此声称每次候选克隆都会复制大结果的字符串字节。
+
+现有种子 Provider 中的临时诊断，在精确原生 Pi 0.85.0 的准备进程内，对公开 `snippets(context)` 每个
+阶段测量十次。每轮新建 Ledger，先冷读取，再读取同一叶节点，追加一条普通非 Ledger 记录，然后再次读取。
+所有调用均返回零个 snippet。基线 `OxWe4P` 于 10:10:52 UTC 先运行，候选 `mAKiLe` 于 10:12:24 UTC
+随后运行。两者使用相同诊断源码，以及 96 条记录、24×800,000 字符结果的种子。数值记录保留全部十次样本，
+包括第一次。
+
+| 读取窗口 | 基线耗时中位数／最大值，ms | 候选耗时中位数／最大值，ms | 基线／候选 CPU 中位数，µs |
+| --- | ---: | ---: | ---: |
+| Ledger 冷读取 | 112.715 / 146.546 | 16.305 / 31.919 | 199,063 / 45,172.5 |
+| 同一叶节点命中缓存 | 0.008418 / 0.025429 | 0.006720 / 0.015312 | 9 / 7 |
+| 新增一条普通记录后 | 0.016171 / 0.156661 | 0.012640 / 0.113763 | 16.5 / 13 |
+
+十个冷读取窗口的 CPU 合计从 2,535,762 降至 547,807 µs。`performance.now()` 测量经过时间；
+`process.cpuUsage()` 测量每次同步读取期间原生种子进程所有线程的 CPU，因此可能大于经过时间。
+这里的冷热是进程内缓存状态，不是十次独立冷启动 Host。顺序没有随机化，内核页缓存没有重置。
+这些窗口不测量整个 Suite 的 CPU、分配字节、主线程独占 CPU 或 UI 活性。更早的原生 TypeBox 计数探针
+没有产生可用记录，不能把缺失值解释为克隆次数或分配量下降。探针及观察器的日志复制代码均已移除。
+
+恢复原观察器和种子后，三次相同源码测试均通过已冻结的 Spinner、启动输入、稳定输入及选择门槛。
+它们使用上一节完整的 Context／Code Mode 工作负载，终端尺寸、隔离及门槛不变，没有 profiler 或人为延迟。
+第三次在诊断代码清理之后执行。
+
+| 运行 | 观察器启动，UTC | Spinner 最大值，ms | 输入最大值，ms | 选择最大值，ms | CPU 秒 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `yzKC8H` | 09:58:14.680 | 146.922 | 17.121 | 17.727 | 20.312882 |
+| `gMlYCT` | 10:00:09.398 | 150.136 | 16.808 | 17.814 | 18.420312 |
+| `gUqIgL` | 10:15:13.689 | 142.529 | 16.763 | 19.199 | 20.594374 |
+
+每次活动观察均超过 12 秒和 950 次采集，活动 Spinner 缺失为零，采集间隔低于 20 ms。
+整次运行的 CPU 没有证明相对前一检查点下降；已测得的节省限于上述冷读取窗口。诊断候选随后执行的 UI
+运行仍有一帧 Spinner 停留 167.931 ms，超过保持不变的 164.768 ms 门槛。该运行多了十条普通种子记录，
+且未启用门槛断言，因此命令零退出不等于门槛通过，也不等价于普通样本。这次超限被保留，原因仍未解释。
+CPU profile 运行也仅用于诊断，因为采样会改变调度。
+
+数值记录将产品、测试、依赖及诊断源码绑定到原始证据哈希。九个由本次调查创建的 profile／探针／UI scope
+均在关闭后核对为 not-found／inactive／dead。产品 `ledger-state.ts` 从 363 增至 367 行，公开回归测试
+从 601 增至 615 行，没有新增测试框架或产品状态。这是冷规范化优化，不代表 `ps-yon.4` 完成。
+Agent Tool 门槛、其余资源维度、恢复工作负载及残留停顿归因仍阻止最终验收。

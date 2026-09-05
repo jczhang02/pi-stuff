@@ -3,7 +3,7 @@
 This 2026-09-05 inventory covers the 16 Capabilities in [suite.json](../../packages/pi-stuff/suite.json) and shared
 loading/status/registration paths at `07d2f473`. It records investigation targets, not permission to remove features.
 The [continuous observer](suite-responsiveness-observer-2026-09-05.md) and the samples below record workload
-costs; the individual source operations in the table remain unmeasured.
+costs; the dated sections below distinguish measured operations from remaining source-level targets.
 Repeated source operations are not automatically redundant: discovery, validation, recovery and visible refresh may
 require them. Beads `ps-yon.3` owns the missing measurements under [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md).
 
@@ -36,7 +36,7 @@ The retention column describes observed safeguards; it does not certify a comple
 | Todo — [overlay](../../packages/pi-stuff/src/todo/todo-overlay.ts) | Changes and rendering filter/count task arrays and retain recent completions. | O(tasks); timed completion retention and disposal cleanup. Repeated scans need timing evidence before consolidation. |
 | BTW — [context](../../packages/pi-stuff/src/btw/btw.ts), [history](../../packages/pi-stuff/src/btw/btw-history.ts) | Invocation converts the effective branch; overflow retry refits it. Hydration scans entries; exchanges copy/filter and bound retained history. | O(B + P); context fitting budget and 1,000-exchange/8 MiB history bound. Session shutdown releases history. |
 | Notification — [runtime](../../packages/pi-stuff/src/notification/runtime.ts) | Qualifying settled work starts one cancellable grace timer; state changes cancel it. | No recurring poll found; delivery reads in-memory settings and emits terminal output. No redundant hotspot established. |
-| Code Mode — [Ledger](../../packages/pi-stuff/src/code-mode/ledger.ts), [normalization](../../packages/pi-stuff/src/code-mode/ledger-state.ts) | First lookup normalizes canonical records and restores values; ordinary branch progress folds only new entries. | Cold O(Ledger bytes), warm O(new tail). The update below removes the post-parse clone and scalar restoration roundtrip. Cold Spinner gates still fail; Host record ownership and validation remain intact. |
+| Code Mode — [Ledger](../../packages/pi-stuff/src/code-mode/ledger.ts), [normalization](../../packages/pi-stuff/src/code-mode/ledger-state.ts) | First lookup normalizes canonical records and restores values; ordinary branch progress folds only new entries. | Cold O(Ledger bytes), warm O(new tail). Direct event-kind dispatch removes repeated schema cleaning; the dated comparison below measures cold-read savings. One TypeBox clone preserves unsafe-key filtering. Residual stalls and complete resource acceptance remain open. |
 | Code Mode — [host client](../../packages/pi-stuff/src/code-mode/host/host-client.ts) | Execution builds a Tool map and sends definitions to the shared helper. | O(Tool schemas); one shared startup Deferred. Measure repeated definitions separately from helper execution. |
 
 ## Shared paths
@@ -137,9 +137,9 @@ remain open. No production or verifier change was needed for this attribution.
 
 ## First cold Ledger reductions
 
-Two repeated operations were removed from `ledger-state.ts` after the `40101bb2` baseline. `eventFrom()` now lets
-TypeBox clean the fresh JSON parse directly; another clone cannot add isolation from the original Host record.
-`restoreValue()` returns validated JSON scalars directly because they cannot contain binary or bigint envelopes.
+At `fbc9c5dd`, two repeated operations were removed from `ledger-state.ts` after the `40101bb2` baseline. `eventFrom()`
+let TypeBox clean the fresh JSON parse without an additional `structuredClone`; that clone added no isolation from
+the original Host record. `restoreValue()` returns validated JSON scalars directly because they cannot contain binary or bigint envelopes.
 Objects and arrays still pass through the storage codec. External JSON validation, canonicalization, schema checking,
 branch invalidation, approval and replay policies are unchanged. The existing public Ledger tests now also cover
 cleanup ownership, JSON negative-zero canonicalization and cold recovery of a 1,000,001-character result.
@@ -173,3 +173,59 @@ vary across single samples; the final RSS snapshot and charged-memory peak excee
 process-tree RSS, charged memory is not allocation, and the existing I/O/GC/wakeup limitations still apply. Remaining
 cold work needs attribution and bounded scheduling without weakening validation. `ps-yon.3`, `ps-yon.4` and the
 separate Agent stall remain open; complete resource measurements and real-Host gates still block final acceptance.
+
+## Dispatch cold Ledger normalization by event kind
+
+The next candidate selects the schema from the existing `LEDGER_EVENT_SCHEMA` using the record's declared `kind`,
+then cleans and checks that member. The `fbc9c5dd` native CPU profile `t0ss9o`, started at 09:45:56 UTC, led back to
+`execute → snippets → loadSnapshot → eventFrom → TypeBox Clean/Check`. TypeBox 1.3.10's `FromUnion` clones and
+cleans a record for each attempted member before checking it. The discriminator already identifies the required
+member, so the other attempts serve no purpose. No new schema registry, cache or asynchronous interface was added.
+
+Removing all TypeBox cloning was not equivalent: its clone also recursively filters `__proto__`, `constructor` and
+`prototype` keys. The public Ledger ownership regression failed when the first candidate omitted this filter and
+passed after retaining one `Value.Clone` before cleaning. Unknown kinds and invalid known records remain rejected;
+JSON canonicalization, Host record isolation and storage decoding remain. TypeBox returns primitive strings directly;
+this finding does not imply that every candidate clone copies the large result's string bytes.
+
+A temporary diagnostic in the existing seed Provider measured ten public `snippets(context)` reads per phase inside
+the exact native Pi 0.85.0 preparatory Host. Each iteration created a new Ledger, read it cold, read it again with the
+same leaf, appended one ordinary non-Ledger entry, then read again. All calls returned zero snippets. Baseline
+`OxWe4P` ran first at 10:10:52 UTC; candidate `mAKiLe` followed at 10:12:24 UTC. Both used the same diagnostic Source
+and the 96-record, 24×800,000-character seed. All ten samples, including the first, are retained in the numeric record.
+
+| Read window | Baseline duration median / max, ms | Candidate duration median / max, ms | Baseline / candidate CPU median, µs |
+| --- | ---: | ---: | ---: |
+| Cold Ledger | 112.715 / 146.546 | 16.305 / 31.919 | 199,063 / 45,172.5 |
+| Same-leaf cache hit | 0.008418 / 0.025429 | 0.006720 / 0.015312 | 9 / 7 |
+| After one ordinary entry | 0.016171 / 0.156661 | 0.012640 / 0.113763 | 16.5 / 13 |
+
+Cold-read CPU summed over ten windows decreased from 2,535,762 to 547,807 µs. `performance.now()` measured elapsed
+time; `process.cpuUsage()` measured all threads in that native seed process during each synchronous read, so CPU can
+exceed wall time. These are within-process cache states, not ten independent cold Host starts. The sequence was not
+randomized and the kernel page cache was not reset. These windows do not measure total Suite CPU, allocated bytes,
+exclusive main-thread CPU or UI liveness. Earlier native TypeBox counter probes produced no usable record; no clone
+count or allocation saving is inferred from that absence. The probe and its observer log-copy code were removed.
+
+With the original observer and seed restored, three same-source runs passed all frozen Spinner, startup-input,
+steady-input and selection gates. They used the previous section's full Context/Code Mode workload and unchanged
+geometry, isolation and gates, with no profiler or injected delay. The third ran after diagnostic cleanup.
+
+| Run | Observer start, UTC | Spinner max, ms | Input max, ms | Selection max, ms | CPU seconds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `yzKC8H` | 09:58:14.680 | 146.922 | 17.121 | 17.727 | 20.312882 |
+| `gMlYCT` | 10:00:09.398 | 150.136 | 16.808 | 17.814 | 18.420312 |
+| `gUqIgL` | 10:15:13.689 | 142.529 | 16.763 | 19.199 | 20.594374 |
+
+Each had over 12 seconds and 950 captures of active coverage, zero active Spinner absence and capture gaps below
+20 ms. Whole-run CPU does not demonstrate a reduction against the earlier checkpoint; the measured saving is the
+cold-read window above. The diagnostic candidate's subsequent UI run still held a Spinner frame for 167.931 ms,
+above the unchanged 164.768 ms gate. That run had ten extra ordinary seed entries and no gate assertion, so its zero
+command exit is not a gate pass or an equivalent ordinary sample. Its breach is retained and remains unexplained.
+The CPU-profile run is also diagnostic only because profiling changes scheduling.
+
+The numeric record binds production, test, dependency and diagnostic Sources to raw evidence hashes. All nine owned
+profile/probe/UI scopes were verified not-found/inactive/dead after shutdown. Production `ledger-state.ts` grew from
+363 to 367 lines; its public regression file grew from 601 to 615, with no new test framework or production state.
+This is a cold-normalization optimization, not completion of `ps-yon.4`. Agent Tool gates, remaining resource dimensions,
+recovery workloads and attribution of the residual stall still block final acceptance.
