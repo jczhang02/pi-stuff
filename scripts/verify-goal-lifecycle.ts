@@ -642,7 +642,7 @@ function seedManualCompactionSession(directory: string): string {
 	for (const index of [1, 2]) {
 		manager.appendMessage({
 			role: "user",
-			content: `Historical request ${String(index)} ${"x".repeat(50_000)}`,
+			content: [{ type: "text", text: `Historical request ${String(index)} ${"x".repeat(50_000)}` }],
 			timestamp: Date.now(),
 		});
 		manager.appendMessage(assistant([{ type: "text", text: `Historical result ${"y".repeat(50_000)}` }], "stop"));
