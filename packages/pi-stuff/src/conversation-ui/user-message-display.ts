@@ -3,14 +3,22 @@ import {
 	getMarkdownTheme,
 	InteractiveMode,
 	type MarkdownTransformer,
-	parseSkillBlock,
+	type parseSkillBlock,
 	SkillInvocationMessageComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Container, type MarkdownTheme, Spacer } from "@earendil-works/pi-tui";
-import { isRuntimeBoolean, isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../shared/runtime-type.js";
+import {
+	isRuntimeBoolean,
+	isRuntimeFunction,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../shared/runtime-type.js";
 import { DiagnosticChannel } from "./diagnostics.js";
 import { UserMessageCard } from "./user-message-card.js";
+
+const LAST_HOST = Symbol.for("@jczhang02/pi-stuff:user-message-host/v1");
 
 const USER_MESSAGE_PATCH = Symbol.for("@jczhang02/pi-stuff:user-message-patch/v1");
 
@@ -74,39 +82,53 @@ function hostPresentation(host: InteractiveMode): HostPresentation {
 	};
 }
 
-function projectMessage(
-	host: HostPresentation,
-	start: number,
-	message: AgentMessage,
-	fail: (error: Error) => void,
-): void {
-	if (message.role !== "user") return;
-	const text = message.content;
-	const source = Array.isArray(text)
-		? text
-				.filter((block) => block.type === "text")
-				.map((block) => block.text)
-				.join("")
-		: text;
-	if (!source) return;
-	const skill = parseSkillBlock(source);
-	const children = host.chatContainer.children;
-	const first = start + (start > 0 ? 1 : 0);
-	const native = children.slice(first);
-	const expected = skill?.userMessage ? 3 : 1;
+function readSkill(component: SkillInvocationMessageComponent): NonNullable<ReturnType<typeof parseSkillBlock>> {
+	const skill: unknown = Object.getOwnPropertyDescriptor(component, "skillBlock")?.value;
 	if (
-		(start > 0 && !(children[start] instanceof Spacer)) ||
-		native.length !== expected ||
-		(skill
-			? !(native[0] instanceof SkillInvocationMessageComponent)
-			: !(native[0] instanceof UserMessageComponent)) ||
-		(expected === 3 && (!(native[1] instanceof Spacer) || !(native[2] instanceof UserMessageComponent)))
+		!isRuntimeObject(skill) ||
+		skill === null ||
+		!("name" in skill) ||
+		!isRuntimeString(skill.name) ||
+		!("location" in skill) ||
+		!isRuntimeString(skill.location) ||
+		!("content" in skill) ||
+		!isRuntimeString(skill.content) ||
+		!("userMessage" in skill) ||
+		(skill.userMessage !== undefined && !isRuntimeString(skill.userMessage))
 	) {
-		throw new Error("User Message presentation found unexpected appended Host components");
+		throw new Error("User Message presentation requires the certified Pi Skill metadata");
+	}
+	return { name: skill.name, location: skill.location, content: skill.content, userMessage: skill.userMessage };
+}
+
+function readPrompt(component: UserMessageComponent): string {
+	const text: unknown = Object.getOwnPropertyDescriptor(component, "text")?.value;
+	if (!isRuntimeString(text)) throw new Error("User Message presentation requires the certified Pi prompt");
+	return text;
+}
+
+function projectMessage(host: HostPresentation, first: number, fail: (error: Error) => void): void {
+	const children = host.chatContainer.children;
+	const component = children[first];
+	if (component instanceof UserMessageCard) return;
+	if (!(component instanceof SkillInvocationMessageComponent) && !(component instanceof UserMessageComponent)) {
+		throw new Error("User Message presentation found unexpected Host components");
+	}
+	const skill = component instanceof SkillInvocationMessageComponent ? readSkill(component) : null;
+	const prompt = component instanceof UserMessageComponent ? readPrompt(component) : (skill?.userMessage ?? "");
+	const count = skill?.userMessage ? 3 : 1;
+	const trailing = children[first + 2];
+	if (
+		count === 3 &&
+		(!(children[first + 1] instanceof Spacer) ||
+			!(trailing instanceof UserMessageComponent) ||
+			readPrompt(trailing) !== prompt)
+	) {
+		throw new Error("User Message presentation found an unexpected Skill prompt");
 	}
 	const fallback = new Container();
-	for (const child of native) fallback.addChild(child);
-	const card = new UserMessageCard(skill ? (skill.userMessage ?? "") : source, {
+	for (const child of children.slice(first, first + count)) fallback.addChild(child);
+	const card = new UserMessageCard(prompt, {
 		markdownTheme: host.markdownTheme,
 		outputPad: host.outputPad,
 		transformers: host.transformers,
@@ -115,7 +137,26 @@ function projectMessage(
 		fail,
 	});
 	card.setExpanded(host.toolOutputExpanded);
-	children.splice(first, native.length, card);
+	children.splice(first, count, card);
+}
+
+function adoptReplayedMessages(state: PatchState): void {
+	const reference: unknown = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, LAST_HOST)?.value;
+	if (!(reference instanceof WeakRef)) return;
+	const host: unknown = reference.deref();
+	if (!(host instanceof InteractiveMode)) return;
+	try {
+		const presentation = hostPresentation(host);
+		// Pi reload replays before session_start. Reconcile once at binding, never on redraw or each insertion.
+		for (let index = 0; index < presentation.chatContainer.children.length; index += 1) {
+			const component = presentation.chatContainer.children[index];
+			if (component instanceof UserMessageComponent || component instanceof SkillInvocationMessageComponent) {
+				projectMessage(presentation, index, (error) => disable(state, error));
+			}
+		}
+	} catch (error) {
+		disable(state, error instanceof Error ? error : new Error("User Message replay projection failed"));
+	}
 }
 
 function preflight(): void {
@@ -124,7 +165,16 @@ function preflight(): void {
 			throw new Error(`User Message presentation requires InteractiveMode.${method}()`);
 		}
 	}
+	const nativeSkill = new SkillInvocationMessageComponent({
+		name: "preflight",
+		location: "preflight/SKILL.md",
+		content: "Instructions",
+		userMessage: undefined,
+	});
+	readSkill(nativeSkill);
+	nativeSkill.render(40);
 	const sample = new UserMessageComponent("User Message preflight", getMarkdownTheme(), 1);
+	readPrompt(sample);
 	sample.render(40);
 	const fallback = new Container();
 	fallback.addChild(sample);
@@ -183,6 +233,7 @@ function createPatch(
 ): PatchState {
 	const state: PatchState = { original, descriptor, patched: original, owners: 0, enabled: true, diagnostics };
 	state.patched = function (message, options): void {
+		Object.defineProperty(InteractiveMode.prototype, LAST_HOST, { configurable: true, value: new WeakRef(this) });
 		if (!state.enabled || message.role !== "user") {
 			original.call(this, message, options);
 			return;
@@ -198,7 +249,10 @@ function createPatch(
 		const start = presentation.chatContainer.children.length;
 		original.call(this, message, options);
 		try {
-			projectMessage(presentation, start, message, (error) => disable(state, error));
+			const first = start + (start > 0 ? 1 : 0);
+			if (first < presentation.chatContainer.children.length) {
+				projectMessage(presentation, first, (error) => disable(state, error));
+			}
 		} catch (error) {
 			disable(state, error instanceof Error ? error : new Error("User Message projection failed"));
 		}
@@ -230,6 +284,7 @@ export function installUserMessageDisplay(diagnostics: DiagnosticChannel): () =>
 		Object.defineProperty(prototype, "addMessageToChat", { ...descriptor, value: state.patched });
 	}
 	state.owners += 1;
+	if (state.owners === 1) adoptReplayedMessages(state);
 	let released = false;
 	return () => {
 		if (released) return;

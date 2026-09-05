@@ -6,7 +6,7 @@ import {
 	SkillInvocationMessageComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Markdown, Spacer, stripTerminalSequences } from "@earendil-works/pi-tui";
+import { Container, Markdown, Spacer, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { UserMessageCard } from "../../packages/pi-stuff/src/conversation-ui/user-message-card.js";
 
 function card(prompt: string, skillName = "implement", failures?: Error[]): UserMessageCard {
@@ -45,6 +45,8 @@ function content(message: UserMessageCard, width = 80): string[] {
 
 test.each([
 	"# Heading",
+	"***",
+	"---",
 	"- First item",
 	"> Quotation",
 	"```ts\nconst answer = 42;\n```",
@@ -87,4 +89,45 @@ test("retains prompt rows across redraw, expansion, and padding changes", () => 
 	expect(content(message)[0]).toBe("    [skill] implement First line");
 	message.setExpanded(false);
 	expect(content(message)).toEqual(["    [skill] implement First line", "     Second line"]);
+});
+
+test("preserves long Unicode prompts and repaints semantic colors after a theme change", () => {
+	const prompt = "Readable 中文🧪 prompt ".repeat(25).trimEnd();
+	const message = card(prompt);
+	for (const width of [24, 32, 48, 100]) {
+		const rows = content(message, width);
+		expect(rows.join("").replace(/\s/gu, "")).toBe(`[skill]implement${prompt.replace(/\s/gu, "")}`);
+		for (const row of rows) expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+	}
+	const dark = message.render(100);
+	initTheme("light");
+	message.invalidate();
+	expect(message.render(100)).not.toEqual(dark);
+	expect(content(message, 100).join("").replace(/\s/gu, "")).toContain(prompt.replace(/\s/gu, ""));
+});
+
+test.each([
+	"Ordinary **bold** 中文🧪",
+	"    indented code",
+	"Literal [skill] implement",
+	'<skill name="incomplete">text</skill>',
+])("keeps ordinary and unrecognized Skill text on the native Markdown path: %s", (prompt) => {
+	initTheme("dark");
+	const fallback = new Container();
+	fallback.addChild(new UserMessageComponent(prompt));
+	const message = new UserMessageCard(prompt, {
+		markdownTheme: getMarkdownTheme(),
+		outputPad: 1,
+		transformers: [],
+		skill: null,
+		fallback,
+		fail: (error) => {
+			throw error;
+		},
+	});
+	const native = new UserMessageComponent(prompt, getMarkdownTheme(), 3)
+		.render(80)
+		.map((row) => stripTerminalSequences(row).trimEnd())
+		.filter((row) => row.trim());
+	expect(content(message).map((row) => row.replace(/^  /, "   "))).toEqual(native);
 });

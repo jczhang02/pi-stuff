@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: b63cb4b43acc3b6234849cfc4ee1466515940cbda896c5fa1721579028dc3efe -->
+<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: bec1d3fb013cb2d130369e3d302e804ad1e0508eac3280f899f28198bc64e52d -->
 
 ---
 status: accepted
@@ -36,7 +36,7 @@ Conversation UI 将把这次提交显示为一条 User Message，同时保留 Pi
 新增的组件。完整构造替代组件后，原子替换匹配的组件，保留原来的消息外部间距。不删除未经校验的固定数量
 尾部子项，也不在每次消息到来时扫描完整 Transcript。
 
-使用 Pi 的 Skill parser 和原生 User Message/Markdown 组件。优先采用 User Message 子类，保留原生卡片
+使用 Pi 的 Skill parser 产生的元数据和原生 User Message/Markdown 组件。优先采用 User Message 子类，保留原生卡片
 几何、终端消息标记、主题失效处理和输出内边距更新，同时支持原生 `setExpanded()` 行为。不重新实现
 Markdown 解析，不识别任意 Skill 提及，不引入平行的 custom-message 流。具体组合必须先通过真实 Host
 验证；仅有继承关系不能证明这些行为得到保留。
@@ -44,6 +44,11 @@ Markdown 解析，不识别任意 Skill 提及，不引入平行的 custom-messa
 仅在 TUI 中通过现有 Session presentation 生命周期安装，沿用 Thinking 的所有权和幂等释放模式。
 Session 切换、关闭和 `/reload` 释放 patch。仅在适配器仍拥有被替换方法时恢复原方法。不声明与其他修改
 同一私有接入位置的 Extension 兼容。
+
+Pi 0.85.0 在发出 `session_start` 前回放替换后的 Session。释放时仅保留对原生 InteractiveMode 的弱引用，
+不保留 Session context 或诊断通道。下次 TUI 绑定时，通过同一 projection 补齐已经渲染的原生 User 和
+Skill 组件，仅执行一次，并跳过适配器已处理的卡片。这避免在释放后继续安装 patch，也无需重建其他
+Transcript 状态。
 
 ### 可靠性与失败策略
 

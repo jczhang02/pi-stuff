@@ -43,10 +43,11 @@ function nativeBody(message: UserMessageComponent) {
 
 // This only chooses label placement; Pi still parses and renders the untouched Markdown.
 function startsBlock(prompt: string): boolean {
-	const [first = "", second = ""] = prompt.trimStart().split("\n", 2);
+	const [first = "", second = ""] = prompt.replace(/^(?:[^\S\n]*\n)+/, "").split("\n", 2);
 	return (
-		/^(?:#{1,6}(?:\s|$)|>|`{3,}|~{3,}|[-+*](?:\s|$)|\d{1,9}[.)]\s|[_<|])/.test(first) ||
-		/^\s*(?:[=-]+|[| :-]+)\s*$/.test(second)
+		/^(?: {4}| {0,3}(?:[-*_][ \t]*){3,}$| {0,3}(?:#{1,6}(?:\s|$)|>|`{3,}|~{3,}|[-+*](?:\s|$)|\d{1,9}[.)]\s|[_<|]))/.test(
+			first,
+		) || /^\s*(?:[=-]+|[| :-]+)\s*$/.test(second)
 	);
 }
 

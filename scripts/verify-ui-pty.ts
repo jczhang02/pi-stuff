@@ -47,6 +47,7 @@ export interface UiPtyVerificationOptions {
 	readonly piBinary: string;
 	readonly sessionId?: string;
 	readonly theme?: string;
+	readonly tuiMode?: "regular" | "fullscreen";
 }
 
 export interface UiPtyEvidence {

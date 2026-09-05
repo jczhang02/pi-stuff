@@ -38,7 +38,7 @@ original method first, then validate only the components added by that call. Bui
 atomically replacing the matched components, retaining the original outer message spacing. Never remove an unchecked
 number of trailing children or scan the complete Transcript on each message.
 
-Use Pi's Skill parser and native User Message/Markdown components. Prefer a User Message subclass that preserves
+Use the metadata produced by Pi's Skill parser and native User Message/Markdown components. Prefer a User Message subclass that preserves
 native card geometry, terminal message markers, theme invalidation, and output-padding updates, while exposing native
 `setExpanded()` behavior. Do not reproduce Markdown parsing, recognize arbitrary Skill mentions, or introduce a
 parallel custom-message stream. The exact composition must first pass real-Host verification; inheritance alone is
@@ -48,6 +48,11 @@ Install only for TUI through the existing Session presentation lifecycle, follow
 release pattern used by Thinking. Session switches, shutdown, and `/reload` release the patch. Restore the original
 method only while the adapter still owns the patched method. Do not claim compatibility with another extension that
 modifies the same private seam.
+
+Pi 0.85.0 replays replacement Sessions before emitting `session_start`. Retain only a weak reference to the native
+InteractiveMode across release, with no retained Session context or diagnostic channel. At the next TUI binding,
+reconcile already-rendered native User and Skill components once through the same projection. Skip cards already
+projected by this adapter. This avoids keeping the patch installed after release or rebuilding other Transcript state.
 
 ### Reliability and failure policy
 

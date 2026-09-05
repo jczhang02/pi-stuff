@@ -104,6 +104,7 @@ export class TmuxPiSession {
 			PI_STUFF_UI_PTY_PACKAGE: resolve(options.packagePath),
 			PI_STUFF_UI_PTY_PROVIDER_EXTENSION: providerExtension,
 			PI_STUFF_UI_PTY_ROWS: String(rows),
+			PI_STUFF_UI_PTY_MODE: options.tuiMode ?? "fullscreen",
 			PI_STUFF_UI_PTY_SESSIONS: paths.sessions,
 			PI_STUFF_UI_PTY_SESSION_ID:
 				options.sessionId ?? `ui-pty-${String(columns)}x${String(rows)}-${String(sessionCounter)}`,
@@ -275,11 +276,7 @@ export class TmuxPiSession {
 		return result.stdout.toString();
 	}
 
-	private async waitFor(
-		predicate: (screen: string) => boolean,
-		description: string,
-		history = false,
-	): Promise<string> {
+	async waitFor(predicate: (screen: string) => boolean, description: string, history = false): Promise<string> {
 		const deadline = Date.now() + WAIT_TIMEOUT_MS;
 		let screen = "";
 		while (Date.now() < deadline) {

@@ -7,7 +7,7 @@ export COLORTERM="$PI_STUFF_UI_PTY_COLORTERM"
 exec "$PI_STUFF_UI_PTY_BIN" \
 	--offline \
 	--approve \
-	--tui-mode fullscreen \
+	--tui-mode "${PI_STUFF_UI_PTY_MODE:-fullscreen}" \
 	--no-extensions \
 	--no-skills \
 	--no-prompt-templates \

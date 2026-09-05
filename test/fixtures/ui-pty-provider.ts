@@ -370,6 +370,7 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 	if (lastUser === VISUALIZATION_PTY_PROMPT) return visualizationStream(model, options);
 	if (lastUser === USER_VISUALIZATION_SOURCE) return textOnlyStream(model, "USER-VISUALIZATION-ACK");
 	if (lastUser === TODO_PTY_PROMPT) return taskCreateStream(model, taskCreatesSinceLatestUser(context));
+	if (lastUser.includes("USER_MESSAGE_PTY")) return textOnlyStream(model, "USER_MESSAGE_PTY_ACK");
 	const isVibeLineLivenessProbe = lastUser === VIBE_LINE_LIVENESS_PTY_PROMPT;
 	const isThoughtProbe = lastUser.startsWith("THOUGHT_PROBE_");
 	const response = isVibeLineLivenessProbe
@@ -554,6 +555,31 @@ function registerUiPtyShortcuts(pi: ExtensionAPI): void {
 }
 
 function registerUiPtySession(pi: ExtensionAPI): void {
+	let queueUserMessage = false;
+	pi.registerCommand("ui-pty-new", {
+		description: "Start a fresh User Message acceptance Session",
+		handler: async (_args, ctx) => {
+			await ctx.newSession();
+		},
+	});
+	pi.registerCommand("ui-pty-resume", {
+		description: "Restore the User Message acceptance Session",
+		handler: async (path, ctx) => {
+			await ctx.switchSession(path);
+		},
+	});
+	pi.registerCommand("ui-pty-user-queue", {
+		description: "Submit automatic and queued User Messages",
+		handler: async () => {
+			queueUserMessage = true;
+			pi.sendUserMessage("USER_MESSAGE_PTY_AUTO");
+		},
+	});
+	pi.on("agent_start", () => {
+		if (!queueUserMessage) return;
+		queueUserMessage = false;
+		pi.sendUserMessage("USER_MESSAGE_PTY_QUEUED", { deliverAs: "followUp" });
+	});
 	pi.on("session_start", (_event, ctx) => {
 		ctx.ui.setStatus("goal", "goal:UI");
 		ctx.ui.setStatus("mcp", "mcp:2");
