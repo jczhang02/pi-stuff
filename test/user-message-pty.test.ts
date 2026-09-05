@@ -3,13 +3,13 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { writePtyEvidence } from "../scripts/ui-pty-interactions.js";
 import { createCase, TmuxPiSession } from "../scripts/ui-pty-session.js";
 import { stageCertifiedPiHost } from "../scripts/verify-pi-host-provenance.js";
 
 const PROMPT = "USER_MESSAGE_PTY_PROMPT 中文🧪";
-const LABEL = "  [skill] humanizer-zh";
+const LABEL = "  /skill:humanizer-zh";
 
 function userRows(screen: string): string[] {
 	return screen
@@ -95,6 +95,13 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 				let screen = await session.waitForText("USER_MESSAGE_PTY_ACK");
 				expect(userRows(screen)).toEqual([`${LABEL} ${PROMPT}`]);
 				expect(screen).not.toContain("to expand)");
+				const coloredRow = session
+					.captureAnsi()
+					.split("\n")
+					.find((row) => stripTerminalSequences(row).includes(LABEL));
+				expect(coloredRow).toBeDefined();
+				expect(new Set(coloredRow?.match(/\[38;[^m]+m/gu)).size).toBeGreaterThanOrEqual(6);
+				expect(coloredRow).toContain(PROMPT);
 				await writePtyEvidence(PI_STUFF_UI_PTY_ARTIFACT_DIR, `user-message-${tuiMode}-${theme}-collapsed`, session);
 				session.sendKey("C-o");
 				screen = await session.waitForText("Skill instructions");
@@ -113,7 +120,7 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 					session.resize(columns, rows);
 					screen = await session.waitFor(
 						(value) =>
-							value.includes("  [skill]") &&
+							value.includes("  /skill:") &&
 							value.includes("USER_MESSAGE_PTY_ACK") &&
 							value.replace(/\s/gu, "").includes(PROMPT.replace(/\s/gu, "")),
 						`user card after ${columns}-column resize`,

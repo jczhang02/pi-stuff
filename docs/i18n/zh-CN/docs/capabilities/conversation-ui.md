@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: e080c24c9c05df24fe5a7aa364f0eeb219841b74025863a4e9ae647a2e847a51 -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: 7475652f691ea14042000ba510a58c0ca5069f1364893ac8339d7e280cdc7900 -->
 
 # Conversation UI
 
@@ -66,8 +66,8 @@ Welcome header 提供活动 model、项目和 Suite 入口的紧凑启动视图�
 User Message 保留 Pi 全宽卡片底色和间距。在认证的 `outputPad=1` 设置下，一个 `` 与 Tool 标记对齐，
 prompt 和续行正文与 Tool 正文对齐。标记表示 Provider Prompt，包括自动用户角色消息，不声明由人类输入。
 
-提交 `/skill:implement <prompt>` 后，`[skill] implement` 与 prompt 一起显示在这张卡片中。纯 Skill 使用
-相同呈现。Skill 标识比任务正文更弱；列表、引用和代码块在需要时从它的下方开始，保留原生 Markdown 结构。
+提交 `/skill:implement <prompt>` 后，`/skill:implement` 与 prompt 一起显示在这张卡片中。纯 Skill 使用
+相同呈现。Skill 调用文字采用当前 Pi 主题的静态逐字彩虹色；列表、引用和代码块在需要时从它的下方开始，保留原生 Markdown 结构。
 原生 `Ctrl+O` 在 prompt 后的 `Skill instructions` 标签下展开完整 Skill instructions，不重复 prompt，
 不创建另一张卡片。
 

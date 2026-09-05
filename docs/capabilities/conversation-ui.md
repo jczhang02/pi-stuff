@@ -69,8 +69,9 @@ User Messages retain Pi's full-width card background and spacing. One `` alig
 continuation text aligned to Tool text at the certified `outputPad=1` setting. This marks a Provider Prompt, including
 automatic user-role messages, rather than asserting human authorship.
 
-Submitting `/skill:implement <prompt>` shows `[skill] implement` and the prompt together in that card. Skill-only
-invocations use the same presentation. The Skill identity is quieter than the task text; lists, quotations, and code
+Submitting `/skill:implement <prompt>` shows `/skill:implement` and the prompt together in that card. Skill-only
+invocations use the same presentation. The Skill command uses static per-character rainbow colors from the active Pi
+theme; lists, quotations, and code
 blocks begin below it where necessary to retain native Markdown structure. Native `Ctrl+O` expands full Skill
 instructions after the prompt under `Skill instructions`, without repeating the prompt or creating another card.
 

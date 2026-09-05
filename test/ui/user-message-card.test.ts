@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { UserMessageCard } from "../../packages/pi-stuff/src/conversation-ui/user-message-card.js";
+import { testTheme } from "../fixtures/extension-context.js";
 
 function card(prompt: string, skillName = "implement", failures?: Error[]): UserMessageCard {
 	initTheme("dark");
@@ -22,6 +23,7 @@ function card(prompt: string, skillName = "implement", failures?: Error[]): User
 	}
 	return new UserMessageCard(prompt, {
 		markdownTheme: getMarkdownTheme(),
+		getTheme: () => testTheme,
 		outputPad: 1,
 		transformers: [],
 		skill,
@@ -54,7 +56,7 @@ test.each([
 	"Name | Value\n--- | ---\nA | B",
 ])("keeps block Markdown below the inline Skill identity: %s", (prompt) => {
 	const message = card(prompt);
-	expect(content(message)[0]).toBe("  [skill] implement");
+	expect(content(message)[0]).toBe("  /skill:implement");
 	expect(content(message).length).toBeGreaterThan(1);
 });
 
@@ -82,13 +84,13 @@ test("retains native messages and expansion after a projection rendering failure
 test("retains prompt rows across redraw, expansion, and padding changes", () => {
 	const message = card("First line\nSecond line");
 	const initial = content(message);
-	expect(initial).toEqual(["  [skill] implement First line", "   Second line"]);
+	expect(initial).toEqual(["  /skill:implement First line", "   Second line"]);
 	expect(content(message)).toEqual(initial);
 	message.setOutputPad(3);
 	message.setExpanded(true);
-	expect(content(message)[0]).toBe("    [skill] implement First line");
+	expect(content(message)[0]).toBe("    /skill:implement First line");
 	message.setExpanded(false);
-	expect(content(message)).toEqual(["    [skill] implement First line", "     Second line"]);
+	expect(content(message)).toEqual(["    /skill:implement First line", "     Second line"]);
 });
 
 test("preserves long Unicode prompts and repaints semantic colors after a theme change", () => {
@@ -96,7 +98,7 @@ test("preserves long Unicode prompts and repaints semantic colors after a theme 
 	const message = card(prompt);
 	for (const width of [24, 32, 48, 100]) {
 		const rows = content(message, width);
-		expect(rows.join("").replace(/\s/gu, "")).toBe(`[skill]implement${prompt.replace(/\s/gu, "")}`);
+		expect(rows.join("").replace(/\s/gu, "")).toBe(`/skill:implement${prompt.replace(/\s/gu, "")}`);
 		for (const row of rows) expect(visibleWidth(row)).toBeLessThanOrEqual(width);
 	}
 	const dark = message.render(100);
@@ -109,7 +111,7 @@ test("preserves long Unicode prompts and repaints semantic colors after a theme 
 test.each([
 	"Ordinary **bold** 中文🧪",
 	"    indented code",
-	"Literal [skill] implement",
+	"Literal /skill:implement",
 	'<skill name="incomplete">text</skill>',
 ])("keeps ordinary and unrecognized Skill text on the native Markdown path: %s", (prompt) => {
 	initTheme("dark");
@@ -117,6 +119,7 @@ test.each([
 	fallback.addChild(new UserMessageComponent(prompt));
 	const message = new UserMessageCard(prompt, {
 		markdownTheme: getMarkdownTheme(),
+		getTheme: () => testTheme,
 		outputPad: 1,
 		transformers: [],
 		skill: null,
@@ -133,7 +136,7 @@ test.each([
 });
 
 test("uses native paragraph classification for leading inline emphasis", () => {
-	expect(content(card("_important_ prompt"))[0]).toBe("  [skill] implement important prompt");
+	expect(content(card("_important_ prompt"))[0]).toBe("  /skill:implement important prompt");
 });
 
 test("keeps native vertical spacing when a Skill prefix precedes a padded Markdown row", () => {
@@ -141,7 +144,7 @@ test("keeps native vertical spacing when a Skill prefix precedes a padded Markdo
 		const message = card(prompt, "grill-me");
 		for (const width of [32, 48, 100]) {
 			const rows = message.render(width).map((row) => stripTerminalSequences(row).trimEnd());
-			expect(rows).toEqual(["", `  [skill] grill-me ${prompt.replaceAll("**", "")}`, ""]);
+			expect(rows).toEqual(["", `  /skill:grill-me ${prompt.replaceAll("**", "")}`, ""]);
 		}
 		message.setExpanded(true);
 		message.setExpanded(false);

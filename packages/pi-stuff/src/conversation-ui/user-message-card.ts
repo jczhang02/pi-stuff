@@ -2,6 +2,7 @@ import {
 	type MarkdownTransformer,
 	type parseSkillBlock,
 	SkillInvocationMessageComponent,
+	type Theme,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -21,6 +22,7 @@ type SkillBlock = NonNullable<ReturnType<typeof parseSkillBlock>>;
 
 export interface UserMessageCardOptions {
 	readonly markdownTheme: MarkdownTheme;
+	readonly getTheme: () => Theme;
 	readonly outputPad: number;
 	readonly transformers: readonly MarkdownTransformer[];
 	readonly skill: SkillBlock | null;
@@ -70,15 +72,23 @@ class PromptContent implements Component {
 	private readonly skill: SkillBlock | null;
 	private readonly style: MarkdownTheme;
 	private readonly marker: boolean;
+	private readonly getTheme: () => Theme;
 	private firstBlock: string | undefined;
 	private cachedWidth: number | undefined;
 	private cachedRows: string[] | undefined;
 
-	constructor(markdown: Markdown, skill: SkillBlock | null, style: MarkdownTheme, marker = true) {
+	constructor(
+		markdown: Markdown,
+		skill: SkillBlock | null,
+		style: MarkdownTheme,
+		getTheme: () => Theme,
+		marker = true,
+	) {
 		this.markdown = markdown;
 		this.skill = skill;
 		this.style = style;
 		this.marker = marker;
+		this.getTheme = getTheme;
 		if (skill)
 			observeBlocks(markdown, (type) => {
 				this.firstBlock ??= type;
@@ -96,7 +106,19 @@ class PromptContent implements Component {
 		this.firstBlock = undefined;
 		const rows = [...this.markdown.render(width - 2)];
 		if (this.skill) {
-			const label = this.style.quote(`[skill] ${sanitizeOneLine(this.skill.name)}`);
+			const theme = this.getTheme();
+			const colors = [
+				"error",
+				"syntaxString",
+				"warning",
+				"success",
+				"accent",
+				"syntaxKeyword",
+				"thinkingXhigh",
+			] as const;
+			const label = Array.from(`/skill:${sanitizeOneLine(this.skill.name)}`, (character, index) =>
+				theme.fg(colors[index % colors.length] ?? "accent", character),
+			).join("");
 			const first = this.firstBlock === "paragraph" ? (rows.shift() ?? "").trimEnd() : "";
 			rows.unshift(...wrapTextWithAnsi(`${label}${first ? ` ${first}` : ""}`, width - 2));
 		}
@@ -125,7 +147,7 @@ export class UserMessageCard extends UserMessageComponent {
 	private compose(): void {
 		const { box, markdown } = nativeBody(this);
 		box.clear();
-		box.addChild(new PromptContent(markdown, this.options.skill, this.options.markdownTheme));
+		box.addChild(new PromptContent(markdown, this.options.skill, this.options.markdownTheme, this.options.getTheme));
 		if (this.expanded && this.options.skill) {
 			box.addChild(new Spacer(1));
 			box.addChild(
@@ -134,7 +156,15 @@ export class UserMessageCard extends UserMessageComponent {
 				}),
 			);
 			const instructions = new UserMessageComponent(this.options.skill.content, this.options.markdownTheme, 0);
-			box.addChild(new PromptContent(nativeBody(instructions).markdown, null, this.options.markdownTheme, false));
+			box.addChild(
+				new PromptContent(
+					nativeBody(instructions).markdown,
+					null,
+					this.options.markdownTheme,
+					this.options.getTheme,
+					false,
+				),
+			);
 		}
 	}
 

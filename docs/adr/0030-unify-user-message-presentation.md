@@ -20,8 +20,9 @@ direction; it does not claim an implemented or certified contract.
 - One `` occupies the Tool Transcript marker column. The prompt and wrapped continuation lines start at the Tool
   text column, retaining the relative indentation of Markdown lists, code, and quotes. The marker denotes a Provider
   Prompt, including automatically submitted `role:user` messages, rather than claiming human authorship.
-- A recognized Skill invocation appears as ` [skill] implement <prompt>`. Its inline Skill identity uses a quieter
-  semantic theme color; the prompt keeps ordinary text styling. No separate badge background, title, or card is added.
+- A recognized Skill invocation appears as ` /skill:implement <prompt>`. Its inline Skill command retains the native
+  `/skill:<name>` spelling and uses static per-character rainbow colors from the active Pi theme; the prompt keeps
+  ordinary text styling. No separate badge background, title, or card is added.
 - Ordinary paragraphs follow the Skill identity inline. Block Markdown starts on the next line within the card;
   narrow terminal widths wrap naturally. The prompt remains readable without expanding the Skill.
 - Native `Ctrl+O` controls expansion. Expanded Skill instructions follow the prompt inside the same card under a

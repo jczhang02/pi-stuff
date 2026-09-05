@@ -9,16 +9,17 @@ import {
 import { Container, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import { DiagnosticChannel } from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
 import { installUserMessageDisplay } from "../../packages/pi-stuff/src/conversation-ui/user-message-display.js";
+import { testTheme } from "../fixtures/extension-context.js";
 
 const manager = SessionManager.inMemory();
 
 test("supports overlapping owners and restores the native insertion method after release", () => {
 	initTheme("dark");
 	const original = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "addMessageToChat");
-	const first = installUserMessageDisplay(new DiagnosticChannel(), manager);
+	const first = installUserMessageDisplay(new DiagnosticChannel(), manager, () => testTheme);
 	let second: (() => void) | undefined;
 	try {
-		second = installUserMessageDisplay(new DiagnosticChannel(), manager);
+		second = installUserMessageDisplay(new DiagnosticChannel(), manager, () => testTheme);
 		first();
 		expect(Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "addMessageToChat")).not.toEqual(original);
 	} finally {
@@ -38,7 +39,7 @@ test("rejects an incompatible native renderer before installing a patch", () => 
 	};
 	try {
 		expect(() => {
-			release = installUserMessageDisplay(new DiagnosticChannel(), manager);
+			release = installUserMessageDisplay(new DiagnosticChannel(), manager, () => testTheme);
 		}).toThrow("incompatible native renderer");
 		expect(Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "addMessageToChat")).toEqual(insertion);
 	} finally {
@@ -82,7 +83,7 @@ test("contains projection faults once, retries on reinstall, and propagates orig
 		method.call(host, { role: "user", content: "Original visible text", timestamp: 0 });
 	};
 	try {
-		release = installUserMessageDisplay(diagnostics, manager);
+		release = installUserMessageDisplay(diagnostics, manager, () => testTheme);
 		insert();
 		insert();
 		expect(chatContainer.render(80).join("\n")).toContain("Original visible text");
@@ -91,11 +92,11 @@ test("contains projection faults once, retries on reinstall, and propagates orig
 		invalid = false;
 		chatContainer.clear();
 		chatContainer.addChild(new UserMessageComponent("Other Session prompt"));
-		release = installUserMessageDisplay(diagnostics, SessionManager.inMemory());
+		release = installUserMessageDisplay(diagnostics, SessionManager.inMemory(), () => testTheme);
 		expect(stripTerminalSequences(chatContainer.render(80).join("\n"))).not.toContain("");
 		release();
 		chatContainer.clear();
-		release = installUserMessageDisplay(diagnostics, manager);
+		release = installUserMessageDisplay(diagnostics, manager, () => testTheme);
 		insert();
 		expect(stripTerminalSequences(chatContainer.render(80).join("\n"))).toContain("  Original visible text");
 		nativeError = true;

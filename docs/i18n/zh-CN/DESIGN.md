@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: e1795bfa4f369d11b3c789d40a11c66c9349c3f08d2cfaa7d268ca9580d1217d -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: 9334b795066eed47230c429f7018804cd8001b5310bca9cc1e7b808a33a3ea3f -->
 
 ---
 version: alpha
@@ -172,8 +172,8 @@ User Message 保留原生全宽 `userMessageBg` 卡片、横向内边距和上�
 在认证的 `outputPad=1` 配置下，正文和折行续行与 Tool 正文对齐。标记表示 Provider Prompt，包括自动提交的
 用户角色消息，不声明由人类输入。其他 Host 内边距仍可设置，但不新增对齐保证。
 
-普通 prompt 和 Skill invocation 共用这张卡片。Host 识别的 Skill 在 prompt 前以较弱的主题语义色显示为
-`[skill] <name>`，没有独立背景、边框、标题或展开提示。纯 Skill 使用相同布局。块级 Markdown 在 Skill 标识
+普通 prompt 和 Skill invocation 共用这张卡片。Host 识别的 Skill 在 prompt 前以当前 Pi 主题的静态逐字彩虹色显示为
+`/skill:<name>`，没有独立背景、边框、标题或展开提示。纯 Skill 使用相同布局。块级 Markdown 在 Skill 标识
 下方开始；换行保留原生 Markdown 层级和终端单元格对齐。原生 `Ctrl+O` 与 Host 当前展开状态保持权威。
 展开的 instructions 位于同一卡片的 prompt 后面，使用低强调的 `Skill instructions` 标签，不重复标记或
 prompt。实时及恢复后的 regular/fullscreen TUI 共用此呈现；HTML 保持原生行为。

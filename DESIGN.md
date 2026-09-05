@@ -181,8 +181,9 @@ User Messages retain the native full-width `userMessageBg` card, horizontal padd
 `outputPad=1` profile. The marker denotes a Provider Prompt, including automatic user-role submissions. It does not
 assert human authorship. Other Host padding values remain configurable without an added alignment guarantee.
 
-Ordinary prompts and Skill invocations share that card. A recognized Skill appears inline as `[skill] <name>` in a
-quieter semantic color before the prompt, without its own background, frame, title, or expansion hint. Skill-only
+Ordinary prompts and Skill invocations share that card. A recognized Skill appears inline as `/skill:<name>` with
+static per-character rainbow colors from the active Pi theme before the prompt, without its own background, frame,
+title, or expansion hint. Skill-only
 invocations use the same layout. Block Markdown starts below the Skill identity; wrapping preserves native Markdown
 hierarchy and terminal-cell alignment. Native `Ctrl+O` and the Host's current expansion state remain authoritative.
 Expanded instructions follow the prompt under a low-emphasis `Skill instructions` label inside the same card, with no

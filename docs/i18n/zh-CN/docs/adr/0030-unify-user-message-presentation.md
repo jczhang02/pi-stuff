@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: 8a276af9f334a2a4568b4183df737a2090799feac1f1afc1f6e3eec1320eb5bf -->
+<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: efc5c435936e48b62a1a274577dfcb4c8f70fc0f903ab9f9bea361fcf3aa8037 -->
 
 ---
 status: accepted
@@ -20,8 +20,7 @@ Conversation UI 将把这次提交显示为一条 User Message，同时保留 Pi
   卡片，保留原生横向内边距和上下留白。
 - 一个 `` 占据 Tool Transcript 的标记列。prompt 和折行续行从 Tool 正文列开始，保留 Markdown 列表、
   代码和引用的相对缩进。标记表示 Provider Prompt，包括自动提交的 `role:user` 消息，不声明由人类输入。
-- Host 识别的 Skill invocation 显示为 ` [skill] implement <prompt>`。行内 Skill 标识采用较弱的主题
-  语义色，prompt 保留正常正文样式。不增加独立 badge 背景、标题或卡片。
+- Host 识别的 Skill invocation 显示为 ` /skill:implement <prompt>`。行内 Skill 标识保留原生调用形式，采用当前 Pi 主题的静态逐字彩虹色，prompt 保留正常正文样式。不增加独立 badge 背景、标题或卡片。
 - 普通段落紧接 Skill 标识。块级 Markdown 在同一卡片内另起一行；窄终端自然换行。无需展开 Skill 即可阅读
   prompt。
 - 原生 `Ctrl+O` 控制展开。完整 Skill instructions 在同一卡片的 prompt 后面展开，使用低强调的
