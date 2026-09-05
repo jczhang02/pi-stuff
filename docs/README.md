@@ -90,6 +90,7 @@ The Web and MCP runtimes also have source-local READMEs:
 | [0029](adr/0029-keep-work-independent-of-retention-quotas.md) | Keep productive work independent of internal retention quotas |
 | [0030](adr/0030-unify-user-message-presentation.md) | Unify User Message presentation inside the native Host |
 | [0031](adr/0031-preserve-magic-context-behavior-through-suite-integration.md) | Preserve Magic Context behavior through Suite integration |
+| [0032](adr/0032-organize-quality-assurance-by-verification-purpose.md) | Organize quality assurance by verification purpose |
 
 ## Evidence and history
 
