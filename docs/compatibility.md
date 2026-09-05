@@ -1,13 +1,10 @@
 # Compatibility
 
-## Certified host
+## Supported host
 
 | Contract | Certified version |
 | --- | --- |
 | Pi standalone host | `0.85.0`, upstream `107d79f11072bbc8a3a757ed7fd69596bee7d68c`, Linux x64 |
-| Pi release archive | SHA-256 `a7e7c65f1dc528d2e17e7d946ad2b61df0e2b0f9952faee77807c2484b464d6e` |
-| Pi release executable | SHA-256 `0cfd1bf3e9468f1052d172502fa388e8e8e53dcdeb9fa97f1ef828fdd7757072`, 105,764,992 bytes |
-| Pi Host embedded Bun runtime | 1.3.14 |
 | Repository Bun toolchain | 1.4.0 |
 | Pi Stuff Package | 0.3.3 |
 | Repository development package | 0.0.0 |
@@ -20,37 +17,32 @@
 | RTK release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
 | RTK release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
-The certified upstream Host is the `v0.85.0` Linux x64 release built from the commit above and reports `0.85.0`. Every
-acceptance path hashes the executable and rejects anything outside the audited allowlist before exercising the complete
-Suite contract, including public `registerMarkdownTransformer()`, regular and fullscreen UI behavior, and
-space-preserving native settings search. The exact binary hash, rather than a reusable version string, is the executable
-identity. Pi Stuff does not rebuild or distribute Pi Host.
+The supported Host profile is Pi `0.85.0` on Linux x64. The upstream source commit above is retained as a provenance
+reference. Acceptance exercises the complete Suite contract against the real Host and its public APIs, including public
+`registerMarkdownTransformer()`, regular and fullscreen UI behavior, and space-preserving native settings search. A
+version match alone is insufficient: the Host must also pass the applicable real-Host capability acceptance. Pi Stuff
+does not rebuild or distribute Pi Host.
 
 CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, anti-slop
 lint, type surfaces, unused-code analysis, generated composition, and public-release safety. For pull requests, the scope classifier starts
 `Acceptance` when executable behavior or executable documentation changed; a direct push to `main` runs `Fast` only,
-and manual dispatch runs both checks. `Acceptance` downloads and verifies the certified Host release, Code Mode host,
+and manual dispatch runs both checks. `Acceptance` obtains a supported Pi Host, Code Mode host,
 and RTK runtime
 before running every test
 file in a fresh Bun process, real TUI verification, the Tool Activity benchmark, and package verification in a
 network-isolated namespace. Per-file process isolation prevents one process- or PTY-heavy test from contaminating the
 native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip
-`Acceptance`; executable documentation remains fully certified. A separate weekly upstream watch reports when the npm
-`latest` tag moves beyond the certified Host, but never changes certification automatically.
-The certified execution profile has two Bun versions with separate scopes. The audited standalone Host embeds Bun 1.3.14;
-provenance checks its exact runtime banner at the reviewed byte offset before hashing the complete executable. Repository
-scripts, CI tests, and Suite subprocess helpers that resolve Bun from PATH use 1.4.0. A repository toolchain upgrade never
-relabels the Host artifact's embedded runtime.
+`Acceptance`; executable documentation remains covered by the same checks. A separate weekly upstream watch reports when
+the npm `latest` tag moves beyond the supported Host, but never changes support automatically.
+The repository toolchain uses Bun 1.4.0. The Host's bundled runtime and release packaging are Host details; they are not
+Pi Stuff compatibility admission criteria.
 Bun dependency upgrades are deliberate maintainer changes because the frozen Bun lockfile, exact repository toolchain,
-`@types/bun`, CI, and executable documentation must move coherently. The Host Bun version moves only with a new exact
-release artifact and recertification. Dependabot is limited to pinned GitHub Actions; it does not produce npm pull
+`@types/bun`, CI, and executable documentation must move coherently. Dependabot is limited to pinned GitHub Actions; it does not produce npm pull
 requests that omit or bypass the repository-owned Bun lockfile.
 
-The certified Host profile identifies the released version, reviewed upstream source commit, Linux x64 release-binary
-hash, and embedded Bun version. The repository toolchain row separately identifies the Bun executable used for repository
-commands and CI. CI downloads the fixed GitHub Releases while network access is available, verifies them, and then runs
-the acceptance suite without external network access. Release archive hashes are checked before extraction; the Pi
-executable hash is checked again before use. Pi upgrades review and update these constants together; the repository does not claim to
+The supported Host profile identifies the released version, reviewed upstream source commit, and Linux x64 platform. The
+repository toolchain row separately identifies the Bun executable used for repository commands and CI. Pi upgrades review
+the supported version, public API seams, and real-Host capability evidence together; the repository does not claim to
 reproduce the upstream compilation process.
 
 Pi core imports remain wildcard peer dependencies because the Host supplies them. Development dependencies stay pinned
@@ -65,6 +57,11 @@ components. Inline Skill placement observes the card-local native Markdown token
 The exact standalone Host must pass Skill-plus-prompt and Skill-only rendering, `Ctrl+O`, resize, replay,
 and reload acceptance. Structural preflight and runtime containment protect native messages; fallback is not a passing
 result for normal certified inputs. Tool alignment is certified at `outputPad=1`; other values remain configurable.
+
+The input-enhancement editor exposes Pi 0.85.0's native embedded working-status capability. The Host spinner and
+working message use the editor's top border and native thinking-level colors, with no duplicate working row. Real-Host
+PTY coverage checks regular/fullscreen and dark/light presentation, narrow resize, dialog restoration, cancellation,
+reload, completion, and the existing 500 ms Vibe Line Spinner liveness limit.
 
 Pi 0.85.0 wraps Thinking content in a native clickable `MouseRegion`. The version-checked Thinking adapter projects
 only that region's child, retaining the Host's visibility callback and click routing. Real-Host PTY acceptance covers
@@ -101,14 +98,14 @@ tests cover Command Dialog restoration, Tool Activity metadata, Context ownershi
 Current Work sources, and duplicate lifecycle suppression.
 
 A Pi upgrade requires a dedicated change that reviews relevant Extension and Package interfaces, updates the pinned
-development dependency, source commit, and release-binary hash together, and passes standalone-host certification.
+development dependency and provenance reference, and passes real-Host capability acceptance.
 Compatibility with other Pi builds is not claimed until that work is complete.
 
 Older version strings in changelogs, archived acceptance reports, research notes, and captured prototypes describe the
 Host that produced that historical evidence. They are not executable compatibility declarations and must not be
 rewritten to imply that old evidence was captured on the current Host. Current source, package manifests, CI, fixtures,
 and verification scripts follow the applicable Host or repository toolchain row above. `CERTIFIED_PI_BUN_VERSION`
-describes the audited Host artifact, not the repository toolchain.
+describes the repository toolchain only where explicitly used; it is not a Pi compatibility gate.
 
 The Codex Capability bundles its retained native helpers only for the certified Linux x64 profile. On another target,
 the command and ordinary Pi turns remain available while the unavailable Tool returns a bounded recovery error.

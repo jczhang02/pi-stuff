@@ -115,7 +115,7 @@ disabled state. A compact list may omit the state word; a detail Header keeps th
 ### Command Dialog
 
 One full-width top rule introduces the surface. The Header answers the surface's primary question before presenting
-metadata. Escape returns exactly one level and eventually restores the captured editor draft, Footer, working row,
+metadata. Escape returns exactly one level and eventually restores the captured editor draft, Footer, working indicator,
 Todo, and Agent roster.
 
 ### Lists
@@ -165,9 +165,14 @@ current Goal's sole compact persistent authority, while Goal lifecycle notices r
 and Command Dialogs provide inspection and control. An accepted terminal Goal Tool row shows only the machine outcome;
 the following Goal Final Response is the sole detailed result, and no terminal notification duplicates it. Ponytail
 follows the same boundary: `󱖿 <mode>` is its only
-persistent mode authority, the Working Row remains the only Agent-activity authority, and `/ponytail` provides control.
+persistent mode authority, the Host working indicator remains the only Agent-activity authority, and `/ponytail` provides control.
 Its Dialog temporarily suppresses the composed Footer, preserves the editor draft, and keeps environment overrides
 visible without presenting them as writable settings.
+
+The native Vibe Line Spinner and working message appear once in the editor's top border, using Pi's thinking-level
+colors, clipping, and animation. Conversation UI preserves that Host capability through its input wrapper; it adds no
+second working row, timer, or status state. Completion, cancellation, Command Dialog restoration, and reload retain
+Host lifecycle authority. Existing input highlighting, autocomplete, and draft behavior remain intact.
 
 The Statusline is a Nerd Font-only surface. Its fixed grammar is `󱙺` model, `` Thinking, `` Fast, `󰉋` directory,
 ``/``/`` branch tracking, ``/``/`󰏫`/`󰝒` Git state, `󰌨` Context, `󰆼` cache, `󰊚` weekly

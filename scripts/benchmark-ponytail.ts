@@ -23,7 +23,7 @@ import {
 	PONYTAIL_BENCHMARK_PROVIDER as PROVIDER,
 } from "./benchmark-ponytail-rpc.js";
 import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
-import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
+import { verifyPiHostVersion } from "./verify-pi-host-provenance.js";
 
 export { buildPonytailBenchmarkEnvironment } from "./benchmark-ponytail-rpc.js";
 
@@ -592,7 +592,7 @@ export async function runPonytailBehaviorBenchmark(
 	output: string | undefined,
 ): Promise<PonytailBehaviorBenchmarkReport> {
 	const piBinary = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
-	await verifyPiHostProvenance(piBinary);
+	await verifyPiHostVersion(piBinary);
 	const benchmarkRoot = await mkdtemp(
 		join(process.env["XDG_RUNTIME_DIR"] ?? tmpdir(), "pi-stuff-ponytail-benchmark-"),
 	);

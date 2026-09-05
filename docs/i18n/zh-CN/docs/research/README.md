@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: 9d82fc772085d9d9961b755a15223fa614c132db1b3d7a4f4973813c42a5e5e1 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 3aebbdbdcb6f828bbb4b98da4dd27e8973cbf732b4623ec05fbc1dcbf2347599 -->
 
 # 研究
 
@@ -27,6 +27,7 @@
 - [Pi 最新 Markdown transform](pi-latest-markdown-transform-20260820.md)
 - [Pi XDG base-directory 行为](pi-xdg-base-directory-20260811.md)
 - [tmux/Kitty 图像可行性](pi-tmux-kitty-images-feasibility-20260815.md)
+- [Pi 0.85.0 兼容性评估](pi-085-compatibility-20260905.md)
 
 ## 产品与界面参考
 

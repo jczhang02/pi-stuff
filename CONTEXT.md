@@ -96,8 +96,8 @@ preserving sibling namespaces; the merged file, lock, and atomic write remain sh
 _Avoid_: Capability settings file, global config
 
 **Vibe Line Spinner**:
-The Host-owned animated glyph in Pi's Working Row while the Host processes Agent work. It is a liveness signal, not
-the Working Row itself, Thinking transcript content, or other Conversation UI content.
+The Host-owned animated glyph that indicates active Agent work. It is a liveness signal, distinct from the working
+message, Thinking transcript content, and other Conversation UI content.
 _Avoid_: Vibe Line, Working Row, Thinking display
 
 **Logical Thinking Run**:
