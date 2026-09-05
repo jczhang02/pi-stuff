@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 9bfbec8aa5fe0273cf273fe680cba7408c74316a99ba6b7beb6dd6710a0b70bf -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 453f4f07b109d6a2361c958ca99d3979edef0806a42f045795ece1c13c93eb80 -->
 
 # Conversation UI
 
@@ -29,6 +29,7 @@ Pi Stuff 面向 conversation、编辑器、Statusline、Welcome header 与聚焦
 - Context 状态从 `recovering` 进入经验证的百分比；请求中止时显示 `unknown`。
 - 单行 latest-prompt 预览与紧凑 Skill 标签。
 - 原生编辑器输入高亮与 slash 补全；所有渲染行都不含 `/` 时，高亮跳过命令表相关工作，且不在重画之间缓存命令表内容。
+  否则直接识别完整调用词并查询实时命令集合，不再排序命令名或重建命令专用正则表达式。
 - Host 拥有的 Thinking，显示为最新一条原生 Markdown 终端行或隐藏态 `• thoughts` 标签，保留原生鼠标和键盘
   可见性控制；并支持 `chart` 或 `tree` Markdown 投影。
 - 关闭后恢复编辑器草稿的全宽 Command Dialog。

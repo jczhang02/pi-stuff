@@ -1,4 +1,401 @@
 {
+	"commandInvocationMatching": {
+		"baseCommit": "683cdf7670bb4bc3879ef0ace742167174ac7e89",
+		"bead": "ps-yon.12",
+		"change": "Recognize complete validated invocation words with a fixed expression and query the existing live Set. Remove per-line catalog sorting, escaping, joining and dynamic RegExp construction; preserve live registry reads, ANSI handling, completion and cadence. No cache or new state.",
+		"physicalLines": {
+			"productionBefore": 84,
+			"productionAfter": 77,
+			"testBefore": 441,
+			"testAfter": 456
+		},
+		"helperArtifact": "ps-yon-invocation-matcher.ipi9ff",
+		"helperEvidenceSha256": "2c81fb7ca97c433de6897b833164b295582e931739c97c2b0b5b6d1236993ca5",
+		"helperMethod": "Actual old and candidate styleKnownInvocations Sources transpiled with Bun.Transpiler; only the unchanged shared import is redirected to the same file. After 16400 equal-output cases, each variant warms up 1000 calls, then alternates 15 trials of 1000 calls with one 256-command Set and the same 92-code-unit styled result. Timing excludes transpilation and equivalence cases; CPU covers all process threads.",
+		"helper": {
+			"purpose": "warm-repository-helper-diagnosis",
+			"base": "683cdf7670bb4bc3879ef0ace742167174ac7e89",
+			"file": "packages/pi-stuff/src/conversation-ui/input-highlighting.ts",
+			"bun": "1.4.0",
+			"equalCases": 16400,
+			"commands": 256,
+			"callsPerTrial": 1000,
+			"trialsPerVariant": 15,
+			"sourceSha256": {
+				"control": "c864f8239a998f956a405f21229c0c9f48e17f10f3b6964baf4f3a30c8f8ca5e",
+				"candidate": "a23468ef7b4b354badffa76a28ae174dcbc803ef89525f37e978fe69908a4973"
+			},
+			"sharedSha256": "7d8eba94d686f0faedd5d0b598417dd0d9d327c683bad81141c0b467e89e3d06",
+			"scriptSha256": "80e8ef2cd659fa009735b9c1869dc6f33bb07fb48ab888b8a67bd8b15130bb6e",
+			"outputSha256": "29b7d99e5d1851ee8795ddea03bebb9edae063c5610c943b4c567bd7bcef9bfb",
+			"workCounts": {
+				"control": {
+					"catalogEnumerationsPerCall": 1
+				},
+				"candidate": {
+					"catalogEnumerationsPerCall": 0
+				}
+			},
+			"medians": {
+				"control": {
+					"elapsedMs": 16.979810999999984,
+					"cpuUs": 20284
+				},
+				"candidate": {
+					"elapsedMs": 3.337547000000029,
+					"cpuUs": 4593
+				}
+			},
+			"trials": {
+				"control": [
+					{
+						"elapsedMs": 19.453632,
+						"cpuUs": 23120,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 18.04529299999996,
+						"cpuUs": 21059,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 18.820842999999968,
+						"cpuUs": 27365,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 18.171626000000003,
+						"cpuUs": 35359,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 17.51893100000001,
+						"cpuUs": 20403,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 16.85780299999999,
+						"cpuUs": 20284,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 17.279743999999994,
+						"cpuUs": 19218,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 16.243605000000002,
+						"cpuUs": 20196,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 19.643234000000007,
+						"cpuUs": 22571,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 16.764183000000003,
+						"cpuUs": 19633,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 16.806189000000018,
+						"cpuUs": 19259,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 16.979810999999984,
+						"cpuUs": 20512,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 16.803169000000025,
+						"cpuUs": 19309,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 16.915246000000025,
+						"cpuUs": 19910,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 16.886498999999958,
+						"cpuUs": 19936,
+						"checksum": 92000
+					}
+				],
+				"candidate": [
+					{
+						"elapsedMs": 4.805000000000007,
+						"cpuUs": 5668,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 4.801869000000011,
+						"cpuUs": 9574,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.85080099999999,
+						"cpuUs": 8714,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.8784370000000195,
+						"cpuUs": 12644,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.337547000000029,
+						"cpuUs": 4028,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.263003000000026,
+						"cpuUs": 3727,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.3780270000000314,
+						"cpuUs": 4596,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.224300000000028,
+						"cpuUs": 3747,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.5339010000000144,
+						"cpuUs": 4758,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.3850040000000376,
+						"cpuUs": 4177,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.1870890000000145,
+						"cpuUs": 4593,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.2115029999999933,
+						"cpuUs": 4204,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 2.8967550000000983,
+						"cpuUs": 3566,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.193290999999931,
+						"cpuUs": 4811,
+						"checksum": 92000
+					},
+					{
+						"elapsedMs": 3.0400829999999814,
+						"cpuUs": 3646,
+						"checksum": 92000
+					}
+				]
+			}
+		},
+		"nativeHostBinarySha256": "0cfd1bf3e9468f1052d172502fa388e8e8e53dcdeb9fa97f1ef828fdd7757072",
+		"nativeWorkload": "benchmark-responsiveness.ts --suite --agent foreground --resource-scope --gates docs/reports/suite-responsiveness-gates-2026-09-05.json",
+		"nativeConditions": "Sequential fresh native Pi 0.85.0 Hosts; offline fixture Providers, 120x40 terminal, full automatic Naming/Usage, private directories and network/PID namespaces. Only the input-highlighting production helper changes across candidate/control/candidate; tests and other benchmarks are not concurrent. No profiler, preload or added delay; kernel page cache not reset.",
+		"nativeSamples": [
+			{
+				"id": "lJGBaK",
+				"variant": "candidate",
+				"evidenceSha256": "b6cf9ead7515654845949c3f480303fabe84a4e264a5cbedc19b6d2b6099a1f1",
+				"providerSha256": "c0fe5e66ea8a8f49f10c4dddbe43ad3ee400cf09f4576dee1cda89795f528d9a",
+				"sourceCommit": "683cdf7670bb4bc3879ef0ace742167174ac7e89",
+				"sourceDiffSha256": "35eee9ef770214d3d0e66aec04253edc4e28fd20e9e729027453d63df24ba09b",
+				"observerStartUtc": "2026-09-05T21:37:24.225Z",
+				"sourceSnapshots": [
+					{
+						"file": "scripts/benchmark-responsiveness.ts",
+						"sha256": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9"
+					},
+					{
+						"file": "scripts/host-resource-scope.ts",
+						"sha256": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee"
+					},
+					{
+						"file": "scripts/pty-observation.ts",
+						"sha256": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40"
+					},
+					{
+						"file": "test/fixtures/responsiveness-provider.ts",
+						"sha256": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3"
+					},
+					{
+						"file": "test/fixtures/faux-provider.ts",
+						"sha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+					}
+				],
+				"gateExit": 1,
+				"spinnerMs": 257.834413999999,
+				"startupInputMs": 14.11003399999936,
+				"steadyInputMs": 98.23447300000043,
+				"selectionMs": 13.870817999999417,
+				"observationGapMs": 16.23202299999957,
+				"spinnerAbsenceMs": 0,
+				"activeDurationMs": 20691.818879,
+				"activeCaptures": 1746,
+				"durationMs": 27022.443842,
+				"firstReadyMs": 4636.245707,
+				"cpuUs": 17113473,
+				"memoryPeakChargedBytes": 1278242816,
+				"rssSnapshotBytes": 588288000,
+				"parentIo": {
+					"rchar": 155789266,
+					"wchar": 26438833,
+					"syscr": 14292,
+					"syscw": 5312,
+					"read_bytes": 0,
+					"write_bytes": 26280512,
+					"cancelled_write_bytes": 0
+				},
+				"childTools": 1,
+				"reapedChildren": 1,
+				"usageRefreshes": 1,
+				"namingRequests": 1,
+				"namesPersisted": 1,
+				"scopeAfterShutdown": "not-found/inactive/dead"
+			},
+			{
+				"id": "dnwjry",
+				"variant": "control",
+				"evidenceSha256": "1e20659f519639f3e257ad04ce9edef6f0cf0fb0fe2331c10c6e4c05a2f9efb9",
+				"providerSha256": "ec8d34d60dad54d44bcb4765dcb5a2672f0f267714110d712ae91a8c712e02a5",
+				"sourceCommit": "683cdf7670bb4bc3879ef0ace742167174ac7e89",
+				"sourceDiffSha256": "d38f6e1a8c4676edf2050abaf20267afc74759e65b86f11732fa2a577577f2bd",
+				"observerStartUtc": "2026-09-05T21:38:14.577Z",
+				"sourceSnapshots": [
+					{
+						"file": "scripts/benchmark-responsiveness.ts",
+						"sha256": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9"
+					},
+					{
+						"file": "scripts/host-resource-scope.ts",
+						"sha256": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee"
+					},
+					{
+						"file": "scripts/pty-observation.ts",
+						"sha256": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40"
+					},
+					{
+						"file": "test/fixtures/responsiveness-provider.ts",
+						"sha256": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3"
+					},
+					{
+						"file": "test/fixtures/faux-provider.ts",
+						"sha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+					}
+				],
+				"gateExit": 1,
+				"spinnerMs": 256.9252629999992,
+				"startupInputMs": 13.827162999999928,
+				"steadyInputMs": 109.55428399999983,
+				"selectionMs": 13.961369000000559,
+				"observationGapMs": 16.23330799999985,
+				"spinnerAbsenceMs": 0,
+				"activeDurationMs": 20685.906163,
+				"activeCaptures": 1745,
+				"durationMs": 26961.429092,
+				"firstReadyMs": 4559.811627,
+				"cpuUs": 16751658,
+				"memoryPeakChargedBytes": 1286090752,
+				"rssSnapshotBytes": 616542208,
+				"parentIo": {
+					"rchar": 155790890,
+					"wchar": 26439200,
+					"syscr": 14250,
+					"syscw": 5308,
+					"read_bytes": 0,
+					"write_bytes": 26280762,
+					"cancelled_write_bytes": 0
+				},
+				"childTools": 1,
+				"reapedChildren": 1,
+				"usageRefreshes": 1,
+				"namingRequests": 1,
+				"namesPersisted": 1,
+				"scopeAfterShutdown": "not-found/inactive/dead"
+			},
+			{
+				"id": "p7qDxP",
+				"variant": "candidate",
+				"evidenceSha256": "52644f577dea39b3453083bd11effcffa7c51ac7a7c683508465c0cc916548e5",
+				"providerSha256": "e8644c9930f88547cda74ae11c6329fbf1baf56518789e4906ab4cb93bfd8860",
+				"sourceCommit": "683cdf7670bb4bc3879ef0ace742167174ac7e89",
+				"sourceDiffSha256": "35eee9ef770214d3d0e66aec04253edc4e28fd20e9e729027453d63df24ba09b",
+				"observerStartUtc": "2026-09-05T21:39:02.186Z",
+				"sourceSnapshots": [
+					{
+						"file": "scripts/benchmark-responsiveness.ts",
+						"sha256": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9"
+					},
+					{
+						"file": "scripts/host-resource-scope.ts",
+						"sha256": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee"
+					},
+					{
+						"file": "scripts/pty-observation.ts",
+						"sha256": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40"
+					},
+					{
+						"file": "test/fixtures/responsiveness-provider.ts",
+						"sha256": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3"
+					},
+					{
+						"file": "test/fixtures/faux-provider.ts",
+						"sha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+					}
+				],
+				"gateExit": 1,
+				"spinnerMs": 233.10113400000046,
+				"startupInputMs": 13.769016000000192,
+				"steadyInputMs": 169.95939800000087,
+				"selectionMs": 14.324185999999827,
+				"observationGapMs": 16.688414000000193,
+				"spinnerAbsenceMs": 0,
+				"activeDurationMs": 20736.145673,
+				"activeCaptures": 1747,
+				"durationMs": 27256.778757,
+				"firstReadyMs": 4769.552181,
+				"cpuUs": 17647674,
+				"memoryPeakChargedBytes": 1290838016,
+				"rssSnapshotBytes": 612683776,
+				"parentIo": {
+					"rchar": 155789516,
+					"wchar": 26439250,
+					"syscr": 14274,
+					"syscw": 5315,
+					"read_bytes": 0,
+					"write_bytes": 26280507,
+					"cancelled_write_bytes": 0
+				},
+				"childTools": 1,
+				"reapedChildren": 1,
+				"usageRefreshes": 1,
+				"namingRequests": 1,
+				"namesPersisted": 1,
+				"scopeAfterShutdown": "not-found/inactive/dead"
+			}
+		],
+		"limits": [
+			"All three native runs fail unchanged Spinner and steady-input gates; this is not a no-stall result.",
+			"The native sequence does not establish whole-Host CPU, memory or latency improvement.",
+			"Warm repository-helper CPU and elapsed-time savings do not establish native Host latency, allocated bytes, GC, wakeups or all-Capability savings.",
+			"Cgroup CPU includes owned descendants. Charged memory is not peak process-tree RSS or allocated bytes; RSS and I/O are end-of-observation live-member snapshots.",
+			"First-Agent import stalls, long-Session/recovery work and full Suite acceptance remain open."
+		]
+	},
 	"explicitSourceImports": {
 		"baseCommit": "bd095042ea187a3b1fe906ca2830265516157d36",
 		"capturedOn": "2026-09-05",

@@ -29,7 +29,8 @@ completion, and Tool running timer.
 - Context status progresses from `recovering` to a validated percentage, or `unknown` when the request is aborted.
 - One-line latest-prompt preview and compact Skill labels.
 - Native-editor input highlighting and slash completion. Highlighting skips command-registry work when no rendered
-  line contains `/`, without caching registry contents between redraws.
+  line contains `/`, without caching registry contents between redraws. Otherwise it recognizes complete invocation
+  words and checks the live command set, without sorting names or rebuilding a command-specific regular expression.
 - Host-owned Thinking shown as one latest native Markdown row or the hidden `• thoughts` label, preserving native
   mouse and keyboard visibility controls; plus `chart` or `tree` Markdown projections.
 - Full-width Command Dialogs that restore the editor draft on close.

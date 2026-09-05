@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import type {
 	KeybindingsManager as AgentKeybindingsManager,
 	ExtensionContext,
@@ -21,6 +21,7 @@ import {
 	type InputEnhancementSettings,
 	installInputEnhancementEditor,
 } from "../../packages/pi-stuff/src/conversation-ui/input-enhancement.js";
+import { styleKnownInvocations } from "../../packages/pi-stuff/src/conversation-ui/input-highlighting.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
 const ACCENT_OPEN = "\u001b[35m";
@@ -135,6 +136,19 @@ async function settleAutocomplete(): Promise<void> {
 }
 
 describe("Pi Stuff input highlighting", () => {
+	test("looks up complete invocation words without enumerating command names", () => {
+		const recognized = ["/review", "/review.more", "/review_more", "/review-more", "/skill:inspect"];
+		const plain = ["/missing", "/review.extra", "/review/file", "path/review"];
+		const names = new Set(recognized.map((name) => name.slice(1)));
+		const enumerate = spyOn(names, Symbol.iterator);
+		const line = [...plain, ...recognized].join(" ");
+
+		expect(styleKnownInvocations(line, names, theme)).toBe(
+			[...plain, ...recognized.map((text) => theme.fg("accent", text))].join(" "),
+		);
+		expect(enumerate).not.toHaveBeenCalled();
+	});
+
 	test("avoids command registry reads on slash-free redraws while keeping highlighting live", () => {
 		const registered = commands("review");
 		const { editor, getCommands } = createEditor(

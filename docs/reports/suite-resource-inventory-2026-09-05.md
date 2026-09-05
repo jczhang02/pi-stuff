@@ -268,3 +268,35 @@ Allocation/GC, wakeups, scale, recovery and every-Capability execution remain se
 record's `explicitSourceImports` section retains all seven samples, raw evidence and Provider hashes, source-diff
 identities, exact maxima and measurement limits. `ps-yon.11` owns this optimization; `ps-yon.6` and final acceptance
 remain open.
+
+## Command highlighting without rebuilding the matcher
+
+`ps-yon.12` removes repeated catalog preparation from `invocationRanges`. The editor already accepts only command
+names matching `[A-Za-z0-9][A-Za-z0-9:._-]{0,127}`. A fixed expression can recognize complete invocation words, then
+check the current `Set`; sorting, escaping and joining every name on each rendered line are unnecessary. Registry
+reads remain live. No cache, wrapper, cadence change or feature removal is needed. Production Source shrinks from
+84 to 77 lines; the existing editor regression file grows from 441 to 456 lines.
+
+The new lookup-count regression fails on `683cdf76` and passes on the candidate. A temporary, source-hashed Bun 1.4.0
+diagnostic also compares the complete old and new `styleKnownInvocations` functions: all 16,400 boundary and seeded
+random cases produce identical styled output. It transpiles both Sources and redirects their unchanged shared import
+to the same file. With 256 commands, 1,000 warmup calls per variant and 15 alternating trials of 1,000 calls, median
+elapsed time falls from 16.980 to 3.338 ms; process CPU falls from 20,284 to 4,593 µs. Catalog enumeration per call
+falls from one to zero. These are warm helper measurements, not native Host latency or allocation measurements.
+
+Fresh native foreground-Agent runs used the unchanged observer, certified Pi 0.85.0 binary, full Naming/Usage,
+120×40 geometry, private directories, network/PID isolation and frozen gates. Only this production helper changed
+between variants; tests and other benchmarks did not run concurrently. Times below are on 2026-09-05 UTC.
+
+| Variant | Observer start | Spinner max, ms | Steady-input max, ms | Selection max, ms | CPU seconds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Candidate `lJGBaK` | 21:37:24.225 | 257.834 | 98.234 | 13.871 | 17.113473 |
+| Control `dnwjry` | 21:38:14.577 | 256.925 | 109.554 | 13.961 | 16.751658 |
+| Candidate `p7qDxP` | 21:39:02.186 | 233.101 | 169.959 | 14.324 | 17.647674 |
+
+All three complete and reap one child Tool run, perform Naming and Usage once, and retain over 20 seconds of active
+observation with zero Spinner absence and gaps below 17 ms. All scopes are unloaded after shutdown. All three still
+fail the 164.768 ms Spinner and 40.465 ms input gates. This sequence does not establish a whole-Host CPU, memory or
+latency improvement; the measured saving is the helper work above. The exact native integrated UI and focused editor
+checks pass. `commandInvocationMatching` in the numeric record retains the trials, Source and evidence hashes, resource
+snapshots and limits. First-Agent import stalls and the remaining whole-Suite acceptance stay open.
