@@ -318,7 +318,7 @@ function pathExists(paths: ReadonlySet<string>, target: string): boolean {
 function isTranslationSource(path: string): boolean {
 	if (!path.endsWith(".md") || path.startsWith(TRANSLATION_ROOT) || path.endsWith(".zh-CN.md")) return false;
 	const basename = posix.basename(path);
-	return basename !== "SKILL.md" && basename !== "THIRD_PARTY_NOTICES.md";
+	return (basename !== "SKILL.md" || path.startsWith(".agents/skills/")) && basename !== "THIRD_PARTY_NOTICES.md";
 }
 
 function translationPath(sourcePath: string): string {

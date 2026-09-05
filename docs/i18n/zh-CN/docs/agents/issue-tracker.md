@@ -1,4 +1,4 @@
-<!-- translation-source: docs/agents/issue-tracker.md; translation-source-sha256: 29aad6e2fa94fb9f19460b23c2db2442f05ce0621836449eecd5a1c30bdce362 -->
+<!-- translation-source: docs/agents/issue-tracker.md; translation-source-sha256: 30b8ce621daf81a2e6d83edd46e917489aaa72cd90942aa25b90aacf2668aa94 -->
 
 # Issue 跟踪器：Beads，配合 GitHub 接收与镜像
 
@@ -34,9 +34,37 @@ Issue ID 使用 `ps` 前缀。
 bun run beads:publish -- <epic-or-bead-id>
 ```
 
-命令先预览，再执行仅推送的 GitHub 同步。它在运行时取得认证，绝不持久化 token。
+命令可从任意仓库 worktree 运行，使用规范仓库中的 Beads 数据库。它通过操作系统锁串行化发布，先预览并执行单向同步，再为每个 Issue 更新一条受管理的交付评论。进程退出或中断时锁自动释放。认证在运行时取得，token 不会持久化。人工评论保留；重复的受管理评论或不同发布身份需要显式核对，不会自动删除或接管。
 
-不要运行通用双向同步，也不要把 GitHub 变更拉入 Beads。父子和阻塞关系以 Beads 为准，不保证显示在 GitHub Issue UI 中。
+评论包含规范状态、已关闭时的关闭原因、交付证据、已验证的 commit 和 PR 链接、PR 实际合并状态，以及转换为 GitHub Issue 链接的 Beads 入向/出向关系。关联 Bead 尚无 GitHub 镜像时，先发布该 Bead。关系仍由 Beads 管理；可见链接不承诺映射为 GitHub 原生依赖或子 Issue 字段。PR 正文必须引用镜像 Issue 的完整 URL，使读者能从 PR 返回原始工作项。
+
+成功必须回读核对完整受管理评论及 Issue 状态、标题。重复发布更新同一评论，也适用于重新打开和 PR 合并之后；内容未变则不写入。失败或中断的请求可能已修改 GitHub。解决报告的问题后重试相同命令，它会识别已有评论，不会盲目重复创建。回读成功前，应报告发布未完成。单独的 `bd close` 或上游同步成功消息不等于公开交付完成。
+
+## 交付与关闭
+
+所有仓库工作项，包括由通用实现 skill 启动的工作，都遵循以下步骤：
+
+1. 读取并认领 Bead，在其中维护范围和关系，使用独立 worktree。
+2. 完成请求的结果，运行适用检查和审查，再签名并推送职责清晰的提交。
+3. 代码工作创建或更新 PR，说明问题、最终行为、验证和 Issue 完整 URL。复用分支已有 PR，避免重复创建。用户明确只要求分支交付时可省略 PR，但必须记录原因。不要仅为完成此流程而执行合并。
+4. 在保留其他 metadata 的同时记录 `metadata.github_delivery`。包含当前 PR head SHA、实际验证、限制及未完成事项。明确标注未验证或失败的验收。
+5. 请求的验收标准全部满足后，才以有实质内容的 `--reason` 在 Beads 中关闭。实现并交付的请求可以在合并前关闭；包含合并要求的请求必须保持进行中，直到验证合并。Beads 完成状态与 GitHub PR 合并状态是独立事实，必须同时可见。
+6. 发布已授权时，运行 `bun run beads:publish -- <id>`，要求返回已验证的评论 URL。交付答复包含 Bead、Issue、PR 或仅分支交付的原因、最终 commit、验证与合并状态。发布失败时分别报告本地与公开状态。之后执行已授权合并时，核对补丁与 worktree 状态，更新 Beads、重新发布，并仅移除已合并且干净的 worktree。
+
+交付对象字段如下：
+
+| 字段 | 契约 |
+| --- | --- |
+| `kind` | `code` 或 `no-code` |
+| `summary` | 非空公开结果，包含限制或未完成事项 |
+| `validation` | 非空公开证据，说明适用验收和审查结果 |
+| `commits` | 完整的小写 40 位 commit SHA；代码至少一项，无代码时为空 |
+| `pull_request` | 可选的本仓库正整数 PR 编号；代码通常必须填写 |
+| `no_pr_reason` | 仅分支交付的明确原因，或无需代码/PR 的原因 |
+
+例如，在忽略的 JSON 文件中保留既有 metadata 并加入 `github_delivery`，然后执行 `bd update <id> --metadata @<file.json>`。发布器拒绝格式错误的 metadata、缺少交付记录或关闭原因的已关闭 Bead、远端不存在的提交，以及当前 head 未列入提交记录的 PR。合并状态从 PR 实际数据读取，而非信任自由文本声明。无代码工作必须有原因，且不得包含 commit/PR 引用。进行中的规划 Bead 可不含交付记录；评论会明确说明尚未记录交付。
+
+历史已关闭 Bead 在重新发布时遵循相同验证：先恢复真实公开证据和引用，适用时明确记录仅分支交付或无代码结果。不要为通过旧记录发布而编造 PR、合并状态或成功验收。发布范围为所选 Bead 及其完整子树；其他依赖只建立链接，不会被隐式发布或关闭。
 
 ## 外部接收
 

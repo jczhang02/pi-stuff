@@ -5,14 +5,14 @@ import { join, resolve } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createRpcTransport } from "../../scripts/magic-context-real-rpc.js";
-import { verifyPiHostProvenance } from "../../scripts/verify-pi-host-provenance.js";
+import { verifyPiHostVersion } from "../../scripts/verify-pi-host-provenance.js";
 import { ZERO_USAGE } from "../fixtures/faux-provider.js";
 
 const suite = resolve(import.meta.dir, "../../packages/pi-stuff");
 const provider = resolve(import.meta.dir, "../fixtures/context-pty-provider.ts");
 const piBinary = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 beforeAll(async () => {
-	await verifyPiHostProvenance(piBinary);
+	await verifyPiHostVersion(piBinary);
 });
 
 function seedHistory(cwd: string, sessions: string, large: boolean): string {

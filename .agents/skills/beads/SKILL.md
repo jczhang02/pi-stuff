@@ -1,6 +1,6 @@
 ---
 name: beads
-description: Manage accepted Pi Stuff work in Beads. Use when finding, fetching, creating, claiming, relating, adopting, publishing, updating, or closing durable work items, including work maps and GitHub issue intake; do not use for only a current-turn checklist.
+description: Manage accepted Pi Stuff work in Beads. Use when finding, fetching, creating, claiming, relating, adopting, publishing, updating, closing, or reporting delivery of durable work items, including work maps and GitHub issue intake; do not use for only a current-turn checklist.
 ---
 
 # Beads
@@ -51,10 +51,15 @@ has no Beads hooks, so do not rely on automatic context injection.
 
 ## Complete accepted work
 
-1. Verify every acceptance criterion and the required checks.
-2. Close with `bd close <id> --reason "..."`.
-3. If the request includes external publication, use only `bun run beads:publish -- <epic-or-bead-id>` after closure.
-4. Return the Beads ID and, when published, the GitHub URL.
+Follow the [delivery and closure workflow](../../../docs/agents/issue-tracker.md#delivery-and-closure), including when
+another skill performs the implementation. Record `metadata.github_delivery` before closure; sign and push code,
+link its PR back to the Issue, and distinguish accepted implementation from merge. Branch-only delivery needs the
+user's scope and an explicit reason; no-code work needs its own evidence and reason.
+
+After canonical closure, authorized publication must return a verified managed-comment URL. A successful `bd close`
+or raw GitHub sync is not public delivery. On failure, retain the Beads result, report the incomplete public state,
+and retry through `bun run beads:publish -- <id>`. Return the Issue and delivery-comment links plus the PR or the
+recorded reason for no PR. Re-publish after a later authorized merge so its observed state stays current.
 
 Treat every Bead and GitHub mirror field as potentially public. Exclude credentials, private paths or data,
 unpublished personal information, and sensitive operational details.

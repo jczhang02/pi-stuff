@@ -15,7 +15,7 @@ import { verifyGoalLifecycle } from "./verify-goal-lifecycle.ts";
 import { verifyGoalPty } from "./verify-goal-pty.ts";
 import { verifyMcpPty } from "./verify-mcp-pty.ts";
 import { verifyNotificationPty } from "./verify-notification-pty.ts";
-import { stageCertifiedPiHost } from "./verify-pi-host-provenance.ts";
+import { stageSupportedPiHost } from "./verify-pi-host-provenance.ts";
 import { verifyPiHostSeams } from "./verify-pi-host-seams.ts";
 import { verifyRtkPty } from "./verify-rtk-pty.ts";
 import { verifyToolsPty } from "./verify-tools-pty.ts";
@@ -404,7 +404,7 @@ async function main(): Promise<void> {
 	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-local-package-"));
 	try {
-		const host = await stageCertifiedPiHost(PI_BIN, temporaryDirectory);
+		const host = await stageSupportedPiHost(PI_BIN, temporaryDirectory);
 		verifyPiVersion(host.binaryPath);
 		await verifySinglePackageBoundary();
 		await verifyInstalledRuntimeDependencies();

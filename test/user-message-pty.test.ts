@@ -6,7 +6,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { writePtyEvidence } from "../scripts/ui-pty-interactions.js";
 import { createCase, TmuxPiSession } from "../scripts/ui-pty-session.js";
-import { stageCertifiedPiHost } from "../scripts/verify-pi-host-provenance.js";
+import { stageSupportedPiHost } from "../scripts/verify-pi-host-provenance.js";
 
 const PROMPT = "USER_MESSAGE_PTY_PROMPT 中文🧪 /skill:humanizer-zh";
 const LABEL = "  /skill:humanizer-zh";
@@ -65,7 +65,7 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 			let session: TmuxPiSession | undefined;
 			try {
 				const { PI_BIN = "/opt/bin/pi", PI_STUFF_UI_PTY_ARTIFACT_DIR } = process.env;
-				const host = await stageCertifiedPiHost(PI_BIN, directory);
+				const host = await stageSupportedPiHost(PI_BIN, directory);
 				const packagePath = resolve(import.meta.dir, "../packages/pi-stuff");
 				const paths = await createCase(directory, "user-message", theme, packagePath);
 				await writeFile(

@@ -1,4 +1,4 @@
-<!-- translation-source: AGENTS.md; translation-source-sha256: c11a049650c1c4081da24cdce63f0ca0959959e64be3d77064f05d2c792dafb4 -->
+<!-- translation-source: AGENTS.md; translation-source-sha256: 816cb604d12674a2d6de637130373f1318cd408366f7d1dcf57cb39ead08f324 -->
 
 # 仓库指令
 
@@ -9,7 +9,7 @@
 
 - 修改代码前，阅读 `CONTEXT.md`、相关已接受 ADR 和 `docs/compatibility.md`。
 - 执行质量、重构、fork 集成或源码精简工作前，还要阅读 `docs/code-quality.md`。
-- 修改可见界面时，还要阅读 `DESIGN.md` 与负责该界面的 Module README 或 ADR。处理工作项时，阅读
+- 修改可见界面时，还要阅读 `DESIGN.md` 与负责该界面的 Module README 或 ADR。处理工作项时（包括通过任意 skill 交付或关闭），阅读
   `docs/agents/issue-tracker.md`。
 - 使用词汇表中的规范术语。持久术语或架构决策要写入 `CONTEXT.md` 或 ADR，不能只留在 Session 历史中。
 
@@ -69,6 +69,9 @@
   遵守公开数据政策；绝不能把 transcript 内容或敏感 Session 数据粘贴进 Beads。
 - 绝不能提交凭据、auth、model store、Session、cache、`.env`、机器状态或私有绝对路径。安装 Suite 必须由
   维护者显式运行 `pi install`；Suite 代码不得自行安装。
+
+报告公开交付完成前，必须取得 `bun run beads:publish` 返回的已验证 GitHub 交付评论，
+并按 issue-tracker 契约包含 commit/PR 引用、关联 Issue、验收和明确的合并状态。
 
 Beads 是规范 issue tracker；GitHub Issues 是只向外推送的公开镜像和外部入口。五个规范 label 与单 context
 domain 布局定义在 `docs/agents/` 下。

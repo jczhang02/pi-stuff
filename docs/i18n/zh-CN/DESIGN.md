@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 778e1914bcc94888407555745d7664b2984ab501355b6541c14660fc40d2be76 -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: d7b789ab71a84d3928cc39bf8334580ecc96f8a493bec3b24e94e6ac58177fd2 -->
 
 ---
 version: alpha
@@ -155,9 +155,13 @@ Todo、Agent roster、Statusline、Conversation Transcript 和 Command Dialog �
 状态只能有一个可见的权威来源，不能在常驻仪表盘里重复显示。共享 Statusline 中按条件出现的 Goal 段是
 当前 Goal 唯一的紧凑常驻权威；Goal 生命周期通知仍是按时间排列的 Transcript 事件，Command Dialog 则负责
 检查和控制。已接受的终止 Goal Tool row 只显示机器结果；随后出现的 Goal Final Response 是唯一详细结果，
-不会再由终止通知重复。Ponytail 遵循同一边界：`󱖿 <mode>` 是唯一的常驻模式权威，Working Row 仍是 Agent 活动的唯一
+不会再由终止通知重复。Ponytail 遵循同一边界：`󱖿 <mode>` 是唯一的常驻模式权威，Host 运行指示器仍是 Agent 活动的唯一
 权威，`/ponytail` 负责控制。它的 Dialog 会临时隐藏组合后的 Footer、保留编辑器草稿，并显示环境变量覆盖，
 但不会把这些覆盖项伪装成可写设置。
+
+原生 Vibe Line Spinner 与运行提示只在编辑器顶部边框出现一次，使用 Pi 的 thinking 等级配色、裁剪和动画。
+Conversation UI 通过输入包装器保留这项 Host 能力，不增加第二条运行行、计时器或状态存储。完成、取消、
+Command Dialog 恢复与 reload 保留 Host 生命周期所有权；现有输入高亮、补全与草稿行为保持不变。
 
 Statusline 只使用 Nerd Font。固定语法依次为：`󱙺` model、`` Thinking、`` Fast、`󰉋` directory、
 ``/``/`` branch tracking、``/``/`󰏫`/`󰝒` Git state、`󰌨` Context、`󰆼` cache、

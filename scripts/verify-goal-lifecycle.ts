@@ -173,7 +173,7 @@ interface GoalLifecycleEnvironment {
 function environment(temporaryDirectory: string, scenario: Scenario, logPath: string): GoalLifecycleEnvironment {
 	const { PATH: path } = process.env;
 	if (!path) throw new Error("PATH is required to start the Pi host");
-	return {
+	const result: GoalLifecycleEnvironment = {
 		HOME: join(temporaryDirectory, "home"),
 		LANG: "C.UTF-8",
 		LC_ALL: "C.UTF-8",
@@ -184,7 +184,6 @@ function environment(temporaryDirectory: string, scenario: Scenario, logPath: st
 		PI_OFFLINE: "1",
 		PI_STUFF_GOAL_LIFECYCLE_LOG: logPath,
 		PI_STUFF_CODE_MODE_DEFAULT: scenario === "code-mode" ? "on" : "off",
-		PI_STUFF_CODE_MODE_HOST: codeModeHostBinaryPath(),
 		PI_STUFF_GOAL_LIFECYCLE_SCENARIO: scenario,
 		PI_TELEMETRY: "0",
 		TERM: "dumb",
@@ -193,6 +192,8 @@ function environment(temporaryDirectory: string, scenario: Scenario, logPath: st
 		XDG_DATA_HOME: join(temporaryDirectory, "data"),
 		XDG_STATE_HOME: join(temporaryDirectory, "state"),
 	};
+	if (scenario === "code-mode") Object.assign(result, { PI_STUFF_CODE_MODE_HOST: codeModeHostBinaryPath() });
+	return result;
 }
 
 function parseRecords(stdout: string): RpcRecord[] {

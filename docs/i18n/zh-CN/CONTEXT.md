@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 135468d15f433a458232a85fe09b15102db4fee4490393b4a8d1db83b8e1b99e -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 0672309928b0c7a3a8101a8df4b7741bbf7e402d7d860a3187c612426d986540 -->
 
 # Pi Stuff
 
@@ -94,8 +94,8 @@ namespace；合并文件、lock 与 atomic write 仍是共享基础设施。
 _避免使用_：Capability settings file、global config
 
 **Vibe Line Spinner**：
-Host 处理 Agent 工作时，Pi 的 Working Row 中由 Host 拥有的动画字符。它是活性信号，不等同于 Working Row
-本身、Thinking 对话记录内容或其他 Conversation UI 内容。
+指示 Agent 工作正在进行的 Host 原生动画字符。它是活性信号，与运行提示、Thinking 对话记录内容及其他
+Conversation UI 内容不同。
 _避免使用_：Vibe Line、Working Row、Thinking 显示
 
 **Logical Thinking Run**：

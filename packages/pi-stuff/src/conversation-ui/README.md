@@ -33,7 +33,8 @@ completion, and Tool running timer.
   Skill-only input, use one card; native `Ctrl+O` expands instructions after the prompt. The version-bound adapter
   preserves canonical messages and releases on Session shutdown/reload; exceptional presentation failure keeps native
   messages, disables further projection for that Session, and reports once through `/diagnostics`.
-- Native-editor input highlighting and slash completion.
+- Native-editor input highlighting and slash completion, with Pi's spinner and working message embedded once in the
+  top border. Pi owns thinking-level colors, clipping, animation, and cleanup; dialogs and reload preserve the editor.
 - Host-owned Thinking shown as one latest native Markdown row or the hidden `• thoughts` label, preserving native
   mouse and keyboard visibility controls; plus `chart` or `tree` Markdown projections.
 - Full-width Command Dialogs that restore the editor draft on close.

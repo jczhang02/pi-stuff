@@ -8,12 +8,7 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { requireJsonInputValue } from "../packages/pi-stuff/src/shared/json-value.js";
-import {
-	CERTIFIED_PI_HOST_PROFILE,
-	CERTIFIED_PI_RELEASE_BINARY_SHA256,
-	CERTIFIED_PI_RELEASE_BINARY_SIZE,
-	CERTIFIED_PI_VERSION,
-} from "./pi-host-contract.js";
+import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import {
 	evaluateSkillDiscoveryBenchmark,
 	parseSkillDiscoveryManifest,
@@ -23,7 +18,7 @@ import {
 } from "./skill-discovery-benchmark-core.js";
 import { assertSanitizedSkillDiscoveryReport } from "./skill-discovery-benchmark-report.js";
 import { runSkillDiscoverySession, SKILL_DISCOVERY_TIMEOUTS } from "./skill-discovery-benchmark-session.js";
-import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
+import { verifyPiHostVersion } from "./verify-pi-host-provenance.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const PROVIDER = "openai-codex";
@@ -54,8 +49,6 @@ const RUN_LOCK_SCHEMA = Type.Object({
 	candidatePackageTree: Type.String({ pattern: "^[0-9a-f]{40}$" }),
 	contextMode: Type.Literal("native"),
 	host: Type.Object({
-		binarySha256: Type.String(),
-		binarySize: Type.Number(),
 		profile: Type.String(),
 		version: Type.String(),
 	}),
@@ -169,7 +162,7 @@ async function preflight(
 	readonly lock: SkillDiscoveryRunLock;
 	readonly manifest: SkillDiscoveryManifest;
 }> {
-	await verifyPiHostProvenance(piBinary);
+	await verifyPiHostVersion(piBinary);
 	if (!isAbsolute(authFile) || !(await lstat(authFile)).isFile()) fail("--auth must name an absolute regular file");
 	const lock = parseRunLock(await readFile(join(ROOT, LOCK_PATH), "utf8"));
 	if (
@@ -179,9 +172,7 @@ async function preflight(
 		lock.contextMode !== CONTEXT_MODE ||
 		lock.reportPath !== REPORT_PATH ||
 		lock.host.version !== CERTIFIED_PI_VERSION ||
-		lock.host.profile !== CERTIFIED_PI_HOST_PROFILE ||
-		lock.host.binarySha256 !== CERTIFIED_PI_RELEASE_BINARY_SHA256 ||
-		lock.host.binarySize !== CERTIFIED_PI_RELEASE_BINARY_SIZE
+		lock.host.profile !== CERTIFIED_PI_HOST_PROFILE
 	)
 		fail("Run Lock does not match the preregistered Host/model/report configuration");
 	if (git("status", "--porcelain=v1", "--untracked-files=all")) fail("candidate worktree is dirty");
