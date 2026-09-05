@@ -32,11 +32,26 @@ change WebSocket/SSE selection.
   completion of the overall repair. Independently verified fixes may be committed separately, but do not certify the
   whole integration. Differential acceptance must distinguish intended Suite behavior from unintended differences.
 
+## Confirmed recovery boundaries
+
+A failed Worker may restart automatically and reconstruct its state from the persisted Pi Session and Magic store.
+Recovery must verify Session ownership, the current input, and committed compaction results. This is state recovery,
+not full history recomposition, and must not become a restart loop. Restart limits belong to the shared recovery budget.
+
+If compaction acknowledgement is lost, inspect durable completion evidence before retrying. Reuse a confirmed result;
+retry only when the operation is confirmed incomplete and safe to repeat. If completion remains uncertain, preserve
+work and stop with an explanation rather than treating missing acknowledgement as proof that no mutation occurred.
+
+Before Pi's automatic post-compaction Provider retry, Magic may perform multiple internal compression steps only while
+each step makes measurable progress and compressible history remains. All steps share one finite recovery budget.
+No progress ends recovery. If the subsequent Provider retry also overflows, preserve work and stop; do not add another
+foreground retry loop or bypass Pi's consecutive-overflow guard.
+
 ## Open decisions
 
-The interview still needs to settle recoverable Worker failures, interrupted compaction with uncertain completion,
-progress and exhaustion rules, cancellation and queued input behavior, and recovery presentation. These decisions
-must be checked against actual Pi and Magic capabilities before implementation is accepted.
+The interview still needs to settle budget values and accounting, progress measurement, cancellation and queued input
+behavior, and recovery presentation. The confirmed recovery boundaries still require feasibility validation against
+actual Pi and Magic capabilities before implementation is accepted.
 
 This proposal would replace incompatible fallback and estimate-only rejection policies in
 [ADR 0026](0026-bound-context-managed-provider-requests.md). Until the design is accepted and implemented, current

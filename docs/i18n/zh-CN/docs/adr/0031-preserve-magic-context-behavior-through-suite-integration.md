@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0031-preserve-magic-context-behavior-through-suite-integration.md; translation-source-sha256: c0fd51729d2c75b98a60f0003b9220a28d07355c16cfc717fd55f75b10a40281 -->
+<!-- translation-source: docs/adr/0031-preserve-magic-context-behavior-through-suite-integration.md; translation-source-sha256: 7bd5a7b92cbb29273fe6271ebf7f53fe7018cf6890a9632c04a187df3f9a725c -->
 
 ---
 status: proposed
@@ -28,10 +28,22 @@ WebSocket/SSE 选择。
 - 可能影响消息、压缩结果、取消或工作现场保留的未解释差异，阻止整项修复完成。独立验证的局部修复可以单独
   提交，但不能证明整个集成已可靠。差分验收必须区分有意保留的 Suite 行为与非预期差异。
 
+## 已确认恢复边界
+
+Worker 失败后可以自动重启，并从已持久化的 Pi Session 和 Magic 存储恢复状态。恢复时必须核对 Session 归属、
+当前输入和已提交的压缩结果。这是状态恢复，不是完整历史重建，也不能变成循环重启。重启限制计入统一恢复预算。
+
+压缩确认丢失时，必须先核对持久化的完成证据。确认完成则复用结果；只有确认未完成并且可以安全重复时才重试。
+如果完成状态始终不明，就保留工作现场并说明原因后停止，不能将未收到确认视为没有发生写入。
+
+在 Pi 自动发出压缩后的 Provider 重试请求之前，Magic 可以执行多个内部压缩步骤，前提是每一步确有可测量进展，
+且仍有可压缩历史。所有步骤共享一个有限恢复预算。没有进展则结束恢复。如果随后的 Provider 重试仍然超限，
+必须保留现场并停止，不另建前台重试循环，也不绕过 Pi 对连续超限的限制。
+
 ## 待决事项
 
-讨论仍需确定可恢复的 Worker 故障、完成状态不明确的压缩中断、进展和耗尽规则、取消与排队输入行为，以及恢复
-过程的显示。接受实现之前，必须根据 Pi 和 Magic 的实际能力核验这些决策。
+讨论仍需确定预算数值与计数方式、进展测量、取消与排队输入行为，以及恢复过程的显示。接受实现之前，
+仍须根据 Pi 和 Magic 的实际能力验证已确认恢复边界的可行性。
 
 本提案拟替换 [ADR 0026](0026-bound-context-managed-provider-requests.md) 中不兼容的兜底和仅凭估计拦截策略。
 在设计被接受并实现之前，当前行为仍单独记录；本草案不表示 Magic 独占恢复已经交付。
