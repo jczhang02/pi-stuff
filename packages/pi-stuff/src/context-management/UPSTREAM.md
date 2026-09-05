@@ -20,7 +20,7 @@ binary; it does not alter upstream source or persist a derived artifact.
 ## Temporary tokenizer compatibility patch
 
 - Patch: [`patches/@cortexkit%2Fpi-magic-context@0.41.1.patch`](../../../../patches/@cortexkit%252Fpi-magic-context@0.41.1.patch)
-- Patch SHA-256: `74c7bcca7f3bd622d7794f6317301360d5a4fc528252a9f0ce2cc08cf611222f`
+- Patch SHA-256: `9c8361ee3bea8f4667f5aa298a85dc55cbfc0c0ba241eddcaff3f1b4ee120a9a`
 - Scope:
   - add the published module's `import.meta.url` ancestry and Bun isolated-linker `node_modules` root to the existing
     `ai-tokenizer` fallback search;
@@ -109,3 +109,9 @@ Historian failure, uncertain acknowledgement, no progress, repeated overflow, an
 These fixture Provider errors establish control flow, not live remote capacity. Remove this patch component only when
 an exact official artifact passes the same durable-completion and real-Host differential cases. Re-audit handler signal
 consumption, lease/publication atomicity, and summary boundaries on every upstream upgrade.
+
+
+The Pi Historian also records its three pre-chunk no-op exits as `noop`, matching their existing log messages and the
+existing post-filter/budget no-op contract. Previously those returns retained the default `failed` telemetry status,
+causing the real acceptance gate to reject otherwise successful runs. This changes outcome accounting, with no new
+compression or retry behavior. The real Provider gate checks that genuine Historian failures remain absent.

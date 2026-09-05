@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { createAssistantMessage } from "../test/fixtures/faux-provider.js";
@@ -176,12 +177,14 @@ function environment(temporaryDirectory: string, scenario: Scenario, logPath: st
 		HOME: join(temporaryDirectory, "home"),
 		LANG: "C.UTF-8",
 		LC_ALL: "C.UTF-8",
+		MAGIC_CONTEXT_PI_SUBAGENT: "1",
 		NO_COLOR: "1",
 		PATH: path,
 		PI_CODING_AGENT_DIR: join(temporaryDirectory, "agent"),
 		PI_OFFLINE: "1",
 		PI_STUFF_GOAL_LIFECYCLE_LOG: logPath,
 		PI_STUFF_CODE_MODE_DEFAULT: scenario === "code-mode" ? "on" : "off",
+		PI_STUFF_CODE_MODE_HOST: codeModeHostBinaryPath(),
 		PI_STUFF_GOAL_LIFECYCLE_SCENARIO: scenario,
 		PI_TELEMETRY: "0",
 		TERM: "dumb",

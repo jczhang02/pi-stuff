@@ -93,7 +93,31 @@ diff --git a/dist/index.js b/dist/index.js
        kind: draft.kind,
        tokens,
        uTokens,
-@@ -22215,6 +22215,7 @@
+@@ -21874,6 +21874,7 @@
+       let boundarySnapshot = providedBoundarySnapshot ?? null;
+       if (!boundarySnapshot) {
+         sessionLog(sessionId, "historian no-op: missing protected-tail boundary snapshot from Pi trigger decision");
++        telemetry.status = "noop";
+         return;
+       }
+       let validation = boundarySnapshot.rawRangeFingerprint.length > 0 ? validateBoundarySnapshot({
+@@ -21896,6 +21897,7 @@
+       }
+       if (!validation.ok) {
+         sessionLog(sessionId, `historian no-op: stale protected-tail snapshot (${validation.detail ?? validation.reason ?? "unknown"})`);
++        telemetry.status = "noop";
+         return;
+       }
+       const protectedTailStart = boundarySnapshot.protectedTailStart;
+@@ -21909,6 +21911,7 @@
+           recordHighPressureNoEligibleHead(db, boundarySnapshot);
+         }
+         clearEmergencyDrainLatch(db, sessionId);
++        telemetry.status = "noop";
+         return;
+       }
+       const perRunCap = selectPerRunCap(boundarySnapshot);
+@@ -22215,6 +22218,7 @@
          rollbackDrainReservation();
          return;
        }
@@ -101,7 +125,7 @@ diff --git a/dist/index.js b/dist/index.js
        let published = false;
        db.exec("BEGIN IMMEDIATE");
        try {
-@@ -24412,47 +24413,6 @@
+@@ -24412,47 +24416,6 @@
    else
      lookup.entryIdsByFingerprint.set(fingerprint, [row.id]);
  }
@@ -149,7 +173,7 @@ diff --git a/dist/index.js b/dist/index.js
  function stripMcOwnedPiCompactionSummary(messages, entryIds, branchEntries) {
    const summaryMessage = messages[0];
    if (summaryMessage?.role !== "compactionSummary")
-@@ -24483,8 +24443,7 @@
+@@ -24483,8 +24446,7 @@
      return cached;
    const lookup = {
      entryIdByMessageRef: new Map,
@@ -159,6 +183,16 @@ diff --git a/dist/index.js b/dist/index.js
    };
    for (const entry of entries)
      addPiBranchEntryToLookup(lookup, entry);
+@@ -24568,9 +24530,6 @@
+         const id = entry.id;
+         cached.indexById.set(id, cached.entries.length + index);
+         addPiBranchEntryToLookup(cached.lookup, entry);
+-        if (isPiContextEmitEligible(entry)) {
+-          cached.lookup.alignedEntryIds.push(entry.id);
+-        }
+       }
+       const projection = {
+         leafId,
 @@ -24834,9 +24793,9 @@
        const unregisterRaw = setRawMessageProvider(sessionId, rawMessageProvider);
        rawMessageProviderUnregistersBySession.set(sessionId, unregisterRaw);

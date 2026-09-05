@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 581e4f06dad919741acc7ae1693e26a5540c6eb5c3c5d69aefc525f9e5ece9e3 -->
+<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 8fa8c00e2ce37ac89bb1b99af4d1fd71aa2b995f241aba9c8dbe7045fefbc8c3 -->
 
 # 捆绑上下文引擎来源
 
@@ -19,7 +19,7 @@ Pi Stuff 通过本适配器集成官方 Magic Context Package，不内嵌 Magic 
 ## 临时 tokenizer 兼容补丁
 
 - 补丁：[`patches/@cortexkit%2Fpi-magic-context@0.41.1.patch`](../../../../../../../patches/@cortexkit%252Fpi-magic-context@0.41.1.patch)
-- 补丁 SHA-256：`74c7bcca7f3bd622d7794f6317301360d5a4fc528252a9f0ce2cc08cf611222f`
+- 补丁 SHA-256：`9c8361ee3bea8f4667f5aa298a85dc55cbfc0c0ba241eddcaff3f1b4ee120a9a`
 - 范围：
   - 把已发布模块的 `import.meta.url` 祖先路径和 Bun isolated-linker 的 `node_modules` 根目录加入现有
     `ai-tokenizer` 回退搜索；
@@ -92,3 +92,8 @@ Pi 适配器现在每次投影都使用 Magic 已有的对象引用与唯一指�
 重复超限，以及原生取消/队列语义一致性。夹具 Provider 错误证明控制流程，不证明真实远端容量。
 只有精确官方产物通过相同的持久化完成及真实 Host 差分用例，才移除此补丁部分。每次上游升级重新审计信号读取、
 租约/发布原子性和摘要边界。
+
+
+Pi Historian 的三个分块前 no-op 返回现记为 `noop`，与原有日志及分块过滤/额度不足时的 no-op 契约一致。
+此前这些返回保留默认 `failed` 统计状态，使真实验收拒绝本已成功的运行。变更只修正结果记账，不增加压缩或重试行为。
+真实 Provider 门槛继续检查没有真正的 Historian 失败。

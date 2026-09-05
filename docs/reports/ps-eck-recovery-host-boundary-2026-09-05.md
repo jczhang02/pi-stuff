@@ -11,6 +11,17 @@ The pinned upstream Pi adapter incorrectly treated equal message counts as proof
 compaction summary and a persisted failed Assistant response can cancel the count difference while shifting identity.
 The patch removes that shortcut and always uses Magic's existing reference/unique-fingerprint resolver.
 
+The earlier causal A/B used authenticated Pi 0.84.4 and a reconstructed incident state. Both arms began with the same
+request hash. After an injected connection loss, the faulty retry grew from 371,210 to 5,397,756 bytes and received a
+real Provider overflow while displayed usage remained 49.695%. With only the identity correction, retry remained
+371,210 bytes and succeeded. This proves the causal mechanism; it does not reconstruct the exact historical rejected
+payload or database state. Final release certification uses Pi 0.85.0 separately.
+
+Final log auditing found incomplete removal of the shortcut: incremental branch updates still called the removed
+eligibility helper and appended to the removed positional list. The patch now removes that obsolete update too. The
+real Worker retained-summary regression additionally rejects any branch-projection failure, so identical fallback
+results cannot hide a broken incremental path.
+
 The earlier Suite policy introduced independent failures: native fallback changed compression ownership, while a 95%
 local estimate gate rejected requests without evidence of real Provider overflow. The new adapter keeps Magic exclusive,
 removes its extra Provider projection reuse cache, and treats estimates as display information. A small pinned upstream

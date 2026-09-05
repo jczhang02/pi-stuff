@@ -696,6 +696,7 @@ test("Magic retry preserves tags when a retained summary and persisted failure c
 		state.currentLeafId = "failed";
 		const retried = await project({ type: "context", messages: structuredClone(messages) }, ctx);
 		expect(retried).toEqual(initial);
+		expect(await readFile(harness.magicLog, "utf8")).not.toContain("Pi branch projection failed:");
 	} finally {
 		await requireHandler(handlers, "session_shutdown")({ type: "session_shutdown", reason: "quit" }, ctx);
 		await foundation.shutdown();
