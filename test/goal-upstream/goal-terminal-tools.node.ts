@@ -3,14 +3,18 @@ import test from "node:test";
 import {
 	assertHardenedGoalPrompt,
 	assertPromptHasGoalId,
+	assistantUsageEntry,
 	completionEvidenceRejectionReason,
 	completionReport,
 	createMockContext,
 	createMockPi,
+	cumulativeAssistantTokens,
 	escapeRegExp,
+	findPersistedGoal,
 	GOAL_CONTEXT_MESSAGE_TYPE,
 	GOAL_PROMPT_MESSAGE_TYPE,
 	goalStatusSnapshot,
+	goalToolText,
 	isContradictoryCompletionSummary,
 	isRuntimeString,
 	lastGoalStatus,
@@ -277,8 +281,11 @@ test("goal_complete rejects contradictory summaries and accepts verified complet
 		ctx,
 	);
 
-	assert.equal(accepted.terminate, true);
-	assert.equal(accepted.content?.[0]?.text, "Goal complete: Implemented and verified with npm test.");
+	assert.equal(accepted.terminate, undefined);
+	const acceptedText = goalToolText(accepted);
+	assert.match(acceptedText, /^Goal complete: Implemented and verified with npm test./u);
+	assert.match(acceptedText, /send the user a concise final response now/i);
+	assert.doesNotMatch(acceptedText, /token budget used/i);
 	assert.doesNotMatch(notifications.at(-1)?.message ?? "", /^Goal complete:/u);
 	assert.equal(lastGoalStatus(mock), null);
 
@@ -295,6 +302,40 @@ test("goal_complete rejects contradictory summaries and accepts verified complet
 	assert.equal(lastGoalStatus(mock), null);
 	mock.emitHostEvent("session_shutdown", {}, ctx);
 });
+
+for (const budget of ["--tokens 10k ", ""]) {
+	test(`goal_complete reports usage with budget ${budget || "absent"}`, async () => {
+		const branch: object[] = [];
+		const started = await startGoalForTest(
+			{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
+			`${budget}finish`,
+		);
+		started.mock.callEvent(
+			"before_agent_start",
+			{ prompt: started.mock.sentUserMessages[0]?.text ?? "", systemPrompt: "base" },
+			started.ctx,
+		);
+		const goal = requireLastGoal(started.mock);
+		goal.timeUsedSeconds = 65;
+		goal.activeStartedAt = undefined;
+		branch.push(assistantUsageEntry({ totalTokens: 2_500 }));
+		assert.equal(goal.baselineTokens, 0);
+		assert.equal(cumulativeAssistantTokens(branch), 2_500);
+
+		const result = await requireGoalTool(started.mock, "goal_complete").execute(
+			"complete-with-usage",
+			completionReport(goal.id, "Implemented and verified with the focused test."),
+			new AbortController().signal,
+			() => undefined,
+			started.ctx,
+		);
+
+		const resultText = goalToolText(result);
+		assert.match(resultText, budget ? /Token budget used: 2\.5k\/10k\./u : /Tokens used: 2\.5k\./u);
+		assert.match(resultText, /Elapsed time: 1m\./u);
+		assert.match(resultText, /every usage fact above/u);
+	});
+}
 
 test("completion evidence accepts concrete Chinese observations without source inspection", () => {
 	assert.equal(
@@ -532,6 +573,7 @@ test("goal_blocked stops an audited goal and rejects later terminal reports", as
 	const currentGoal = requireLastGoal(blocked.mock);
 	const blockerReason = "Repository access requires the user";
 	primeBlockerAudit(currentGoal, blockerReason);
+	const notificationsBeforeAccepted = blocked.notifications.length;
 	const accepted = await blockerTool.execute(
 		"block-accepted",
 		{
@@ -546,18 +588,16 @@ test("goal_blocked stops an audited goal and rejects later terminal reports", as
 		blocked.ctx,
 	);
 
-	assert.equal(accepted.terminate, true);
-	assert.match(accepted.content?.[0]?.text ?? "", /goal blocked/i);
+	assert.equal(accepted.terminate, undefined);
+	const acceptedText = goalToolText(accepted);
+	assert.match(acceptedText, /goal blocked/i);
+	assert.match(acceptedText, /send the user a concise final response now/i);
 	assert.equal(lastGoalStatus(blocked.mock), "blocked");
 	assert.equal(goalStatusSnapshot(blocked.mock.pi)?.status, "blocked");
-	assert.match(blocked.notifications.at(-1)?.message ?? "", /goal blocked/i);
-	assert.deepEqual(
-		blocked.mock.callEvent(
-			"tool_call",
-			{ toolName: "bash", toolCallId: "stale-after-block", input: {} },
-			blocked.ctx,
-		),
-		{ block: true, reason: STALE_GOAL_TOOL_REASON },
+	assert.equal(blocked.notifications.length, notificationsBeforeAccepted);
+	assert.equal(
+		blocked.mock.callEvent("tool_call", { toolName: "bash", toolCallId: "tool-after-block", input: {} }, blocked.ctx),
+		undefined,
 	);
 
 	const completion = await completionTool.execute(
@@ -587,3 +627,87 @@ test("goal_blocked stops an audited goal and rejects later terminal reports", as
 	assert.match(alreadyStopped.content?.[0]?.text ?? "", /blocked, not active/i);
 	assert.equal(alreadyStopped.terminate, undefined);
 });
+
+for (const tokens of [9, 10, 12]) {
+	for (const toolName of ["goal_complete", "goal_blocked"]) {
+		test(`${toolName} checks newly recorded usage ${tokens}/10 before final response`, async () => {
+			const branch: object[] = [];
+			let aborts = 0;
+			const started = await startGoalForTest(
+				{
+					sessionManager: { getBranch: () => branch, getEntries: () => branch },
+					abort: () => {
+						aborts += 1;
+					},
+				},
+				"--tokens 10 finish",
+			);
+			const goal = requireLastGoal(started.mock);
+			const reason = "Repository access requires the user";
+			if (toolName === "goal_blocked") primeBlockerAudit(goal, reason);
+			branch.push(assistantUsageEntry({ totalTokens: tokens }));
+			const result = await requireGoalTool(started.mock, toolName).execute(
+				"terminal-budget-boundary",
+				toolName === "goal_complete"
+					? completionReport(goal.id, "Implemented and verified with the focused test.")
+					: {
+							goal_id: goal.id,
+							reason,
+							repeated_turns: 3,
+							attempt: "Requested access through the configured hardware agent socket.",
+							evidence: "The hardware agent socket returned an explicit access-denied response.",
+						},
+				new AbortController().signal,
+				() => undefined,
+				started.ctx,
+			);
+			assert.equal(result.terminate, tokens >= 10 ? true : undefined);
+			assert.equal(aborts, tokens >= 10 ? 1 : 0);
+			assert.equal(/send the user a concise final response/i.test(goalToolText(result)), tokens < 10);
+			const terminal = findPersistedGoal(started.mock, toolName === "goal_complete" ? "complete" : "blocked");
+			assert.equal(terminal?.tokensUsed, tokens);
+			started.mock.emitHostEvent("session_shutdown", {}, started.ctx);
+		});
+	}
+}
+
+for (const action of ["resume", "edit revised objective"]) {
+	test(`blocked usage stays frozen through status and ${action}`, async () => {
+		const branch: object[] = [];
+		const started = await startGoalForTest(
+			{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
+			"--tokens 10 finish",
+		);
+		const goal = requireLastGoal(started.mock);
+		const reason = "Repository access requires the user";
+		primeBlockerAudit(goal, reason);
+		branch.push(assistantUsageEntry({ totalTokens: 9 }));
+		await requireGoalTool(started.mock, "goal_blocked").execute(
+			"block-before-report",
+			{
+				goal_id: goal.id,
+				reason,
+				repeated_turns: 3,
+				attempt: "Requested access through the configured hardware agent socket.",
+				evidence: "The hardware agent socket returned an explicit access-denied response.",
+			},
+			new AbortController().signal,
+			() => undefined,
+			started.ctx,
+		);
+		branch.push(assistantUsageEntry({ totalTokens: 2 }));
+		await started.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, started.ctx);
+		await started.mock.commands.get("goal")?.handler("status", started.ctx);
+		assert.equal(requireLastGoal(started.mock).tokensUsed, 9);
+		await started.mock.commands.get("goal")?.handler(action, started.ctx);
+		if (action.startsWith("edit")) {
+			assert.equal(lastGoalStatus(started.mock), "blocked");
+			await started.mock.commands.get("goal")?.handler("resume", started.ctx);
+		}
+		assert.equal(lastGoalStatus(started.mock), "active");
+		branch.push(assistantUsageEntry({ totalTokens: 1 }));
+		await started.mock.callEvent("tool_execution_end", { toolName: "read", isError: false }, started.ctx);
+		assert.equal(requireLastGoal(started.mock).tokensUsed, 10);
+		started.mock.emitHostEvent("session_shutdown", {}, started.ctx);
+	});
+}

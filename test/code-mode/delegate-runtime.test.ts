@@ -232,7 +232,7 @@ test("a durable approval decision pauses before the nested Tool can execute", as
 	runtime.clear();
 });
 
-test("a failed durable success record is settled as an error instead of staying in flight", async () => {
+test("a failed durable success record is never rewritten as an ordinary Tool error", async () => {
 	const responses: unknown[] = [];
 	const settlements: string[] = [];
 	const runtime = await delegateRuntime((message) => responses.push(message));
@@ -278,14 +278,14 @@ test("a failed durable success record is settled as an error instead of staying 
 	});
 	for (let attempt = 0; attempt < 20 && responses.length === 0; attempt += 1) await Bun.sleep(1);
 
-	expect(settlements).toEqual(["success", "error"]);
+	expect(settlements).toEqual(["success"]);
 	expect(responses).toEqual([
 		{ id: 10, result: { message: "ledger full", status: "error" }, type: "delegate/response" },
 	]);
 	runtime.clear();
 });
 
-test("an unserializable Tool result settles as an error before durable success", async () => {
+test("an unserializable post-effect Tool result reports an incomplete settlement", async () => {
 	const responses: unknown[] = [];
 	const settlements: string[] = [];
 	const cyclic: unknown[] = [];
@@ -331,7 +331,7 @@ test("an unserializable Tool result settles as an error before durable success",
 	});
 	for (let attempt = 0; attempt < 20 && responses.length === 0; attempt += 1) await Bun.sleep(1);
 
-	expect(settlements).toEqual(["error"]);
+	expect(settlements).toEqual(["incomplete"]);
 	expect(responses).toEqual([
 		{
 			id: 12,

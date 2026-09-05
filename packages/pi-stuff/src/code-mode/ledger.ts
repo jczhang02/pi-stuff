@@ -76,12 +76,33 @@ function isLedgerEntry(entry: SessionEntry): entry is Extract<SessionEntry, { ty
 function loadSnapshot(context: ExtensionContext): LedgerSnapshot {
 	const state = createLedgerSnapshot();
 	for (const entry of context.sessionManager.getBranch?.() ?? context.sessionManager.getEntries()) {
-		if (!isLedgerEntry(entry) || !isJsonSourceValue(entry.data)) continue;
-		const event = eventFrom(entry.data);
-		if (event) applyEvent(state, event);
+		applyEntry(state, entry);
 	}
 	trimTerminalExecutions(state);
 	return state;
+}
+
+function applyEntry(state: LedgerSnapshot, entry: SessionEntry): void {
+	if (!isLedgerEntry(entry) || !isJsonSourceValue(entry.data)) return;
+	const event = eventFrom(entry.data);
+	if (event) applyEvent(state, event);
+}
+
+function appendedEntries(
+	manager: ExtensionContext["sessionManager"],
+	leafId: string | null,
+	previousLeafId: string | null,
+): SessionEntry[] | undefined {
+	const entries: SessionEntry[] = [];
+	let cursor = leafId;
+	while (cursor !== previousLeafId) {
+		if (cursor === null) return undefined;
+		const entry = manager.getEntry?.(cursor);
+		if (!entry) return undefined;
+		entries.push(entry);
+		cursor = entry.parentId;
+	}
+	return entries.reverse();
 }
 
 export class CodeModeIncompleteExecutionError extends Error {
@@ -352,10 +373,18 @@ export class CodeModeSessionLedger {
 		if (
 			leafId !== undefined &&
 			this.cache?.sessionManager === scope.context.sessionManager &&
-			this.cache.sessionId === scope.sessionId &&
-			this.cache.leafId === leafId
-		)
-			return this.cache.state;
+			this.cache.sessionId === scope.sessionId
+		) {
+			if (this.cache.leafId === leafId) return this.cache.state;
+			const entries = appendedEntries(scope.context.sessionManager, leafId, this.cache.leafId);
+			if (entries) {
+				const state = this.cache.state;
+				for (const entry of entries) applyEntry(state, entry);
+				trimTerminalExecutions(state);
+				this.storeCache(scope, state, leafId);
+				return state;
+			}
+		}
 		this.cache = undefined;
 		const state = loadSnapshot(scope.context);
 		if (leafId !== undefined) this.storeCache(scope, state, leafId);
@@ -463,6 +492,7 @@ export class CodeModeExecutionController {
 	}
 
 	private planCall(name: string, input: CodemodeValue, policy?: ReplayPolicy): RuntimeToolCallPlan {
+		if (this.incompleteError) throw this.incompleteError;
 		const sequence = this.cursor++;
 		const plan: RuntimeToolCallPlan = {
 			attempt: this.passAttempt,
@@ -569,6 +599,7 @@ export class CodeModeExecutionController {
 	}
 
 	completeToolCall = (plan: RuntimeToolCallPlan, settlement: RuntimeToolCallSettlement): void => {
+		if (this.incompleteError) throw this.incompleteError;
 		const call = this.execution.calls.get(plan.sequence);
 		if (
 			plan.executionId !== this.execution.executionId ||
@@ -578,26 +609,45 @@ export class CodeModeExecutionController {
 			call.status !== "running"
 		)
 			throw new Error("Code Mode Tool result has no matching running ledger call");
-		const result = settlement.result ? optionalPresentationValue(call.name, settlement.result) : undefined;
-		const value =
-			settlement.status === "success" && !result
-				? durableValue(`The result of ${call.name}`, settlement.value)
-				: undefined;
-		const event: CallSettledEvent = {
-			at: Date.now(),
-			callId: plan.id,
-			executionId: this.execution.executionId,
-			kind: "call-settled",
-			schemaVersion: 1,
-			status: settlement.status,
-		};
-		if (settlement.message) Object.assign(event, { error: settlement.message });
-		if (result) Object.assign(event, { result });
-		if (value) Object.assign(event, { value });
-		this.ledger.append(this.scope, this.state, event);
+		if (settlement.status === "incomplete") {
+			throw this.markIncomplete(settlement.message ?? "Tool completion could not be recorded");
+		}
+		try {
+			const result = settlement.result ? optionalPresentationValue(call.name, settlement.result) : undefined;
+			const value =
+				settlement.status === "success" && !result
+					? durableValue(`The result of ${call.name}`, settlement.value)
+					: undefined;
+			const event: CallSettledEvent = {
+				at: Date.now(),
+				callId: plan.id,
+				executionId: this.execution.executionId,
+				kind: "call-settled",
+				schemaVersion: 1,
+				status: settlement.status,
+			};
+			if (settlement.message) Object.assign(event, { error: settlement.message });
+			if (result) Object.assign(event, { result });
+			if (value) Object.assign(event, { value });
+			this.ledger.append(this.scope, this.state, event);
+		} catch (cause) {
+			throw this.markIncomplete(cause);
+		}
 	};
 
+	private markIncomplete(cause: unknown): CodeModeIncompleteExecutionError {
+		this.incompleteError ??= new CodeModeIncompleteExecutionError(
+			this.executionId,
+			`Code Mode completion could not be recorded after a possible effect: ${cause instanceof Error ? cause.message : String(cause)}. Inspect the effect before explicitly repeating or abandoning the work.`,
+		);
+		return this.incompleteError;
+	}
+
 	finish(status: CodeModeExecutionStatus, error?: string): void {
+		if (this.incompleteError) {
+			status = "incomplete";
+			error = this.incompleteError.message;
+		}
 		if (this.execution.status === status && this.execution.error === error) return;
 		const event: ExecutionSettledEvent = {
 			at: Date.now(),

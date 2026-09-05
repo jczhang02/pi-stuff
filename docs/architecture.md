@@ -60,14 +60,17 @@ diagnostics surface and are available through `/diagnostics`.
 
 | Lifecycle | Owner | Responsibility |
 | --- | --- | --- |
-| Foreground Agent work | Pi | Ordinary turns, model execution, and Host terminal behavior |
-| Goal continuation | Goal | Objective persistence, evidence gates, continuation, and Goal terminal policy |
+| Foreground Agent work | Pi | Ordinary turns, model execution, Goal Final Responses, and Host terminal behavior |
+| Goal continuation | Goal | Objective persistence, evidence gates, continuation, terminal-state persistence, and queue intent |
 | Delegated Agent execution | Agents | Child execution, supervision, and current-session Agent controls |
 | Background processes | Background Work | Background Shells, Monitors, output, and cancellation |
 | Context projection | Context Management | Retrieval, compaction, pressure handling, and history projection |
 
 These owners coordinate through bounded shared state and Pi extension events. A visible state has one UI authority so
 the Welcome card, Statusline, overlays, notifications, and transcript do not compete to explain the same condition.
+Goal validates and persists an accepted terminal state before returning its Tool result; Pi then owns the ordinary
+follow-up Provider request and Assistant message in that same foreground Agent run, unless the recorded usage exhausts
+an explicit budget or another forced-stop boundary applies.
 
 ## Configuration and data
 
@@ -89,4 +92,3 @@ integration. See [Settings reference](reference/settings.md) for the supported P
 - [Capability documentation](README.md#capability-documentation) links the current local contracts.
 - [ADRs](README.md#current-adr-index) record durable trade-offs.
 - [Compatibility](compatibility.md) records the certified Host and development toolchain.
-

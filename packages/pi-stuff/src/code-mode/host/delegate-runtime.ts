@@ -295,6 +295,7 @@ export class CodeModeDelegateRuntime {
 	private invokeTool(call: PreparedDelegateToolCall): PreparedDelegateRequest {
 		let finished = false;
 		let settlementAttempted = false;
+		let toolReturned = false;
 		let operationSignal: AbortSignal | undefined;
 		const settleFailure = (cause: unknown, cancelled: boolean): void => {
 			if (finished) return;
@@ -310,7 +311,7 @@ export class CodeModeDelegateRuntime {
 					call.context.completeToolCall?.(call.plan, {
 						message: call.trace.error,
 						result: call.trace.result,
-						status: "error",
+						status: toolReturned ? "incomplete" : "error",
 					});
 				} catch (ledgerError) {
 					call.trace.error = `${call.trace.error}; ledger update failed: ${
@@ -334,16 +335,17 @@ export class CodeModeDelegateRuntime {
 			Effect.flatMap((value) =>
 				Effect.try({
 					try: () => {
+						toolReturned = true;
 						const transportValue = encodeTransportValue(value);
 						call.trace.result ??= resultFromValue(value);
 						call.trace.status = "done";
 						if (call.plan) {
+							settlementAttempted = true;
 							call.context.completeToolCall?.(call.plan, {
 								result: call.trace.result,
 								status: "success",
 								value,
 							});
-							settlementAttempted = true;
 						}
 						const serializationError = this.respond(call.messageId, {
 							status: "ok",

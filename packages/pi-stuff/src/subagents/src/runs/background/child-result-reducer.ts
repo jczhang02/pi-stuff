@@ -11,6 +11,7 @@ export class ChildResultReducer {
 	private first: IndexedMessage | undefined;
 	private latestAssistant: IndexedMessage | undefined;
 	private latestAssistantOutput: IndexedMessage | undefined;
+	private latestAssistantText: IndexedMessage | undefined;
 	private latestNonAssistant: IndexedMessage | undefined;
 	private latestToolError: IndexedMessage | undefined;
 	private nextIndex = 0;
@@ -20,7 +21,14 @@ export class ChildResultReducer {
 		this.first ??= indexed;
 		if (message.role === "assistant") {
 			this.latestAssistant = indexed;
-			if (getFinalOutput([message])) this.latestAssistantOutput = indexed;
+			if (message.content.some((part) => part.type === "text" && part.text.trim().length > 0))
+				this.latestAssistantText = indexed;
+			const output = getFinalOutput([message]);
+			if (
+				output &&
+				(!this.latestAssistantOutput || getFinalOutput([this.latestAssistantOutput.message, message]) === output)
+			)
+				this.latestAssistantOutput = indexed;
 			return;
 		}
 		if (message.role === "toolResult" && message.isError) this.latestToolError = indexed;
@@ -31,6 +39,7 @@ export class ChildResultReducer {
 		const retained = [
 			this.first,
 			this.latestAssistantOutput,
+			this.latestAssistantText,
 			this.latestAssistant,
 			this.latestToolError,
 			this.latestNonAssistant,

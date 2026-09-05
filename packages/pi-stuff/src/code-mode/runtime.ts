@@ -282,12 +282,12 @@ function runOutcome(
 	const thrownError = response ? undefined : cause instanceof Error ? cause.message : String(cause);
 	const error = controller?.incompleteError?.message ?? responseError ?? thrownError;
 	const invalidImage = cause instanceof InvalidCodeModeImageError;
-	const status: PiStuffCodeModeDetails["status"] = invalidImage
-		? "error"
-		: controller?.isPaused
-			? "paused"
-			: controller?.incompleteError
-				? "incomplete"
+	const status: PiStuffCodeModeDetails["status"] = controller?.incompleteError
+		? "incomplete"
+		: invalidImage
+			? "error"
+			: controller?.isPaused
+				? "paused"
 				: response?.kind === "terminated" || (!response && wasCancelled(cause, signal))
 					? "cancelled"
 					: !response || responseError
@@ -623,34 +623,25 @@ export class CodeModeRuntime {
 		let outcome: ReturnType<typeof runOutcome>;
 		let media: ReturnType<typeof projectFinalMedia>;
 		try {
-			const runPass = async (): Promise<RuntimeResponse> => {
-				const executeOptions: CodeModeExecuteOptions = {
-					context: executorContext,
-					source: buildSuiteSandboxSource(code, this.connector.catalog(), snippets),
-					tools,
-				};
-				if (signal) Object.assign(executeOptions, { signal });
-				let response = await this.executor.execute(executeOptions);
-				recordResponse(response);
-				while (response.kind === "yielded") {
-					const waitOptions: CodeModeWaitOptions & { readonly yieldTimeMs: number } = {
-						context: executorContext,
-						yieldTimeMs: AUTO_WAIT_MS,
-					};
-					if (signal) Object.assign(waitOptions, { signal });
-					response = await this.executor.wait(response.cellId, waitOptions);
-					recordResponse(response);
-				}
-				return response;
+			const executeOptions: CodeModeExecuteOptions = {
+				context: executorContext,
+				source: buildSuiteSandboxSource(code, this.connector.catalog(), snippets),
+				tools,
 			};
+			if (signal) Object.assign(executeOptions, { signal });
 			let response: RuntimeResponse;
 			for (;;) {
 				controller?.beginPass(attempt);
 				try {
-					response = await runPass();
+					response = await this.runPass(executeOptions, recordResponse);
 					break;
 				} catch (cause) {
-					if (cause instanceof CodeModeHostLostError && attempt < HOST_RECOVERY_LIMIT && !signal?.aborted) {
+					if (
+						cause instanceof CodeModeHostLostError &&
+						attempt < HOST_RECOVERY_LIMIT &&
+						!signal?.aborted &&
+						!controller?.incompleteError
+					) {
 						if (controller) await this.connector.onPassEnd(controller.executionId, "error");
 						resetTraceProjection(traces, operationIndexes, operations, retainedControls);
 						[droppedOperationCount, cellId, attempt] = [0, undefined, attempt + 1];
@@ -678,6 +669,24 @@ export class CodeModeRuntime {
 			details: finalDetails,
 			...nestedResultControls(traces, retainedControls),
 		};
+	}
+
+	private async runPass(
+		options: CodeModeExecuteOptions,
+		recordResponse: (response: RuntimeResponse) => void,
+	): Promise<RuntimeResponse> {
+		const waitOptions: CodeModeWaitOptions & { readonly yieldTimeMs: number } = {
+			context: options.context,
+			yieldTimeMs: AUTO_WAIT_MS,
+		};
+		if (options.signal) Object.assign(waitOptions, { signal: options.signal });
+		let response = await this.executor.execute(options);
+		recordResponse(response);
+		while (response.kind === "yielded") {
+			response = await this.executor.wait(response.cellId, waitOptions);
+			recordResponse(response);
+		}
+		return response;
 	}
 
 	shutdown(): Promise<void> {

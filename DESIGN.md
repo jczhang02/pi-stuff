@@ -160,7 +160,9 @@ Tab and Shift+Tab switch the focused pane; Enter moves from the list to detail, 
 Todo, Agent roster, Statusline, Conversation Transcript, and Command Dialogs have different jobs. A state has one
 visible authority; do not repeat it in a permanent dashboard. The shared Statusline's conditional Goal segment is the
 current Goal's sole compact persistent authority, while Goal lifecycle notices remain chronological Transcript events
-and Command Dialogs provide inspection and control. Ponytail follows the same boundary: `󱖿 <mode>` is its only
+and Command Dialogs provide inspection and control. An accepted terminal Goal Tool row shows only the machine outcome;
+the following Goal Final Response is the sole detailed result, and no terminal notification duplicates it. Ponytail
+follows the same boundary: `󱖿 <mode>` is its only
 persistent mode authority, the Working Row remains the only Agent-activity authority, and `/ponytail` provides control.
 Its Dialog temporarily suppresses the composed Footer, preserves the editor draft, and keeps environment overrides
 visible without presenting them as writable settings.

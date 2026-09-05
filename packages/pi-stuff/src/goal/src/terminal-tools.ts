@@ -4,14 +4,16 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../tool-display/registration.js";
+import { formatDuration, formatTokenCount } from "./accounting.js";
+import type { ActiveGoal } from "./persistence.js";
 import {
+	abortCurrentTurn,
 	GOAL_BLOCKED_TOOL,
 	GOAL_COMPLETE_TOOL,
 	type GoalRuntime,
 	goalIdRejectionReason,
 	isContradictoryCompletionSummary,
 	transitionGoal,
-	truncateNotification,
 } from "./runtime.js";
 import { blockerReportRejectionReason, completionEvidenceRejectionReason, recordGoalBlockerAttempt } from "./safety.js";
 import {
@@ -101,6 +103,36 @@ function hasPendingSkipForGoal(runtime: GoalRuntime, goalId: string): boolean {
 	);
 }
 
+function goalCompletionResult(
+	text: string,
+	completed: ActiveGoal,
+	details: GoalCompleteDetails,
+	budgetWrapUp: boolean,
+) {
+	const terminate =
+		budgetWrapUp || (completed.tokenBudget !== undefined && completed.tokensUsed >= completed.tokenBudget);
+	const facts: string[] = [];
+	if (completed.tokenBudget !== undefined) {
+		facts.push(
+			`Token budget used: ${formatTokenCount(completed.tokensUsed)}/${formatTokenCount(completed.tokenBudget)}.`,
+		);
+	} else if (completed.tokensUsed > 0) {
+		facts.push(`Tokens used: ${formatTokenCount(completed.tokensUsed)}.`);
+	}
+	if (completed.timeUsedSeconds > 0) facts.push(`Elapsed time: ${formatDuration(completed.timeUsedSeconds)}.`);
+	const finalResponse = terminate
+		? []
+		: [
+				"",
+				"The Goal is complete. Send the user a concise final response now with the result, verification, any remaining risk, and every usage fact above.",
+			];
+	const result = {
+		content: [{ type: "text" as const, text: [text, ...facts, ...finalResponse].join("\n") }],
+		details,
+	};
+	return terminate ? { ...result, terminate: true as const } : result;
+}
+
 function executeGoalComplete(
 	runtime: GoalRuntime,
 	params: GoalCompleteParams,
@@ -126,12 +158,6 @@ function executeGoalComplete(
 			const result = { content: [{ type: "text" as const, text: rejection }], details };
 			return terminate ? { ...result, terminate: true as const } : result;
 		};
-		const complete = (text: string) => ({
-			content: [{ type: "text" as const, text }],
-			details,
-			terminate: true as const,
-		});
-
 		if (!completedGoal) return reject("no active goal");
 		const completingDuringBudgetWrapUp = runtime.hasActiveBudgetWrapUp();
 		if (!runtime.canRecordGoalUsage() && !completingDuringBudgetWrapUp) {
@@ -178,13 +204,18 @@ function executeGoalComplete(
 			return reject(rejectionReason, completingDuringBudgetWrapUp);
 		}
 
+		runtime.recordGoalUsage(completedGoal, ctx);
 		runtime.activeGoal = transitionGoal(completedGoal, "complete");
 		runtime.setCompletionSummary(runtime.activeGoal.id, summary);
-		runtime.recordGoalUsage(runtime.activeGoal, ctx);
 		if (runtime.pendingQueueAction?.kind === "prioritize") {
 			runtime.persistGoal(runtime.activeGoal);
 			runtime.publishPresentationStatus(runtime.activeGoal);
-			return complete(`Goal complete: ${summary}`);
+			return goalCompletionResult(
+				`Goal complete: ${summary}`,
+				runtime.activeGoal,
+				details,
+				completingDuringBudgetWrapUp,
+			);
 		}
 		if (runtime.queuedGoals.length > 0) {
 			runtime.pendingQueueAction = {
@@ -195,14 +226,25 @@ function executeGoalComplete(
 			};
 			runtime.persistGoal(runtime.activeGoal);
 			runtime.publishPresentationStatus(runtime.activeGoal);
-			return complete(`Goal complete: ${summary}\nNext goal queued: ${runtime.queuedGoals[0]?.text}`);
+			return goalCompletionResult(
+				`Goal complete: ${summary}\nNext goal queued: ${runtime.queuedGoals[0]?.text}`,
+				runtime.activeGoal,
+				details,
+				completingDuringBudgetWrapUp,
+			);
 		}
 		const completedTimeUsedSeconds = runtime.activeGoal.timeUsedSeconds;
+		const result = goalCompletionResult(
+			`Goal complete: ${summary}`,
+			runtime.activeGoal,
+			details,
+			completingDuringBudgetWrapUp,
+		);
 		runtime.persistGoal(runtime.activeGoal);
 		runtime.publishPresentationStatus(runtime.activeGoal);
 		yield* runtime.clearActiveGoal(ctx);
 		showCompletionStatus(ctx, completedTimeUsedSeconds);
-		return complete(`Goal complete: ${summary}`);
+		return result;
 	});
 }
 
@@ -266,13 +308,17 @@ function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParams, ctx
 	runtime.prompts.cancelContinuationWork();
 	runtime.clearBudgetWrapUp();
 	runtime.clearGoalRecoveryForGoal(blockedGoal.id);
-	runtime.blockStaleGoalToolCalls();
 	runtime.activeGoal = transitionGoal(blockedGoal, "blocked");
 	runtime.setTerminalReason(runtime.activeGoal.id, reason);
 	runtime.persistGoal(runtime.activeGoal);
-	ctx.ui.notify(`Goal blocked: ${truncateNotification(reason)}`, "warning");
-	return {
-		content: [{ type: "text" as const, text: `Goal blocked: ${reason}` }],
+	const terminate = blockedGoal.tokenBudget !== undefined && blockedGoal.tokensUsed >= blockedGoal.tokenBudget;
+	const result = {
+		content: [
+			{
+				type: "text" as const,
+				text: `Goal blocked: ${reason}${terminate ? "" : "\n\nThe Goal is blocked. Send the user a concise final response now with the blocker, evidence, and exact user or external action needed."}`,
+			},
+		],
 		details: {
 			goal,
 			goal_id: requestedGoalId,
@@ -281,8 +327,8 @@ function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParams, ctx
 			evidence,
 			repeated_turns: repeatedTurns,
 		} satisfies GoalBlockedDetails,
-		terminate: true as const,
 	};
+	return terminate ? { ...result, terminate: true as const } : result;
 }
 
 export function registerGoalTerminalTools(
@@ -304,8 +350,12 @@ export function registerGoalTerminalTools(
 			"Call goal_complete only after the requested goal is fully implemented, verified, and no known required work remains; otherwise keep working.",
 		],
 		parameters: GOAL_COMPLETE_PARAMETERS,
-		execute: (_toolCallId, params, _signal, _onUpdate, ctx) =>
-			options.run(ctx, executeGoalComplete(runtime, params, ctx, options.showCompletionStatus)),
+		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const result = await options.run(ctx, executeGoalComplete(runtime, params, ctx, options.showCompletionStatus));
+			// Pi aggregates terminate across the whole Tool batch; abort also covers mixed batches.
+			if ("terminate" in result && result.terminate) abortCurrentTurn(ctx);
+			return result;
+		},
 	});
 
 	const goalBlockedTool = defineTool({
@@ -323,11 +373,14 @@ export function registerGoalTerminalTools(
 			"Pass goal_blocked the exact current goal_id; never reuse a goal_id from an older, stopped, replaced, or cleared goal turn.",
 		],
 		parameters: GOAL_BLOCKED_PARAMETERS,
-		execute: (_toolCallId, params, _signal, _onUpdate, ctx) =>
-			options.run(
+		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const result = await options.run(
 				ctx,
 				Effect.sync(() => executeGoalBlocked(runtime, params, ctx)),
-			),
+			);
+			if ("terminate" in result && result.terminate) abortCurrentTurn(ctx);
+			return result;
+		},
 	});
 
 	registerSuiteOwnedTool(pi, goalCompleteTool, goalCompletePresentation());

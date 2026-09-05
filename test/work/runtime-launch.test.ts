@@ -68,15 +68,15 @@ test("bounds durable output while retaining the newest evidence", () => {
 	});
 });
 
-test("retains the full configured suffix beyond the in-memory preview", () => {
+test("retains the newest suffix with room for subsequent appends", () => {
 	const path = join(temporaryRoot(), "full-retained-suffix");
 	const output = new BoundedOutputFile(path, 70_000);
 	output.append(Buffer.from("a".repeat(60_000)));
 	output.append(Buffer.from("b".repeat(20_000)));
 	output.close();
 
-	expect(statSync(path).size).toBe(70_000);
-	expect(tryReadBoundedTail(path, 80_000)).toStartWith("…[9.8KB earlier output bytes omitted]\n");
+	expect(statSync(path).size).toBe(35_000);
+	expect(tryReadBoundedTail(path, 80_000)).toStartWith("…[43.9KB earlier output bytes omitted]\n");
 	expect(tryReadBoundedTail(path, 80_000)).toEndWith("b".repeat(20_000));
 });
 
@@ -126,17 +126,17 @@ test("preserves terminal newlines and UTF-8 boundaries in foreground suffixes", 
 test("preserves cumulative omission in a truncated foreground result", () => {
 	const root = temporaryRoot();
 	const path = join(root, "foreground-output");
-	const output = new BoundedOutputFile(path, 70_000);
-	output.append(Buffer.from("x".repeat(100_000)));
+	const output = new BoundedOutputFile(path, 140_000);
+	output.append(Buffer.from("x".repeat(200_000)));
 	output.append(Buffer.from("\nLATEST-EVIDENCE\n"));
 	output.close();
 
 	const snapshot = foregroundOutputSnapshot(path, output.recentText());
-	expect(snapshot.text).toStartWith("…[97.7KB");
+	expect(snapshot.text).toStartWith("…[195.3KB");
 	expect(snapshot.text).toContain("LATEST-EVIDENCE");
 	expect(snapshot.text).toContain("Retained output:");
 	expect(snapshot.text).not.toContain("Full output:");
-	expect(snapshot.details).toMatchObject({ omittedBytes: 30_017, retainedOutputPath: path });
+	expect(snapshot.details).toMatchObject({ omittedBytes: 130_000, retainedOutputPath: path });
 	expect(snapshot.details).not.toHaveProperty("fullOutputPath");
 });
 
@@ -566,4 +566,21 @@ test("accepts a command acknowledgement after a fast supervisor exit", async () 
 	const result = await active.executeBash({ command: ":" }, context(root));
 	expect(result.content).toEqual([{ type: "text", text: "(no output)" }]);
 	await active.shutdown();
+});
+
+test("amortizes rollover writes across small output chunks", () => {
+	const path = join(temporaryRoot(), "amortized-output");
+	let replacementBytes = 0;
+	const output = new BoundedOutputFile(path, 64_000, {
+		renameSync: (source, destination) => {
+			if (destination === path) replacementBytes += statSync(source).size;
+			renameSync(source, destination);
+		},
+	});
+	output.append(Buffer.alloc(64_000));
+	for (let index = 0; index < 100; index++) output.append(Buffer.alloc(1_000));
+	output.close();
+	expect(output.durable).toBeTrue();
+	expect(replacementBytes).toBeLessThan(164_000);
+	expect(statSync(path).size).toBeLessThanOrEqual(64_000);
 });

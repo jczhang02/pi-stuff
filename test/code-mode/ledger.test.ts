@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { compensateCodeModeExecution } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import {
 	CODE_MODE_LEDGER_ENTRY_TYPE,
@@ -87,6 +87,35 @@ test("Session ledger reads fail closed when the active branch is unavailable", (
 	state.readError = unavailable;
 
 	expect(() => ledger.history(context)).toThrow(unavailable);
+});
+
+test("post-effect persistence failure remains incomplete after storage recovers", () => {
+	const { branch, context } = fixture();
+	let failAppend = false;
+	const ledger = new CodeModeSessionLedger({
+		appendEntry(customType, data) {
+			if (failAppend) {
+				failAppend = false;
+				throw new Error("injected storage failure");
+			}
+			branch.push({ customType, data, id: `fault-${String(branch.length)}`, type: "custom" });
+		},
+	});
+	const controller = ledger.begin(context, "outer-storage-failure", "", new Map([["write", "never"]]));
+	const call = controller.beginToolCall("write", {});
+	failAppend = true;
+	expect(() => controller.completeToolCall(call, { status: "success", value: "effect applied" })).toThrow(
+		CodeModeIncompleteExecutionError,
+	);
+	expect(() => controller.completeToolCall(call, { status: "error", message: "caught" })).toThrow(
+		CodeModeIncompleteExecutionError,
+	);
+	expect(() => controller.beginToolCall("write", {})).toThrow(CodeModeIncompleteExecutionError);
+	controller.beginPass(1);
+	expect(() => controller.beginToolCall("write", {})).toThrow(CodeModeIncompleteExecutionError);
+	controller.finish("success");
+	expect(ledger.history(context)[0]?.status).toBe("incomplete");
+	expect(branch.at(-2)?.data).toMatchObject({ kind: "call-started" });
 });
 
 test("Session leaf probe failures disable caching without hiding durable branch state", () => {
@@ -500,4 +529,39 @@ test("Session ledger growth does not become an execution quota", () => {
 	const physicalBytes = branch.reduce((total, entry) => total + Buffer.byteLength(JSON.stringify(entry)) + 1, 0);
 	expect(physicalBytes).toBeGreaterThan(16 * 1024 * 1024);
 	expect(branch.at(-1)?.data).toMatchObject({ kind: "execution-settled", status: "success" });
+});
+
+test("folds only appended Session entries and rebuilds on branch divergence", () => {
+	const manager = SessionManager.inMemory();
+	// SAFETY: the ledger only reads cwd and the public SessionManager methods supplied here.
+	const context = { ...fixture().context, sessionManager: manager };
+	const ledger = new CodeModeSessionLedger({
+		appendEntry: (type, data) => {
+			manager.appendCustomEntry(type, data);
+		},
+	});
+	const original = manager.getBranch.bind(manager);
+	let branchReads = 0;
+	manager.getBranch = (...args) => {
+		branchReads++;
+		return original(...args);
+	};
+	const first = ledger.begin(context, "first", "text(1)", new Map());
+	first.finish("success");
+	const fork = manager.getLeafId();
+	if (!fork) throw new Error("missing Session leaf");
+	for (let index = 0; index < 10; index++) {
+		manager.appendCustomEntry("ordinary-progress", { index });
+		expect(ledger.history(context)).toHaveLength(1);
+	}
+	expect(branchReads).toBe(1);
+	const second = ledger.begin(context, "second", "text(2)", new Map());
+	second.finish("success");
+	expect(ledger.history(context)).toHaveLength(2);
+	manager.branch(fork);
+	expect(ledger.history(context)).toHaveLength(1);
+	expect(branchReads).toBe(2);
+	manager.appendCustomEntry(CODE_MODE_LEDGER_ENTRY_TYPE, { kind: "malformed" });
+	expect(ledger.history(context)).toHaveLength(1);
+	expect(branchReads).toBe(2);
 });

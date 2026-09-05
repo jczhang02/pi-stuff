@@ -7,6 +7,8 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeFunction } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { GOAL_FINAL_RESPONSE, GOAL_FINAL_RESPONSE_MARKER } from "../test/fixtures/ui-pty-provider.ts";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/ui-pty-provider.ts");
@@ -21,7 +23,11 @@ export interface GoalPtyVerificationOptions {
 }
 
 const PROVIDER_REQUEST_SCHEMA = Type.Object(
-	{ ownedGoalPrompt: Type.Optional(Type.String()), type: Type.Optional(Type.String()) },
+	{
+		ownedGoalPrompt: Type.Optional(Type.String()),
+		tools: Type.Optional(Type.Array(Type.String())),
+		type: Type.Optional(Type.String()),
+	},
 	{ additionalProperties: true },
 );
 const GIT_PROBE_SCHEMA = Type.Object(
@@ -146,6 +152,16 @@ class GoalPtySession {
 				"-g",
 				"remain-on-exit",
 				"on",
+				";",
+				"set-option",
+				"-g",
+				"extended-keys",
+				"on",
+				";",
+				"set-option",
+				"-g",
+				"extended-keys-format",
+				"csi-u",
 			],
 			{ env: environment, stderr: "pipe", stdout: "pipe" },
 		);
@@ -275,10 +291,27 @@ async function verifyPersistedGoal(temporaryDirectory: string, sessionDirectory:
 	const successfulCompletion = completionResults.some((message) =>
 		message.content?.some((part) => part.text?.startsWith("Goal complete:")),
 	);
-	if (!completedGoal || !successfulCompletion) {
+	const finalResponseIndexes = entries.flatMap((entry, index) =>
+		entry.type === "message" &&
+		entry.message?.role === "assistant" &&
+		entry.message.content?.some((part) => part.text?.includes(GOAL_FINAL_RESPONSE))
+			? [index]
+			: [],
+	);
+	const completedStateIndex = entries.findIndex(
+		(entry) =>
+			entry.type === "custom" &&
+			entry.customType === "goal-state" &&
+			Check(GOAL_DATA_SCHEMA, entry.data) &&
+			entry.data.goal?.status === "complete",
+	);
+	if (!completedGoal || !successfulCompletion || finalResponseIndexes.length !== 1) {
 		fail(
-			`hidden Goal prompt fixture did not complete its Goal: ${JSON.stringify({ completedGoal, completionResults })}`,
+			`hidden Goal prompt fixture did not complete and persist one final Assistant response: ${JSON.stringify({ completedGoal, completionResults, finalResponseIndexes })}`,
 		);
+	}
+	if (completedStateIndex < 0 || completedStateIndex >= (finalResponseIndexes[0] ?? -1)) {
+		fail("Goal completion state was not persisted before its final Assistant response");
 	}
 
 	const exportPath = join(temporaryDirectory, "goal-session.html");
@@ -304,6 +337,7 @@ export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promis
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const gitProbePath = join(temporaryDirectory, "git-probe.jsonl");
 	await Promise.all([mkdir(configDirectory), mkdir(binDirectory), mkdir(sessionDirectory)]);
+	await disableSessionNamingForTest(configDirectory);
 	await writeFile(
 		join(binDirectory, "git"),
 		`#!/bin/sh
@@ -342,6 +376,9 @@ exec /usr/bin/git "$@"
 		}
 		verifyScreen(active, options.columns, "active hidden Goal prompt", true);
 
+		const finalResponse = await session.waitForText(GOAL_FINAL_RESPONSE_MARKER);
+		verifyScreen(finalResponse, options.columns, "Goal final Assistant response", true);
+
 		session.sendKey("C-o");
 		const expanded = await session.waitForText(completionSummary);
 		const visibleSummaryCount = expanded.split(completionSummary).length - 1;
@@ -363,8 +400,11 @@ exec /usr/bin/git "$@"
 				return record;
 			})
 			.filter((record) => record.type === "request");
-		if (requests.length !== 2) {
-			fail(`two-turn Goal fixture produced ${String(requests.length)} provider requests instead of two`);
+		if (requests.length !== 3) {
+			fail(`Goal fixture produced ${String(requests.length)} Provider requests instead of three`);
+		}
+		if (requests.some((request) => !request.tools?.includes("goal_complete"))) {
+			fail("A Goal fixture Provider request did not retain goal_complete");
 		}
 		const gitProbeDeadline = Date.now() + WAIT_TIMEOUT_MS;
 		let gitProbe = "";
