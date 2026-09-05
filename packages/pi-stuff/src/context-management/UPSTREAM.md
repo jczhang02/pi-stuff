@@ -58,18 +58,15 @@ publisher to forward, while foreground Pi and Agents retain their existing lifec
 
 The Package declares Pi peers `^0.80.2`, which does not include the Suite's certified Pi 0.84.4 Host. Pi Stuff does not
 infer compatibility from that range. Real Pi 0.84.4 PTY and Provider gates separately certify activation, cancellation
-recovery, live Session replacement and restoration, cold resume, Magic-only compaction, project isolation, startup/degraded
-fail-open behavior, and active Host-managed fail-closed Provider handling. See the [optimization report](../../../../docs/reports/magic-context-effect-optimization-2026-09-02.md).
+recovery, live Session replacement and restoration, cold resume, Magic-only compaction, project isolation, and
+fail-open behavior. See the [optimization report](../../../../docs/reports/magic-context-effect-optimization-2026-09-02.md).
 
 ## Pi Stuff adapter policy
 
 - lazy direct-input activation starts after Host input acknowledgement while the first Agent boundary retains direct-user
   mutation authority; automatic-turn activation runs only when a recognized CortexKit config exists and no legacy
   location or flat user execution settings await the official factory's migration;
-- native Pi fail-open behavior during startup or degraded operation only;
-- active Host-managed `before_provider_request` handling is a local fail-closed adapter boundary with 95% final-payload
-  validation; direct calls bypassing that hook are excluded;
-- no upstream submission or dependency is introduced for the local adapter boundary;
+- native Pi fail-open behavior;
 - one bounded status/projection seam for BTW and Agents;
 - exact official base Package plus the temporary audited tokenizer compatibility patch behind a replaceable Capability seam;
 - the exact official engine isolated from Pi's UI thread behind immutable Host snapshots and bounded effects;

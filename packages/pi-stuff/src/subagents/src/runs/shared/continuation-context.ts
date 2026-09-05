@@ -5,8 +5,9 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import Tokenizer from "ai-tokenizer";
+import * as o200kBase from "ai-tokenizer/encoding/o200k_base";
 import type { JsonInputObject, JsonInputValue } from "../../../../shared/json-value.js";
-import { estimateProviderPayloadTokens, type ProviderPayloadModel } from "../../../../shared/provider-payload.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV } from "./pi-args.ts";
 
@@ -17,11 +18,17 @@ const CHILD_CONTEXT_FALLBACK_FIXED_RATIO = 0.25;
 const CHILD_CONTEXT_MIN_GUARD_TOKENS = 4_096;
 const OLD_TOOL_RESULT_BYTES = 1_536;
 const RECENT_TOOL_RESULTS_BYTES = 8_192;
+const OPENAI_PAYLOAD_TOKENIZER = new Tokenizer(o200kBase);
 const TASK_PREFIX = /(?:^|\s)Task:\s*/gu;
 const TASK_FINGERPRINT = /^[a-f0-9]{64}$/u;
 
 export type ChildProviderRequestPhase = "launch" | "continuation";
-export type { ProviderPayloadModel } from "../../../../shared/provider-payload.js";
+export type ProviderPayloadModel = {
+	provider?: string;
+	id?: string;
+	contextWindow?: number;
+	maxTokens?: number;
+};
 
 type ChildMessage = ContextEvent["messages"][number];
 
@@ -43,6 +50,14 @@ export interface ChildContextProjection {
 	readonly targetTokens?: number;
 }
 
+function usesO200kTokenizer(model: ProviderPayloadModel | undefined): boolean {
+	if (model?.provider === "openai-codex") return true;
+	if (model?.provider !== "openai" && model?.provider !== "azure-openai-responses") return false;
+	const id = model.id?.toLowerCase();
+	if (!id) return false;
+	return /^(?:chatgpt-4o|gpt-4o|gpt-5|o[134](?:-|$))/u.test(id);
+}
+
 export function childProviderInputCapacity(model: ProviderPayloadModel | undefined): number | undefined {
 	const contextWindow = model?.contextWindow;
 	const maxTokens = model?.maxTokens;
@@ -59,7 +74,16 @@ export function childProviderInputCapacity(model: ProviderPayloadModel | undefin
 }
 
 export function estimateChildPayloadTokens(serialized: string, model: ProviderPayloadModel | undefined): number {
-	return estimateProviderPayloadTokens(serialized, model);
+	if (usesO200kTokenizer(model)) {
+		try {
+			return OPENAI_PAYLOAD_TOKENIZER.count(serialized);
+		} catch {
+			// The byte-level upper bound below remains safe if tokenization fails.
+		}
+	}
+	// Unknown OpenAI/Azure deployments may use a different encoding. UTF-8 byte
+	// length is a conservative tokenizer-independent upper bound.
+	return Buffer.byteLength(serialized, "utf8");
 }
 
 function serializedTokens<Value>(value: Value, model: ProviderPayloadModel | undefined): number {

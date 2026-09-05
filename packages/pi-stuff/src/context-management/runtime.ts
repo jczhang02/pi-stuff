@@ -19,11 +19,12 @@ import {
 	type SuiteAgentMessageOptions,
 } from "../conversation-ui/index.js";
 import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
-import { isRuntimeObject } from "../shared/runtime-type.js";
+import { isRuntimeObject, isRuntimeSymbol } from "../shared/runtime-type.js";
 import { registerSuiteOwnedTool, registerSuiteToolActivityMetadata } from "../tool-display/index.js";
 import { MAGIC_TOOL_LABELS, MAGIC_TOOL_NAME_SET, MAGIC_TOOL_NAMES } from "./activity.js";
 import { ContextCommandRuntime, type MagicCommandDefinition } from "./command-runtime.js";
 import {
+	addCompactMagicContextMessage,
 	addCompactMagicContextPrompt,
 	CANCELLED_EVENT_RESULT_SCHEMA,
 	COMPACT_PROMPT_EVENT_SCHEMA,
@@ -70,7 +71,6 @@ export interface ContextCapabilityRegistry {
 
 interface ContextRuntimeBoundary {
 	readonly activate: (ctx: ExtensionContext, trigger: ContextActivationTrigger) => Promise<ContextStatusSnapshot>;
-	readonly committed: () => void;
 	readonly committedFailure: (cause: unknown, ctx: ExtensionContext) => Promise<void>;
 }
 
@@ -98,7 +98,6 @@ export class ContextCapabilityRuntime {
 	private readonly sessionStarts = Semaphore.makeUnsafe(1);
 	private generation = 0;
 	private readonly boundary: ContextRuntimeBoundary;
-	private providerBoundaryCommitted = false;
 	private readonly commandRuntime: ContextCommandRuntime;
 	private readonly magicCommands = new Map<string, MagicCommandDefinition>();
 	private magicContextHandler: MagicContextHandler | undefined;
@@ -116,6 +115,7 @@ export class ContextCapabilityRuntime {
 	private nativeCompactionPreflight: Deferred.Deferred<void> | undefined;
 	private directInputActivationPending = false;
 	private magicPromptInstalledForSession = false;
+	private readonly suiteCustomContextGuidance = new Set<symbol>();
 
 	constructor(
 		pi: ExtensionAPI,
@@ -161,11 +161,6 @@ export class ContextCapabilityRuntime {
 			this.sessionContext,
 			this.dependencies.readNativeCompactionSettings,
 		);
-	}
-
-	private setNative(trigger?: ContextActivationTrigger): void {
-		this.state =
-			trigger === undefined ? { state: "native", engine: "native" } : { state: "native", engine: "native", trigger };
 	}
 
 	private setDegraded(cause: unknown, trigger: ContextActivationTrigger | undefined): void {
@@ -248,6 +243,7 @@ export class ContextCapabilityRuntime {
 		this.projectionRuntime.invalidate(true);
 		this.directInputActivationPending = false;
 		this.magicPromptInstalledForSession = false;
+		this.suiteCustomContextGuidance.clear();
 		this.registry.contexts.set(ctx.sessionManager, this);
 		this.ownedContexts.add(ctx.sessionManager);
 		if (this.magicTools.size > 0) this.activateMagicTools();
@@ -312,7 +308,11 @@ export class ContextCapabilityRuntime {
 			if (this.disposed) return Effect.void;
 			this.disposed = true;
 			const trigger = this.state.trigger;
-			this.setNative(trigger);
+			this.state =
+				trigger === undefined
+					? { state: "native", engine: "native" }
+					: { state: "native", engine: "native", trigger };
+			this.suiteCustomContextGuidance.clear();
 			this.sessionContext = undefined;
 			this.generation++;
 			this.magicSessionStartHandlers = [];
@@ -356,7 +356,7 @@ export class ContextCapabilityRuntime {
 				return Deferred.await(cleanup.deferred).pipe(Effect.flatMap(() => this.activate(ctx, trigger)));
 			}
 			if (this.dependencies.magicSubagent()) {
-				this.setNative(trigger);
+				this.state = { state: "native", engine: "native", trigger };
 				return Effect.succeed(this.status());
 			}
 			if (this.state.state === "active" || this.state.state === "native") return Effect.succeed(this.status());
@@ -435,11 +435,20 @@ export class ContextCapabilityRuntime {
 		} catch {
 			return undefined;
 		}
-		return this.projectionRuntime.stageSuiteCustomContextGuidance();
+		const token = Symbol("suite-custom-context-guidance");
+		this.suiteCustomContextGuidance.add(token);
+		return token;
 	}
 
 	cancelSuiteCustomContextGuidance(token: symbol): void {
-		this.projectionRuntime.cancelSuiteCustomContextGuidance(token);
+		this.suiteCustomContextGuidance.delete(token);
+	}
+
+	private consumeSuiteCustomContextGuidance(): boolean {
+		const token = this.suiteCustomContextGuidance.values().next().value;
+		if (!isRuntimeSymbol(token)) return false;
+		this.suiteCustomContextGuidance.delete(token);
+		return true;
 	}
 	private preflightNativeCustomTurn(ctx: ExtensionContext, requireIdle = true): Effect.Effect<void> {
 		return Effect.suspend(() => {
@@ -578,10 +587,6 @@ export class ContextCapabilityRuntime {
 				try: () => this.commitRegistrationPlan(plan, generation),
 				catch: (error) => error,
 			});
-			if (!this.providerBoundaryCommitted) {
-				this.boundary.committed();
-				this.providerBoundaryCommitted = true;
-			}
 			committed = true;
 			this.state = { state: "active", engine: "magic-context", trigger };
 			return this.status();
@@ -703,15 +708,16 @@ export class ContextCapabilityRuntime {
 	}
 
 	projectMagicContext(event: ContextEvent, ctx: ExtensionContext): Effect.Effect<MagicContextEventResult | undefined> {
-		return this.projectionRuntime.projectMagicEvent(event, ctx).pipe(Effect.map((attempt) => attempt?.result));
-	}
-
-	currentProviderProjectionToken(): symbol | undefined {
-		return this.projectionRuntime.currentProviderProjectionToken();
-	}
-
-	markProviderProjectionValidated(token: symbol | undefined, model: ExtensionContext["model"]): void {
-		this.projectionRuntime.markProviderProjectionValidated(token, model);
+		return this.projectionRuntime.projectMagicEvent(event, ctx).pipe(
+			Effect.map((attempt) => {
+				if (!attempt?.full) return attempt?.result;
+				if (!this.consumeSuiteCustomContextGuidance()) return attempt.result;
+				return {
+					...attempt.result,
+					messages: addCompactMagicContextMessage(attempt.result?.messages ?? event.messages),
+				};
+			}),
+		);
 	}
 
 	private registerMagicHandler(event: string, handler: LooseEventHandler, generation: number): void {
@@ -750,7 +756,7 @@ export class ContextCapabilityRuntime {
 			register(event, async (rawEvent, ctx) => {
 				if (!this.isCurrentGeneration(generation)) return;
 				this.magicPromptInstalledForSession = true;
-				this.projectionRuntime.clearSuiteCustomContextGuidance();
+				this.suiteCustomContextGuidance.clear();
 				try {
 					const withoutContributions = Check(COMPACT_PROMPT_EVENT_SCHEMA, rawEvent)
 						? { ...rawEvent, systemPrompt: stripContextPromptContributions(this.pi, rawEvent.systemPrompt) }

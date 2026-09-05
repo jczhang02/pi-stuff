@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 1a296708281a9708b6d8e729330731a5d5eabe4c1a2bf6c8e3f1edbc5040dd23 -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 80e6155ce578d0691dc34660d22cdd4f3a1011c77a175e24f68e37e7a9433ccc -->
 
 # Conversation UI
 
@@ -26,7 +26,6 @@ Pi Stuff 面向 conversation、编辑器、Statusline、Welcome header 与聚焦
 
 - 具有稳定 model、工作区、Context、用量、Goal 与 Ponytail 分组的响应式 Statusline；每个 settled Session
   leaf 与 model 的 context usage 只在 Host idle 时读取一次，因此 Tool 与输入 repaint 不会重新扫描它。
-- Context 状态从 `recovering` 进入经验证的百分比；请求中止时显示 `unknown`。
 - 单行 latest-prompt 预览与紧凑 Skill 标签。
 - 原生编辑器输入高亮与 slash 补全。
 - Host 拥有的 Thinking，显示为最新一条原生 Markdown 终端行或隐藏态 `• thoughts` 标签，保留原生鼠标和键盘

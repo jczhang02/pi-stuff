@@ -12,7 +12,7 @@ test("real Pi TUI activates Magic Context, resumes it, owns compaction, and fail
 	});
 }, 120_000);
 
-test("long malformed-image history preserves the submitted input frame through native provider retry", async () => {
+test("long malformed-image history does not block Pi's submitted input frame", async () => {
 	await verifyContextInputFramePty({
 		piBinary: PI_BIN,
 		packagePath: resolve(import.meta.dir, "../packages/pi-stuff"),

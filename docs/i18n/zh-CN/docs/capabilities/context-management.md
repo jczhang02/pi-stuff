@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/context-management.md; translation-source-sha256: 40ae936750b44ffacfca68c2975be8b32945c45391b655d183bb54b39fd48e39 -->
+<!-- translation-source: docs/capabilities/context-management.md; translation-source-sha256: e71969b2573d99269845ca937126355f3e44660bf9014266417a0289034a1a4b -->
 
 # Context Management
 
@@ -59,18 +59,10 @@ Pi Session JSONL 仍是原始 conversation 记录。Context Management 为 model
 compaction 或 tree navigation 改变活动 branch 时让缓存失效。
 
 第一次 bind 或 branch 不连续时，会把完整 Session snapshot 发给 Context worker。普通投影只发送新 leaf。
-启动和 engine 降级路径可以退回 Pi 的原生 context；但处于活动状态、由 Host 管理的前台
-`before_provider_request` 只有在最终 JSON 序列化的 Provider payload 具有有限的 token 估计值，且不超过模型
-Context window 的 95% 时才会通过。窗口缺失、序列化、测量、非有限估计值和超出边界的情况都会在本地产生
-abort/error，并将估计值设为 unknown。绕过此 hook 的直接调用不在范围内。
+派生 store 或 worker 不可用时，当前 request 会退回 Pi 原生 context。
 
 Prompt contribution 保持固定顺序：Host context、Context Management，再到其他已注册 capability contribution。
 Direct-mode guidance 上限为 8,000 个字符。
-
-只有此前在 Provider 边界通过验证的结果，且每个有序 raw message object 以及 Provider、model id 和 Context
-window 均完全相同时，才能复用；输入变化会重新运行验证。Pi 负责现有的 retry、continuation 和 compaction
-行为，不增加新的 budgets。正常状态报告通过验证的百分比，恢复状态报告 `recovering`，失败时报告 `unknown`
-并在本地 abort；成功的 assistant 或 Session lifecycle 会清除恢复状态。
 
 ## Compaction
 
@@ -104,3 +96,4 @@ Context engine 与 worker 选择属于外部配置。Pi Stuff 不在 `pi-stuff.j
 - [命令参考](../reference/commands.md#context)
 - [故障排查](../troubleshooting.md#context)
 - [架构](../architecture.md#生命周期所有权)
+

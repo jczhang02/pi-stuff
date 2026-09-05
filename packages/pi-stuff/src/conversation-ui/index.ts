@@ -111,16 +111,11 @@ export {
 	type CodexStatusChannel,
 	type CodexStatusSnapshot,
 	type CodexStatusSource,
-	type ContextStatus,
-	type ContextStatusChannel,
-	type ContextStatusSnapshot,
-	type ContextStatusSource,
 	type GoalStatus,
 	type GoalStatusChannel,
 	type GoalStatusSnapshot,
 	type GoalStatusSource,
 	getCodexStatusChannel,
-	getContextStatusChannel,
 	getGoalStatusChannel,
 } from "./statusline.js";
 export {

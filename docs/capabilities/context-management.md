@@ -59,15 +59,7 @@ Pi's Session JSONL remains the raw conversation record. Context Management build
 requests and invalidates it when input, compaction, or tree navigation changes the active branch.
 
 The first bind or a branch discontinuity sends a full Session snapshot to the Context worker. Ordinary projection sends
-only the new leaf. Startup and degraded-engine paths may fall back to Pi's native context; an active Host-managed
-foreground `before_provider_request` fails closed unless the final JSON-serialized Provider payload has a finite token
-estimate no greater than 95% of the model Context window. Missing window, serialization, measurement, nonfinite, and
-over-bound cases locally abort with an error and unknown estimate. Direct calls bypassing that hook are excluded.
-
-Only a prior Provider-boundary-validated result may be reused when every ordered raw message object and Provider, model
-id, and Context window are identical; changed inputs rerun validation. Pi owns existing retry, continuation, and
-compaction behavior, with no new budgets. Normal status reports the validated percentage, recovery reports `recovering`,
-and failure reports `unknown` with local abort; successful assistant or Session lifecycle clears recovery state.
+only the new leaf. If the derived store or worker is unavailable, the current request falls back to Pi's native context.
 
 Prompt contributions follow a stable order: Host context, Context Management, then other registered capability
 contributions. Direct-mode guidance is bounded to 8,000 characters.
@@ -106,3 +98,4 @@ Context engine and worker selection are external configuration. Pi Stuff does no
 - [Command reference](../reference/commands.md#context)
 - [Troubleshooting](../troubleshooting.md#context)
 - [Architecture](../architecture.md#lifecycle-ownership)
+

@@ -40,31 +40,10 @@ export interface GoalStatusChannel {
 	publish(snapshot: GoalStatusSnapshot): void;
 }
 
-export type ContextStatus = "recovering" | "validated" | "unknown";
-
-export interface ContextStatusSnapshot {
-	readonly state: ContextStatus;
-	readonly tokens?: number;
-	readonly contextWindow?: number;
-}
-
-export interface ContextStatusSource {
-	getSnapshot(): ContextStatusSnapshot | undefined;
-	subscribe(listener: () => void): () => void;
-}
-
-export interface ContextStatusChannel {
-	readonly source: ContextStatusSource;
-	clear(): void;
-	publish(snapshot: ContextStatusSnapshot): void;
-}
-
 const CODEX_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/codex-status-channels/v1");
 const GOAL_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/goal-status-channels/v1");
-const CONTEXT_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/context-status-channels/v1");
 const CODEX_STATUS_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/codex-status-discovery/v1";
 const GOAL_STATUS_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/goal-status-discovery/v1";
-const CONTEXT_STATUS_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/context-status-discovery/v1";
 const REJECTED_STATUS = Symbol("rejected status");
 
 type StatusChannelHost = Pick<ExtensionAPI, "events"> & Partial<Pick<ExtensionAPI, "on">>;
@@ -129,22 +108,6 @@ function normalizeGoalStatus(snapshot: GoalStatusSnapshot): GoalStatusSnapshot |
 	return next;
 }
 
-function normalizeContextStatus(snapshot: ContextStatusSnapshot): ContextStatusSnapshot | typeof REJECTED_STATUS {
-	if (!["recovering", "validated", "unknown"].includes(snapshot.state)) return REJECTED_STATUS;
-	const next: ContextStatusSnapshot = { state: snapshot.state };
-	if (isRuntimeNumber(snapshot.tokens) && Number.isFinite(snapshot.tokens) && snapshot.tokens >= 0) {
-		Object.assign(next, { tokens: snapshot.tokens });
-	}
-	if (
-		isRuntimeNumber(snapshot.contextWindow) &&
-		Number.isFinite(snapshot.contextWindow) &&
-		snapshot.contextWindow > 0
-	) {
-		Object.assign(next, { contextWindow: snapshot.contextWindow });
-	}
-	return next;
-}
-
 function finiteNonNegative(value: number): number {
 	return isRuntimeNumber(value) && Number.isFinite(value) && value >= 0 ? value : 0;
 }
@@ -201,19 +164,6 @@ export function getGoalStatusChannel(pi: StatusChannelHost): GoalStatusChannel {
 			new SharedStatusChannel<GoalStatusSnapshot, GoalStatusSnapshot | undefined>(
 				() => undefined,
 				normalizeGoalStatus,
-			),
-	);
-}
-
-export function getContextStatusChannel(pi: StatusChannelHost): ContextStatusChannel {
-	return getStatusChannel(
-		pi,
-		CONTEXT_STATUS_CHANNELS,
-		CONTEXT_STATUS_DISCOVERY_EVENT,
-		() =>
-			new SharedStatusChannel<ContextStatusSnapshot, ContextStatusSnapshot | undefined>(
-				() => undefined,
-				normalizeContextStatus,
 			),
 	);
 }

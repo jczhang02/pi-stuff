@@ -2,12 +2,7 @@ import { basename } from "node:path";
 import type { ExtensionContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { isRuntimeNumber } from "../shared/runtime-type.js";
-import type {
-	CodexStatusSnapshot,
-	ContextStatusSnapshot,
-	GoalStatus,
-	GoalStatusSnapshot,
-} from "./statusline-channels.js";
+import type { CodexStatusSnapshot, GoalStatus, GoalStatusSnapshot } from "./statusline-channels.js";
 import type { GitChangeCounts } from "./statusline-git.js";
 import type { PromptPreview, UsageTotals } from "./statusline-session.js";
 import { sanitizeOneLine } from "./terminal-text.js";
@@ -25,7 +20,6 @@ export interface StatuslineContextUsage {
 export interface StatuslineRenderInput {
 	readonly branch: string;
 	readonly codexStatus: CodexStatusSnapshot | undefined;
-	readonly contextStatus: ContextStatusSnapshot | undefined;
 	readonly contextUsage: StatuslineContextUsage | null | undefined;
 	readonly cwd: string;
 	readonly density: StatuslineDensity;
@@ -136,7 +130,6 @@ export function renderStatusline(theme: Theme, input: StatuslineRenderInput): st
 	if (gitSegments.diff) segments.push(statusSegment("diff", 50, gitSegments.diff.full, gitSegments.diff.compact));
 
 	const contextSegment = renderContextSegment(
-		input.contextStatus,
 		input.contextUsage,
 		input.model?.contextWindow,
 		theme,
@@ -237,43 +230,13 @@ function compactCount(value: number): string {
 }
 
 function renderContextSegment(
-	status: ContextStatusSnapshot | undefined,
 	usage: StatuslineContextUsage | null | undefined,
 	modelContextWindow: number | undefined,
 	theme: Theme,
 	icons: StatuslineIcons,
 	statuses: ReadonlyMap<string, string>,
 ): SegmentText | undefined {
-	if (statuses.has("compact-policy")) return undefined;
-	if (status) {
-		if (status.state !== "validated") {
-			return {
-				compact: `${theme.fg("dim", icons.context)} ${theme.fg("text", status.state)}`,
-				full: `${theme.fg("dim", icons.context)} ${theme.fg("text", status.state)}`,
-			};
-		}
-		const contextWindow = status.contextWindow;
-		const tokens = status.tokens;
-		if (
-			isRuntimeNumber(tokens) &&
-			Number.isFinite(tokens) &&
-			isRuntimeNumber(contextWindow) &&
-			Number.isFinite(contextWindow) &&
-			contextWindow > 0
-		) {
-			const percent = Math.max(0, Math.min(100, (tokens / contextWindow) * 100));
-			const value = `${Math.round(percent)}%`;
-			return {
-				compact: `${theme.fg("dim", icons.context)} ${theme.fg("text", value)}`,
-				full: `${theme.fg("dim", icons.context)} ${theme.fg("text", value)}`,
-			};
-		}
-		return {
-			compact: `${theme.fg("dim", icons.context)} ${theme.fg("text", "unknown")}`,
-			full: `${theme.fg("dim", icons.context)} ${theme.fg("text", "unknown")}`,
-		};
-	}
-	if (usage === null) return undefined;
+	if (statuses.has("compact-policy") || usage === null) return undefined;
 	const percent = usage?.percent;
 	const knownPercent = isRuntimeNumber(percent) && Number.isFinite(percent);
 	const contextWindow = usage?.contextWindow ?? modelContextWindow;

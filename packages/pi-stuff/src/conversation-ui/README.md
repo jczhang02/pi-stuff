@@ -26,7 +26,6 @@ completion, and Tool running timer.
 
 - Responsive Statusline with stable model, workspace, Context, usage, Goal, and Ponytail groups; context usage is read
   once per settled Session leaf and model, only while the Host is idle, so Tool and input repaints do not rescan it.
-- Context status progresses from `recovering` to a validated percentage, or `unknown` when the request is aborted.
 - One-line latest-prompt preview and compact Skill labels.
 - Native-editor input highlighting and slash completion.
 - Host-owned Thinking shown as one latest native Markdown row or the hidden `• thoughts` label, preserving native

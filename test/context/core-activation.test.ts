@@ -462,14 +462,9 @@ test("discards partial Magic registrations before a retry", async () => {
 
 	await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
-	await emit(
-		handlers,
-		"message_end",
-		{ type: "message_end", message: { role: "assistant", stopReason: "stop" } },
-		ctx,
-	);
+	await emit(handlers, "message_end", { type: "message_end" }, ctx);
 	expect(handlers.get("context")).toHaveLength(1);
-	expect(handlers.get("message_end")).toHaveLength(2);
+	expect(handlers.get("message_end")).toHaveLength(1);
 	expect(registrations).toEqual({ commands: ["ctx"], entryRenderers: ["pi-stuff-context-activity"] });
 	expect(tools.find((tool) => tool.name === "ctx_search")?.description).toBe("Committed Magic search");
 	expect(staleMessageEnds).toBe(1);

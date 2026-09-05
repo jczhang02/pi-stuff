@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: c48a25fb193058e95d9b070d6d794abf72bc1e0af351c4fb30f5b48351d771fe -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: 6f6e72e81cfd349cd054f62947b41664cb31e7d75d76cc6a9b4e7d51048e5470 -->
 
 # Conversation UI
 
@@ -44,10 +44,6 @@ Statusline 会保留上一次 settled value，不会在每次 repaint 时要求 
 
 Latest-prompt 行只占一个终端行。Skill 调用会缩减为提交任务与紧凑 Skill 标签；展开的 Skill 指令和本地路径
 不会显示。
-
-在 Context projection 期间，Context 分组显示 `recovering`。如果 Provider boundary 无法安全测量或限制请求，
-则显示 `unknown` 并中止请求。boundary 验证完成后，经验证的百分比会替换过时的 Host 用量。只有 assistant
-成功完成或发生 Session 生命周期事件后，snapshot 才会清除。
 
 ## Welcome header
 

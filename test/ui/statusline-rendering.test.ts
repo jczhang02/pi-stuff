@@ -7,7 +7,6 @@ import {
 	footerData,
 	type GitChangeCounts,
 	getCodexStatusChannel,
-	getContextStatusChannel,
 	getGoalStatusChannel,
 	messageEntries,
 	preferences,
@@ -475,62 +474,5 @@ test("keeps Context percentage without exposing token-window counts", () => {
 			expect(rendered).toContain("󰌨 42.4%");
 			expect(rendered).not.toContain("200k");
 		}
-	});
-});
-
-test("uses the Context projection snapshot instead of stale Host usage during recovery", () => {
-	withFormerFallbackOverride(() => {
-		const { events } = createExtensionApi();
-		const contextStatus = getContextStatusChannel({ events });
-		const controller = new StatuslineController(api(), {
-			contextStatus: contextStatus.source,
-			enabled: new ValueSource(true),
-		});
-		const component = controller.createFooter(
-			context({ contextPercent: 42.4, reasoning: false }),
-			tuiHarness().tui,
-			theme,
-			footerData("main"),
-		);
-
-		contextStatus.publish({ state: "recovering" });
-		let rendered = component.render(100).join("\n");
-		expect(rendered).toContain("󰌨 recovering");
-		expect(rendered).not.toContain("42.4%");
-
-		contextStatus.publish({ state: "validated", tokens: 50_000, contextWindow: 200_000 });
-		rendered = component.render(100).join("\n");
-		expect(rendered).toContain("󰌨 25%");
-		expect(rendered).not.toContain("42.4%");
-
-		contextStatus.clear();
-		expect(component.render(100).join("\n")).toContain("󰌨 42.4%");
-	});
-});
-
-test("renders explicit unknown Context when Host usage throws", () => {
-	withFormerFallbackOverride(() => {
-		const { events } = createExtensionApi();
-		const contextStatus = getContextStatusChannel({ events });
-		const controller = new StatuslineController(api(), {
-			contextStatus: contextStatus.source,
-			enabled: new ValueSource(true),
-		});
-		const throwingContext = {
-			...context({ contextPercent: 42.4, reasoning: false }),
-			getContextUsage: () => {
-				throw new Error("usage unavailable");
-			},
-		};
-		const component = controller.createFooter(throwingContext, tuiHarness().tui, theme, footerData("main"));
-
-		contextStatus.publish({ state: "unknown" });
-		let rendered = component.render(100).join("\n");
-		expect(rendered).toContain("󰌨 unknown");
-		expect(rendered).not.toContain("42.4%");
-
-		contextStatus.clear();
-		rendered = component.render(100).join("\n");
-		expect(rendered).not.toContain("󰌨");
 	});
 });

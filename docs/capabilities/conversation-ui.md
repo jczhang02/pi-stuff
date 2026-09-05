@@ -46,11 +46,6 @@ persistent indicator.
 The latest-prompt row is one terminal line. Skill invocations are reduced to the submitted task and compact Skill
 labels; expanded Skill instructions and local paths are not shown.
 
-During Context projection, the Context group shows `recovering`. If the Provider boundary cannot safely measure or
-bound the request, it shows `unknown` and the request is aborted. After boundary validation, the validated percentage
-replaces stale Host usage. The snapshot clears only after a successful assistant completion or a Session lifecycle
-event.
-
 ## Welcome header
 
 The Welcome header gives a compact startup view of the active model, project, and Suite entry points. It disappears
