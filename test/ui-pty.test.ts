@@ -35,13 +35,40 @@ test("real Pi renders and restores the integrated production UI at all accepted 
 }, 120_000);
 
 const WORKING_SPINNER = /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/u;
+function ansiColorBefore(line: string, token: string): string | undefined {
+	const tokenIndex = line.indexOf(token);
+	if (tokenIndex < 0) return undefined;
+	return line
+		.slice(0, tokenIndex)
+		.match(/\[38;[^m]+m/gu)
+		?.at(-1);
+}
 
-async function expectEmbeddedStatus(session: pty.TmuxPiSession, columns: number): Promise<void> {
+async function setThinkingLevel(session: pty.TmuxPiSession, level: "low" | "medium"): Promise<void> {
+	session.sendKey("C-u");
+	session.sendLiteral(`/thinking ${level}`);
+	session.sendKey("Escape");
+	session.sendKey("Enter");
+	await session.waitForText(`Thinking level: ${level}`);
+}
+
+async function expectEmbeddedStatus(session: pty.TmuxPiSession, columns: number): Promise<string> {
 	const screen = await session.waitFor((value) => WORKING_SPINNER.test(value), "running indicator");
 	const indicators = screen.split("\n").filter((line) => WORKING_SPINNER.test(line));
 	expect(indicators).toHaveLength(1);
-	expect(indicators[0]).toMatch(/^── [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] .+─$/u);
+	expect(indicators[0]).toMatch(/^── [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] .+─+\s*$/u);
 	flow.verifyTerminalWidth(screen, columns, "embedded working status");
+	const ansiIndicator = session
+		.captureAnsi()
+		.split("\n")
+		.find((line) => WORKING_SPINNER.test(line));
+	const spinnerColor =
+		ansiIndicator && ansiColorBefore(ansiIndicator, ansiIndicator.match(WORKING_SPINNER)?.[0] ?? "");
+	const messageColor = ansiIndicator && ansiColorBefore(ansiIndicator, "Working");
+	expect(spinnerColor).toBeDefined();
+	expect(messageColor).toBe(spinnerColor);
+	expect(ansiIndicator && ansiColorBefore(ansiIndicator, "──")).toBe(spinnerColor);
+	return spinnerColor ?? "";
 }
 
 for (const tuiMode of ["regular", "fullscreen"] as const) {
@@ -60,9 +87,10 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 				await session.waitForStatusline();
 				expect(await flow.verifyVibeLineSpinnerLiveness(session)).toBeLessThanOrEqual(500);
 				await session.waitFor((screen) => !WORKING_SPINNER.test(screen), "idle editor after completion");
+				await setThinkingLevel(session, "low");
 				session.sendLiteral("THOUGHT_PROBE_EMBEDDED");
 				session.sendKey("Enter");
-				await expectEmbeddedStatus(session, 100);
+				const lowColor = await expectEmbeddedStatus(session, 100);
 				session.sendLiteral("UNSENT_DRAFT");
 				session.sendKey("F12");
 				const dialog = await session.waitForText("DRAFT_SURFACE");
@@ -78,6 +106,13 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 				session.sendKey("Escape");
 				await session.waitFor((screen) => !WORKING_SPINNER.test(screen), "idle editor after cancellation");
 				expect(session.capture()).toContain("UNSENT_DRAFT");
+				await setThinkingLevel(session, "medium");
+				session.sendLiteral("THOUGHT_PROBE_COLOR");
+				session.sendKey("Enter");
+				const mediumColor = await expectEmbeddedStatus(session, 100);
+				expect(mediumColor).not.toBe(lowColor);
+				session.sendKey("Escape");
+				await session.waitFor((screen) => !WORKING_SPINNER.test(screen), "idle editor after color cancellation");
 				session.sendKey("C-u");
 				session.sendLiteral("/reload");
 				session.sendKey("Enter");
