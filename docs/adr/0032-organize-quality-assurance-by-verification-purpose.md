@@ -114,13 +114,26 @@ coverage from retained reports alone.
   and never invokes Benchmarks. Reviews remain a review process rather than an empty symmetry-driven command.
 - Tests expose five stable level entries: `test:unit`, `test:component-integration`, `test:system`,
   `test:system-integration`, and `test:acceptance`. Capability, file, and test-name selection refine these entries;
-  do not create a command for every combination of Capability and level. The no-argument test scope remains undecided.
+  do not create a command for every combination of Capability and level.
 - Ordinary `check`, `test`, and `verify` execution is offline, credential-free, and makes no live model calls. It may
   require real local Pi, RTK, or PTY tools. Live model and external-Service verification require explicit selection
   and environment preflight, rather than an ambiguous `real` label determining whether calls occur.
 - This migration organizes existing checks and Capability Benchmarks. Record the Suite Outcome Evaluation interface
   boundary, but implement its public-task runner as separate work; do not expose an empty command or treat historical
   reports as a runnable evaluation.
+
+### Default scope and command discovery
+
+- With no arguments, `bun run test` runs all applicable offline dynamic Tests across the five levels, excluding Static
+  Checks, Benchmarks, and live services. Use level or Capability selection for focused development.
+- `verify` uses the PR target comparison base in CI and the merge base with `origin/main` locally, including staged,
+  unstaged, and untracked changes. Allow `--base <ref>` to override the base. Display the base and selected scope before
+  execution. Missing bases, uncertain impact, or a clean main branch without selectable changes fall back to the complete
+  applicable test suite.
+- Repository test, verification, and benchmark entry points provide `--help` without executing work and `--list` to
+  preview selected checks or scenarios and their environment requirements. Unknown arguments and explicit selections
+  matching nothing fail visibly. Before execution, summarize scope, network/model use, and report location.
+- Extend existing scripts only as needed for this interface; do not introduce a generic CLI framework.
 
 ## Consequences
 

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: 3d4c928c8c15fd0756f7ff2eb1bdc2f10aabeeed95e5df86355807e43355110b -->
+<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: 09c511bb6ed6e2c06ed57e5ce20df001770844cc68f8ffe91421a5a41c406ab0 -->
 
 ---
 status: accepted
@@ -60,9 +60,16 @@ status: accepted
 ### 命令职责
 
 - `bun run check` 负责全部 Static Checks；`bun run test` 负责动态 Tests；`bun run benchmark:...` 负责独立 Benchmarks。`bun run verify` 将静态检查与保守选择的动态测试组合为日常验证，绝不调用 Benchmarks。Reviews 保持审查流程，不为形式对称创建空命令。
-- Tests 提供五个稳定层级入口：`test:unit`、`test:component-integration`、`test:system`、`test:system-integration`、`test:acceptance`。使用 Capability、文件和测试名称筛选进一步缩小范围，不为每个 Capability 与层级组合创建命令。无参数 test 的范围仍待决定。
+- Tests 提供五个稳定层级入口：`test:unit`、`test:component-integration`、`test:system`、`test:system-integration`、`test:acceptance`。使用 Capability、文件和测试名称筛选进一步缩小范围，不为每个 Capability 与层级组合创建命令。
 - 普通 `check`、`test`、`verify` 执行离线、无需凭据、不调用真实模型，可以要求真实本地 Pi、RTK 或 PTY 工具。真实模型与外部 Service 验证必须显式选择并预检环境，不能由含糊的 `real` 标签决定是否发起调用。
 - 本次迁移整理现有检查和 Capability Benchmarks。记录 Suite Outcome Evaluation 的接口边界，公开任务执行器另立工作实现；不暴露空命令，也不把历史报告当成可运行评测。
+
+### 默认范围与命令发现
+
+- 无参数 `bun run test` 运行五层中全部适用的离线动态 Tests，不包含静态检查、Benchmarks 或真实服务调用。开发时通过层级或 Capability 筛选缩小范围。
+- `verify` 在 CI 使用 PR 目标比较基准，本地使用与 `origin/main` 的共同祖先，并包含暂存、未暂存和未跟踪变更。允许 `--base <ref>` 覆盖基准，执行前显示基准与选中范围。基准缺失、影响不明，或干净主分支没有可选择变更时，回退到完整适用测试。
+- 仓库测试、验证和评测入口提供不执行工作的 `--help`，以及预览选中检查或场景和环境要求的 `--list`。未知参数和显式筛选未匹配任何项目时明确失败。真正执行前简要显示范围、联网或模型调用情况及报告位置。
+- 仅按接口需要扩展现有脚本，不引入通用 CLI 框架。
 
 ## 后果
 
