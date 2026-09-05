@@ -32,9 +32,64 @@ Publish Beads issues explicitly with:
 bun run beads:publish -- <epic-or-bead-id>
 ```
 
-The command previews and then performs a push-only GitHub sync. It obtains authentication at runtime and never persists a token.
+The command runs from any repository worktree, using the canonical repository's Beads database. It serializes
+publishers with an OS lock, previews and performs push-only synchronization, then updates one managed delivery comment
+per Issue. The lock is released on process exit, including interruption. It obtains authentication at runtime and never
+persists a token. Human comments are preserved; duplicate managed comments or a different publishing identity require
+explicit reconciliation rather than deletion or takeover.
 
-Do not run general bidirectional sync or pull GitHub changes into Beads. Parent and blocker edges remain canonical in Beads and are not guaranteed to appear in GitHub's issue UI.
+The comment contains canonical status, the closure reason when closed, delivery evidence, verified commit and PR links,
+actual PR merge state, and incoming/outgoing Beads relationships resolved to GitHub Issue links. Publish related Beads
+first if they do not yet have GitHub mirrors. Relationships remain Beads-owned; visible links do not promise GitHub
+native dependency or sub-issue fields. A PR must reference the full mirrored Issue URL in its body, which gives readers
+a reverse path from the PR to the originating work.
+
+Success requires readback of the exact managed comment and Issue status/title. Repeating publication updates the same
+comment, including after reopening or PR merge; unchanged content creates no write. A failed or interrupted request may
+have changed GitHub already. Retry the same command after correcting its reported problem; it discovers the existing
+comment instead of blindly creating another. Report publication as incomplete until readback succeeds. Never treat
+`bd close` or an upstream sync success message alone as complete public delivery.
+
+## Delivery and closure
+
+For every repository work item, including work started through generic implementation skills:
+
+1. Read and claim the Bead. Keep scope and relationships there. Work in an isolated worktree.
+2. Finish the requested outcome, run the applicable checks and reviews, then sign and push coherent commits.
+3. For code work, create or update a PR with the problem, resulting behavior, validation, and the full Issue URL.
+   Reuse a PR for the branch rather than creating duplicates. A user-requested branch-only delivery may omit a PR,
+   but its reason must be recorded. Do not merge merely to complete this workflow.
+4. Record the delivery in `metadata.github_delivery`, preserving other metadata. Include the current PR head SHA and
+   actual validation, limitations, and remaining work. Keep unverified or failed acceptance explicit.
+5. Close in Beads only when its requested acceptance criteria are satisfied, with a substantive `--reason`. A request
+   to implement and deliver may close before merge; a request requiring merge stays active until merge is verified.
+   Beads completion and GitHub PR merge state are separate facts and must both remain visible.
+6. When publication is authorized, run `bun run beads:publish -- <id>` and require verified comment URLs. Return the
+   Bead, Issue, PR or branch-only reason, final commit, validation, and merge state. If publication fails, report the
+   local and public states separately. After an authorized merge, verify the patch and worktree state, update Beads,
+   publish again, and remove only the clean merged worktree.
+
+The delivery object has the following fields:
+
+| Field | Contract |
+| --- | --- |
+| `kind` | `code` or `no-code` |
+| `summary` | Nonempty public outcome, including limitations or remaining work |
+| `validation` | Nonempty public evidence of the applicable acceptance and review results |
+| `commits` | Full lowercase 40-character commit SHAs; at least one for code, empty for no-code |
+| `pull_request` | Optional positive PR number in this repository; code normally requires it |
+| `no_pr_reason` | Explicit reason for branch-only code delivery, or why no code/PR was needed |
+
+For example, prepare an ignored JSON file containing the existing metadata plus `github_delivery`, then use
+`bd update <id> --metadata @<file.json>`. The publisher rejects malformed metadata, closed Beads without delivery or a
+closure reason, missing remote commits, and a PR whose current head is absent from the recorded commits. It reads PR
+merge state directly instead of trusting a free-form claim. No-code work must have a reason and no commit/PR references.
+Open planning Beads may publish without a delivery record; their comment states that delivery is not yet recorded.
+
+Historical closed Beads follow the same validation when republished: recover their real public evidence and references
+first, and explicitly record branch-only or no-code outcomes where applicable. Do not invent a PR, merged state, or
+successful acceptance to make legacy publication pass. Publication covers the selected Bead and its full child tree;
+other dependencies are linked, not implicitly published or closed.
 
 ## External intake
 
