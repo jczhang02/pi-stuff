@@ -10,10 +10,15 @@ import { Container, Markdown, Spacer, stripTerminalSequences, visibleWidth } fro
 import { highlightSkillCommands } from "../../packages/pi-stuff/src/conversation-ui/skill-command-style.js";
 import { UserMessageCard } from "../../packages/pi-stuff/src/conversation-ui/user-message-card.js";
 
-function card(prompt: string, skillName = "implement", failures?: Error[]): UserMessageCard {
+function card(
+	prompt: string,
+	skillName = "implement",
+	failures?: Error[],
+	instructions = "Details stay below the prompt.",
+): UserMessageCard {
 	initTheme("dark");
 	const skill = parseSkillBlock(
-		`<skill name="${skillName}" location="fixture/SKILL.md">\nDetails stay below the prompt.\n</skill>${prompt ? `\n\n${prompt}` : ""}`,
+		`<skill name="${skillName}" location="fixture/SKILL.md">\n${instructions}\n</skill>${prompt ? `\n\n${prompt}` : ""}`,
 	);
 	const fallback = new Container();
 	if (skill) fallback.addChild(new SkillInvocationMessageComponent(skill));
@@ -181,4 +186,37 @@ test("restores compound SGR foregrounds without confusing background RGB values 
 		const rendered = highlightSkillCommands(`\u001b[${control}m/skill:one tail`);
 		expect(rendered.endsWith(`\u001b[${expected}m tail`)).toBe(true);
 	}
+});
+
+test("matches visible commands across formatting without inventing token boundaries", () => {
+	for (const prompt of ["/skill:**implement**", "**/skill:im**plement", "/skill:im**ple**ment"]) {
+		const rendered = card(prompt).render(100).join("\n");
+		expect(rendered.split("\u001b[38;5;93m/")).toHaveLength(3);
+	}
+	const rendered = card("**path**/skill:implement").render(100).join("\n");
+	expect(rendered.split("\u001b[38;5;93m/")).toHaveLength(2);
+});
+
+test("wraps the complete prefixed paragraph exactly as native Markdown, retaining hard breaks", () => {
+	for (const prompt of [
+		"one two three four five six seven eight nine ten eleven twelve",
+		"one two three  \nfour five six",
+		"one two\nthree four",
+	]) {
+		const message = card(prompt);
+		for (const width of [24, 40, 80]) {
+			const expected = new Markdown(`/skill:implement ${prompt}`, 0, 0, getMarkdownTheme())
+				.render(width - 4)
+				.map((row, index) => `${index === 0 ? "  " : "   "}${stripTerminalSequences(row).trimEnd()}`);
+			expect(content(message, width)).toEqual(expected);
+		}
+	}
+});
+
+test("colors inline commands in expanded instructions while retaining native fenced code", () => {
+	const message = card("hi", "implement", undefined, "Use /skill:to-spec\n\n```text\n/skill:literal\n```");
+	message.setExpanded(true);
+	const rendered = message.render(100).join("\n");
+	expect(rendered.split("\u001b[38;5;93m/")).toHaveLength(3);
+	expect(stripTerminalSequences(rendered)).toContain("/skill:literal");
 });

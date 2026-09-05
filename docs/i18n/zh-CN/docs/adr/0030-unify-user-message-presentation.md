@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: 0c7c211bc48d3df1403ddce82f015272334ddbbcbbffd1674fe70698b519a2ba -->
+<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: 1380ac3b87c00eaf13662e2ca536443da3cc1dc9ae90063e63ac1f5947294185 -->
 
 ---
 status: accepted
@@ -90,3 +90,8 @@ projection，并通过现有诊断通道报告一次。不打断 Agent，不重�
 这只是装饰，不新增 Skill 调用、instructions 或 Provider 内容。固定 ANSI 256 色环来自 `pi-dynamic-workflows` 的 `56489683` 提交中
 `src/workflow-editor.ts`。每个命令从紫色（色环索引 26）开始，每个字符前进一色；Transcript 保持静态，
 不安装动画计时器。
+
+修复后的呈现只装饰完整的最外层行内输出，按跨 ANSI 控制序列的可见文字匹配，再映射回原控制流，
+避免嵌套强调产生错误边界。prompt 和展开的 instructions 共用该装饰。Skill 前缀在原生换行前加入
+第一个顶层段落结果，块级内容保留独立标识行；所有参数（包括嵌套样式上下文）原样转发。恢复历史时，
+一旦投影失败禁用适配器，立即停止循环，保留后续原生组件。

@@ -74,7 +74,7 @@ invocations use the same presentation. The Skill command uses the static workflo
 blocks begin below it where necessary to retain native Markdown structure. Native `Ctrl+O` expands full Skill
 instructions after the prompt under `Skill instructions`, without repeating the prompt or creating another card.
 Inline `/skill:<name>` text throughout the prompt receives the same colors in its original position. This decoration
-does not invoke Skills or add instructions for textual mentions; fenced code and hyperlink targets remain native.
+does not invoke Skills or add instructions for textual mentions. Expanded instructions share the inline decoration; fenced code and hyperlink targets remain native.
 
 Live and restored regular/fullscreen TUI share the same rendering. Session content, Provider input, editor history,
 and HTML export retain their native semantics. The version-bound adapter is released on Session switch, shutdown,

@@ -48,20 +48,31 @@ interface NativeMarkdownBlock {
 }
 
 // Observe Pi's parsed first block on this card's Markdown instance; no parallel Markdown grammar or global patch.
-function observeBlocks(markdown: Markdown, observe: (type: string) => void): void {
+function observeBlocks(markdown: Markdown, decorate: (type: string, rows: string[]) => string[]): void {
 	const method: unknown = Object.getOwnPropertyDescriptor(Markdown.prototype, "renderToken")?.value;
 	if (!isRuntimeFunction(method))
 		throw new Error("User Message presentation requires the certified Pi token renderer");
+	let depth = 0;
 	// SAFETY: this validated callable has Pi 0.85.0's token-render signature and receives native parser output unchanged.
-	const renderToken = method as (this: Markdown, token: NativeMarkdownBlock, width: number, next?: string) => string[];
+	const renderToken = method as (
+		this: Markdown,
+		token: NativeMarkdownBlock,
+		width: number,
+		...args: unknown[]
+	) => string[];
 	Object.defineProperty(markdown, "renderToken", {
 		configurable: true,
-		value: function (this: Markdown, token: NativeMarkdownBlock, width: number, next?: string): string[] {
+		value: function (this: Markdown, token: NativeMarkdownBlock, width: number, ...args: unknown[]): string[] {
 			if (!isRuntimeObject(token) || token === null || !("type" in token) || !isRuntimeString(token.type)) {
 				throw new Error("User Message presentation requires the certified Pi Markdown token");
 			}
-			if (token.type !== "space") observe(token.type);
-			return renderToken.call(this, token, width, next);
+			depth += 1;
+			try {
+				const rows = renderToken.call(this, token, width, ...args);
+				return depth === 1 ? decorate(token.type, rows) : rows;
+			} finally {
+				depth -= 1;
+			}
 		},
 	});
 }
@@ -71,14 +82,20 @@ function highlightInlineSkills(markdown: Markdown): void {
 	const method: unknown = Object.getOwnPropertyDescriptor(Markdown.prototype, "renderInlineTokens")?.value;
 	if (!isRuntimeFunction(method))
 		throw new Error("User Message presentation requires the certified Pi inline renderer");
+	let depth = 0;
 	// SAFETY: forward the certified method's opaque arguments unchanged, and validate its rendered string.
 	const render = method as (this: Markdown, ...args: unknown[]) => string;
 	Object.defineProperty(markdown, "renderInlineTokens", {
 		configurable: true,
 		value: function (this: Markdown, ...args: unknown[]): string {
-			const text: unknown = render.apply(this, args);
-			if (!isRuntimeString(text)) throw new Error("User Message inline rendering returned non-text");
-			return highlightSkillCommands(text);
+			depth += 1;
+			try {
+				const text: unknown = render.apply(this, args);
+				if (!isRuntimeString(text)) throw new Error("User Message inline rendering returned non-text");
+				return depth === 1 ? highlightSkillCommands(text) : text;
+			} finally {
+				depth -= 1;
+			}
 		},
 	});
 }
@@ -88,7 +105,7 @@ class PromptContent implements Component {
 	private readonly skill: SkillBlock | null;
 	private readonly style: MarkdownTheme;
 	private readonly marker: boolean;
-	private firstBlock: string | undefined;
+	private prefixPending = true;
 	private cachedWidth: number | undefined;
 	private cachedRows: string[] | undefined;
 
@@ -97,10 +114,13 @@ class PromptContent implements Component {
 		this.skill = skill;
 		this.style = style;
 		this.marker = marker;
-		if (marker) highlightInlineSkills(markdown);
+		highlightInlineSkills(markdown);
 		if (skill)
-			observeBlocks(markdown, (type) => {
-				this.firstBlock ??= type;
+			observeBlocks(markdown, (type, rows) => {
+				if (!this.prefixPending || type === "space") return rows;
+				this.prefixPending = false;
+				const label = rainbowSkillCommand(`/skill:${sanitizeOneLine(skill.name)}`);
+				return type === "paragraph" ? [`${label} ${rows[0] ?? ""}`, ...rows.slice(1)] : [label, ...rows];
 			});
 	}
 
@@ -112,12 +132,10 @@ class PromptContent implements Component {
 	render(width: number): string[] {
 		if (this.cachedRows && this.cachedWidth === width) return this.cachedRows;
 		if (width <= 2) return width > 0 && this.marker ? [""] : [];
-		this.firstBlock = undefined;
+		this.prefixPending = true;
 		const rows = [...this.markdown.render(width - 2)];
-		if (this.skill) {
-			const label = rainbowSkillCommand(`/skill:${sanitizeOneLine(this.skill.name)}`);
-			const first = this.firstBlock === "paragraph" ? (rows.shift() ?? "").trimEnd() : "";
-			rows.unshift(...wrapTextWithAnsi(`${label}${first ? ` ${first}` : ""}`, width - 2));
+		if (this.skill && rows.length === 0) {
+			rows.push(...wrapTextWithAnsi(rainbowSkillCommand(`/skill:${sanitizeOneLine(this.skill.name)}`), width - 2));
 		}
 		this.cachedWidth = width;
 		this.cachedRows = rows.map(

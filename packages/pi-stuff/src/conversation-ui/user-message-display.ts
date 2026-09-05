@@ -153,7 +153,7 @@ function adoptReplayedMessages(state: PatchState, sessionManager: ExtensionConte
 		if (manager !== sessionManager) return;
 		const presentation = hostPresentation(host);
 		// Pi reload replays before session_start. Reconcile once at binding, never on redraw or each insertion.
-		for (let index = 0; index < presentation.chatContainer.children.length; index += 1) {
+		for (let index = 0; state.enabled && index < presentation.chatContainer.children.length; index += 1) {
 			const component = presentation.chatContainer.children[index];
 			if (component instanceof UserMessageComponent || component instanceof SkillInvocationMessageComponent) {
 				projectMessage(presentation, index, (error) => disable(state, error));

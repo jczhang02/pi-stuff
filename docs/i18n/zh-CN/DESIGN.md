@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 84e1408aa0d236b3665a42e1f7c6dbf1b4d337fd4738e1b66fe61ff8c3da366e -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: 778e1914bcc94888407555745d7664b2984ab501355b6541c14660fc40d2be76 -->
 
 ---
 version: alpha
@@ -176,7 +176,8 @@ User Message 保留原生全宽 `userMessageBg` 卡片、横向内边距和上�
 `/skill:<name>`，没有独立背景、边框、标题或展开提示。纯 Skill 使用相同布局。User Message 中各处的行内 `/skill:<name>` 文本采用相同配色，
 不改变调用语义，也不为文字提及添加 instructions。块级 Markdown 在 Skill 标识
 下方开始；换行保留原生 Markdown 层级和终端单元格对齐。原生 `Ctrl+O` 与 Host 当前展开状态保持权威。
-展开的 instructions 位于同一卡片的 prompt 后面，使用低强调的 `Skill instructions` 标签，不重复标记或
+Skill 前缀在 Pi 换行前加入第一个原生段落，保留硬换行。展开的 instructions 使用相同的行内 Skill
+装饰，位于同一卡片的 prompt 后面，使用低强调的 `Skill instructions` 标签，不重复标记或
 prompt。实时及恢复后的 regular/fullscreen TUI 共用此呈现；HTML 保持原生行为。
 
 Thinking 始终位于 Host 拥有的 Transcript 内。显示时，每个 Host Thinking run 只占一行：`• thoughts: `

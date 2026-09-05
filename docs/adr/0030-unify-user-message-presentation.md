@@ -47,11 +47,16 @@ not evidence that those behaviors survive.
 
 Determine inline Skill placement from the first non-space block type emitted by the card's native Markdown token
 renderer. Observe that card-local method while passing every token and argument unchanged to Pi; do not patch the
-Markdown prototype or maintain a second block classifier. Preflight this version-bound component signal as well as
+Markdown prototype or maintain a second block classifier. Prepend the Skill label to the first top-level native
+paragraph result before Pi wraps it; block content keeps a separate label row. Forward every native argument,
+including nested style context, unchanged. Preflight this version-bound component signal as well as
 the insertion seam, and route an incompatible runtime signal through the same native fallback.
 
 Observe the card-local native `renderInlineTokens` result to color inline `/skill:<name>` text before native wrapping.
-Forward its arguments unchanged, validate the returned string, preserve terminal hyperlink controls and restore the
+Decorate only completed outermost inline results so nested emphasis cannot invent command boundaries. Match the
+visible text across ANSI controls, then map colors back to the original control stream. Apply this to the prompt
+and expanded instructions. Forward arguments unchanged, validate the returned string, preserve terminal hyperlink
+controls and restore the
 preceding foreground after each command. Fenced code remains native. This is decoration only: no additional Skill
 invocations, instructions, or Provider content are synthesized. The fixed ANSI 256-color ring follows
 `pi-dynamic-workflows` commit `56489683`, `src/workflow-editor.ts`. Each command begins at violet (ring index 26),
@@ -66,7 +71,8 @@ Pi 0.85.0 replays replacement Sessions before emitting `session_start`. Retain o
 InteractiveMode across release, with no retained Session context or diagnostic channel. At the next TUI binding,
 reconcile already-rendered native User and Skill components once through the same projection, only if the remembered
 Host's current SessionManager is identical to the binding's SessionManager. Skip cards already
-projected by this adapter. This avoids keeping the patch installed after release or rebuilding other Transcript state.
+projected by this adapter. Stop the reconciliation loop immediately when a caught projection failure disables
+the adapter, leaving subsequent native components untouched. This avoids keeping the patch installed after release or rebuilding other Transcript state.
 
 ### Reliability and failure policy
 

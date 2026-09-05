@@ -4,10 +4,12 @@ import {
 	InteractiveMode,
 	initTheme,
 	SessionManager,
+	SkillInvocationMessageComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Container, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
+import { Container, Spacer, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import { DiagnosticChannel } from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
+import { UserMessageCard } from "../../packages/pi-stuff/src/conversation-ui/user-message-card.js";
 import { installUserMessageDisplay } from "../../packages/pi-stuff/src/conversation-ui/user-message-display.js";
 
 const manager = SessionManager.inMemory();
@@ -108,5 +110,57 @@ test("contains projection faults once, retries on reinstall, and propagates orig
 			if (descriptor) Object.defineProperty(prototype, name, descriptor);
 		}
 		Reflect.deleteProperty(prototype, Symbol.for("@jczhang02/pi-stuff:user-message-host/v1"));
+	}
+});
+
+test("stops replay adoption after a caught expanded-card composition failure", () => {
+	initTheme("dark");
+	const prototype = InteractiveMode.prototype;
+	const names = ["getMarkdownThemeWithSettings", "getMarkdownTransformers", "sessionManager"];
+	const descriptors = names.map((name) => Object.getOwnPropertyDescriptor(prototype, name));
+	const referenceKey = Symbol.for("@jczhang02/pi-stuff:user-message-host/v1");
+	const reference = Object.getOwnPropertyDescriptor(prototype, referenceKey);
+	const setPadding = UserMessageComponent.prototype.setOutputPad;
+	const chatContainer = new Container();
+	chatContainer.addChild(
+		new SkillInvocationMessageComponent({
+			name: "implement",
+			location: "fixture/SKILL.md",
+			content: "Instructions",
+			userMessage: undefined,
+		}),
+	);
+	chatContainer.addChild(new Spacer(1));
+	const later = new UserMessageComponent("Later native message");
+	chatContainer.addChild(later);
+	// SAFETY: only the certified presentation fields are supplied for this deliberate lifecycle fault.
+	const host = Object.assign(Object.create(prototype), {
+		chatContainer,
+		outputPad: 1,
+		toolOutputExpanded: true,
+	}) as InteractiveMode;
+	const diagnostics = new DiagnosticChannel();
+	let release: (() => void) | undefined;
+	try {
+		Object.defineProperty(prototype, "sessionManager", { configurable: true, get: () => manager });
+		Object.defineProperty(prototype, "getMarkdownThemeWithSettings", { configurable: true, value: getMarkdownTheme });
+		Object.defineProperty(prototype, "getMarkdownTransformers", { configurable: true, value: () => [] });
+		Object.defineProperty(prototype, referenceKey, { configurable: true, value: new WeakRef(host) });
+		UserMessageComponent.prototype.setOutputPad = function (padding) {
+			if (this instanceof UserMessageCard) throw new Error("expanded composition failure");
+			setPadding.call(this, padding);
+		};
+		release = installUserMessageDisplay(diagnostics, manager);
+		expect(chatContainer.children[2]).toBe(later);
+		expect(diagnostics.list().map((entry) => entry.count)).toEqual([1]);
+	} finally {
+		release?.();
+		UserMessageComponent.prototype.setOutputPad = setPadding;
+		for (const [index, name] of names.entries()) {
+			const descriptor = descriptors[index];
+			if (descriptor) Object.defineProperty(prototype, name, descriptor);
+		}
+		if (reference) Object.defineProperty(prototype, referenceKey, reference);
+		else Reflect.deleteProperty(prototype, referenceKey);
 	}
 });

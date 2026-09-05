@@ -1,3 +1,4 @@
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { terminalControlEnd } from "../shared/terminal-text.js";
 
 // pi-dynamic-workflows, 56489683, src/workflow-editor.ts. Freeze the violet phase for transcript text.
@@ -6,13 +7,12 @@ const RAINBOW = [
 	93, 129, 165, 201, 198, 197,
 ];
 
+function rainbowCharacter(character: string, index: number): string {
+	return `\u001b[38;5;${RAINBOW[(index + 26) % RAINBOW.length]}m${character}`;
+}
+
 export function rainbowSkillCommand(text: string, restore = "\u001b[39m"): string {
-	return (
-		Array.from(text, (character, index) => {
-			const color = RAINBOW[(index + 26) % RAINBOW.length];
-			return `\u001b[38;5;${color}m${character}`;
-		}).join("") + restore
-	);
+	return Array.from(text, rainbowCharacter).join("") + restore;
 }
 
 function foregroundAfter(control: string, previous: string): string {
@@ -36,8 +36,17 @@ function foregroundAfter(control: string, previous: string): string {
 
 /** Decorate visible command text without editing OSC hyperlinks or native foreground restoration. */
 export function highlightSkillCommands(text: string): string {
+	const plain = stripTerminalSequences(text);
+	const pattern = /(^|[^A-Za-z0-9_./:@-])(\/skill:[A-Za-z0-9_-]+(?::[A-Za-z0-9_-]+)*)(?![A-Za-z0-9_./:@-])/gu;
+	const ranges = Array.from(plain.matchAll(pattern), (match) => ({
+		start: match.index + (match[1]?.length ?? 0),
+		end: match.index + match[0].length,
+	}));
+	if (ranges.length === 0) return text;
 	let output = "";
 	let foreground = "\u001b[39m";
+	let visible = 0;
+	let rangeIndex = 0;
 	for (let index = 0; index < text.length; ) {
 		if (text.charCodeAt(index) === 0x1b) {
 			const end = terminalControlEnd(text, index);
@@ -47,15 +56,13 @@ export function highlightSkillCommands(text: string): string {
 			index = end;
 			continue;
 		}
-		const next = text.indexOf("\u001b", index);
-		const end = next < 0 ? text.length : next;
-		output += text
-			.slice(index, end)
-			.replace(
-				/(^|[^A-Za-z0-9_./:@-])(\/skill:[A-Za-z0-9_-]+(?::[A-Za-z0-9_-]+)*)(?![A-Za-z0-9_./:@-])/gu,
-				(_match, boundary: string, command: string) => boundary + rainbowSkillCommand(command, foreground),
-			);
-		index = end;
+		while (ranges[rangeIndex] && visible >= (ranges[rangeIndex]?.end ?? 0)) rangeIndex += 1;
+		const range = ranges[rangeIndex];
+		const character = String.fromCodePoint(text.codePointAt(index) ?? 0);
+		output +=
+			range && visible >= range.start ? rainbowCharacter(character, visible - range.start) + foreground : character;
+		visible += character.length;
+		index += character.length;
 	}
 	return output;
 }

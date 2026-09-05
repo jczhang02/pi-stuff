@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: 29770cb0f179fc2a16eed614428df6e1eb4ea3417a7eb198c4b784d83ab08cbe -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: e75bd030d8600eef300007de09c83d6e76bd72f6cb9cca84327a21a8c6d77c6d -->
 
 # Conversation UI
 
@@ -70,7 +70,7 @@ prompt 和续行正文与 Tool 正文对齐。标记表示 Provider Prompt，包
 相同呈现。Skill 调用文字采用固定的 workflow 演示中的静态彩虹配色；列表、引用和代码块在需要时从它的下方开始，保留原生 Markdown 结构。
 原生 `Ctrl+O` 在 prompt 后的 `Skill instructions` 标签下展开完整 Skill instructions，不重复 prompt，
 不创建另一张卡片。prompt 中各处的行内 `/skill:<name>` 文本在原位采用相同配色。此装饰不会执行 Skill
-或为文字提及添加 instructions；围栏代码和超链接目标保留原生呈现。
+或为文字提及添加 instructions。展开的 instructions 使用相同的行内装饰；围栏代码和超链接目标保留原生呈现。
 
 实时和恢复后的 regular/fullscreen TUI 共用相同渲染。Session 内容、Provider 输入、编辑器历史和 HTML 导出
 保留原生语义。版本约束适配器在 Session 切换、关闭和 `/reload` 时释放。初始化不兼容会明确失败；工作中的

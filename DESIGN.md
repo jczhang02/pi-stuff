@@ -189,7 +189,8 @@ title, or expansion hint. Skill-only
 invocations use the same layout. Inline `/skill:<name>` text throughout a User Message uses the same palette,
 without changing invocation semantics or adding instructions for textual mentions. Block Markdown starts below the Skill identity; wrapping preserves native Markdown
 hierarchy and terminal-cell alignment. Native `Ctrl+O` and the Host's current expansion state remain authoritative.
-Expanded instructions follow the prompt under a low-emphasis `Skill instructions` label inside the same card, with no
+The Skill prefix joins the first native paragraph before wrapping; native hard breaks remain intact.
+Expanded instructions use the same inline Skill decoration and follow the prompt under a low-emphasis `Skill instructions` label inside the same card, with no
 duplicate marker or prompt. Live and restored regular/fullscreen TUI share this presentation; HTML remains native.
 
 Thinking stays inside the Host-owned Transcript. When visible, every Host Thinking run occupies one row: `• thoughts: `
