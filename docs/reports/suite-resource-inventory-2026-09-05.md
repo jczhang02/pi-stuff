@@ -109,3 +109,28 @@ gates. MCP uses fresh private HOME/XDG/Agent/project/Session directories; its am
 were not reset. RTK uses a fresh private HOME/XDG/TMPDIR, but fresh/resume share their fixture state. The kernel page
 cache was not reset for either verifier. Different themes and fresh/resume workloads are not paired optimization
 samples. Per-owner repetition, scale, crash recovery, allocation/GC and complete resource dimensions remain open.
+
+### RTK executable-read attribution
+
+A separate diagnostic launched at 08:51:10 UTC on `dee4f81b` repeated the unchanged RTK verifier with strace 7.1
+following the exact Host and filtering file operations to the certified RTK executable. Fresh and resumed verification
+passed. The fresh trace contains five complete reads of the 10,326,432-byte binary: 51,632,160 bytes returned to user
+buffers, through ten positive `read` calls and five EOF reads. Five additional `O_PATH` opens inspect identity without
+reading content; counting every open as a full read would double the result. The parser joined the one interrupted
+read with its resumed return. Trace/source hashes and counts are retained in `rtkIdentityTrace` in the numeric record.
+
+The [runtime owner](../../packages/pi-stuff/src/rtk/runtime.ts) explains the count: `certify()` reads once, and
+`assertStable()` reads before each of the four rewrite requests, including the command for which RTK returns no
+replacement. There were one version probe, four rewrite executions and three resulting RTK command executions.
+Opening the already-ready dialog added no read. The resumed fixture performed no tracked RTK executable read or
+execution. This rules out extra certification in this measured sequence, not in every possible concurrent workload.
+
+Retain these identity checks under the current [drift-detection contract](../capabilities/rtk.md#runtime-verification).
+The existing runtime and certified-executable tests passed on repository Bun 1.4.0: 14 tests, 60 assertions, including
+cached verification, concurrent verification deduplication, path changes and in-place binary changes. The evidence
+does not justify weakening the contract to avoid its reads. It also does not establish that the complete RTK
+implementation has no removable work.
+
+strace changes scheduling. Its read durations are not hashing CPU time, main-thread blocking or Vibe Line liveness;
+returned bytes are not physical storage reads or total allocation. Those dimensions and RTK projection/savings costs
+remain open. No production or verifier change was needed for this attribution.

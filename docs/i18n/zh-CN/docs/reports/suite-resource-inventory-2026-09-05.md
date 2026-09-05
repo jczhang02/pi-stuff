@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 8e7b7481a8d1ee104b823f62f45325e163c214d5cae6af40c4b006ae889c3451 -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 9dad9deecece3d0e7d0711471196f416b86edf6e905e178a0159b8145a69980b -->
 
 # Suite 资源源码清单
 
@@ -107,3 +107,23 @@ MCP 使用新的私有 HOME／XDG／Agent／项目／Session 目录，但未重�
 RTK 使用新的私有 HOME／XDG／TMPDIR，新会话和恢复共用 fixture 状态。两者均未重置内核页缓存。
 不同主题及新会话／恢复工作负载不是成对优化样本。各所有者的重复工作、规模增长、崩溃恢复、分配／GC
 及完整资源维度仍未完成。
+
+### RTK 可执行文件读取归因
+
+另一项诊断于 UTC 08:51:10 在 `dee4f81b` 启动，使用 strace 7.1 跟随精确 Host，只追踪指向认证 RTK
+可执行文件的文件操作，再次执行未修改的 RTK 验证器。新会话和恢复验证均通过。新会话轨迹包含五次
+完整读取，每次 10,326,432 字节；十次返回数据的 `read` 和五次 EOF 读取共向用户缓冲区交付
+51,632,160 字节。另有五次 `O_PATH` 打开只检查身份、不读取内容；把每次打开都算作完整读取会让结果翻倍。
+解析时将一次中断的读取与对应恢复返回合并。数值记录的 `rtkIdentityTrace` 保留轨迹／源码哈希及计数。
+
+[runtime 所有者](../../../../../packages/pi-stuff/src/rtk/runtime.ts)解释了次数：`certify()` 读取一次，
+`assertStable()` 在四次改写请求前各读取一次，包含 RTK 不返回替代命令的那一次。实际记录到一次版本探测、
+四次改写执行和三次改写后的 RTK 命令执行。打开已经 ready 的对话框未增加读取；恢复 fixture 没有追踪到
+RTK 可执行文件读取或执行。这排除了该测量序列中的额外认证，不代表所有并发工作负载都已排除。
+
+按当前[漂移检测契约](../capabilities/rtk.md#runtime-验证)保留这些身份校验。既有 runtime 和认证
+可执行文件测试在仓库 Bun 1.4.0 上通过：14 个测试、60 次断言，覆盖认证缓存、并发认证去重、路径变化和
+文件原地变化。现有证据不支持为了减少读取而削弱契约，也没有证明完整 RTK 实现不存在可删除的工作。
+
+strace 会改变调度。读取持续时间不是哈希 CPU 时间、主线程阻塞或 Vibe Line 活性；返回字节数不是物理
+存储读取量或累计分配量。这些维度，以及 RTK 投影／节省统计的成本，仍待核实。本次归因未修改产品或验证器。

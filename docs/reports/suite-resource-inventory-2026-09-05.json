@@ -29,6 +29,69 @@
 		"suiteManifestSha256": "99867b607fa1e7aa2ef90851d3cc811e1fffbe8add4627e1446ffddc6b6f4202",
 		"sharedProviderSha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
 	},
+	"rtkIdentityTrace": {
+		"suiteCommit": "dee4f81b9b6bdeb5f6eeed7de4f8bb433cc91b2b",
+		"launchRequestedAt": "2026-09-05T08:51:10Z",
+		"workloadRef": "rtk",
+		"tracer": "strace 7.1",
+		"wrapperSha256": "74cd42bfd6d3228a7b92774cb36c077adb4612d91d0fa0a14041d619e1fe1b06",
+		"sourceSha256": "1fb274a11e99c7a645bbf85b8a95f2e970b793c7f418039e9b3b03d83e56dc0b",
+		"filter": "-f -qq -ttt -T -yy -s 80 -e trace=openat,read,pread64,close,newfstatat,statx,readlink,execve,execveat -P CERTIFIED_RTK_EXECUTABLE",
+		"verifierExitStatus": 0,
+		"executableBytes": 10326432,
+		"fresh": {
+			"rawSha256": "0032a63da8c4038e58ec0607be38fc845f7094aba2d9c0361fec3d63d5bc2c05",
+			"contentReadOpens": 5,
+			"metadataOnlyOpens": 5,
+			"positiveReadCalls": 10,
+			"eofReadCalls": 5,
+			"returnedBytes": 51632160,
+			"readBytesPerOpen": [
+				10326432,
+				10326432,
+				10326432,
+				10326432,
+				10326432
+			],
+			"contentReadOpenTraceLines": [
+				135,
+				148,
+				169,
+				189,
+				213
+			],
+			"executions": {
+				"version": 1,
+				"rewrite": 4,
+				"rewrittenCommand": 3
+			}
+		},
+		"resume": {
+			"rawSha256": "146eafa302d97ec441d8f4d447a95303c689163b280b0ff89cc9909da57cd0ee",
+			"trackedExecutableReadCalls": 0,
+			"trackedExecutableExecCalls": 0
+		},
+		"versionPreflight": {
+			"trackedExecutableReadCalls": 0,
+			"trackedExecutableExecCalls": 0
+		},
+		"interpretation": "Observed exactly one certification read and four pre-rewrite identity reads, consistent with runtime.ts and the current drift-detection contract. The ready dialog and resumed fixture added no executable reads. No extra certification demonstrated in this scenario; identity checks retained.",
+		"limits": "Read return values are user-buffer bytes, not physical storage I/O or total allocation. O_PATH opens are metadata-only and are not counted as content reads. Interrupted/resumed read lines are joined by trace TID. strace perturbs scheduling; these observations do not certify hashing CPU time, main-thread blocking, liveness gates, concurrent rewrites or all RTK overhead.",
+		"focusedTests": {
+			"runtime": "repository Bun 1.4.0",
+			"files": [
+				"test/rtk/runtime.test.ts",
+				"test/rtk/real-rtk.test.ts"
+			],
+			"fileSha256": [
+				"cf114d74acfa01f0499c2f71e31c6010a57e2e2e3d55c27216256fe3b63b0559",
+				"b86830703d13dbb3814c824b247a3ab9ad4aa59f12886314e8c0ee993ec9153d"
+			],
+			"passed": 14,
+			"failed": 0,
+			"assertions": 60
+		}
+	},
 	"workloads": [
 		{
 			"id": "mcp",
