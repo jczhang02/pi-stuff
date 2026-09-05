@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: f6c847d2fe46ba86438a282370a8dd9686b4fb5d78340758fd3e5a4c6ef43959 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: 5a328b23579f3d7ebdb85787fe1d001f429f59ff37541db259f28790a15676de -->
 
 # 文档
 
@@ -90,6 +90,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0027](adr/0027-preserve-foreground-reporting-through-background-handoff.md) | 在 Background Work 移交后保留前台报告义务 |
 | [0028](adr/0028-bound-tool-display-before-projection.md) | 在 projection 前限制 Tool Display |
 | [0029](adr/0029-keep-work-independent-of-retention-quotas.md) | 让生产性工作不受内部保留配额支配 |
+| [0031](adr/0031-preserve-magic-context-behavior-through-suite-integration.md) | 提议：在 Suite 集成中保持 Magic Context 行为一致 |
 
 ## 证据与历史
 
