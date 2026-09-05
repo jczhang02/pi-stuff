@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 2a1eb97088ca02ab732fd7cb748a840b5e81e0a8c12852cb37409c89dece78e8 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 6e1388e9dc4ef0c902adc53264ae04724b982fd3a854aed63b6c16ab3888fc92 -->
 
 # Pi Stuff
 
@@ -204,6 +204,11 @@ Session 选择的 `off`、`lite`、`full` 或 `ultra` 实现纪律级别。它�
 在 delegated Agent launch 时建立 snapshot；`review` 是 Skill，不是 Ponytail Mode。`off` 是硬模型边界：
 Ponytail 不贡献 standing instruction 或模型可见 Skill catalog，但显式 Skill command 仍可用。
 _避免使用_：Review mode、Agent mode、global mode
+
+**Context Recovery**：
+在实际 Context 或引擎故障后，恢复使用正确 Magic Context 投影的能力，同时保留已接受输入和已完成工作。
+普通主动压缩不是 Context Recovery；恢复不会将前台生命周期归属从 Pi 转移出去。
+_避免_：Agent restart、background maintenance、full history recomposition
 
 **Context Engine Worker**：
 Context Management 内部的 Bun Worker，使完全相同的 Magic Context derived-state engine 离开 Pi UI 线程运行。

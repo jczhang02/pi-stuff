@@ -81,11 +81,19 @@ The ten-minute deadline applies only to an actual fault-recovery phase. It is no
 ordinary proactive compaction, or a normal Provider response. A retry or maintenance operation must not reset, replace,
 or cancel the foreground run merely to simplify adapter implementation.
 
-## Open decisions
+This prohibition does not require pretending that an actual failure is recoverable. When a Provider has rejected the
+request or Magic cannot produce a correct projection, attempt recovery within the confirmed boundaries. If recovery
+cannot restore correct operation, preserve the Session, current input, and queued input, explain the cause, and stop.
+Never turn optional maintenance failure or an uncertain estimate into such a foreground failure.
 
-The remaining policy clarification is how the prohibition on proactive interruption relates to the previously
-confirmed stops for actual unrecoverable failures. Progress measurement and detailed cancellation propagation remain
-engineering validation work, not assumed capabilities. The design still awaits final shared-understanding confirmation.
+## Design confirmation and engineering validation
+
+The product-policy questions are settled. The consolidated design awaits final shared-understanding confirmation.
+Progress measurement, genuine Magic compaction through Pi's public continuation seam, acknowledgement verification,
+queue preservation, and cancellation propagation remain engineering validation work, not assumed capabilities.
+Validate normal operation, recovery, exhaustion, cancellation, late results, Session switching, and cold resume against
+direct Magic execution and the complete Suite integration. Publish no overall correctness claim while a material
+unexplained difference remains.
 
 This proposal would replace incompatible fallback and estimate-only rejection policies in
 [ADR 0026](0026-bound-context-managed-provider-requests.md). Until the design is accepted and implemented, current

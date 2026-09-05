@@ -217,6 +217,12 @@ boundary: Ponytail contributes neither standing instructions nor a model-visible
 commands remain available.
 _Avoid_: Review mode, Agent mode, global mode
 
+**Context Recovery**:
+Restoring the ability to use a correct Magic Context projection after an actual Context or engine failure while
+preserving accepted input and completed work. Ordinary proactive compaction is not Context Recovery; recovery does
+not transfer foreground lifecycle ownership from Pi.
+_Avoid_: Agent restart, background maintenance, full history recomposition
+
 **Context Engine Worker**:
 The internal Bun Worker in Context Management that runs the exact Magic Context derived-state engine away from Pi's UI
 thread. It receives immutable Host snapshots and returns Context results through a narrow adapter; Pi still owns the

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0031-preserve-magic-context-behavior-through-suite-integration.md; translation-source-sha256: 23554fcb9c39c0d8c8cc4c0539bb8873c56154e281e5cf7369733fb286a20570 -->
+<!-- translation-source: docs/adr/0031-preserve-magic-context-behavior-through-suite-integration.md; translation-source-sha256: c005470ebea1826eca2921f7e0b01a3b76b07d802c42836d50e896c00106c4fa -->
 
 ---
 status: proposed
@@ -68,10 +68,16 @@ Pi Stuff 不得通过主动动作打断本可继续的 Agent 运行。估计阈�
 十分钟期限只适用于实际故障恢复阶段，不是正常 Agent 执行、普通主动压缩或正常 Provider 回答的计时器。
 不得仅为简化适配层实现，通过重试或维护操作重置、替换或取消前台运行。
 
-## 待决事项
+禁止主动制造中断，不意味着假装实际故障可以恢复。Provider 已经拒绝请求，或 Magic 无法生成正确投影时，
+按已确认的边界尝试恢复。如果仍无法恢复正确运行，就保留 Session、当前输入和排队输入，说明原因并停止。
+绝不能把可选维护失败或不确定的估计升级成这样的前台故障。
 
-剩余的政策澄清是：禁止主动制造中断，与此前确认的实际不可恢复故障停止条件之间如何衔接。
-进展测量和具体取消传播仍是工程验证工作，不能当作已经具备的能力。设计仍等待最终共同理解确认。
+## 设计确认与工程验证
+
+产品政策问题已经收敛，整合后的设计等待最终共同理解确认。进展测量、通过 Pi 公开继续执行接口完成真正的 Magic
+压缩、完成确认核对、队列保留和取消传播，仍是工程验证工作，不能当作已经具备的能力。
+直接运行 Magic 和完整 Suite 集成都必须覆盖正常运行、恢复、恢复耗尽、取消、迟到结果、Session 切换和冷恢复。
+仍有影响正确性的未解释差异时，不得宣称整体可靠。
 
 本提案拟替换 [ADR 0026](0026-bound-context-managed-provider-requests.md) 中不兼容的兜底和仅凭估计拦截策略。
 在设计被接受并实现之前，当前行为仍单独记录；本草案不表示 Magic 独占恢复已经交付。
