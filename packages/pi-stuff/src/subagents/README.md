@@ -61,6 +61,10 @@ Current Session governor transactions use asynchronous stable-inode kernel claim
 or flush diagnostic owner records; mutual exclusion and process-death release remain kernel-owned. Canonical ledger
 commits and legacy lock handling are unchanged.
 
+Final-output extraction scans ordinary Assistant content once, retaining only the latest eligible text reference.
+It joins a complete message only when that message contains an acceptance report; report precedence and bounded
+result/error evidence are unchanged.
+
 ## Documentation
 
 - [Agents guide](../../../../docs/capabilities/subagents.md)

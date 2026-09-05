@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 0b0aa62182d22f34490c607c9e2da5b441296a38b68a9354d03214f65f9e52a0 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 596b32581be1a42db4c023c04a3a235918f5d5839589936ba4cdc896c285350e -->
 
 # Agents
 
@@ -58,6 +58,9 @@ Session。
 
 当前 Session governor 事务使用异步的稳定 inode 内核锁。获取锁时不再重写诊断用 owner 记录，也不强制刷盘；
 互斥与进程退出后的释放仍由内核保证。规范账本的提交方式与旧版本锁的处理保持不变。
+
+提取最终输出时，普通 Assistant 内容只扫描一次，仅保留最后一段合格文本的引用。只有消息包含验收报告时，
+才拼接该消息的完整文本；验收报告的优先级以及有界结果、错误证据保持不变。
 
 ## 文档
 

@@ -300,11 +300,28 @@ export function findLatestSessionFile(sessionDir: string | undefined): string | 
 // Message Parsing Utilities
 // ============================================================================
 
+function acceptanceMessageText(content: readonly unknown[]): string {
+	const texts: string[] = [];
+	for (const part of content) {
+		if (
+			part !== null &&
+			isRuntimeObject(part) &&
+			"type" in part &&
+			part.type === "text" &&
+			"text" in part &&
+			isRuntimeString(part.text) &&
+			part.text.trim().length > 0
+		)
+			texts.push(part.text);
+	}
+	return texts.join("\n");
+}
+
 /**
  * Get the final text output from a list of messages
  */
 export function getFinalOutput(messages: readonly { role?: string; content?: unknown }[]): string {
-	const validTextParts: string[] = [];
+	let latestText: string | undefined;
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
 		if (!msg || !isRuntimeObject(msg) || msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
@@ -312,17 +329,6 @@ export function getFinalOutput(messages: readonly { role?: string; content?: unk
 			("errorMessage" in msg && isRuntimeString(msg.errorMessage) && msg.errorMessage.length > 0) ||
 			("stopReason" in msg && msg.stopReason === "error");
 		if (hasAssistantError) continue;
-		const messageText = msg.content
-			.filter(
-				(part) =>
-					part !== null &&
-					isRuntimeObject(part) &&
-					part.type === "text" &&
-					isRuntimeString(part.text) &&
-					part.text.trim().length > 0,
-			)
-			.map((part) => (part.type === "text" ? part.text : ""))
-			.join("\n");
 		for (let j = msg.content.length - 1; j >= 0; j--) {
 			const part = msg.content[j];
 			if (
@@ -333,8 +339,8 @@ export function getFinalOutput(messages: readonly { role?: string; content?: unk
 				part.text.trim().length === 0
 			)
 				continue;
-			validTextParts.push(part.text);
-			if (/```acceptance[-_]report\s*\n[\s\S]*?```/i.test(part.text)) return messageText;
+			latestText ??= part.text;
+			if (/```acceptance[-_]report\s*\n[\s\S]*?```/i.test(part.text)) return acceptanceMessageText(msg.content);
 			for (const match of part.text.matchAll(/```(?:json|jsonc|json5)\s*\n([\s\S]*?)```/gi)) {
 				const body = match[1] ?? "";
 				if (
@@ -343,13 +349,13 @@ export function getFinalOutput(messages: readonly { role?: string; content?: unk
 						body,
 					)
 				) {
-					return messageText;
+					return acceptanceMessageText(msg.content);
 				}
 			}
-			if (/ACCEPTANCE_REPORT\s*:/i.test(part.text)) return messageText;
+			if (/ACCEPTANCE_REPORT\s*:/i.test(part.text)) return acceptanceMessageText(msg.content);
 		}
 	}
-	return validTextParts[0] ?? "";
+	return latestText ?? "";
 }
 
 export const MAX_STREAMED_OUTPUT_LINE_CHARS = 2000;
