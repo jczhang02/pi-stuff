@@ -24,7 +24,6 @@ export type SkillSource =
 interface ResolvedSkill {
 	name: string;
 	path: string;
-	content: string;
 	description?: string;
 	source: SkillSource;
 }
@@ -38,7 +37,6 @@ interface CachedSkillEntry {
 	name: string;
 	filePath: string;
 	source: SkillSource;
-	description?: string;
 	order: number;
 }
 
@@ -66,16 +64,6 @@ const SOURCE_PRIORITY = {
 	builtin: 100,
 	unknown: 0,
 } satisfies Record<SkillSource, number>;
-
-function stripSkillFrontmatter(content: string): string {
-	const normalized = content.replace(/\r\n/g, "\n");
-	if (!normalized.startsWith("---")) return normalized;
-
-	const endIndex = normalized.indexOf("\n---", 3);
-	if (endIndex === -1) return normalized;
-
-	return normalized.slice(endIndex + 4).trim();
-}
 
 function isWithinPath(filePath: string, dir: string): boolean {
 	const relative = path.relative(dir, filePath);
@@ -404,24 +392,14 @@ function chooseHigherPrioritySkill(
 }
 
 function parseSkillDescription(content: string): string | undefined {
-	const normalized = content.replace(/\r\n/g, "\n");
-	if (!normalized.startsWith("---")) return undefined;
+	if (!content.startsWith("---")) return undefined;
 
-	const endIndex = normalized.indexOf("\n---", 3);
+	const endIndex = content.indexOf("\n---", 3);
 	if (endIndex === -1) return undefined;
 
-	const frontmatter = normalized.slice(3, endIndex).trim();
+	const frontmatter = content.slice(3, endIndex).replace(/\r\n/g, "\n").trim();
 	const match = frontmatter.match(/^description:\s*(.+)$/m);
 	return match?.[1]?.trim().replace(/^['"]|['"]$/g, "");
-}
-
-function maybeReadSkillDescription(filePath: string): string | undefined {
-	try {
-		return parseSkillDescription(fs.readFileSync(filePath, "utf-8"));
-	} catch {
-		// Description parsing is best-effort metadata extraction.
-		return undefined;
-	}
 }
 
 function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: SkillSearchPath[]): CachedSkillEntry[] {
@@ -438,15 +416,11 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 		if (existingIndex !== undefined) {
 			const existing = entries[existingIndex];
 			if (existing && (SOURCE_PRIORITY[source] ?? 0) > (SOURCE_PRIORITY[existing.source] ?? 0)) {
-				const updated: CachedSkillEntry = {
+				entries[existingIndex] = {
 					...existing,
 					name,
 					source,
 				};
-				delete updated.description;
-				const description = maybeReadSkillDescription(resolvedFile);
-				if (description !== undefined) updated.description = description;
-				entries[existingIndex] = updated;
 			}
 			return;
 		}
@@ -457,8 +431,6 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 			source,
 			order: order++,
 		};
-		const description = maybeReadSkillDescription(resolvedFile);
-		if (description !== undefined) entry.description = description;
 		entries.push(entry);
 	};
 
@@ -576,12 +548,10 @@ function readSkill(skillName: string, skillPath: string, source: SkillSource): R
 		}
 
 		const raw = fs.readFileSync(skillPath, "utf-8");
-		const content = stripSkillFrontmatter(raw);
 		const description = parseSkillDescription(raw);
 		const skill: ResolvedSkill = {
 			name: skillName,
 			path: skillPath,
-			content,
 			source,
 		};
 		if (description !== undefined) skill.description = description;

@@ -51,6 +51,10 @@ execution or recovery records or hashing Agent definitions and task bodies. Fina
 inputs and creates their digests, model metadata, and recovery record once. Planning projections are not cached across
 launches or reused as finalized child contracts.
 
+Skill path discovery does not read candidate Skill bodies. Selected files are read once per metadata cache miss;
+the bounded cache retains names, paths, sources and descriptions, not unused body text. Selected-file modification
+checks, discovery precedence, fallback paths and the advertised Skill prompt remain unchanged.
+
 New launches and existing-target controls have separate loading boundaries. A launch loads its selected execution
 engine on first use; foreground execution does not load detached-runner launch machinery. Isolated-worktree operations
 load only when requested. Session fallback snapshot operations load only when a task has an inherited Session file

@@ -1,4 +1,390 @@
 {
+	"skillMetadataResolution": {
+		"bead": "ps-yon.13",
+		"baseCommit": "f8398ab25d3d387317902c5e19517488a74845eb",
+		"change": "Remove discarded descriptions and Markdown body reads from Skill path discovery. Keep selected-file metadata only; normalize only frontmatter. Preserve selection, priority, fallback, mtime checks, errors, prompt and inherited native Skill behavior.",
+		"physicalLines": {
+			"productionBefore": 720,
+			"productionAfter": 690,
+			"testBefore": 16,
+			"testAfter": 61
+		},
+		"sourceSha256": {
+			"control": "718f725636bfa095888b07e55d2b5044a5d16960d4caa6244cee6b85b259bef6",
+			"candidate": "d343df508d8e4ae9359559beecb59e248478809f9b6e38d48e4e791fb476e509"
+		},
+		"helper": {
+			"evidenceSha256": "6bea14ff81160530936aeb7f03836bd6ea841026ea060b02224fffc5ba1959e5",
+			"driverSha256": "01aa0431ef02107aad61791684d2f636269e545b080228f9aeb0cd5b668137ff",
+			"runtime": "1.4.0",
+			"equivalentCases": 12,
+			"catalogFiles": 48,
+			"fileBytes": 147500,
+			"counts": {
+				"control": {
+					"reads": 49,
+					"bytes": 7227500
+				},
+				"candidate": {
+					"reads": 1,
+					"bytes": 147500
+				}
+			},
+			"retainedBodyCodeUnits": {
+				"control": 6291408,
+				"candidate": 0
+			},
+			"medians": {
+				"control": {
+					"elapsedMs": 88.17101000000002,
+					"cpuUs": 90801
+				},
+				"candidate": {
+					"elapsedMs": 0.5683680000001914,
+					"cpuUs": 595
+				}
+			},
+			"trials": [
+				{
+					"trial": 0,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 92.58268900000002,
+					"cpuUs": 107667
+				},
+				{
+					"trial": 0,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.8038980000000038,
+					"cpuUs": 1101
+				},
+				{
+					"trial": 1,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.8811829999999645,
+					"cpuUs": 979
+				},
+				{
+					"trial": 1,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 91.58371799999986,
+					"cpuUs": 92040
+				},
+				{
+					"trial": 2,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 87.50755700000013,
+					"cpuUs": 87912
+				},
+				{
+					"trial": 2,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 1.0805769999999484,
+					"cpuUs": 1086
+				},
+				{
+					"trial": 3,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.5419770000002018,
+					"cpuUs": 694
+				},
+				{
+					"trial": 3,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 93.09102700000005,
+					"cpuUs": 109118
+				},
+				{
+					"trial": 4,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 86.96639200000004,
+					"cpuUs": 88968
+				},
+				{
+					"trial": 4,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.7386179999998603,
+					"cpuUs": 1218
+				},
+				{
+					"trial": 5,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.44774500000005446,
+					"cpuUs": 455
+				},
+				{
+					"trial": 5,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 101.56692600000008,
+					"cpuUs": 120964
+				},
+				{
+					"trial": 6,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 86.47871900000007,
+					"cpuUs": 87932
+				},
+				{
+					"trial": 6,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.5221950000000106,
+					"cpuUs": 595
+				},
+				{
+					"trial": 7,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.4573050000001331,
+					"cpuUs": 549
+				},
+				{
+					"trial": 7,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 85.91957400000001,
+					"cpuUs": 87819
+				},
+				{
+					"trial": 8,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 92.52754800000002,
+					"cpuUs": 107995
+				},
+				{
+					"trial": 8,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.5707740000000285,
+					"cpuUs": 574
+				},
+				{
+					"trial": 9,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.4539909999998599,
+					"cpuUs": 459
+				},
+				{
+					"trial": 9,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 85.1071199999999,
+					"cpuUs": 86152
+				},
+				{
+					"trial": 10,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 96.06111400000032,
+					"cpuUs": 113089
+				},
+				{
+					"trial": 10,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.7137590000002092,
+					"cpuUs": 728
+				},
+				{
+					"trial": 11,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.5537729999998646,
+					"cpuUs": 564
+				},
+				{
+					"trial": 11,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 86.85605599999985,
+					"cpuUs": 88291
+				},
+				{
+					"trial": 12,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 85.23090200000001,
+					"cpuUs": 85786
+				},
+				{
+					"trial": 12,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.8670320000001084,
+					"cpuUs": 875
+				},
+				{
+					"trial": 13,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.5114139999996041,
+					"cpuUs": 514
+				},
+				{
+					"trial": 13,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 88.17101000000002,
+					"cpuUs": 105098
+				},
+				{
+					"trial": 14,
+					"variant": "control",
+					"calls": 5,
+					"elapsedMs": 90.02264500000001,
+					"cpuUs": 90801
+				},
+				{
+					"trial": 14,
+					"variant": "candidate",
+					"calls": 5,
+					"elapsedMs": 0.5683680000001914,
+					"cpuUs": 576
+				}
+			],
+			"limits": "Warm Bun source diagnostic; same filesystem-backed public resolver with selected mtime invalidated outside each timed call. CPU is whole-process/all-thread; retained field lengths are not heap bytes, allocation or GC. Not native Host or interface acceptance.",
+			"countingAttempt": "Initial default-object interception observed zero calls and failed before timing. Retained namespace spy asserts 49 control reads and one candidate read."
+		},
+		"nativeScenario": {
+			"hostBinarySha256": "0cfd1bf3e9468f1052d172502fa388e8e8e53dcdeb9fa97f1ef828fdd7757072",
+			"command": "bun scripts/benchmark-responsiveness.ts --pi <certified-pi> --suite --agent foreground --resource-scope --gates docs/reports/suite-responsiveness-gates-2026-09-05.json --repeat-tool",
+			"configuration": "120x40 fullscreen; fresh private fixture and network/PID namespace; 48 local Skill Markdown files of 147500 bytes, selected skill-00; two child Bash runs; automatic Naming and Usage; no profiler or concurrent test workload.",
+			"temporaryAssertions": "Every child Provider request verifies selected name, escaped description, location and active Read Tool; four records per run. Original fixture restored after comparisons.",
+			"fixtures": [
+				{
+					"file": "scripts/benchmark-responsiveness.ts",
+					"sha256": "a94d005b3a512ac4c568679a1831d35a72234e046279b0c611611a70415ff839"
+				},
+				{
+					"file": "scripts/host-resource-scope.ts",
+					"sha256": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee"
+				},
+				{
+					"file": "scripts/pty-observation.ts",
+					"sha256": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40"
+				},
+				{
+					"file": "test/fixtures/responsiveness-provider.ts",
+					"sha256": "48c0221c89f9f3153727be1c54d58546dc52615498ce8dadcca335a35da60eb9"
+				},
+				{
+					"file": "test/fixtures/faux-provider.ts",
+					"sha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+				}
+			],
+			"candidateDiffsIdentical": true,
+			"controlProductionExactlyMatchesBase": true
+		},
+		"nativeRuns": [
+			{
+				"sample": "b09Gyz",
+				"variant": "candidate",
+				"evidenceSha256": "ff66c3577491d5908e27911cc31e7d5a85e3670ed294e8cb9cbf16b5cf656ad4",
+				"providerSha256": "6fedda2c74384d21e36dac111dba375186ad96d9507d2294c79c97bf18761f80",
+				"sourceDiffSha256": "aaa5433bf85840742ce9b23d6e2c5e0486fe244eef50cb3b69bec309046068a8",
+				"spinnerMs": 197.94072699999924,
+				"inputMs": 61.946382000000085,
+				"selectionMs": 24.986242999999376,
+				"startupInputMs": 13.718783000000258,
+				"observationGapMs": 15.993822999999793,
+				"absenceMs": 0,
+				"activeMs": 36762.581506,
+				"activeCaptures": 3102,
+				"durationMs": 42793.884333,
+				"cpuUs": 21543203,
+				"peakChargedBytes": 1275691008,
+				"rssSnapshotBytes": 598564864,
+				"parentRchar": 256288088,
+				"parentSyscr": 22856,
+				"completedChildTools": 2,
+				"reapedChildren": 2,
+				"automaticUsage": 1,
+				"namingRequests": 1,
+				"namingPersisted": 1,
+				"skillMetadataChecks": 4,
+				"verdict": "FAIL: frozen Spinner and steady-input gates",
+				"scopeAfterShutdown": "not-found/inactive/dead"
+			},
+			{
+				"sample": "YkfTkZ",
+				"variant": "control",
+				"evidenceSha256": "e1e8801f949edfaaa8191ed96ba42b2a61d8bd189f5160e768b485f0f87733ab",
+				"providerSha256": "5a0455a3f60d2ef176bd8f6d135aac4867f6fccb18fac1edbdccccd6e257d5b8",
+				"sourceDiffSha256": "89de257ffb7384026797398c8dd838f199ed17773d2e309bcfc1c9465951b8f5",
+				"spinnerMs": 209.61528100000032,
+				"inputMs": 134.231749999999,
+				"selectionMs": 13.913312000000587,
+				"startupInputMs": 13.81672299999991,
+				"observationGapMs": 16.522148000000016,
+				"absenceMs": 0,
+				"activeMs": 36841.137212999995,
+				"activeCaptures": 3107,
+				"durationMs": 43462.20927,
+				"cpuUs": 22584736,
+				"peakChargedBytes": 1275174912,
+				"rssSnapshotBytes": 585678848,
+				"parentRchar": 284617454,
+				"parentSyscr": 23371,
+				"completedChildTools": 2,
+				"reapedChildren": 2,
+				"automaticUsage": 1,
+				"namingRequests": 1,
+				"namingPersisted": 1,
+				"skillMetadataChecks": 4,
+				"verdict": "FAIL: frozen Spinner and steady-input gates",
+				"scopeAfterShutdown": "not-found/inactive/dead"
+			},
+			{
+				"sample": "fyNfiD",
+				"variant": "candidate",
+				"evidenceSha256": "de4ec2c93b911eea0a6b7b6707d9b3597349465fc7ec10723222558d8bf10904",
+				"providerSha256": "6c53027b0ac25b239eece2ed460e9919fc1a53a8b681aaf26e60bbea72a5974b",
+				"sourceDiffSha256": "aaa5433bf85840742ce9b23d6e2c5e0486fe244eef50cb3b69bec309046068a8",
+				"spinnerMs": 198.67680800000016,
+				"inputMs": 62.5583459999998,
+				"selectionMs": 14.392267000002903,
+				"startupInputMs": 13.533139999999548,
+				"observationGapMs": 16.14841499999966,
+				"absenceMs": 0,
+				"activeMs": 36791.082101,
+				"activeCaptures": 3104,
+				"durationMs": 43439.874096,
+				"cpuUs": 22507493,
+				"peakChargedBytes": 1265696768,
+				"rssSnapshotBytes": 578461696,
+				"parentRchar": 256301123,
+				"parentSyscr": 22993,
+				"completedChildTools": 2,
+				"reapedChildren": 2,
+				"automaticUsage": 1,
+				"namingRequests": 1,
+				"namingPersisted": 1,
+				"skillMetadataChecks": 4,
+				"verdict": "FAIL: frozen Spinner and steady-input gates",
+				"scopeAfterShutdown": "not-found/inactive/dead"
+			}
+		],
+		"limits": [
+			"Every native run still fails frozen Spinner and input gates; this does not complete ps-yon.6 or full Suite acceptance.",
+			"Sampled parent rchar includes unrelated reads and waited-child accounting; not Skill-only or physical-disk bytes.",
+			"Three native samples do not establish stable whole-Host CPU or memory improvement; charged cgroup peak is not peak RSS.",
+			"Logical cached body field lengths are not heap bytes, allocation or garbage collection; broader resource and recovery acceptance remains open."
+		]
+	},
 	"commandInvocationMatching": {
 		"baseCommit": "683cdf7670bb4bc3879ef0ace742167174ac7e89",
 		"bead": "ps-yon.12",

@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 596b32581be1a42db4c023c04a3a235918f5d5839589936ba4cdc896c285350e -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: b3c2f2cf7b2d9eace9359247744cbe5e5e5f34d9de7406bd721d158eead18f9b -->
 
 # Agents
 
@@ -50,6 +50,10 @@
 规划阶段校验 Skills、候选模型、Tool 预算与超时，以及 capability/MCP 约束，但不创建执行或恢复记录，也不计算
 Agent 定义与任务正文的摘要。最终构建阶段解析启动输入，并一次性生成对应摘要、模型元数据和恢复记录。
 规划投影不会跨启动缓存，也不会被当作最终 child contract 复用。
+
+发现 Skill 路径时不读取候选 Skill 的正文。选中文件只在元数据缓存未命中时读取一次；有界缓存仅保留名称、
+路径、来源和描述，不保留未使用的正文。选中文件的修改检查、发现优先级、回退路径和提供给模型的 Skill
+提示词保持不变。
 
 新启动与已有目标的控制操作分开加载。启动时首次加载所选执行引擎；前台执行不加载 detached runner 的启动实现。
 隔离 worktree 的操作仅在请求该功能时加载。Session 重试快照的操作仅在任务继承了 Session 文件且至少有两个候选

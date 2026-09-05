@@ -300,3 +300,45 @@ fail the 164.768 ms Spinner and 40.465 ms input gates. This sequence does not es
 latency improvement; the measured saving is the helper work above. The exact native integrated UI and focused editor
 checks pass. `commandInvocationMatching` in the numeric record retains the trials, Source and evidence hashes, resource
 snapshots and limits. First-Agent import stalls and the remaining whole-Suite acceptance stay open.
+
+## Read only selected Skill metadata
+
+At `f8398ab2`, Agent Skill discovery read every candidate Markdown file to attach descriptions that its consumers
+discarded. Selected files were then read again, and the selected-file cache retained stripped body text that the
+Skill prompt never used. `ps-yon.13` removes those discovery reads and unused fields. Description parsing normalizes
+only the frontmatter rather than the complete body. Discovery order, source priority, fallback, selected-file mtime
+checks, missing-file handling and prompt text remain unchanged. Production Source falls from 720 to 690 physical
+lines; the existing focused test grows from 16 to 61 lines.
+
+The filesystem regression failed on the old implementation with three body reads instead of one. The candidate
+passes, including metadata-only results, exact escaped prompt text, reuse and changed-file invalidation. A separate
+source-bound Bun 1.4.0 diagnostic compared both complete resolvers on 12 LF/CRLF and malformed-frontmatter cases;
+metadata and generated prompts matched. It then selected one of 48 files, each 147,500 bytes, using local Skill paths.
+One cache-miss resolution made 49 file reads / 7,227,500 bytes before the change and one read / 147,500 bytes afterward.
+Across 15 alternating trial pairs of five calls, selected-file mtimes were invalidated outside each timed call.
+Median elapsed time fell from 88.171 to 0.568 ms and process CPU from 90,801 to 595 µs. Returned results for all 48
+Skills retained 6,291,408 body code units before the change and none afterward; this is not a heap-byte measurement.
+The diagnostic uses warmed Source and filesystem state; CPU includes all process threads, not exclusive main-thread
+work, and it does not measure allocation or GC. Its first counting attempt failed to intercept namespace reads and
+produced no measurements; the retained driver uses the same tested read spy and asserts both counts before timing.
+
+Native comparisons used the existing exact Pi 0.85.0 foreground observer with two Agent calls, full automatic
+Naming/Usage and unchanged frozen gates. The temporary fixture supplied the same 48-file local catalog and selected
+`skill-00`. Each child Provider request verified the advertised name, escaped description, file location and active
+Read Tool. Both children completed their Bash Tool and birth-bound exit in every run. Only the Skill resolver differed
+between candidate and control; fixture hashes matched, the two candidate diffs were identical, and no tests or other
+benchmarks ran concurrently.
+
+| Variant | Spinner max, ms | Input max, ms | CPU seconds | Sampled parent `rchar`, bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Candidate `b09Gyz` | 197.941 | 61.946 | 21.543203 | 256,288,088 |
+| Control `YkfTkZ` | 209.615 | 134.232 | 22.584736 | 284,617,454 |
+| Candidate `fyNfiD` | 198.677 | 62.558 | 22.507493 | 256,301,123 |
+
+Every run had zero Spinner absence, capture gaps below 17 ms and more than 36 seconds of active observation.
+All three still failed the 164.768 ms Spinner and 40.465 ms input gates. The parent read counters are consistent with
+less Skill I/O, but include other reads and waited-child accounting; they are not exact Skill-only or physical-disk
+bytes. These three samples do not establish a stable whole-Host CPU or memory improvement. All scopes were unloaded,
+and temporary fixture changes were removed. The numeric record's `skillMetadataResolution` retains every trial,
+Source and evidence hashes, native resource snapshots and limits. Full Suite resource dimensions, first-Agent cold
+loading and final responsiveness acceptance remain open.
