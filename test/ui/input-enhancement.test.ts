@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type {
 	KeybindingsManager as AgentKeybindingsManager,
 	ExtensionContext,
@@ -114,8 +114,9 @@ function createEditor(
 		inlineSlashAutocomplete: boolean;
 		inputHighlighting: boolean;
 	};
+	const getCommands = mock(() => registeredCommands);
 	const factory = createInputEnhancementEditorFactory(undefined, {
-		getCommands: () => registeredCommands,
+		getCommands,
 		getSettings: () => mutableSettings,
 		getTheme: () => theme,
 	});
@@ -125,7 +126,7 @@ function createEditor(
 	const editor = factory(tui, editorTheme, keybindings) as ObservableEditor;
 	const provider = new CommandProvider(providerItems);
 	editor.setAutocompleteProvider?.(provider);
-	return { editor, provider, settings: mutableSettings, tui };
+	return { editor, getCommands, provider, settings: mutableSettings, tui };
 }
 
 async function settleAutocomplete(): Promise<void> {
@@ -134,6 +135,28 @@ async function settleAutocomplete(): Promise<void> {
 }
 
 describe("Pi Stuff input highlighting", () => {
+	test("avoids command registry reads on slash-free redraws while keeping highlighting live", () => {
+		const registered = commands("review");
+		const { editor, getCommands } = createEditor(
+			{ inlineSlashAutocomplete: false, inputHighlighting: true },
+			[],
+			registered,
+		);
+		for (const text of ["", "普通文字 plain input"]) {
+			editor.setText(text);
+			editor.render(64);
+			editor.render(64);
+		}
+		expect(getCommands).not.toHaveBeenCalled();
+
+		editor.setText("/new-command");
+		expect(editor.render(64).join("\n")).not.toContain(ACCENT_OPEN);
+		registered.push(command("new-command", "extension"));
+		expect(editor.render(64).join("\n")).toContain(`${ACCENT_OPEN}/new-command${ACCENT_CLOSE}`);
+		expect(getCommands).toHaveBeenCalledTimes(2);
+		expect(editor.getText()).toBe("/new-command");
+	});
+
 	test("styles only recognized current commands and skills without changing width or CJK", async () => {
 		const { editor } = createEditor({ inlineSlashAutocomplete: false, inputHighlighting: true }, [
 			{ value: "review", label: "review" },

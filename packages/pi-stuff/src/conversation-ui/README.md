@@ -28,7 +28,8 @@ completion, and Tool running timer.
   once per settled Session leaf and model, only while the Host is idle, so Tool and input repaints do not rescan it.
 - Context status progresses from `recovering` to a validated percentage, or `unknown` when the request is aborted.
 - One-line latest-prompt preview and compact Skill labels.
-- Native-editor input highlighting and slash completion.
+- Native-editor input highlighting and slash completion. Highlighting skips command-registry work when no rendered
+  line contains `/`, without caching registry contents between redraws.
 - Host-owned Thinking shown as one latest native Markdown row or the hidden `• thoughts` label, preserving native
   mouse and keyboard visibility controls; plus `chart` or `tree` Markdown projections.
 - Full-width Command Dialogs that restore the editor draft on close.

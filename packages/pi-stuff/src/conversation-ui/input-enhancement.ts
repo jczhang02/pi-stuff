@@ -363,7 +363,10 @@ class InputEnhancementEditor implements EditorComponent {
 		this.refreshInlineAutocomplete();
 		const rendered = this.editor.render(width);
 		this.reportAutocompleteVisibility();
-		const names = settings.inputHighlighting ? commandNames(this.options, this.providerCommandNames) : undefined;
+		const names =
+			settings.inputHighlighting && rendered.some((line) => line.includes("/"))
+				? commandNames(this.options, this.providerCommandNames)
+				: undefined;
 		const currentTheme = names ? this.options.getTheme() : undefined;
 		const lines =
 			names && currentTheme ? rendered.map((line) => styleKnownInvocations(line, names, currentTheme)) : rendered;
