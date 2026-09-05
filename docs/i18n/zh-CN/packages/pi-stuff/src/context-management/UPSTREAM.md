@@ -1,9 +1,8 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: fe46c4b108877d83b185f3798e95640d4b9ef775d17878ea9c5390dc618392ec -->
+<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: a41841e3b642627d971e9e1222909fe131d4ee107ae29b28ec4dbe404c5035e4 -->
 
 # 捆绑上下文引擎来源
 
-Pi Stuff 通过本适配器集成官方 Magic Context Package，不内嵌 Magic Context Core。上游 tokenizer 路径尚
-不满足独立 Pi 的模块解析和首轮延迟约定，因此仓库为固定 Package 应用一个临时且经过审查的依赖补丁。
+Pi Stuff 通过本适配器集成官方 Magic Context Package，不内嵌 Magic Context Core。仓库为固定 Package 应用一个临时且经过审查的依赖补丁，处理 tokenizer 兼容性和 Pi 重试时的稳定消息身份。
 
 精确发布的 Package 在 Pi Stuff Context Engine Worker 中执行。适配器只在激活时生成一个内存 bundle，使
 官方模块图可从已认证的独立 Pi 二进制文件解析；它不修改上游源码，也不持久化派生产物。
@@ -20,7 +19,7 @@ Pi Stuff 通过本适配器集成官方 Magic Context Package，不内嵌 Magic 
 ## 临时 tokenizer 兼容补丁
 
 - 补丁：[`patches/@cortexkit%2Fpi-magic-context@0.41.1.patch`](../../../../../../../patches/@cortexkit%252Fpi-magic-context@0.41.1.patch)
-- 补丁 SHA-256：`e01e53c4eab1f49c9d44ed5b9040eddd1d0eeb547121d8f62209d049c940cef0`
+- 补丁 SHA-256：`4a9f5c7ce7119a03f4b96271268df2d0b1e31d9a855111e85fd49b45158df24d`
 - 范围：
   - 把已发布模块的 `import.meta.url` 祖先路径和 Bun isolated-linker 的 `node_modules` 根目录加入现有
     `ai-tokenizer` 回退搜索；
@@ -79,3 +78,9 @@ Package 声明的 Pi peer 是 `^0.80.2`，不包括 Suite 已认证的 Pi 0.84.4
 - 首次使用配置引导遵循上游绝对 XDG 与 JSON/JSONC 路径规则，忽略上游不读取的自定义 Pi Agent 目录，
   并且只有不存在可识别用户或项目配置时才创建用户配置；
 - 首次使用采用纯词法搜索配置，使初始激活不依赖可选本地 embedding runtime。显式用户 embedding 配置会保留。
+
+## 保留旧摘要时的重试身份修复
+
+Pi 适配器现在每次投影都使用 Magic 已有的对象引用与唯一指纹匹配。消息数量相同不能证明位置对应：Pi 会保留旧压缩摘要，同时从重试消息中移除已经持久化的失败回复；两处数量差异可能相互抵消，使删除记录套用到错误消息。未再使用的位置对齐实现已删除。
+
+回归测试使用真实 Pi Session 投影和真实 Magic Worker，保留旧摘要、持久化失败回复，然后重试同一输入，要求投影消息和标签完全相同。这是 ps-eck 下 ps-5r4 的修复，不能单独证明 Magic 独占的超限恢复已经完成。精确上游版本通过同一回归和真实 Host 差分验收后，移除此补丁部分。

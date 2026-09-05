@@ -19,6 +19,7 @@ import type {
 	ToolDefinition,
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
 import type { TSchema } from "typebox";
 import type {
@@ -655,4 +656,52 @@ test("an invocation cancelled while queued never reaches Magic Context", () => {
 		}),
 	).toThrow("queued invocation cancelled");
 	expect(invoked).toBeFalse();
+});
+
+test("Magic retry preserves tags when a retained summary and persisted failure cancel message counts", async () => {
+	const harness = await createMagicWorkerHarness();
+	const { handlers, pi, state, contextForSession } = harness;
+	const ctx = contextForSession("retained-summary-retry");
+	const foundation = installEffectFoundation(pi);
+	await foundation.startSession(ctx.sessionManager);
+	try {
+		await magicContextWorkerFactory(pi);
+		await requireHandler(handlers, "session_start")({ type: "session_start", reason: "startup" }, ctx);
+		const first = messageEntry("first", userMessage("FIRST_RETAINED_DIRECTIVE"), null);
+		const oldSummary: SessionEntry = {
+			type: "compaction",
+			id: "old-summary",
+			parentId: "first",
+			timestamp: new Date().toISOString(),
+			firstKeptEntryId: "first",
+			summary: "Earlier task decisions",
+			tokensBefore: 1000,
+		};
+		const second = messageEntry("second", assistantMessage("SECOND_RETAINED_RESULT"), "old-summary");
+		const latestSummary: SessionEntry = {
+			...oldSummary,
+			id: "latest-summary",
+			parentId: "second",
+			summary: "Latest task decisions",
+		};
+		const current = messageEntry("current", userMessage("CURRENT_ACCEPTED_INPUT"), "latest-summary");
+		state.currentBranch = [first, oldSummary, second, latestSummary, current];
+		state.currentLeafId = "current";
+		const messages = buildSessionContext(state.currentBranch).messages;
+		const project = requireHandler(handlers, "context");
+		const initial = await project({ type: "context", messages: structuredClone(messages) }, ctx);
+		const failed = messageEntry(
+			"failed",
+			{ ...assistantMessage(""), stopReason: "error", errorMessage: "Connection closed" },
+			"current",
+		);
+		state.currentBranch = [...state.currentBranch, failed];
+		state.currentLeafId = "failed";
+		const retried = await project({ type: "context", messages: structuredClone(messages) }, ctx);
+		expect(retried).toEqual(initial);
+	} finally {
+		await requireHandler(handlers, "session_shutdown")({ type: "session_shutdown", reason: "quit" }, ctx);
+		await foundation.shutdown();
+		await harness.cleanup();
+	}
 });

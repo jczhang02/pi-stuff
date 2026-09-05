@@ -35,10 +35,9 @@ index f574d21a61cffa52fce1952d7d4aa0d4700eb70c..2fdf431135ce7b7917ad6752df443d56
    return [...new Set(candidates)];
  }
 diff --git a/dist/index.js b/dist/index.js
-index ab4cf6242ad700372ac05ddef01febaadca945e5..340c1092888b39ccc2c12b70b2c09a2eab5a4083 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -16629,14 +16629,14 @@ function safeStableStringify(value) {
+@@ -16629,14 +16629,14 @@
      return "";
    }
  }
@@ -55,7 +54,7 @@ index ab4cf6242ad700372ac05ddef01febaadca945e5..340c1092888b39ccc2c12b70b2c09a2e
      keyBytes: key.length * 2 + 32
    };
    contentMemo.set(key, measured);
-@@ -16655,8 +16655,8 @@ function memoizedContent(kind, content) {
+@@ -16655,8 +16655,8 @@
  function memoizedTokens(kind, content) {
    return memoizedContent(kind, content).tokens;
  }
@@ -66,7 +65,7 @@ index ab4cf6242ad700372ac05ddef01febaadca945e5..340c1092888b39ccc2c12b70b2c09a2e
  }
  function parseVisibleTag(content, tagsByNumber) {
    const match = content.trimStart().match(TAG_PREFIX);
-@@ -16918,7 +16918,7 @@ function finalizeParts(drafts, protectedTags, pendingDropTagNumbers) {
+@@ -16918,7 +16918,7 @@
      u += uTokens;
      return {
        key: draft.key,
@@ -75,7 +74,78 @@ index ab4cf6242ad700372ac05ddef01febaadca945e5..340c1092888b39ccc2c12b70b2c09a2e
        kind: draft.kind,
        tokens,
        uTokens,
-@@ -30623,6 +30623,7 @@ async function src_default(pi) {
+@@ -24412,47 +24412,6 @@
+   else
+     lookup.entryIdsByFingerprint.set(fingerprint, [row.id]);
+ }
+-function isPiContextEmitEligible(entry) {
+-  if (!entry || typeof entry !== "object")
+-    return false;
+-  const row = entry;
+-  if (typeof row.id !== "string")
+-    return false;
+-  return row.type === "message" || row.type === "custom_message" || row.type === "branch_summary" && typeof row.summary === "string" && row.summary.length > 0;
+-}
+-function buildPiAlignedEntryIds(entries) {
+-  let compactionIndex = -1;
+-  let firstKeptEntryId;
+-  for (let index = entries.length - 1;index >= 0; index -= 1) {
+-    const row = entries[index];
+-    if (row?.type !== "compaction")
+-      continue;
+-    compactionIndex = index;
+-    firstKeptEntryId = typeof row.firstKeptEntryId === "string" ? row.firstKeptEntryId : undefined;
+-    break;
+-  }
+-  if (compactionIndex < 0) {
+-    return entries.filter(isPiContextEmitEligible).map((entry) => entry.id);
+-  }
+-  const ids = [undefined];
+-  if (firstKeptEntryId !== undefined) {
+-    let foundFirstKept = false;
+-    for (let index = 0;index < compactionIndex; index += 1) {
+-      const entry = entries[index];
+-      if (entry?.id === firstKeptEntryId) {
+-        foundFirstKept = true;
+-      }
+-      if (foundFirstKept && isPiContextEmitEligible(entry))
+-        ids.push(entry.id);
+-    }
+-  }
+-  for (let index = compactionIndex + 1;index < entries.length; index += 1) {
+-    const entry = entries[index];
+-    if (isPiContextEmitEligible(entry))
+-      ids.push(entry.id);
+-  }
+-  return ids;
+-}
+ function stripMcOwnedPiCompactionSummary(messages, entryIds, branchEntries) {
+   const summaryMessage = messages[0];
+   if (summaryMessage?.role !== "compactionSummary")
+@@ -24483,8 +24442,7 @@
+     return cached;
+   const lookup = {
+     entryIdByMessageRef: new Map,
+-    entryIdsByFingerprint: new Map,
+-    alignedEntryIds: buildPiAlignedEntryIds(entries)
++    entryIdsByFingerprint: new Map
+   };
+   for (const entry of entries)
+     addPiBranchEntryToLookup(lookup, entry);
+@@ -24834,9 +24792,9 @@
+       const unregisterRaw = setRawMessageProvider(sessionId, rawMessageProvider);
+       rawMessageProviderUnregistersBySession.set(sessionId, unregisterRaw);
+       scheduleReconciliation(options.db, sessionId, readRawSessionMessages);
+-      const branchLookup = branchEntries === null ? null : getPiBranchEntryLookup(branchEntries);
+-      const alignedEntryIds = branchLookup?.alignedEntryIds ?? null;
+-      const resolvedEntryIds = alignedEntryIds?.length === event.messages.length ? alignedEntryIds : branchEntries === null ? null : collectMessageEntryIdsByRef(ctx, event.messages, sessionId, branchEntries);
++      // Retry removes failed messages while retained compaction summaries remain.
++      // Equal lengths do not establish identity; use the existing reference/fingerprint resolver.
++      const resolvedEntryIds = branchEntries === null ? null : collectMessageEntryIdsByRef(ctx, event.messages, sessionId, branchEntries);
+       const strictEntryIds = resolvedEntryIds ? [...resolvedEntryIds] : null;
+       if (strictEntryIds && branchEntries && options.injection && !options.compactionOff && stripMcOwnedPiCompactionSummary(event.messages, strictEntryIds, branchEntries)) {
+         logTransformTiming(sessionId, "mcCompactionSummarySuppression", tEntryBranch);
+@@ -30623,6 +30581,7 @@
      log(`${PREFIX2} in-process subagent child detected; skipping full extension registration`);
      return;
    }
