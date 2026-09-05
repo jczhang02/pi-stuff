@@ -493,9 +493,9 @@ test("uses the Context projection snapshot instead of stale Host usage during re
 			footerData("main"),
 		);
 
-		contextStatus.publish({ state: "recovering" });
+		contextStatus.publish({ state: "recovering", phase: "compacting" });
 		let rendered = component.render(100).join("\n");
-		expect(rendered).toContain("󰌨 recovering");
+		expect(rendered).toContain("󰌨 recovering: compacting");
 		expect(rendered).not.toContain("42.4%");
 
 		contextStatus.publish({ state: "validated", tokens: 50_000, contextWindow: 200_000 });

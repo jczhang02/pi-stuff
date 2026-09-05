@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { getContextStatusChannel } from "../../packages/pi-stuff/src/conversation-ui/statusline-channels.js";
 import {
 	apiFor,
 	COMPACTION_RESULT,
@@ -18,7 +19,196 @@ import {
 
 afterEach(cleanupContextCoreFixtures);
 
-test("restores native compaction while a live Magic transform is unhealthy", async () => {
+test("explicit compaction cancellation clears recovery without degrading a healthy Worker", async () => {
+	const handlers: Handlers = new Map();
+	const api = apiFor(handlers);
+	const entered = Promise.withResolvers<void>();
+	piStuffContext(api, {
+		loadMagicContext: async () => ({
+			default: (pi) => {
+				pi.on("context", (event) => ({
+					messages: [taggedMessage("<session-history>preserved</session-history>"), ...event.messages],
+				}));
+				pi.on(
+					"session_before_compact",
+					(event) =>
+						new Promise((_resolve, reject) => {
+							entered.resolve();
+							event.signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+						}),
+				);
+			},
+		}),
+	});
+	const ctx = context();
+	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+	const cancel = new AbortController();
+	const pending = emitResults(
+		handlers,
+		"session_before_compact",
+		{ type: "session_before_compact", reason: "overflow", signal: cancel.signal },
+		ctx,
+	);
+	await entered.promise;
+	expect(getContextStatusChannel(api).source.getSnapshot()?.state).toBe("recovering");
+	cancel.abort();
+	expect(await pending).toEqual([{ cancel: true }]);
+	expect(getContextCapability(ctx).status().state).toBe("active");
+	expect(getContextStatusChannel(api).source.getSnapshot()).toBeUndefined();
+});
+
+test("compaction cancellation stops waiting for Session initialization without starting compaction", async () => {
+	const handlers: Handlers = new Map();
+	const entered = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	let compactions = 0;
+	piStuffContext(apiFor(handlers), {
+		loadMagicContext: async () => {
+			entered.resolve();
+			await release.promise;
+			return {
+				default: (pi) => {
+					pi.on("context", (event) => ({
+						messages: [taggedMessage("<session-history>preserved</session-history>"), ...event.messages],
+					}));
+					pi.on("session_before_compact", () => {
+						compactions++;
+						return { compaction: COMPACTION_RESULT };
+					});
+				},
+			};
+		},
+	});
+	const ctx = context();
+	const startup = emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+	const cancel = new AbortController();
+	const pending = emitResults(
+		handlers,
+		"session_before_compact",
+		{ type: "session_before_compact", reason: "overflow", signal: cancel.signal },
+		ctx,
+	);
+	await entered.promise;
+	cancel.abort();
+	try {
+		expect(await pending).toEqual([{ cancel: true }]);
+	} finally {
+		release.resolve();
+	}
+	await startup;
+	expect(compactions).toBe(0);
+	expect(getContextCapability(ctx).status().state).toBe("active");
+});
+
+test("overflow recovery restarts a failed Worker and replaces lifecycle handlers once", async () => {
+	const handlers: Handlers = new Map();
+	let starts = 0;
+	const observed: number[] = [];
+	await piStuffContext(apiFor(handlers), {
+		loadMagicContext: async () => ({
+			default: (pi, onFatal) => {
+				const worker = ++starts;
+				pi.on("context", (event) => ({
+					messages: [taggedMessage("<session-history>preserved</session-history>"), ...event.messages],
+				}));
+				pi.on("before_agent_start", () => {
+					observed.push(worker);
+				});
+				pi.on("session_before_compact", () => {
+					if (worker === 1) {
+						const error = new Error("Worker exited during compaction");
+						onFatal?.(error);
+						throw error;
+					}
+					return { compaction: COMPACTION_RESULT };
+				});
+			},
+		}),
+	});
+	const ctx = context();
+	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+	const result = await emitResults(
+		handlers,
+		"session_before_compact",
+		{
+			type: "session_before_compact",
+			reason: "overflow",
+			signal: new AbortController().signal,
+		},
+		ctx,
+	);
+	expect(result).toEqual([{ compaction: COMPACTION_RESULT }]);
+	expect(starts).toBe(2);
+	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+	expect(observed).toEqual([2]);
+	expect(ctx.signal?.aborted).toBe(false);
+});
+
+test("a late failed projection cannot restart or abort a replacement Session", async () => {
+	const handlers: Handlers = new Map();
+	const entered = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	let starts = 0;
+	await piStuffContext(apiFor(handlers), {
+		loadMagicContext: async () => ({
+			default: (pi) => {
+				starts++;
+				pi.on("context", async () => {
+					entered.resolve();
+					await release.promise;
+					throw new Error("old Session projection failed");
+				});
+			},
+		}),
+	});
+	const original = context();
+	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, original);
+	const projection = emitResults(handlers, "context", { type: "context", messages: [taggedMessage("old")] }, original);
+	await entered.promise;
+	const replacement = context([], "/workspace/project-b", "session-b");
+	await emit(handlers, "session_start", { type: "session_start", reason: "switch" }, replacement);
+	release.resolve();
+	expect(await projection).toEqual([undefined]);
+	expect(starts).toBe(1);
+	expect(original.signal?.aborted).toBe(false);
+	expect(replacement.signal?.aborted).toBe(false);
+	expect(getContextCapability(replacement).status().state).toBe("active");
+});
+
+test("overflow counts a Worker already lost before its hook against the same single restart allowance", async () => {
+	const handlers: Handlers = new Map();
+	let starts = 0;
+	let failWorker: (() => void) | undefined;
+	piStuffContext(apiFor(handlers), {
+		loadMagicContext: async () => ({
+			default: (pi, onFatal) => {
+				starts++;
+				failWorker = () => onFatal?.(new Error("Worker exited"));
+				pi.on("context", (event) => ({
+					messages: [taggedMessage("<session-history>preserved</session-history>"), ...event.messages],
+				}));
+				pi.on("session_before_compact", () => {
+					failWorker?.();
+					throw new Error("replacement Worker exited");
+				});
+			},
+		}),
+	});
+	const ctx = context();
+	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+	failWorker?.();
+	expect(
+		await emitResults(
+			handlers,
+			"session_before_compact",
+			{ type: "session_before_compact", reason: "overflow", signal: new AbortController().signal },
+			ctx,
+		),
+	).toEqual([{ cancel: true }]);
+	expect(starts).toBe(2);
+});
+
+test("preserves input and blocks native fallback when Magic recovery fails", async () => {
 	const handlers: Handlers = new Map();
 	const api = apiFor(handlers);
 	let shouldFail = false;
@@ -42,22 +232,18 @@ test("restores native compaction while a live Magic transform is unhealthy", asy
 	const ctx = context();
 	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
-	expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined, { cancel: true }]);
+	expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
 
 	shouldFail = true;
 	const original = { type: "context", messages: [taggedMessage("native")] };
-	expect(await emitResults(handlers, "context", original, ctx)).toEqual([{ messages: original.messages }]);
+	expect(await emitResults(handlers, "context", original, ctx)).toEqual([undefined]);
 	expect(getContextCapability(ctx).status().state).toBe("degraded");
-	expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined]);
+	expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
 
-	shouldFail = false;
-	const recovered = await emitResults(handlers, "context", original, ctx);
-	expect(JSON.stringify(recovered)).toContain("healthy");
-	expect(getContextCapability(ctx).status().state).toBe("active");
-	expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined, { cancel: true }]);
+	expect(ctx.signal?.aborted).toBe(true);
 });
 
-test("yields extreme overflow to native compaction before Magic scans the Session", async () => {
+test("keeps Magic ownership under extreme estimated pressure without proactive compaction", async () => {
 	const handlers: Handlers = new Map();
 	let compactionResults: unknown[] = [];
 	let compactions = 0;
@@ -96,9 +282,9 @@ test("yields extreme overflow to native compaction before Magic scans the Sessio
 	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
 	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
-	expect(compactions).toBe(1);
-	expect(compactionResults).toEqual([undefined, undefined]);
-	expect(getContextCapability(ctx).status().state).toBe("degraded");
+	expect(compactions).toBe(0);
+	expect(compactionResults).toEqual([]);
+	expect(getContextCapability(ctx).status().state).toBe("active");
 	expect(projections).toBe(0);
 
 	await emitResults(handlers, "context", { type: "context", messages: [taggedMessage("native")] }, ctx);
@@ -106,7 +292,7 @@ test("yields extreme overflow to native compaction before Magic scans the Sessio
 	expect(projections).toBe(1);
 });
 
-test("fails open when a live Magic turn handler throws", async () => {
+test("isolates optional turn-handler failures without tearing down Magic", async () => {
 	const handlers: Handlers = new Map();
 	let attempts = 0;
 	piStuffContext(apiFor(handlers), {
@@ -126,14 +312,13 @@ test("fails open when a live Magic turn handler throws", async () => {
 
 	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 	expect(getContextCapability(ctx).status()).toMatchObject({
-		engine: "native",
-		error: "turn startup failed",
-		state: "degraded",
+		engine: "magic-context",
+		state: "active",
 	});
 
 	await emit(handlers, "input", { type: "input", text: "retry", source: "rpc" }, ctx);
 	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
-	expect(attempts).toBe(2);
+	expect(attempts).toBe(1);
 	expect(getContextCapability(ctx).status().state).toBe("active");
 });
 
@@ -160,11 +345,11 @@ test("ignores a stale Magic compaction result after shutdown", async () => {
 	const shutdown = emit(handlers, "session_shutdown", { type: "session_shutdown", reason: "reload" }, ctx);
 	releaseCompaction?.();
 
-	expect(await compaction).toEqual([undefined, undefined]);
+	expect(await compaction).toEqual([{ cancel: true }]);
 	await shutdown;
 });
 
-test("presents manual Magic compaction as one extension-owned managed-history boundary", async () => {
+test("does not fabricate a manual compaction summary from a cancellation", async () => {
 	const handlers: Handlers = new Map();
 	const api = apiFor(handlers);
 	piStuffContext(api, {
@@ -187,22 +372,13 @@ test("presents manual Magic compaction as one extension-owned managed-history bo
 		{
 			preparation: { firstKeptEntryId: "keep-this", tokensBefore: 42_000 },
 			reason: "manual",
+			signal: new AbortController().signal,
 			type: "session_before_compact",
 		},
 		ctx,
 	);
 
-	expect(result).toEqual([
-		undefined,
-		{
-			compaction: {
-				details: { engine: "magic-context", mode: "managed-history", source: "magic-context" },
-				firstKeptEntryId: "keep-this",
-				summary: "Magic Context manages prior history.",
-				tokensBefore: 42_000,
-			},
-		},
-	]);
+	expect(result).toEqual([{ cancel: true }]);
 });
 
 test("does not stack native compaction after the Magic compaction hook throws", async () => {
@@ -235,15 +411,16 @@ test("does not stack native compaction after the Magic compaction hook throws", 
 			{
 				preparation: { firstKeptEntryId: "keep-this", tokensBefore: 42_000 },
 				reason: "manual",
+				signal: new AbortController().signal,
 			},
 			ctx,
 		),
-	).toEqual([undefined, { cancel: true }]);
+	).toEqual([{ cancel: true }]);
 	expect(getContextCapability(ctx).status()).toMatchObject({
-		engine: "native",
+		engine: "magic-context",
 		error: "context store unavailable",
 		state: "degraded",
 	});
 	expect(notifications).toHaveLength(1);
-	expect(notifications[0]).toContain("full Session remains intact");
+	expect(notifications[0]).toContain("Session and current input are preserved");
 });

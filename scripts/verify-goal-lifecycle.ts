@@ -177,6 +177,7 @@ function environment(temporaryDirectory: string, scenario: Scenario, logPath: st
 		HOME: join(temporaryDirectory, "home"),
 		LANG: "C.UTF-8",
 		LC_ALL: "C.UTF-8",
+		MAGIC_CONTEXT_PI_SUBAGENT: "1",
 		NO_COLOR: "1",
 		PATH: path,
 		PI_CODING_AGENT_DIR: join(temporaryDirectory, "agent"),

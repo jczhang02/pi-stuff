@@ -43,3 +43,5 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 
 Raw JSON, ANSI, text, and image evidence stays beside the report that owns it. Historical versions, paths, and hashes
 remain unchanged so the recorded environment stays identifiable.
+
+- [ps-eck recovery and Host boundary (2026-09-05)](ps-eck-recovery-host-boundary-2026-09-05.md)

@@ -19,6 +19,7 @@ import type {
 	ToolDefinition,
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
 import type { TSchema } from "typebox";
 import type {
@@ -356,7 +357,7 @@ test("Magic worker Tool events do not traverse irrelevant payloads", () => {
 	expect(toolResult.event.input).toEqual({});
 });
 
-test("the pinned direct engine keeps signal-blind lifecycle work outside Agent cancellation", async () => {
+test("the pinned engine cancels explicit compaction while ordinary lifecycle work survives Agent cancellation", async () => {
 	const harness = await createMagicWorkerHarness();
 	const { commands, contextForSession, handlers, pi } = harness;
 	try {
@@ -368,12 +369,12 @@ test("the pinned direct engine keeps signal-blind lifecycle work outside Agent c
 
 		const eventSignal = new AbortController();
 		eventSignal.abort(new Error("compaction consumer cancelled"));
-		expect(
-			await requireHandler(handlers, "session_before_compact")(
+		await expect(
+			requireHandler(handlers, "session_before_compact")(
 				beforeCompactEvent("direct-entry", eventSignal.signal),
 				context,
 			),
-		).toEqual({ cancel: true });
+		).rejects.toThrow("compaction consumer cancelled");
 
 		context.abort();
 		const statusCommand = commands.get("ctx-status");
@@ -414,19 +415,16 @@ test("the isolated engine matches pinned cancellation and keeps ordinary turns i
 		await requireHandler(handlers, "session_start")(sessionStart, context);
 		expect(state.branchReads).toBe(1);
 
-		const beforeCompact = beforeCompactEvent();
+		const beforeCompact = { ...beforeCompactEvent(), reason: "threshold" as const };
 		expect(await requireHandler(handlers, "session_before_compact")(beforeCompact, context)).toEqual({
 			cancel: true,
 		});
 		expect(state.branchReads).toBe(1);
 		const cancelled = new AbortController();
 		cancelled.abort(new Error("already cancelled"));
-		expect(
-			await requireHandler(handlers, "session_before_compact")(
-				{ ...beforeCompact, signal: cancelled.signal },
-				context,
-			),
-		).toEqual({ cancel: true });
+		await expect(
+			requireHandler(handlers, "session_before_compact")({ ...beforeCompact, signal: cancelled.signal }, context),
+		).rejects.toThrow("already cancelled");
 
 		const inFlightTagged = assistantMessage("§1§ WORKER_IN_FLIGHT_INTERRUPT_EVIDENCE");
 		const inFlightProjected = assistantMessage("WORKER_IN_FLIGHT_INTERRUPT_EVIDENCE");
@@ -655,4 +653,53 @@ test("an invocation cancelled while queued never reaches Magic Context", () => {
 		}),
 	).toThrow("queued invocation cancelled");
 	expect(invoked).toBeFalse();
+});
+
+test("Magic retry preserves tags when a retained summary and persisted failure cancel message counts", async () => {
+	const harness = await createMagicWorkerHarness();
+	const { handlers, pi, state, contextForSession } = harness;
+	const ctx = contextForSession("retained-summary-retry");
+	const foundation = installEffectFoundation(pi);
+	await foundation.startSession(ctx.sessionManager);
+	try {
+		await magicContextWorkerFactory(pi);
+		await requireHandler(handlers, "session_start")({ type: "session_start", reason: "startup" }, ctx);
+		const first = messageEntry("first", userMessage("FIRST_RETAINED_DIRECTIVE"), null);
+		const oldSummary: SessionEntry = {
+			type: "compaction",
+			id: "old-summary",
+			parentId: "first",
+			timestamp: new Date().toISOString(),
+			firstKeptEntryId: "first",
+			summary: "Earlier task decisions",
+			tokensBefore: 1000,
+		};
+		const second = messageEntry("second", assistantMessage("SECOND_RETAINED_RESULT"), "old-summary");
+		const latestSummary: SessionEntry = {
+			...oldSummary,
+			id: "latest-summary",
+			parentId: "second",
+			summary: "Latest task decisions",
+		};
+		const current = messageEntry("current", userMessage("CURRENT_ACCEPTED_INPUT"), "latest-summary");
+		state.currentBranch = [first, oldSummary, second, latestSummary, current];
+		state.currentLeafId = "current";
+		const messages = buildSessionContext(state.currentBranch).messages;
+		const project = requireHandler(handlers, "context");
+		const initial = await project({ type: "context", messages: structuredClone(messages) }, ctx);
+		const failed = messageEntry(
+			"failed",
+			{ ...assistantMessage(""), stopReason: "error", errorMessage: "Connection closed" },
+			"current",
+		);
+		state.currentBranch = [...state.currentBranch, failed];
+		state.currentLeafId = "failed";
+		const retried = await project({ type: "context", messages: structuredClone(messages) }, ctx);
+		expect(retried).toEqual(initial);
+		expect(await readFile(harness.magicLog, "utf8")).not.toContain("Pi branch projection failed:");
+	} finally {
+		await requireHandler(handlers, "session_shutdown")({ type: "session_shutdown", reason: "quit" }, ctx);
+		await foundation.shutdown();
+		await harness.cleanup();
+	}
 });

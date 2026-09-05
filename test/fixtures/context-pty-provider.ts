@@ -1,4 +1,4 @@
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 import type { AssistantMessage, Context, JsonValue } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -84,6 +84,8 @@ function historianPayload(prompt: string): string {
 	const start = Number(range?.[1] ?? "1");
 	const end = Number(range?.[2] ?? String(start));
 	record({ type: "historian", model: MODEL, start, end });
+	if (process.env["PI_STUFF_CONTEXT_RECOVERY_MODE"] === "no-progress")
+		return `<output><compartments></compartments><facts></facts><events></events><unprocessed_from>${start}</unprocessed_from></output>`;
 	return [
 		"<output>",
 		"<compartments>",
@@ -179,12 +181,65 @@ function toolCallStream(id: string, name: string, argumentsValue: Record<string,
 	return stream;
 }
 
-function fixtureStream(context: Context, signal?: AbortSignal) {
+let recoveryRequests = 0;
+
+function recoveryStream(context: Context, signal?: AbortSignal) {
 	if (process.env["MAGIC_CONTEXT_PI_SUBAGENT"] === "1") {
+		const transientMarker = `${process.env["PI_STUFF_CONTEXT_PTY_LOG"]}.transient`;
+		if (process.env["PI_STUFF_CONTEXT_RECOVERY_MODE"] === "transient" && !existsSync(transientMarker)) {
+			writeFileSync(transientMarker, "failed once");
+			record({ type: "historian-transient-failure" });
+			const stream = createAssistantMessageEventStream();
+			stream.push({
+				type: "error",
+				reason: "error",
+				error: { ...assistantMessage([], "error"), errorMessage: "503 overloaded" },
+			});
+			stream.end();
+			return stream;
+		}
 		const marker = process.env["PI_STUFF_CONTEXT_PTY_HISTORIAN_MARKER"];
 		if (marker) writeFileSync(marker, "ready\n");
-		return textStream(historianPayload(lastUserText(context)));
+		return textStream(
+			historianPayload(lastUserText(context)),
+			ZERO_USAGE,
+			Number(process.env["PI_STUFF_CONTEXT_RECOVERY_DELAY"] ?? 0),
+			signal,
+		);
 	}
+	const text = allText(context);
+	const lastUser = lastUserText(context);
+	if (lastUser.includes("QUEUED_RECOVERY_INPUT")) return textStream("QUEUED_RECOVERY_DONE", LOW_USAGE);
+	if (lastUser.includes("MAGIC_RECOVERY_ACCEPTED_INPUT")) {
+		if (
+			process.env["PI_STUFF_CONTEXT_RECOVERY_MODE"] === "tools" &&
+			!context.messages.some(
+				(message) => message.role === "toolResult" && contentText(message.content).includes("RECOVERY_TOOL_RESULT"),
+			)
+		) {
+			return toolCallStream("recovery-side-effect", "bash", {
+				command: "printf 'effect\\n' >> recovery-effect.txt; printf 'RECOVERY_TOOL_RESULT\\n'",
+			});
+		}
+		recoveryRequests++;
+		record({ type: "recovery-request", text, attempt: recoveryRequests });
+		if (recoveryRequests === 1 || process.env["PI_STUFF_CONTEXT_RECOVERY_MODE"] === "exhaust") {
+			const stream = createAssistantMessageEventStream();
+			const error = {
+				...assistantMessage([], "error"),
+				errorMessage: "Your input exceeds the context window of this model",
+			};
+			stream.push({ type: "error", reason: "error", error });
+			stream.end();
+			return stream;
+		}
+		return textStream("MAGIC_RECOVERY_CONTINUED", LOW_USAGE);
+	}
+}
+
+function fixtureStream(context: Context, signal?: AbortSignal) {
+	const recovery = recoveryStream(context, signal);
+	if (recovery) return recovery;
 	const text = allText(context);
 	const lastUser = lastUserText(context);
 	const memoryResult = context.messages.find(
@@ -278,7 +333,7 @@ function fixtureStream(context: Context, signal?: AbortSignal) {
 	if (lastUser.includes("CONTEXT_RESUME")) return textStream("CONTEXT_RESUME_DONE");
 	if (lastUser.includes("CONTEXT_DRAIN")) return textStream("CONTEXT_DRAIN_DONE");
 	if (lastUser.includes("CONTEXT_NATIVE_RESUME")) return textStream("CONTEXT_NATIVE_RESUME_DONE");
-	if (lastUser.includes("CONTEXT_FAIL_OPEN")) return textStream("CONTEXT_FAIL_OPEN_DONE");
+	if (lastUser.includes("CONTEXT_UNAVAILABLE")) return textStream("CONTEXT_UNAVAILABLE_DONE");
 	if (lastUser.includes("CONTEXT_SECOND")) return textStream("CONTEXT_SECOND_DONE");
 	return textStream("CONTEXT_FIRST_DONE");
 }

@@ -89,6 +89,7 @@ The Web and MCP runtimes also have source-local READMEs:
 | [0028](adr/0028-bound-tool-display-before-projection.md) | Bound Tool Display before projection |
 | [0029](adr/0029-keep-work-independent-of-retention-quotas.md) | Keep productive work independent of internal retention quotas |
 | [0030](adr/0030-unify-user-message-presentation.md) | Unify User Message presentation inside the native Host |
+| [0031](adr/0031-preserve-magic-context-behavior-through-suite-integration.md) | Preserve Magic Context behavior through Suite integration |
 
 ## Evidence and history
 

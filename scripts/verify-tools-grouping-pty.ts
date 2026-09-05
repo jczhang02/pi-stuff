@@ -607,6 +607,8 @@ export async function verifyToolsGroupingPty(options: ToolsGroupingPtyOptions): 
 		writeFile(join(temporaryDirectory, "slow-target.txt"), "SLOW_RETRIEVAL_DATA\n", { mode: 0o600 }),
 	]);
 	const environment = {
+		// This display fixture exercises native Pi compaction; real Magic recovery has its own Host gate.
+		MAGIC_CONTEXT_PI_SUBAGENT: "1",
 		PI_CODING_AGENT_DIR: configDirectory,
 		PI_STUFF_TOOLS_GROUPING_BIN: options.piBinary,
 		PI_STUFF_TOOLS_GROUPING_COLUMNS: String(options.columns),

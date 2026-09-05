@@ -275,7 +275,7 @@ test("reports degraded continuity without disabling active Magic Context", async
 		trigger: "startup",
 		continuity: "degraded",
 		continuityDetail:
-			"Pi native auto-compaction is disabled. Run /settings and enable auto-compaction so Pi can recover if Magic Context becomes unavailable.",
+			"Pi auto-compaction is disabled, so Pi will not invoke automatic Magic overflow recovery. Ordinary Magic compaction remains enabled.",
 	});
 });
 
@@ -307,7 +307,7 @@ test("reports degraded continuity when native compaction settings cannot be read
 	});
 });
 
-test("fails open and retries when Magic session startup throws", async () => {
+test("retains Magic ownership and retries when Magic session startup throws", async () => {
 	const handlers: Handlers = new Map();
 	let loads = 0;
 	let starts = 0;
@@ -331,7 +331,7 @@ test("fails open and retries when Magic session startup throws", async () => {
 	expect(starts).toBe(1);
 	expect(getContextCapability(ctx).status()).toEqual({
 		state: "degraded",
-		engine: "native",
+		engine: "magic-context",
 		trigger: "startup",
 		error: "startup failed",
 	});
@@ -347,7 +347,7 @@ test("fails open and retries when Magic session startup throws", async () => {
 	});
 });
 
-test("keeps the native fallback warning after the active Context engine fails", async () => {
+test("keeps Magic ownership and rejects cached or raw history after the engine fails", async () => {
 	const handlers: Handlers = new Map();
 	const tools: ToolDefinition[] = [];
 	const api = apiFor(handlers, tools);
@@ -388,25 +388,63 @@ test("keeps the native fallback warning after the active Context engine fails", 
 	reportFatal?.(new Error("Context engine worker crashed"));
 	await Bun.sleep(10);
 
-	expect(getContextCapability(ctx).status()).toEqual({
+	expect(getContextCapability(ctx).status()).toMatchObject({
 		state: "degraded",
-		engine: "native",
-		trigger: "startup",
+		engine: "magic-context",
 		error: "Context engine worker crashed",
 		continuity: "degraded",
-		continuityDetail: expect.stringContaining("Run /settings and enable auto-compaction"),
+		continuityDetail: expect.stringContaining("will not invoke automatic Magic overflow recovery"),
 	});
 	enabled = true;
 	expect(getContextCapability(ctx).status().continuity).toBeUndefined();
 	expect(getContextCapability(ctx).status().error).toBe("Context engine worker crashed");
-	expect(api.getActiveTools()).not.toContain("ctx_search");
-	const fallback = await projectCurrentContext("agent-fork", ctx);
-	expect(loads).toBe(2);
-	expect(fallback.source).toBe("native");
-	expect(fallback.text).not.toContain("cached before failure");
+	expect(api.getActiveTools()).toContain("ctx_search");
+	await expect(projectCurrentContext("agent-fork", ctx)).rejects.toThrow("raw history was not substituted");
+	expect(loads).toBe(1);
 });
 
-test("fails open during startup and retries on the next activation", async () => {
+test.each(["session", "input"] as const)(
+	"replaces failed Worker registrations before %s activation",
+	async (trigger) => {
+		const handlers: Handlers = new Map();
+		let reportFatal: ((cause: unknown) => void) | undefined;
+		const starts: number[] = [];
+		const shutdowns: number[] = [];
+		let loads = 0;
+		await piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI, onFatal?: (cause: unknown) => void) => {
+					const worker = ++loads;
+					reportFatal = onFatal;
+					magicApi.on("context", (event) => ({ messages: event.messages }));
+					magicApi.on("session_start", () => {
+						starts.push(worker);
+						if (worker === 1 && loads > 1) throw new Error("closed Worker received Session start");
+					});
+					magicApi.on("session_shutdown", () => {
+						shutdowns.push(worker);
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		reportFatal?.(new Error("Worker closed"));
+		if (trigger === "session") {
+			await emit(handlers, "session_start", { type: "session_start", reason: "switch" }, ctx);
+		} else {
+			await emit(handlers, "input", { type: "input", text: "retry", source: "rpc" }, ctx);
+			await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		}
+		await emit(handlers, "session_start", { type: "session_start", reason: "switch" }, ctx);
+		expect(starts).toEqual([1, 2, 2]);
+		expect(shutdowns).toEqual([1]);
+		expect(loads).toBe(2);
+		expect(getContextCapability(ctx).status().state).toBe("active");
+	},
+);
+
+test("keeps explicit upstream non-registration in native mode", async () => {
 	const handlers: Handlers = new Map();
 	let loads = 0;
 	piStuffContext(apiFor(handlers), {
@@ -417,12 +455,12 @@ test("fails open during startup and retries on the next activation", async () =>
 	});
 	const ctx = context();
 	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-	expect(getContextCapability(ctx).status().state).toBe("degraded");
+	expect(getContextCapability(ctx).status().state).toBe("native");
 
 	await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
-	expect(loads).toBe(2);
-	expect(getContextCapability(ctx).status().state).toBe("active");
+	expect(loads).toBe(1);
+	expect(getContextCapability(ctx).status().state).toBe("native");
 });
 
 test("discards partial Magic registrations before a retry", async () => {
@@ -456,7 +494,7 @@ test("discards partial Magic registrations before a retry", async () => {
 	const ctx = context();
 	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 	expect(handlers.get("context")).toHaveLength(1);
-	expect(handlers.get("message_end")).toBeUndefined();
+	expect(handlers.get("message_end")).toHaveLength(1);
 	expect(registrations).toEqual({ commands: ["ctx"], entryRenderers: ["pi-stuff-context-activity"] });
 	expect(tools.find((tool) => tool.name === "ctx_search")?.description).toContain("provider boundary");
 
