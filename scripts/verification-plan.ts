@@ -35,7 +35,7 @@ function ref(root: string, value: string | undefined): string | null {
 	}
 }
 function allTests(root: string): string[] {
-	return discoverTestFiles(resolve(root, "test"))
+	return discoverTestFiles(resolve(root, "tests"))
 		.map((file) => relative(root, file))
 		.filter((file) => !file.endsWith("-live.test.ts"));
 }
@@ -112,7 +112,7 @@ function affectsAcceptanceDimensions(root: string, path: string, base: string | 
 	return dimension.test(changedText || content(root, path));
 }
 function sourceFiles(root: string): string[] {
-	return names(root, ["ls-files", "-coz", "--exclude-standard", "--", "packages/pi-stuff", "scripts", "test"]).filter(
+	return names(root, ["ls-files", "-coz", "--exclude-standard", "--", "packages/pi-stuff", "scripts", "tests"]).filter(
 		(path) => CODE.test(path),
 	);
 }
@@ -132,7 +132,7 @@ function dependencyCapabilities(root: string, changed: string[], all: string[], 
 			queue.push(dependent);
 			const cap =
 				sourceCapability(dependent, capabilities) ??
-				(dependent.startsWith("test/") ? testCapability(dependent, capabilities) : undefined);
+				(dependent.startsWith("tests/") ? testCapability(dependent, capabilities) : undefined);
 			if (cap) caps.add(cap);
 		}
 	}
@@ -145,7 +145,7 @@ export function selectAffectedTests(root: string, changed: string[], base: strin
 	const capabilities = suiteCapabilities(root);
 	const known = (path: string): boolean =>
 		sourceCapability(path, capabilities) !== undefined ||
-		(path.startsWith("test/") && testCapability(path, capabilities) !== undefined) ||
+		(path.startsWith("tests/") && testCapability(path, capabilities) !== undefined) ||
 		pureMetadata(root, path, base);
 	if (
 		changed.some(
@@ -165,7 +165,7 @@ export function selectAffectedTests(root: string, changed: string[], base: strin
 	for (const path of changed) {
 		const cap =
 			sourceCapability(path, capabilities) ??
-			(path.startsWith("test/") ? testCapability(path, capabilities) : undefined);
+			(path.startsWith("tests/") ? testCapability(path, capabilities) : undefined);
 		if (cap) caps.add(cap);
 	}
 	if (!caps.size) return { files: all, reason: "unknown impact; all applicable offline tests" };

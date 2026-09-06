@@ -42,7 +42,7 @@ function validatePlan(value: PlanDocument, root: string): VerificationPlan {
 	if (value.base !== null && !validSha(value.base)) throw new Error("Verification plan has an invalid base");
 	if (!validSha(value.head)) throw new Error("Verification plan must contain a valid head");
 	if (value.head !== gitHead(root)) throw new Error(`Verification plan is stale: expected ${value.head}`);
-	const offline = discoverTestFiles(resolve(root, "test"))
+	const offline = discoverTestFiles(resolve(root, "tests"))
 		.map((file) => relative(root, file))
 		.filter((file) => !file.endsWith("-live.test.ts"))
 		.sort();

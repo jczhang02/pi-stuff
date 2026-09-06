@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import manifest from "../benchmarks/terminal-bench-2.1/manifest.json" with { type: "json" };
+import manifest from "../tests/benchmarks/terminal-bench-2.1/manifest.json" with { type: "json" };
 import type { EvaluationOptions } from "./terminal-bench/run.js";
 
 const help = `Usage: bun run benchmark:suite:terminal-bench [options]

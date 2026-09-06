@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: 2966ee83cae5c7abad8e8ab4fb61a256b20b6df02cc239d0ab9c7d7f5febc8b9 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: a88a5c682dc0d3a96d9d423e39323a6f4630ca9615b07f942eca9ae74aa96ca2 -->
 
 # 文档
 
@@ -59,6 +59,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [`CONTEXT.md`](../CONTEXT.md) | 规范术语和职责边界 |
 | [`DESIGN.md`](../DESIGN.md) | 共用界面与交互规则 |
 | [Capability Contract 目录](capability-contract-catalog.md) | 当前可观察合同及验收状态 |
+| [测试目录](../tests/README.md) | 测试层级、共享夹具、benchmark 输入与本地命令 |
 | [兼容性](compatibility.md) | 已认证的 Host、工具链和依赖版本 |
 | [质量保障](quality-assurance.md) | 验证命令、执行配置和迁移状态 |
 | [代码质量](code-quality.md) | 源码质量门槛和完成审查 |

@@ -5,36 +5,36 @@
 		"reason": "Loads the external TypeBox compiler from the selected Package root."
 	},
 	"scripts/ui-pty-thinking-evidence.ts": {
-		"sha256": "05bbf8f5086f213619a1082e25e2dd0b0f2b50139dc9077eb426c3376cdfc447",
+		"sha256": "bdffc25f74be714ef5a5590253f8efe6217ea641bab0a3d21165d649563f69dd",
 		"dependencies": [],
 		"reason": "Loads the certified Host HTML exporter."
 	},
 	"scripts/verify-goal-pty.ts": {
-		"sha256": "a3b85805e27bc724ed65942bd11d4bc923b0db463523e78645198159885083d1",
+		"sha256": "bd83a8ac127d10c8313524e204d986f587ef10677d3badee35b60aad487f7447",
 		"dependencies": [],
 		"reason": "Loads the certified Host HTML exporter."
 	},
 	"scripts/verify-web-integration.ts": {
-		"sha256": "1a1b1974a11bcea856c2eb9bf740baf3dc727ca568ed7d66ff214c3a655273f1",
+		"sha256": "66f651669e14f1ed8664e792844297dcd8ff65a480c1e3240df00962c0f7fc2a",
 		"dependencies": ["packages/pi-stuff/src/web/"],
 		"reason": "Loads the Web adapter from the selected Package checkout."
 	},
-	"test/component-integration/context-management/duplicate-runtime.test.ts": {
+	"tests/component-integration/context-management/duplicate-runtime.test.ts": {
 		"sha256": "e86160144dad60ad0d0442409858d0a3cbf7e29b10f92905c1fd797b7026780d",
 		"dependencies": ["packages/pi-stuff/src/context-management/"],
 		"reason": "Loads two physical copies of the Context Module."
 	},
-	"test/component-integration/context-management/magic-worker.test.ts": {
+	"tests/component-integration/context-management/magic-worker.test.ts": {
 		"sha256": "1a4b391e931caf178c46bc762a1b8f939084110cbb0569016abf7b377d5cd45b",
 		"dependencies": [],
 		"reason": "Loads the installed external Magic Context package."
 	},
-	"test/component-integration/tool-display/duplicate-runtime.test.ts": {
+	"tests/component-integration/tool-display/duplicate-runtime.test.ts": {
 		"sha256": "5d921b5fe19a06b584211a02c75cba3c8c766d59dfe467aff73beb882667188f",
 		"dependencies": ["packages/pi-stuff/src/tool-display/"],
 		"reason": "Loads two physical copies of the Tool Display Module."
 	},
-	"test/goal-upstream/goal-runtime-support.mjs": {
+	"tests/goal-upstream/goal-runtime-support.mjs": {
 		"sha256": "2c9fee266c2096577565e25eed70256bbc2bb22184732e204072c6674515c70b",
 		"dependencies": [],
 		"reason": "Loads AuthStorage from the certified external Host package."

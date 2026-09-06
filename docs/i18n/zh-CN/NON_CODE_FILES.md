@@ -1,4 +1,4 @@
-<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: b04a96db8fda6d2eb2c78b14aa63696c271e0c287e42eb8776414195cc638366 -->
+<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: d8f1ae6969d10ba28c2f3fbee957038696775f423f9b13f5d42ed2d7402001f0 -->
 
 # 非代码文件检查清单
 
@@ -385,14 +385,14 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `test/fixtures/skill-discovery-benchmark-manifest.jsonl` | 定义 Skill Discovery 首轮真实模型基准的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
-| `test/fixtures/skill-discovery-benchmark-run-lock.json` | 冻结 Skill Discovery 首轮真实模型基准使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
-| `test/fixtures/skill-discovery-confirmation-manifest.jsonl` | 定义修正 Tool allowlist 后的 Skill Discovery 确认实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
-| `test/fixtures/skill-discovery-confirmation-run-lock.json` | 冻结修正 Tool allowlist 后的 Skill Discovery 确认实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
-| `test/fixtures/skill-discovery-direct-read-manifest.jsonl` | 定义直接读取 Skill 内容的 Skill Discovery 实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
-| `test/fixtures/skill-discovery-direct-read-run-lock.json` | 冻结直接读取 Skill 内容的 Skill Discovery 实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
-| `test/fixtures/skill-discovery-isolated-confirmation-manifest.jsonl` | 定义隔离 Context worker 混淆因素后的 Skill Discovery 确认实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
-| `test/fixtures/skill-discovery-isolated-confirmation-run-lock.json` | 冻结隔离 Context worker 混淆因素后的 Skill Discovery 确认实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
-| `test/fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl` | 定义拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
-| `test/fixtures/skill-discovery-startup-bounded-confirmation-run-lock.json` | 冻结拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
-| `test/fixtures/smoke-package/package.json` | 声明一个最小 Pi Extension 测试 Package，用于验证扩展发现、加载和打包 smoke。 |
+| `tests/fixtures/skill-discovery-benchmark-manifest.jsonl` | 定义 Skill Discovery 首轮真实模型基准的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
+| `tests/fixtures/skill-discovery-benchmark-run-lock.json` | 冻结 Skill Discovery 首轮真实模型基准使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
+| `tests/fixtures/skill-discovery-confirmation-manifest.jsonl` | 定义修正 Tool allowlist 后的 Skill Discovery 确认实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
+| `tests/fixtures/skill-discovery-confirmation-run-lock.json` | 冻结修正 Tool allowlist 后的 Skill Discovery 确认实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
+| `tests/fixtures/skill-discovery-direct-read-manifest.jsonl` | 定义直接读取 Skill 内容的 Skill Discovery 实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
+| `tests/fixtures/skill-discovery-direct-read-run-lock.json` | 冻结直接读取 Skill 内容的 Skill Discovery 实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
+| `tests/fixtures/skill-discovery-isolated-confirmation-manifest.jsonl` | 定义隔离 Context worker 混淆因素后的 Skill Discovery 确认实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
+| `tests/fixtures/skill-discovery-isolated-confirmation-run-lock.json` | 冻结隔离 Context worker 混淆因素后的 Skill Discovery 确认实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
+| `tests/fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl` | 定义拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
+| `tests/fixtures/skill-discovery-startup-bounded-confirmation-run-lock.json` | 冻结拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
+| `tests/fixtures/smoke-package/package.json` | 声明一个最小 Pi Extension 测试 Package，用于验证扩展发现、加载和打包 smoke。 |

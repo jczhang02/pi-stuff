@@ -15,10 +15,10 @@ export { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VER
 
 const root = resolve(import.meta.dir, "..");
 const packageDirectory = join(root, "packages", "pi-stuff");
-const goalToolInspector = join(root, "test/fixtures/assert-goal-tools.ts");
-const webToolInspector = join(root, "test/fixtures/assert-web-tools.ts");
-const mcpToolInspector = join(root, "test/fixtures/assert-mcp-tools.ts");
-const workToolInspector = join(root, "test/fixtures/assert-work-tools.ts");
+const goalToolInspector = join(root, "tests/fixtures/assert-goal-tools.ts");
+const webToolInspector = join(root, "tests/fixtures/assert-web-tools.ts");
+const mcpToolInspector = join(root, "tests/fixtures/assert-mcp-tools.ts");
+const workToolInspector = join(root, "tests/fixtures/assert-work-tools.ts");
 const RTK_TECHNIQUE_FILES = [
 	"ansi.ts",
 	"build.ts",

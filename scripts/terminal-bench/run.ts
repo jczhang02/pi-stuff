@@ -3,7 +3,7 @@ import { mkdir, open, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
-import manifest from "../../benchmarks/terminal-bench-2.1/manifest.json" with { type: "json" };
+import manifest from "../../tests/benchmarks/terminal-bench-2.1/manifest.json" with { type: "json" };
 import { CERTIFIED_PI_VERSION } from "../pi-host-contract.js";
 import { archiveUnfinishedTrials, type EvaluationReport, summarizeEvaluation } from "./results.js";
 import {

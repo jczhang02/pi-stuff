@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 3e075199d77474cbe675f62269e755995dad0bf97e83b98bf201000770cc4a88 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: d90bbb9869a65fc21a5b11d20df6837144641e7d34047ebdf55dd43e17725f96 -->
 
 # 贡献指南
 
@@ -12,7 +12,7 @@
 
 ## Package 变更
 
-Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版本或发布。行为需要持久用户记录时更新 `docs/releases/`。Suite 组合变化时，修改 `packages/pi-stuff/suite.json` 并运行 `bun run suite:generate`。使用适用的 Acceptance 测试 `test/acceptance/repository/source-install.test.ts` 验证源码安装。本仓库没有 registry 发布或 Changesets 流程。
+Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版本或发布。行为需要持久用户记录时更新 `docs/releases/`。Suite 组合变化时，修改 `packages/pi-stuff/suite.json` 并运行 `bun run suite:generate`。使用适用的 Acceptance 测试 `tests/acceptance/repository/source-install.test.ts` 验证源码安装。本仓库没有 registry 发布或 Changesets 流程。
 
 ## 提交
 

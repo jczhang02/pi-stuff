@@ -9,8 +9,8 @@ import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/work-pty-provider.ts");
-const runner = join(root, "test/fixtures/work-pty-runner.sh");
+const providerExtension = join(root, "tests/fixtures/work-pty-provider.ts");
+const runner = join(root, "tests/fixtures/work-pty-runner.sh");
 const REQUEST_RECORD_SCHEMA = Type.Object(
 	{
 		monitorCompletedNotification: Type.Boolean(),

@@ -120,7 +120,7 @@ function selectTestFiles({ values, positionals }: ReturnType<typeof parseTestArg
 	const profile = values.profile ?? "offline";
 	if (profile !== "offline" && profile !== "live") throw new Error(`Unknown test profile: ${profile}`);
 	const repositoryRoot = process.cwd();
-	const testRoot = resolve(repositoryRoot, "test");
+	const testRoot = resolve(repositoryRoot, "tests");
 	const filters = [...(values.file ?? []), ...positionals];
 	const levels = values.level ?? [];
 	const capabilities = values.capability ?? [];
@@ -217,7 +217,7 @@ async function main(): Promise<void> {
 			}
 			return;
 		}
-		console.error("No test files were discovered under test/.");
+		console.error("No test files were discovered under tests/.");
 		process.exitCode = 1;
 		return;
 	}

@@ -163,7 +163,7 @@ async function runArm(
 		"--extension",
 		join(root, "packages", "pi-stuff", "index.ts"),
 		"--extension",
-		join(root, "test", "fixtures", "code-mode-provider.ts"),
+		join(root, "tests", "fixtures", "code-mode-provider.ts"),
 		"--no-skills",
 		"--no-prompt-templates",
 		"--no-context-files",

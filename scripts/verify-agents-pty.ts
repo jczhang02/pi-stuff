@@ -18,8 +18,8 @@ import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/agents-pty-provider.ts");
-const runner = join(root, "test/fixtures/agents-pty-runner.sh");
+const providerExtension = join(root, "tests/fixtures/agents-pty-provider.ts");
+const runner = join(root, "tests/fixtures/agents-pty-runner.sh");
 const NERD_PROMPT_MARKER = "\uF460";
 
 export interface AgentsPtyVerificationOptions {

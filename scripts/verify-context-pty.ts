@@ -24,8 +24,8 @@ import { resolvePiBinary } from "./installed-tools.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/context-pty-provider.ts");
-const runner = join(root, "test/fixtures/context-pty-runner.sh");
+const providerExtension = join(root, "tests/fixtures/context-pty-provider.ts");
+const runner = join(root, "tests/fixtures/context-pty-runner.sh");
 const MEMORY_EVIDENCE = "真实 Context 检索证据";
 const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object({ summary: Type.String() }, { additionalProperties: true });
 const RECORD_LINE_SCHEMA = Type.Object(

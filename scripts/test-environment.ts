@@ -16,14 +16,14 @@ export function requirementsForTest(file: string): string[] {
 	if (file.endsWith("codex/native-tools.test.ts")) requirements.add("codex-native");
 	if (file.endsWith(".node.ts")) requirements.add("node");
 	if (
-		/^test\/(?:system|acceptance)\//u.test(file) ||
+		/^tests\/(?:system|acceptance)\//u.test(file) ||
 		file.endsWith("system-integration/repository/smoke-pi.test.ts") ||
 		file.endsWith("system-integration/subagents/process-controls-recovery.test.ts")
 	)
 		requirements.add("pi");
-	if (/test\/(system-integration|acceptance)\/rtk\//u.test(file)) requirements.add("rtk");
+	if (/tests\/(system-integration|acceptance)\/rtk\//u.test(file)) requirements.add("rtk");
 	if (
-		(!file.startsWith("test/unit/") && /pty|watchdog/u.test(file)) ||
+		(!file.startsWith("tests/unit/") && /pty|watchdog/u.test(file)) ||
 		file.endsWith("acceptance/code-mode/tui-offline.test.ts")
 	) {
 		requirements.add("tmux");

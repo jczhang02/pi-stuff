@@ -6,8 +6,8 @@
 	},
 	"include": [
 		"../../packages/pi-stuff/src/conversation-ui/**/*.ts",
-		"../../test/agents/**/*.ts",
-		"../../test/*/subagents/**/*.ts",
+		"../../tests/agents/**/*.ts",
+		"../../tests/*/subagents/**/*.ts",
 		"../../packages/pi-stuff/src/code-mode/proxy-from-env.d.ts"
 	]
 }

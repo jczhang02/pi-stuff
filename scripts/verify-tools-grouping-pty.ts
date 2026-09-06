@@ -8,9 +8,9 @@ import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/tools-grouping-pty-provider.ts");
-const runner = join(root, "test/fixtures/tools-grouping-pty-runner.sh");
-const GENERIC_FIT_TARGET = "https://example.test/a-very-long-resource-identifier-without-boundaries-that-keeps-going";
+const providerExtension = join(root, "tests/fixtures/tools-grouping-pty-provider.ts");
+const runner = join(root, "tests/fixtures/tools-grouping-pty-runner.sh");
+const GENERIC_FIT_TARGET = "https://example.tests/a-very-long-resource-identifier-without-boundaries-that-keeps-going";
 const SESSION_RECORD_SCHEMA = Type.Object(
 	{
 		message: Type.Optional(Type.Object({ role: Type.Optional(Type.String()) }, { additionalProperties: true })),

@@ -11,7 +11,7 @@ export async function prepareGoalTests(repositoryRoot: string): Promise<string> 
 	);
 	await writeFile(
 		join(outputDirectory, "packages/pi-stuff/src/conversation-ui/index.js"),
-		`export * from "../../../../test/goal-upstream/ui-node-shim.js";\n`,
+		`export * from "../../../../tests/goal-upstream/ui-node-shim.js";\n`,
 	);
 	return outputDirectory;
 }

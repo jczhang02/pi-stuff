@@ -10,10 +10,10 @@ import { resolvePiBinary } from "./installed-tools.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/mcp-pty-provider.ts");
-const runner = join(root, "test/fixtures/mcp-pty-runner.sh");
-const server = join(root, "test/fixtures/mcp/stdio-server.mjs");
-const httpServer = join(root, "test/fixtures/mcp/http-server.mjs");
+const providerExtension = join(root, "tests/fixtures/mcp-pty-provider.ts");
+const runner = join(root, "tests/fixtures/mcp-pty-runner.sh");
+const server = join(root, "tests/fixtures/mcp/stdio-server.mjs");
+const httpServer = join(root, "tests/fixtures/mcp/http-server.mjs");
 const DEFAULT_COLUMNS = 64;
 const NARROW_COLUMNS = 48;
 const DEFAULT_ROWS = 28;

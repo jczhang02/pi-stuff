@@ -4,7 +4,7 @@ import { PiRpcClient } from "./pi-rpc-client.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const PONYTAIL_PACKAGE = join(ROOT, "packages/pi-stuff");
-const OBSERVER_EXTENSION = join(ROOT, "test/fixtures/ponytail-benchmark-observer.ts");
+const OBSERVER_EXTENSION = join(ROOT, "tests/fixtures/ponytail-benchmark-observer.ts");
 const COMMAND_TIMEOUT_MS = 60_000;
 const HOST_STARTUP_TIMEOUT_MS = 5 * 60_000;
 const CASE_TIMEOUT_MS = 15 * 60_000;

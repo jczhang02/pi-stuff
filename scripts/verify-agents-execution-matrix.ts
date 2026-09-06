@@ -12,7 +12,7 @@ import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/agents-execution-matrix-provider.ts");
+const providerExtension = join(root, "tests/fixtures/agents-execution-matrix-provider.ts");
 const PROCESS_TIMEOUT_MS = 90_000;
 const BACKGROUND_SETTLE_TIMEOUT_MS = 60_000;
 

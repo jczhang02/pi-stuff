@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
-import { THOUGHT_PHASES, TODO_PTY_READY } from "../test/fixtures/ui-pty-provider.js";
+import { THOUGHT_PHASES, TODO_PTY_READY } from "../tests/fixtures/ui-pty-provider.js";
 import { selectAcceptanceMatrix } from "./acceptance-matrix.js";
 import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";

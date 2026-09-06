@@ -1,8 +1,10 @@
-<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: edb137e4bafb8afbf04e439236ebabb733b6b0fd3599d0452c99dbc6fd799e48 -->
+<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: befdab094f145bc2a033775d8fb2e7f08f3ce1b3ee592e632077b82199ffd134 -->
 
 # 质量保障
 
 Static Checks 验证源码，不运行产品场景。Tests 通过声明的接缝证明行为；Capability Benchmarks 独立测量性能或效果；Reviews 评估需求、设计、安全、可维护性与证据质量。
+
+[测试目录导览](../tests/README.md) 介绍五个测试层级、共享夹具和固定 benchmark 输入。
 
 ## 当前命令
 
@@ -20,7 +22,7 @@ bun run benchmark:suite:terminal-bench --help
 
 `check` 执行格式、lint、TypeScript、依赖和未使用源码、生成组合、仓库安全、Capability Contract Catalog 以及 Package/resource/license 静态验证；不会改写源码或运行 Benchmark。`fix` 才会执行格式和安全 lint 修复。
 
-`test` 当前发现五个层级下的 339 个文件（334 个离线文件、1 个显式在线文件）：Component (`unit`)、Component Integration (`component-integration`)、System (`system`)、System Integration (`system-integration`) 与 Acceptance (`acceptance`)。离线清单按上述层级分别有 135、159、2、10、28 个文件。目录按 `level/capability/scenario` 组织，每个文件独立 OS process。Goal smoke 是原生 Bun test；其余 21 个 `.node.ts` 保留 Node 兼容边界，只编译一次后运行。同一维度的重复 selector 取并集，不同维度取交集。`--name` 使用原生 test runner 的 regex candidate filter，不扫描源码名称。`--help` 和 `--list` 不执行场景。报告默认写入 `.artifacts/tests/`，记录文件状态、process duration、setup duration 和 Acceptance 矩阵；失败或空选择返回非零。
+`test` 当前发现五个层级下的 340 个文件（334 个离线文件、1 个显式在线文件）：Component (`unit`)、Component Integration (`component-integration`)、System (`system`)、System Integration (`system-integration`) 与 Acceptance (`acceptance`)。离线清单按上述层级分别有 135、159、2、10、28 个文件。目录按 `level/capability/scenario` 组织，每个文件独立 OS process。Goal smoke 是原生 Bun test；其余 21 个 `.node.ts` 保留 Node 兼容边界，只编译一次后运行。同一维度的重复 selector 取并集，不同维度取交集。`--name` 使用原生 test runner 的 regex candidate filter，不扫描源码名称。`--help` 和 `--list` 不执行场景。报告默认写入 `.artifacts/tests/`，记录文件状态、process duration、setup duration 和 Acceptance 矩阵；失败或空选择返回非零。
 
 Tests 在首个失败后停止剩余文件；缺少原生执行证据同样算失败。`--keep-going` 收集全部选中文件的结果，但不会把失败变成成功；`verify --keep-going` 也会在 Checks 命令失败后继续运行 Tests。每个文件开始前和结束后都持久化报告，区分已完成、尚未开始，以及执行中断时最后记录为进行中的文件。缺失、取消或未完成的证据不能通过 CI 汇总。
 
@@ -30,7 +32,7 @@ Pi、RTK 优先使用显式 `PI_BIN` / `RTK_BIN`，再查找 `PATH`（Pi 会排�
 
 ## 源码安装与保留证据
 
-`test/acceptance/repository/source-install.test.ts` 在隔离 Settings 和 XDG 目录中运行认证 Pi 的 `install`，再从 checkout 外启动 Pi，观察已安装 Package 加载的命令，并清理临时环境。Distribution archive 不是交付要求。原 package-verification aggregate 重复的 Host/PTY 场景已移除；源码安装、Suite inspection、Host seam 和依赖互操作各自在相应层级与 Capability 下拥有主归属。
+`tests/acceptance/repository/source-install.test.ts` 在隔离 Settings 和 XDG 目录中运行认证 Pi 的 `install`，再从 checkout 外启动 Pi，观察已安装 Package 加载的命令，并清理临时环境。Distribution archive 不是交付要求。原 package-verification aggregate 重复的 Host/PTY 场景已移除；源码安装、Suite inspection、Host seam 和依赖互操作各自在相应层级与 Capability 下拥有主归属。
 
 ## Benchmarks
 

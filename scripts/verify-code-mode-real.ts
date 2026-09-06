@@ -66,7 +66,7 @@ async function runPi(
 		"--extension",
 		join(root, "packages", "pi-stuff", "index.ts"),
 		"--extension",
-		join(root, "test", "fixtures", "code-mode-provider.ts"),
+		join(root, "tests", "fixtures", "code-mode-provider.ts"),
 		"--print",
 		mode === "start" ? "CODE_MODE_EXECUTE" : "CODE_MODE_RESUME",
 	];

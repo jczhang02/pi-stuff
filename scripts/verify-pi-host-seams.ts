@@ -7,7 +7,7 @@ import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
-const provider = join(root, "test/fixtures/pi-host-seams-provider.ts");
+const provider = join(root, "tests/fixtures/pi-host-seams-provider.ts");
 const TIMEOUT_MS = 20_000;
 
 interface SeamRecord {

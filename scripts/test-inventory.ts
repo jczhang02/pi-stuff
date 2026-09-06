@@ -35,7 +35,7 @@ export function suiteCapabilities(root: string): Set<string> {
 
 export function testCapability(file: string, capabilities?: Set<string>): string | undefined {
 	const parts = file.split("/");
-	if (parts[0] !== "test" || !TEST_LEVELS.some((level) => level === parts[1])) return undefined;
+	if (parts[0] !== "tests" || !TEST_LEVELS.some((level) => level === parts[1])) return undefined;
 	const candidate = parts[2];
 	return candidate && (!capabilities || capabilities.has(candidate) || candidate === "repository")
 		? candidate

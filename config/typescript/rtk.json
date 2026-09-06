@@ -10,8 +10,8 @@
 	},
 	"include": [
 		"../../packages/pi-stuff/src/rtk/**/*.ts",
-		"../../test/rtk/**/*.ts",
-		"../../test/*/rtk/**/*.ts",
+		"../../tests/rtk/**/*.ts",
+		"../../tests/*/rtk/**/*.ts",
 		"../../packages/pi-stuff/src/code-mode/proxy-from-env.d.ts"
 	],
 	"exclude": ["../../node_modules"]

@@ -60,17 +60,17 @@
 			".": {
 				"entry": [
 					"scripts/*.ts",
-					"test/**/*.test.ts",
-					"test/**/*.node.ts",
-					"test/goal-upstream/ui-node-shim.ts",
-					"test/ui/settings-lock-race-worker.ts",
-					"test/fixtures/**/*.ts",
-					"test/agents/fixtures/**/*.ts"
+					"tests/**/*.test.ts",
+					"tests/**/*.node.ts",
+					"tests/goal-upstream/ui-node-shim.ts",
+					"tests/ui/settings-lock-race-worker.ts",
+					"tests/fixtures/**/*.ts",
+					"tests/agents/fixtures/**/*.ts"
 				],
 				"project": [
 					"scripts/**/*.ts",
 					"tools/**/*.ts",
-					"test/**/*.ts"
+					"tests/**/*.ts"
 				]
 			},
 			"packages/pi-stuff": {

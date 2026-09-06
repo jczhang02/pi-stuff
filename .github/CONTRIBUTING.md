@@ -21,7 +21,7 @@ scope, source-install evidence, and migration status.
 Pi Stuff has one private local Package. Capability Modules are not independently versioned or published. When behavior
 needs a durable user-facing record, update `docs/releases/`. For Suite composition changes, edit
 `packages/pi-stuff/suite.json` and run `bun run suite:generate`. Verify source installation with the applicable
-Acceptance test, `test/acceptance/repository/source-install.test.ts`; there is no registry publication or Changesets
+Acceptance test, `tests/acceptance/repository/source-install.test.ts`; there is no registry publication or Changesets
 workflow.
 
 ## Commits

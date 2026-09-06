@@ -4,6 +4,8 @@ Static Checks validate source without running product scenarios. Tests establish
 Capability Benchmarks measure performance or effectiveness independently of verification gates. Reviews assess
 requirements, design, security, maintainability, and the usefulness of that evidence.
 
+The [tests directory guide](../tests/README.md) maps the five levels, shared fixtures, and pinned benchmark inputs.
+
 ## Current commands
 
 ```bash
@@ -23,9 +25,9 @@ repository safety, the Capability Contract Catalog, and static Package/resource/
 source or execute Benchmarks. `fix` explicitly applies formatting and safe lint fixes; generated composition and
 snapshots have separate explicit update operations.
 
-`test` currently discovers 339 files (338 offline and one explicit live file) under five levels: Component (`unit`),
+`test` currently discovers 340 files (339 offline and one explicit live file) under five levels: Component (`unit`),
 Component Integration (`component-integration`), System (`system`), System Integration (`system-integration`), and
-Acceptance (`acceptance`). The offline inventory is 138 / 160 / 2 / 10 / 28 files by those levels. Within each level,
+Acceptance (`acceptance`). The offline inventory is 139 / 160 / 2 / 10 / 28 files by those levels. Within each level,
 files are grouped by Capability directory and scenario. It runs one OS process per file. The Goal runtime smoke is a
 native Bun test; the other 21 `.node.ts` compatibility files are compiled once and then run through Node. Repeated
 selectors within one dimension are a union; different dimensions are an intersection. `--name` uses the native test
@@ -58,7 +60,7 @@ exact `RTK_BIN` selection even when its filename is not `rtk`.
 Static Package verification checks source/resources, declared external dependencies, native Tool executability, and
 license/provenance records. Distribution archives are not a delivery requirement.
 
-`test/acceptance/repository/source-install.test.ts` runs the certified Pi `install` command with isolated Settings and
+`tests/acceptance/repository/source-install.test.ts` runs the certified Pi `install` command with isolated Settings and
 XDG directories, then starts Pi outside the checkout and observes commands loaded through the installed Package
 setting. It never changes the maintainer's installation. The installed process and temporary environment are cleaned up.
 

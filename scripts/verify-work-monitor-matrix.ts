@@ -7,7 +7,7 @@ import { resolvePiBinary } from "./installed-tools.ts";
 import { PiRpcClient } from "./pi-rpc-client.js";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/work-monitor-matrix-provider.ts");
+const providerExtension = join(root, "tests/fixtures/work-monitor-matrix-provider.ts");
 const TIMEOUT_MS = 30_000;
 
 const SCENARIOS = ["cancel", "command_failure", "file_error", "http_success", "log_success", "timeout"] as const;

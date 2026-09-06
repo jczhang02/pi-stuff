@@ -11,8 +11,8 @@ import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/rtk-pty-provider.ts");
-const runner = join(root, "test/fixtures/rtk-pty-runner.sh");
+const providerExtension = join(root, "tests/fixtures/rtk-pty-provider.ts");
+const runner = join(root, "tests/fixtures/rtk-pty-runner.sh");
 const LONG_RESULT_ID = "rtk-pty-long-output";
 const RG_FILES_COMMAND = "rg --files -g '*.txt' .";
 const RG_SEARCH_COMMAND = "rg -n RTK untracked.txt";

@@ -15,8 +15,8 @@ import { resolvePiBinary } from "./installed-tools.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/btw-pty-provider.ts");
-const runner = join(root, "test/fixtures/btw-pty-runner.sh");
+const providerExtension = join(root, "tests/fixtures/btw-pty-provider.ts");
+const runner = join(root, "tests/fixtures/btw-pty-runner.sh");
 
 export interface BtwPtyVerificationOptions {
 	readonly piBinary: string;

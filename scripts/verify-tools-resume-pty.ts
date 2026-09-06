@@ -12,8 +12,8 @@ import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/tools-resume-pty-provider.ts");
-const runner = join(root, "test/fixtures/tools-resume-pty-runner.sh");
+const providerExtension = join(root, "tests/fixtures/tools-resume-pty-provider.ts");
+const runner = join(root, "tests/fixtures/tools-resume-pty-runner.sh");
 const BUILTINS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
 const BUILTIN_SET = new Set<string>(BUILTINS);
 const COLD_FIRST_FRAME_BOUNDARY = "COLD_FIRST_FRAME_BOUNDARY";

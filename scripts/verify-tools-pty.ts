@@ -14,9 +14,9 @@ import { stripTerminalControls } from "./terminal-controls.js";
 import { runToolsPtyLiveness, type ToolsLivenessSample } from "./tools-pty-liveness.ts";
 
 const root = resolve(import.meta.dir, "..");
-const providerExtension = join(root, "test/fixtures/tools-pty-provider.ts");
-const runner = join(root, "test/fixtures/tools-pty-runner.sh");
-const activeParityRunner = join(root, "test/fixtures/tools-active-parity-runner.sh");
+const providerExtension = join(root, "tests/fixtures/tools-pty-provider.ts");
+const runner = join(root, "tests/fixtures/tools-pty-runner.sh");
+const activeParityRunner = join(root, "tests/fixtures/tools-active-parity-runner.sh");
 const BUILTINS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
 const BUILTIN_SET = new Set<string>(BUILTINS);
 const LONG_READ_DIRECTORY = "pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/deep";
