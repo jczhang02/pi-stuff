@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 144776f833bf94e864c44b38419ec2237f778c138213038c90c14cf5f7eacf91 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: bf5cbbfac3b070800c478537b6b3fc295c448462cf2ec681aa4ba1199742b311 -->
 
 # 兼容性
 
@@ -26,7 +26,7 @@
 
 CI 提供两个稳定检查。`Fast` 始终验证冻结依赖图、格式、anti-slop lint、类型接口、未使用代码分析、生成组合和公开发布安全。PR 的范围分类器对可执行或影响未知的变更启动 `Acceptance`。Beads 元数据、根 Markdown、文档证据、Package/Module README 和 `.github/CONTRIBUTING.md` 仅需 `Fast`；Runtime Skill、Prompt Template、配置和可执行示例不属于普通文档豁免。重命名同时按旧、新路径分类。直接推送到 `main` 仅运行 `Fast`；手动触发运行两者。PTY 验证器使用可选 tmux 服务器设置前先探测支持情况；Ubuntu 基线必须在没有 `extended-keys-format` 时正常运行。
 
-`Acceptance` 获取受支持的 Pi Host、Code Mode Host 和 RTK runtime，然后在网络隔离命名空间中运行隔离测试、真实 TUI 验证、Tool Activity benchmark 和 Package 验证。逐文件进程隔离避免重进程或 PTY 测试污染后续测试。按[验证政策](code-quality.md#risk-based-verification)复用同一版本所需 CI 证据；仅 `Fast` 通过不认证完整 Host 验收。[交付发布器](agents/issue-tracker.md#verified-ci-evidence)在报告交付前核对适用检查。另有每周上游观察任务报告 npm `latest` 是否超过受支持 Host，但不会自动改变支持范围。
+`Acceptance` 获取受支持的 Pi Host、Code Mode Host 和 RTK runtime，然后在网络隔离命名空间中运行隔离测试、真实 TUI 验证、Tool Activity benchmark 和 Package 验证。该作业允许运行 40 分钟；单个场景的超时与必需覆盖范围保持不变。逐文件进程隔离避免重进程或 PTY 测试污染后续测试。按[验证政策](code-quality.md#risk-based-verification)复用同一版本所需 CI 证据；仅 `Fast` 通过不认证完整 Host 验收。[交付发布器](agents/issue-tracker.md#verified-ci-evidence)在报告交付前核对适用检查。另有每周上游观察任务报告 npm `latest` 是否超过受支持 Host，但不会自动改变支持范围。
 
 仓库工具链使用 Bun 1.4.0。Host 自带的 runtime 和 Release 打包属于 Host 细节，不是 Pi Stuff 的兼容性准入标准。
 

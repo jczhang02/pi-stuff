@@ -32,8 +32,8 @@ A direct push to `main` runs `Fast` only; manual dispatch runs both checks. PTY 
 settings before using them; the Ubuntu baseline must work without `extended-keys-format`.
 
 `Acceptance` obtains the supported Pi Host, Code Mode host, and RTK runtime, then runs isolated tests, real TUI
-verification, the Tool Activity benchmark, and package verification in a network-isolated namespace. Per-file process
-isolation prevents process- or PTY-heavy tests from contaminating later tests. Reuse required CI evidence for the same
+verification, the Tool Activity benchmark, and package verification in a network-isolated namespace. The job allows 40 minutes; individual scenario timeouts and
+required coverage are unchanged. Per-file process isolation prevents process- or PTY-heavy tests from contaminating later tests. Reuse required CI evidence for the same
 revision under [the verification policy](code-quality.md#risk-based-verification); a Fast-only result does not certify
 full Host acceptance. The [delivery publisher](agents/issue-tracker.md#verified-ci-evidence) verifies the applicable
 checks before reporting delivery. A separate weekly upstream watch reports when npm `latest` moves beyond the
