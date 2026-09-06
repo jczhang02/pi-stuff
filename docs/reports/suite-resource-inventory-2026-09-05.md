@@ -301,6 +301,59 @@ latency improvement; the measured saving is the helper work above. The exact nat
 checks pass. `commandInvocationMatching` in the numeric record retains the trials, Source and evidence hashes, resource
 snapshots and limits. First-Agent import stalls and the remaining whole-Suite acceptance stay open.
 
+## Skip cleanup after successful atomic publication
+
+On 2026-09-06, `ps-yon.16` removes one redundant filesystem operation per successful Agents atomic write. At
+`55dbf85c`, the [shared writers](../../packages/pi-stuff/src/subagents/src/shared/atomic-json.ts) attempted to remove
+the temporary pathname after a successful same-directory rename had already consumed it. Both synchronous and
+asynchronous writers now clean up only after a failed write or rename, preserving the original error if cleanup also
+fails. Directory and rename retry policy, atomic visibility, private permissions and callers are unchanged. No cache,
+option or writer abstraction was added. Production Source falls from 128 to 120 physical lines; the existing
+regression grows from 28 to 78, for a net Source delta of +42.
+
+The regression reached both writers on the old implementation: two tests passed and two failed because a successful
+write called cleanup once instead of zero times. The candidate verifies complete replacement, mode `0600`, no leftover
+temporary file, failure cleanup and original-error precedence. The final ordinary-filesystem run of
+`atomic-json.test.ts`, `artifacts.test.ts`, `background-engine-lifecycle.test.ts` and
+`foreground-engine-recovery.test.ts` passed 42 tests and 155 assertions in 4.45 seconds.
+
+Earlier ordinary-filesystem tests did fail. Candidate runs reported 20 pass/2 fail and 17 pass/1 fail, with artifact
+cleanup-hook or cross-process claim-shard timeouts. The old production control also failed the claim-shard test
+(17 pass/1 fail). The same 42-test selection then passed on tmpfs before passing again on the ordinary filesystem.
+The tmpfs result isolates functional behavior; it is not ordinary-disk performance evidence. No timeout was relaxed.
+These failures are retained in the [numeric record](suite-resource-inventory-2026-09-05.json).
+
+Four sequential native runs used the existing foreground observer with `--repeat-tool`, the exact Pi 0.85.0 executable,
+a 120×40 terminal and two fresh-context children. All used the ordinary filesystem, fresh private configuration and
+temporary caches; the kernel page cache was not reset. No tests, scouts or profiler competed with these runs.
+The two ordinary variants differed only in the production writer; separate marked variants counted writer entries
+and cleanup attempts. Observer start times below are on 2026-09-06 UTC.
+
+| Variant | Start, UTC | Spinner, ms | Input, ms | Selection, ms | Scoped CPU, seconds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Control `mWVidp` | 01:43:06.164 | 284.585 | 99.372 | 197.429 | 26.767517 |
+| Candidate `kv9SHH` | 01:44:33.848 | 188.776 | 27.315 | 26.712 | 29.069786 |
+| Marked control `dbCmhU` | 01:46:25.493 | 229.068 | 103.880 | 15.903 | 28.560100 |
+| Marked candidate `rh14Kw` | 01:47:50.631 | 252.247 | 76.848 | 17.182 | 27.691378 |
+
+Both marked runs observed 52 synchronous writes in the parent and one in each child: 54 publications in either
+variant, with cleanup attempts reduced from 54 to zero. No asynchronous writer invocation occurred in this Host
+workload; its success-path reduction is covered by the real-filesystem regression, not these native counts.
+The marks count calls at the shared writer, not all kernel syscalls, wakeups, allocation or garbage collection.
+All temporary marks and Provider probes were removed.
+
+Every run still failed the frozen Spinner gate. The ordinary control also failed input and selection; both marked
+runs failed input. All completed and reaped both children, requested and persisted automatic Naming once, and refreshed
+Usage once. Spinner absence was zero, capture gaps stayed below 19 ms, and each sample retained over 37 seconds and
+3,000 active captures. All four resource scopes were unloaded after shutdown.
+
+Ambient I/O pressure varied substantially. The system's I/O `some avg10` was 78.98 before the ordinary control,
+24.62 between ordinary runs and 26.14 after the candidate. This does not identify the cause of an individual stall or
+test timeout. The samples establish removal of unwanted cleanup, not a stable whole-Host CPU, memory or latency
+improvement. The numeric record's `successfulAtomicPublication` binds all four samples to source, fixture and evidence
+hashes and retains resource snapshots and pressure readings. Charged-memory peaks and RSS snapshots are not peak
+process-tree RSS. The separate late-Agent stall, remaining resource dimensions and full single-stall acceptance stay open.
+
 ## Skip status publication without an IPC recipient
 
 On 2026-09-06, `ps-yon.15` removes inactive status-publisher work from the shared Agent runner. At `c7ea40e9`,

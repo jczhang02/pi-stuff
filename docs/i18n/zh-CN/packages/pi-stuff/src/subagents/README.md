@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 780c3997b21d7012e558a72e88f4c56011b534d0593a1b92dfd6a54c5959ff86 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: f9f0a90440fccf884856d7a71396a98ae1b2abacc4aaf4a3592dfcb4c1f71b84 -->
 
 # Agents
 
@@ -68,6 +68,9 @@ Session。
 
 只有当前进程具备已连接的 IPC 发送通道时，状态发布才创建队列、fiber 和定时唤醒。没有该通道的 Host
 仍持久化状态并通知进程内观察者；已连接的后台 runner 保持原有进度发送频率和终态立即送达行为。
+
+artifact 原子写入器只在写入或改名失败后删除临时文件。同目录改名成功后，临时路径已不存在；
+同步与异步发布均保留原子可见性、私有权限、重试策略及原始错误优先规则。
 
 提取最终输出时，普通 Assistant 内容只扫描一次，仅保留最后一段合格文本的引用。只有消息包含验收报告时，
 才拼接该消息的完整文本；验收报告的优先级以及有界结果、错误证据保持不变。

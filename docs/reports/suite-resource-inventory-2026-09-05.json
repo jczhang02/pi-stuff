@@ -1,4 +1,312 @@
 {
+	"successfulAtomicPublication": {
+		"bead": "ps-yon.16",
+		"base": "55dbf85c37207cd270767c579b009054bc5bfe31",
+		"date": "2026-09-06",
+		"change": "Remove temporary-path cleanup after successful same-directory atomic rename; preserve failure cleanup and the original write/rename error in both writers.",
+		"sourceLines": {
+			"atomicWriter": {
+				"before": 128,
+				"after": 120
+			},
+			"regression": {
+				"before": 28,
+				"after": 78
+			},
+			"net": 42
+		},
+		"sourceSha256": {
+			"control": "0f1522a990f361ccf1e3e3046d41dfd52434f949c43487c3fbf20682c2c80bec",
+			"candidate": "bb32f1501c426a3411017e97805614dc53d3a7cf56a8dbddbd6ecc1c5116bfc9"
+		},
+		"command": "bun scripts/benchmark-responsiveness.ts --pi <certified-pi> --suite --agent foreground --resource-scope --gates docs/reports/suite-responsiveness-gates-2026-09-05.json --repeat-tool",
+		"isolation": "Exact Pi 0.85.0, 120x40 terminal, two fresh-context children, automatic Naming/Usage and isolated network/PID namespaces. Fresh private configuration/temporary caches on the ordinary filesystem; kernel page cache not reset. Sequential native runs without competing tests, scouts or profiling. Ambient I/O pressure varied.",
+		"regression": "Old writer: 2 pass, 2 fail, 10 assertions; each successful sync/async write attempted one unwanted cleanup. Final candidate ordinary-filesystem focused run: 42 pass, 0 fail, 155 assertions across atomic-json, artifacts, background-engine-lifecycle and foreground-engine-recovery.",
+		"earlierTestFailures": [
+			{
+				"variant": "candidate",
+				"scope": "atomic-json and artifacts",
+				"pass": 20,
+				"fail": 2,
+				"assertions": 67,
+				"failures": "Retained-prefix afterEach timeout and cross-process claim-shard timeout."
+			},
+			{
+				"variant": "candidate",
+				"scope": "artifacts",
+				"pass": 17,
+				"fail": 1,
+				"assertions": 52,
+				"failures": "Mixed-case afterEach timeout."
+			},
+			{
+				"variant": "control",
+				"scope": "artifacts",
+				"pass": 17,
+				"fail": 1,
+				"assertions": 51,
+				"failures": "Cross-process claim-shard timeout."
+			}
+		],
+		"tmpfsCheck": {
+			"pass": 42,
+			"fail": 0,
+			"assertions": 155,
+			"seconds": 4.19,
+			"limit": "Functional isolation only, not ordinary-disk resource or responsiveness evidence. The same command subsequently passed on the ordinary filesystem in 4.45 seconds."
+		},
+		"runs": [
+			{
+				"sample": "mWVidp",
+				"variant": "control",
+				"diagnostic": false,
+				"startUtc": "2026-09-06T01:43:06.164Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"input",
+					"selection"
+				],
+				"evidenceSha256": "37a7426b2f42b9016d4e6d79f5ad45b534cecc4ef91514601207e47c89b1ecc2",
+				"providerSha256": "862d8562dd3e775321b5839be7d8623c5940945bf40230787d8a0c487607a1d3",
+				"sourceDiffSha256": "5e78088ad0abf36a434dff889e99c90072436adaa9b87907d392fdf37b1e7979",
+				"maximumSpinnerFrameMs": 284.5849290000042,
+				"maximumSteadyInputMs": 99.37239200000477,
+				"maximumSelectionMs": 197.42872500000522,
+				"maximumStartupInputMs": 13.8776170000001,
+				"maximumObservationGapMs": 16.723574999999983,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 39438.274311999994,
+				"activeCaptureCount": 3208,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 26767517,
+				"peakChargedBytes": 1263362048,
+				"rssSnapshotBytes": 604991488,
+				"parentIo": {
+					"rchar": 242002644,
+					"wchar": 27483048,
+					"syscr": 22304,
+					"syscw": 7352,
+					"read_bytes": 32222720,
+					"write_bytes": 27207759,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "kv9SHH",
+				"variant": "candidate",
+				"diagnostic": false,
+				"startUtc": "2026-09-06T01:44:33.848Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner"
+				],
+				"evidenceSha256": "dc567a5f194f198a1352fd800006b75a95f2bbdda1ac8c0369edec7f1385ded8",
+				"providerSha256": "25525a1230213ad7a5ac06b0b72aa6df321b70d2f96c7e881b2b5fe4a4de1200",
+				"sourceDiffSha256": "ff3d2c7c3557141ba5f51c7c1f43bd75a5260ed25db1394c2463dcde66782edc",
+				"maximumSpinnerFrameMs": 188.77561200000127,
+				"maximumSteadyInputMs": 27.314825000001292,
+				"maximumSelectionMs": 26.71240300000136,
+				"maximumStartupInputMs": 15.466612000000168,
+				"maximumObservationGapMs": 18.79107599999952,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 38222.03886,
+				"activeCaptureCount": 3069,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 29069786,
+				"peakChargedBytes": 1232990208,
+				"rssSnapshotBytes": 613507072,
+				"parentIo": {
+					"rchar": 241982445,
+					"wchar": 27478449,
+					"syscr": 22310,
+					"syscw": 7305,
+					"read_bytes": 16384,
+					"write_bytes": 27227958,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "dbCmhU",
+				"variant": "control",
+				"diagnostic": true,
+				"startUtc": "2026-09-06T01:46:25.493Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"input"
+				],
+				"evidenceSha256": "72c89c1749fd539784c878722d7ecdb8a38a76019c9ad31e25e29cdfa9cea96e",
+				"providerSha256": "c8fd64706c09047c79fbc63ca690f6cd883b73431da9d2d160f659ef171f5deb",
+				"sourceDiffSha256": "476a9dae885a93f6449ca14fa73cd547a3583b236e5c0e69edf044e79ae5a285",
+				"maximumSpinnerFrameMs": 229.06835300000057,
+				"maximumSteadyInputMs": 103.88017600000057,
+				"maximumSelectionMs": 15.903000999998767,
+				"maximumStartupInputMs": 15.790203999999903,
+				"maximumObservationGapMs": 18.1423020000002,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 38211.306162999994,
+				"activeCaptureCount": 3045,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 28560100,
+				"peakChargedBytes": 1252454400,
+				"rssSnapshotBytes": 604565504,
+				"parentIo": {
+					"rchar": 242000489,
+					"wchar": 27483517,
+					"syscr": 22264,
+					"syscw": 7350,
+					"read_bytes": 401408,
+					"write_bytes": 27209602,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1,
+				"atomicCounts": [
+					{
+						"role": "parent",
+						"completedTools": 2,
+						"syncWrites": 52,
+						"syncCleanup": 52,
+						"asyncWrites": 0,
+						"asyncCleanup": 0
+					},
+					{
+						"role": "child",
+						"completedTools": 1,
+						"syncWrites": 1,
+						"syncCleanup": 1,
+						"asyncWrites": 0,
+						"asyncCleanup": 0
+					},
+					{
+						"role": "child",
+						"completedTools": 1,
+						"syncWrites": 1,
+						"syncCleanup": 1,
+						"asyncWrites": 0,
+						"asyncCleanup": 0
+					}
+				]
+			},
+			{
+				"sample": "rh14Kw",
+				"variant": "candidate",
+				"diagnostic": true,
+				"startUtc": "2026-09-06T01:47:50.631Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"input"
+				],
+				"evidenceSha256": "046b0621175e8948bb78a9113afeb339fe0ab606244ab1679d03bd122012a661",
+				"providerSha256": "fe2c194d99bf42b4e4ffde9d2dde0f4eea9557e44325077a73c1258554c56139",
+				"sourceDiffSha256": "c6b03a28758ca8e8a9d6558440276b88e10522bf9be455d1985d3b2ca5284e86",
+				"maximumSpinnerFrameMs": 252.24676499999987,
+				"maximumSteadyInputMs": 76.84787200000028,
+				"maximumSelectionMs": 17.181691999998293,
+				"maximumStartupInputMs": 14.543257999999696,
+				"maximumObservationGapMs": 17.22176699999909,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 37825.888448,
+				"activeCaptureCount": 3031,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 27691378,
+				"peakChargedBytes": 1231142912,
+				"rssSnapshotBytes": 586866688,
+				"parentIo": {
+					"rchar": 241987120,
+					"wchar": 27478916,
+					"syscr": 22196,
+					"syscw": 7320,
+					"read_bytes": 651264,
+					"write_bytes": 27209226,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1,
+				"atomicCounts": [
+					{
+						"role": "parent",
+						"completedTools": 2,
+						"syncWrites": 52,
+						"syncCleanup": 0,
+						"asyncWrites": 0,
+						"asyncCleanup": 0
+					},
+					{
+						"role": "child",
+						"completedTools": 1,
+						"syncWrites": 1,
+						"syncCleanup": 0,
+						"asyncWrites": 0,
+						"asyncCleanup": 0
+					},
+					{
+						"role": "child",
+						"completedTools": 1,
+						"syncWrites": 1,
+						"syncCleanup": 0,
+						"asyncWrites": 0,
+						"asyncCleanup": 0
+					}
+				]
+			}
+		],
+		"fixtures": [
+			{
+				"file": "scripts/benchmark-responsiveness.ts",
+				"sha256": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9"
+			},
+			{
+				"file": "scripts/host-resource-scope.ts",
+				"sha256": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee"
+			},
+			{
+				"file": "scripts/pty-observation.ts",
+				"sha256": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40"
+			},
+			{
+				"file": "test/fixtures/responsiveness-provider.ts",
+				"sha256": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3"
+			},
+			{
+				"file": "test/fixtures/faux-provider.ts",
+				"sha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+			}
+		],
+		"diagnosticProviderSha256": "11b2d472471560ee8d0013dfbef91c466d556d8b613b7ab8d006650b4f1cc565",
+		"limits": "Both marked runs observed 52 parent and one write per child: 54 sync writes in each variant, cleanup attempts 54 to 0. No async writer invocation was observed in this Host workload. Counts are marked writer/cleanup calls, not all process syscalls, wakeups, allocation or GC. All four frozen-gate runs failed. No stable whole-Host CPU, memory or latency improvement or late-stall attribution is established. Charged-memory peaks and RSS snapshots are not peak process-tree RSS.",
+		"pressureSnapshots": [
+			{
+				"at": "2026-09-06T01:43:05.955Z",
+				"io": "some avg10=78.98 avg60=75.30 avg300=69.31 total=123160317177\nfull avg10=74.94 avg60=71.97 avg300=66.53 total=117704840947\n",
+				"cpu": "some avg10=0.13 avg60=0.12 avg300=0.07 total=1495965165\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+			},
+			{
+				"at": "2026-09-06T01:44:33.619Z",
+				"io": "some avg10=24.62 avg60=37.23 avg300=58.21 total=123184374183\nfull avg10=23.00 avg60=34.85 avg300=55.55 total=117726969958\n",
+				"cpu": "some avg10=0.00 avg60=0.07 avg300=0.07 total=1496555432\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+			},
+			{
+				"at": "2026-09-06T01:46:25.070Z",
+				"io": "some avg10=26.14 avg60=28.34 avg300=48.03 total=123213574103\nfull avg10=24.64 avg60=26.51 avg300=45.62 total=117753971404\n",
+				"cpu": "some avg10=0.00 avg60=0.01 avg300=0.04 total=1497244286\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+			}
+		]
+	},
 	"inactiveStatusPublication": {
 		"bead": "ps-yon.15",
 		"base": "c7ea40e9d5bf5e7a0782ee693c241566b9f1f3ba",

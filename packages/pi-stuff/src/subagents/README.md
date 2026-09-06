@@ -72,6 +72,10 @@ Status publication creates its queue, fiber and timed wakeups only when the curr
 sender. Hosts without that channel still persist status and notify in-process observers; connected background runners
 keep their existing progress cadence and immediate terminal delivery.
 
+Atomic artifact writers remove temporary files only after a failed write or rename. Successful same-directory rename
+already consumes the temporary pathname; atomic visibility, private permissions, retries and original-error precedence
+remain unchanged for both synchronous and asynchronous publication.
+
 Final-output extraction scans ordinary Assistant content once, retaining only the latest eligible text reference.
 It joins a complete message only when that message contains an acceptance report; report precedence and bounded
 result/error evidence are unchanged.
