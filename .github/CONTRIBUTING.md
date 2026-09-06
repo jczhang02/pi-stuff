@@ -29,10 +29,15 @@ When `PI_STUFF_UI_PTY_ARTIFACT_DIR` is set, the observer also copies its evidenc
 these synthetic frames, interaction timings and Source snapshots in its existing failure attachment; Host binaries and
 private fixture configuration are not copied.
 
-Manual CI dispatch accepts `probe_kernel_events=true` for a short scheduler-event positive control on a separate
-GitHub-hosted VM. It uses an owned tracefs instance, rejects lost events, and removes that instance on exit. Only kernel
-version and control counts enter the log; no raw process trace is uploaded. This diagnoses runner capability, not Pi
-resource cost. It neither changes the ordinary `Fast`/`Acceptance` checks nor traces their liveness samples.
+Manual CI dispatch accepts `probe_kernel_events=true` for a scheduler-event positive control on a separate
+GitHub-hosted VM, then seven diagnostic workloads before ordinary acceptance. The workloads reuse the responsiveness
+observer for native Pi, Suite Tools, foreground/background Agents, Context, Goal, and a cold Ledger. Only the collector
+uses host-root tracing access; workloads run as the ordinary runner user in private user/network/PID namespaces.
+Owned tracefs instances use a global clock and reject loss, incomplete task lifetimes, ambiguous root identity, and
+unsupported nonleader exec. Wakeups follow the target task across thread/child births, exit cleanup, and PID reuse.
+Counts and kernel event formats are retained as a summary artifact; raw system-wide traces are never uploaded.
+These diagnostic runs do not certify resource savings or liveness. Ordinary acceptance still runs without tracing;
+only a dispatch requesting the extra measurements receives ten additional job minutes.
 
 ## Package changes
 

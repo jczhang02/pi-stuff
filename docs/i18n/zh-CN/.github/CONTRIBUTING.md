@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 56c80286ef2d2afb1311f6b8bce2fb97bb67c2594d76b482146a509047280659 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 39e3adda7c11059ab2da407e467ecad0a72969c32ee6ded90c56a52c2aae44e7 -->
 
 # 贡献指南
 
@@ -29,10 +29,14 @@ bun run check
 设置 `PI_STUFF_UI_PTY_ARTIFACT_DIR` 后，观察器还会在采集结束后把证据 JSON 复制到该目录。
 CI 通过现有失败附件保留合成场景的画面、交互时序和 Source 快照；不会复制 Host 可执行文件或私有夹具配置。
 
-手动触发 CI 时可设置 `probe_kernel_events=true`，在独立的 GitHub 托管虚拟机上执行短时调度事件正控。
-它使用独占的 tracefs 实例，拒绝丢失事件的样本，并在退出时删除该实例。日志只记录内核版本和正控计数，
-不上传原始进程跟踪。这用于诊断 runner 的采集能力，不是测量 Pi 资源开销；不会修改普通的
-`Fast`/`Acceptance` 检查，也不会跟踪它们的活性样本。
+手动触发 CI 时可设置 `probe_kernel_events=true`，先在独立的 GitHub 托管虚拟机上执行调度事件正控，
+再在普通验收之前运行七种诊断工作负载。它们复用响应性 observer，覆盖原生 Pi、Suite Tool、前台/后台
+Agent、Context、Goal 和冷 Ledger。只有采集器使用宿主机 root 跟踪权限；工作负载以普通 runner 用户
+运行，并使用独立的用户、网络和 PID 命名空间。独占 tracefs 实例使用全局时钟，拒绝事件丢失、任务
+生命周期不完整、根进程身份不明确或不支持的非主线程 exec。唤醒按目标任务归属统计，覆盖线程/子进程
+创建、退出清理及 PID 复用。计数和内核事件格式保留为汇总附件；不上传全系统原始跟踪。
+这些诊断运行不证明资源节省或活性通过。普通验收仍在关闭跟踪后运行；只有请求额外测量的手动运行
+才增加十分钟 job 时限。
 
 ## Package 变更
 

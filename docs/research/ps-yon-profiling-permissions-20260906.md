@@ -4,7 +4,7 @@ Date: 2026-09-06
 
 The local permission failure does not establish that the maintainer must grant more privileges to finish `ps-yon`.
 Stopping the entire task on that basis was premature. Ordinary-user probes work on the approved Host, and the
-repository already uses a GitHub-hosted VM with passwordless sudo. Kernel-event collection there still needs a probe.
+repository already uses a GitHub-hosted VM with passwordless sudo. A subsequent CI probe confirmed kernel-event access.
 
 ## What acceptance requires
 
@@ -62,11 +62,23 @@ and privileged setup for isolated namespace checks. Those steps passed in
 `6d4d1a27dae633a1e1141f162de668c9f9a38037`. GitHub documents fresh VMs for this runner class and passwordless sudo
 on its Linux VMs in the [runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 This provides an existing environment to test the narrow kernel requirement without requesting local admin access.
-Its tracepoint availability and useful workload capture have not yet been verified.
+The follow-up [run 34043925911](https://github.com/jczhang02/pi-stuff/actions/runs/34043925911), on
+`0c6687eed45910f06253d040522fd61dfce0f905`, passed both full acceptance and the separate kernel probe. On
+`6.17.0-1022-azure`, one 0.1-second sleep produced three wakeups, one new-task wakeup, one fork, and one exit, with
+zero reported lost events. The owned tracefs instance was removed. These are control counts, not Pi measurements.
+
+The workload collector reuses the existing observer and keeps its user/network/PID isolation. Kernel event PIDs are
+host-global, so the uniquely staged Pi executable's exec records identify the measured parent; namespace-local
+fixture PIDs are not used as kernel identities. The parser keeps exited tasks owned through kernel cleanup and
+separates later PID generations. Linux emits its exit event before memory and file cleanup; see
+[`do_exit`](https://github.com/torvalds/linux/blob/v6.17/kernel/exit.c) and the
+[event print formats](https://github.com/torvalds/linux/blob/v6.17/include/trace/events/sched.h).
+Unexpected formats, lost records, missing exits, root reuse, or an owned nonleader exec reject the measurement.
+Paired before-and-after Pi workload counts are still required; the control does not supply them.
 
 Continue the ordinary-user resource and retained-stall investigation with existing observers. The responsiveness
 observer already has a separate `--cpu-profile` diagnostic mode; do not mix profiling with frozen liveness gates.
-Probe kernel-event support in the existing isolated CI VM, then run matched workloads there if supported. Do not
+Run matched workloads in the verified CI environment. Do not
 combine a local baseline with a CI candidate, build a new profiler framework, or rerun unchanged full acceptance just
 to answer this permission question. Full resource coverage, long-Session/recovery evidence, and historical-stall
 attribution remain unfinished; neither the successful probe nor green CI closes `ps-yon`.

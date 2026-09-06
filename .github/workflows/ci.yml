@@ -130,7 +130,7 @@ jobs:
     needs: fast
     if: ${{ github.event_name != 'push' && needs.fast.outputs.acceptance_required == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.probe_kernel_events && 40 || 30 }}
     env:
       PI_BIN: ${{ github.workspace }}/.artifacts/pi-release/pi/pi
       PI_STUFF_CODE_MODE_HOST: ${{ github.workspace }}/.artifacts/code-mode-host/codex-code-mode-host
@@ -220,6 +220,27 @@ jobs:
             await installCodeModeHost({ arch: process.arch, destination, platform: process.platform });
           '
           test -x "$PI_STUFF_CODE_MODE_HOST"
+
+      - name: Measure isolated Pi scheduler wakeups
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.probe_kernel_events }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pi-stuff-scheduler"
+          sudo env -i PATH="$SYSTEM_TOOL_BIN:$(dirname "$RTK_BIN"):$PATH" \
+            GITHUB_ACTIONS=true RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            PI_BIN="$PI_BIN" PI_STUFF_CODE_MODE_HOST="$PI_STUFF_CODE_MODE_HOST" \
+            "$(command -v bun)" scripts/benchmark-scheduler-wakeups.ts \
+            --uid "$(id -u)" --gid "$(id -g)" --output "$RUNNER_TEMP/pi-stuff-scheduler/summary.json"
+
+      - name: Upload scheduler summary
+        if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.probe_kernel_events }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: scheduler-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pi-stuff-scheduler/summary.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Run disconnected acceptance
         shell: bash

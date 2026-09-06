@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/ps-yon-profiling-permissions-20260906.md; translation-source-sha256: 0270cb28be6b214bb194cf7c081aad3f00fa256c39461b1207cd4caa70571a24 -->
+<!-- translation-source: docs/research/ps-yon-profiling-permissions-20260906.md; translation-source-sha256: 2a6b588e5b9cafb3eb898a586af911b6f0c093010274baa4da8cfdf68021bde0 -->
 
 # ps-yon 性能测量权限核查
 
@@ -6,7 +6,7 @@
 
 本机的权限错误不足以证明维护者必须授予更高权限才能完成 `ps-yon`。据此停止整个任务过于仓促。
 普通用户探针已在批准的 Host 上运行成功，仓库也已经使用支持免密 sudo 的 GitHub 托管虚拟机。
-仍需实测该虚拟机能否采集所需内核事件。
+后续 CI 探针已经确认可读取内核事件。
 
 ## 验收要求
 
@@ -61,10 +61,21 @@ Bun 文档说明了 JavaScript/原生堆的区分、堆统计，以及通过 `BU
 `6d4d1a27dae633a1e1141f162de668c9f9a38037`。GitHub 的
 [runner 文档](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) 明确说明，此类 runner
 使用新建虚拟机，Linux 虚拟机支持免密 sudo。因此已有环境可用于验证这项局部内核要求，无须请求本机
-管理员权限。但尚未验证其 tracepoint 可用性，也尚未采集有效工作负载。
+管理员权限。后续[运行 34043925911](https://github.com/jczhang02/pi-stuff/actions/runs/34043925911) 对应
+`0c6687eed45910f06253d040522fd61dfce0f905`，完整验收和独立的内核探针均通过。在
+`6.17.0-1022-azure` 上，一次 0.1 秒 sleep 产生三次唤醒、一次新任务唤醒、一次 fork 和一次 exit，
+丢失事件计数为零。独占 tracefs 实例已删除。这是正控计数，不是 Pi 测量。
+
+工作负载采集器复用已有 observer，并保留用户、网络和 PID 隔离。内核事件 PID 属于宿主机全局空间，
+因此通过唯一暂存 Pi 可执行文件的 exec 记录识别被测父进程，不把命名空间内的夹具 PID 当作内核身份。
+解析器在内核退出清理期间保留任务归属，并区分后续 PID 复用。Linux 在内存和文件清理之前发出 exit
+事件，参见 [`do_exit`](https://github.com/torvalds/linux/blob/v6.17/kernel/exit.c) 和
+[事件输出格式](https://github.com/torvalds/linux/blob/v6.17/include/trace/events/sched.h)。未知格式、事件
+丢失、缺少 exit、根 PID 复用或归属任务发生非主线程 exec 都会使测量失败。仍须取得优化前后配对的
+Pi 工作负载计数；正控不能替代它们。
 
 继续使用已有 observer，推进普通权限可完成的资源与历史卡顿调查。响应性 observer 已有独立的
-`--cpu-profile` 诊断模式；不得把 profiling 与冻结的活性门禁混跑。先在现有隔离 CI 虚拟机探测内核事件
-支持，再在支持的情况下运行匹配的工作负载。不要把本机 baseline 和 CI candidate 混为配对样本，不要
+`--cpu-profile` 诊断模式；不得把 profiling 与冻结的活性门禁混跑。在已验证的 CI 环境中运行匹配的工作负载。
+不要把本机 baseline 和 CI candidate 混为配对样本，不要
 新建 profiler 框架，也不要仅为回答权限问题重跑未改动的完整验收。完整资源覆盖、长 Session/恢复证据
 和历史卡顿归因仍未完成；探针成功或 CI 全绿均不能关闭 `ps-yon`。
