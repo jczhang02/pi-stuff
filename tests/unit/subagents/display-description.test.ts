@@ -10,11 +10,11 @@ describe("Agent display descriptions", () => {
 		["Review C:\\Users\\me\\secret\\file.ts", "Review file.ts"],
 		["Review C:/Users/me/secret/file.ts", "Review file.ts"],
 		["Review \\\\server\\share\\secret.txt", "Review secret.txt"],
-		["See https://example.tests/a/b", "See https://example.tests/a/b"],
+		["See https://example.test/a/b", "See https://example.test/a/b"],
 		["Review repo/src/index.ts", "Review repo/src/index.ts"],
 		["Use input/output prose", "Use input/output prose"],
 		["Compare ./src/a.ts with ../src/b.ts", "Compare ./src/a.ts with ../src/b.ts"],
-		["See https://x.tests/a and /tmp/private/b.ts", "See https://x.tests/a and b.ts"],
+		["See https://x.test/a and /tmp/private/b.ts", "See https://x.test/a and b.ts"],
 	])("redacts only private absolute path tokens in %s", (task, expected) => {
 		expect(resolveDisplayDescription(undefined, task)).toBe(expected);
 	});
@@ -30,15 +30,15 @@ describe("Agent display descriptions", () => {
 		["Open C:\\Users\\Private User\\report.txt", "Open report.txt"],
 		['Open "/workspace/My Private Project/report.txt"', 'Open "report.txt"'],
 		["Compare /private/a.ts /private/b.ts", "Compare a.ts b.ts"],
-		["See //cdn.example.tests/assets/file.js", "See //cdn.example.tests/assets/file.js"],
-		["See https://example.tests/a/b", "See https://example.tests/a/b"],
+		["See //cdn.example.test/assets/file.js", "See //cdn.example.test/assets/file.js"],
+		["See https://example.test/a/b", "See https://example.test/a/b"],
 	])("redacts absolute paths after token delimiters in %s", (value, expected) => {
 		expect(compactAbsolutePaths(value)).toBe(expected);
 	});
 
 	test("preserves an explicit public description", () => {
-		expect(resolveDisplayDescription("Docs: https://example.tests/a/b", "/tmp/private.md")).toBe(
-			"Docs: https://example.tests/a/b",
+		expect(resolveDisplayDescription("Docs: https://example.test/a/b", "/tmp/private.md")).toBe(
+			"Docs: https://example.test/a/b",
 		);
 	});
 });

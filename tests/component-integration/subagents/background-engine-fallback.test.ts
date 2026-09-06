@@ -91,7 +91,7 @@ process.stdout.write(JSON.stringify({
 					cwd: root,
 					governorSessionId,
 					logicalAgentPathComponent: logicalAgentId,
-					modelCandidates: ["tests/model-a", "tests/model-b"],
+					modelCandidates: ["test/model-a", "test/model-b"],
 				},
 			},
 		}),
@@ -103,7 +103,7 @@ process.stdout.write(JSON.stringify({
 			{
 				success: false,
 				error: expect.stringContaining("Automatic Agent expansion needs attention"),
-				modelAttempts: [{ model: "tests/model-a", success: false, costReported: true }],
+				modelAttempts: [{ model: "test/model-a", success: false, costReported: true }],
 			},
 		],
 	});
@@ -185,7 +185,7 @@ if (model.endsWith("model-a")) {
 					...task(0),
 					cwd: root,
 					sessionFile,
-					modelCandidates: ["tests/model-a", "tests/model-b"],
+					modelCandidates: ["test/model-a", "test/model-b"],
 				},
 			},
 		}),
@@ -198,8 +198,8 @@ if (model.endsWith("model-a")) {
 			{
 				output: "CLEAN_FALLBACK",
 				modelAttempts: [
-					{ model: "tests/model-a", success: false },
-					{ model: "tests/model-b", success: true },
+					{ model: "test/model-a", success: false },
+					{ model: "test/model-b", success: true },
 				],
 			},
 		],
@@ -295,7 +295,7 @@ test("restores different fallback sessions concurrently without a shared lock", 
 						...task(index),
 						cwd: root,
 						sessionFile,
-						modelCandidates: ["tests/model-a", "tests/model-b"],
+						modelCandidates: ["test/model-a", "test/model-b"],
 					})),
 					concurrency: 2,
 					worktree: false,
@@ -311,8 +311,8 @@ test("restores different fallback sessions concurrently without a shared lock", 
 		expect(result).toMatchObject({
 			success: true,
 			modelAttempts: [
-				{ model: "tests/model-a", success: false },
-				{ model: "tests/model-b", success: true },
+				{ model: "test/model-a", success: false },
+				{ model: "test/model-b", success: true },
 			],
 		});
 	}
@@ -366,7 +366,7 @@ setTimeout(() => process.stdout.write(JSON.stringify({
 						...task(index),
 						cwd: root,
 						sessionFile: aliasedSession,
-						modelCandidates: ["tests/model-a", "tests/model-b"],
+						modelCandidates: ["test/model-a", "test/model-b"],
 					})),
 					concurrency: 2,
 					worktree: false,
@@ -438,7 +438,7 @@ process.stdout.write(JSON.stringify({
 						...task(index),
 						cwd: root,
 						sessionFile,
-						modelCandidates: ["tests/model-a", "tests/model-b"],
+						modelCandidates: ["test/model-a", "test/model-b"],
 					},
 				},
 			}),
@@ -490,7 +490,7 @@ setTimeout(() => process.exit(0), 2_000);
 				...task(0),
 				cwd: root,
 				sessionFile,
-				modelCandidates: ["tests/model-a", "tests/model-b"],
+				modelCandidates: ["test/model-a", "test/model-b"],
 			},
 		},
 	});
@@ -602,7 +602,7 @@ if (model.endsWith("model-a")) {
 				task: {
 					...task(0),
 					cwd: root,
-					modelCandidates: ["tests/model-a", "tests/model-b"],
+					modelCandidates: ["test/model-a", "test/model-b"],
 				},
 			},
 		}),
@@ -613,14 +613,14 @@ if (model.endsWith("model-a")) {
 		state: "failed",
 		results: [
 			{
-				modelAttempts: [{ model: "tests/model-a", success: false }],
+				modelAttempts: [{ model: "test/model-a", success: false }],
 			},
 		],
 	});
 	expect(readBackgroundStatus(asyncDir)).toMatchObject({
 		steps: [{ toolCount: 1 }],
 	});
-	expect(fs.readFileSync(attemptsPath, "utf8").trim().split("\n")).toEqual(["tests/model-a"]);
+	expect(fs.readFileSync(attemptsPath, "utf8").trim().split("\n")).toEqual(["test/model-a"]);
 }, 5_000);
 
 test("preserves prior writer proof when fallback persistence and the next launch fail", async () => {
@@ -660,7 +660,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 				task: {
 					...task(0),
 					cwd: root,
-					modelCandidates: ["tests/model-a", "tests/model-b"],
+					modelCandidates: ["test/model-a", "test/model-b"],
 				},
 			},
 		}),
@@ -692,8 +692,8 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 			{
 				writerAttemptCount: 1,
 				modelAttempts: [
-					{ model: "tests/model-a", error: "503 Service Unavailable" },
-					{ model: "tests/model-b", error: "injected second launch failure" },
+					{ model: "test/model-a", error: "503 Service Unavailable" },
+					{ model: "test/model-b", error: "injected second launch failure" },
 				],
 			},
 		],

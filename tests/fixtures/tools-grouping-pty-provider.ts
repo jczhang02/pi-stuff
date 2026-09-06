@@ -8,7 +8,7 @@ import { createAssistantMessage, createTextStream, registerFixtureProvider } fro
 
 const PROVIDER = "pi-stuff-tools-grouping-pty";
 const MODEL = "fixture-model";
-const GENERIC_FIT_TARGET = "https://example.tests/a-very-long-resource-identifier-without-boundaries-that-keeps-going";
+const GENERIC_FIT_TARGET = "https://example.test/a-very-long-resource-identifier-without-boundaries-that-keeps-going";
 interface FixtureCall {
 	readonly arguments: Record<string, JsonValue>;
 	readonly name: string;

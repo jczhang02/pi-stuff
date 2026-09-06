@@ -39,7 +39,7 @@ test("accounts for resolved skill metadata before creating a fork session", asyn
 	const result = await executor(cwd, state(), undefined, {
 		agent: {
 			...agent(),
-			model: "tests/small",
+			model: "test/small",
 			skills: [skillName],
 			skillPath: [skillRoot],
 		},
@@ -69,7 +69,7 @@ test("accounts for the Host system prompt before admitting a child launch", asyn
 		() => {
 			engineCalls += 1;
 		},
-		{ agent: { ...agent(), model: "tests/small" } },
+		{ agent: { ...agent(), model: "test/small" } },
 	).execute(
 		"host-prompt-overflow",
 		{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
@@ -105,7 +105,7 @@ test("accounts for the selected tool schema before admitting a child launch", as
 		() => {
 			engineCalls += 1;
 		},
-		{ agent: { ...agent(), model: "tests/small", tools: ["read"] }, pi },
+		{ agent: { ...agent(), model: "test/small", tools: ["read"] }, pi },
 	).execute(
 		"tool-schema-overflow",
 		{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
@@ -149,7 +149,7 @@ test("accounts for the read Tool forced into a skill-enabled child", async () =>
 		{
 			agent: {
 				...agent(),
-				model: "tests/small",
+				model: "test/small",
 				tools: ["write"],
 				skills: [skillName],
 				skillPath: [skillRoot],
@@ -185,7 +185,7 @@ test("does not charge a replaced Host base prompt when inherited context and Ski
 		{
 			agent: {
 				...agent(),
-				model: "tests/small",
+				model: "test/small",
 				systemPromptMode: "replace",
 				inheritProjectContext: false,
 				inheritSkills: false,
@@ -230,7 +230,7 @@ test("projects a replace-mode fork when retained project context makes the raw c
 			captured = launch;
 		},
 		{
-			agent: { ...agent(), model: "tests/large", systemPromptMode: "replace" },
+			agent: { ...agent(), model: "test/large", systemPromptMode: "replace" },
 			projectContext: async () => {
 				projectionCalls += 1;
 				return { source: "magic-context", text: "bounded parent", truncated: true };
@@ -281,7 +281,7 @@ test("accounts for replace-mode project context from the child's actual cwd", as
 		{
 			agent: {
 				...agent(),
-				model: "tests/large",
+				model: "test/large",
 				systemPromptMode: "replace",
 				inheritSkills: false,
 			},
@@ -330,7 +330,7 @@ test("supports one native and one projected child in the same parallel fork", as
 	};
 	const runState = state();
 	const result = await executor(cwd, runState, undefined, {
-		agent: { ...agent(), model: "tests/small" },
+		agent: { ...agent(), model: "test/small" },
 		projectContext: async () => ({ source: "magic-context", text: "bounded parent", truncated: true }),
 	}).execute(
 		"parallel-oversized-fork-call",
@@ -338,8 +338,8 @@ test("supports one native and one projected child in the same parallel fork", as
 			async: false,
 			context: "fork",
 			tasks: [
-				{ agent: "general-purpose", model: "tests/large", task: "Fits" },
-				{ agent: "general-purpose", model: "tests/small", task: "Does not fit" },
+				{ agent: "general-purpose", model: "test/large", task: "Fits" },
+				{ agent: "general-purpose", model: "test/small", task: "Does not fit" },
 			],
 		},
 		new AbortController().signal,
@@ -395,7 +395,7 @@ test("launches without a projection when Context fails open", async () => {
 			captured = launch;
 		},
 		{
-			agent: { ...agent(), model: "tests/small" },
+			agent: { ...agent(), model: "test/small" },
 			projectContext: async () => {
 				projections++;
 				throw new Error("Magic unavailable");

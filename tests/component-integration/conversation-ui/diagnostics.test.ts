@@ -93,7 +93,7 @@ describe("DiagnosticChannel", () => {
 		const channel = new DiagnosticChannel();
 		channel.report({
 			capability: "MCP\u001b[31m",
-			error: new Error("Bearer secret-token and https://example.tests/callback?code=private-code"),
+			error: new Error("Bearer secret-token and https://example.test/callback?code=private-code"),
 			summary: "OAuth\nfailed",
 		});
 		const record = channel.list()[0];

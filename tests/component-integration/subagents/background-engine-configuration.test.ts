@@ -292,10 +292,10 @@ const RECOVERY_FIXTURES = [
 			exitCode: 1,
 			timedOut: true,
 			error: "Agent timed out.",
-			attemptedModels: ["tests/first"],
+			attemptedModels: ["test/first"],
 			modelAttempts: [
 				{
-					model: "tests/first",
+					model: "test/first",
 					success: false,
 					exitCode: 1,
 					error: "provider timeout",
@@ -312,8 +312,8 @@ const RECOVERY_FIXTURES = [
 		expected: {
 			status: "failed",
 			timedOut: true,
-			attemptedModels: ["tests/first"],
-			modelAttempts: [{ model: "tests/first", error: "provider timeout" }],
+			attemptedModels: ["test/first"],
+			modelAttempts: [{ model: "test/first", error: "provider timeout" }],
 			totalCost: { inputTokens: 1, outputTokens: 2, costUsd: 0.5 },
 			turnBudget: { maxTurns: 1, graceTurns: 0, turnCount: 2, outcome: "exceeded" },
 			turnBudgetExceeded: true,

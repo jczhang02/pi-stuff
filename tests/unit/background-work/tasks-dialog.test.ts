@@ -175,7 +175,7 @@ test("shows a Monitor source, conditions, and latest evidence", () => {
 			monitorFailureText: "FATAL",
 			monitorSource: "http",
 			monitorSuccessText: "READY",
-			monitorTarget: "https://example.tests/health",
+			monitorTarget: "https://example.test/health",
 			monitorTimeoutSeconds: 30,
 			recentOutput: "503 booting",
 			startedAt: Date.now() - 3_000,
@@ -188,7 +188,7 @@ test("shows a Monitor source, conditions, and latest evidence", () => {
 	const output = component.render(100).join("\n");
 	expect(output).toContain("Tasks / Monitor");
 	expect(output).toContain("Source");
-	expect(output).toContain("HTTP · https://example.tests/health");
+	expect(output).toContain("HTTP · https://example.test/health");
 	expect(output).toContain('success contains "READY"');
 	expect(output).toContain('failure contains "FATAL"');
 	expect(output).toContain("timeout");

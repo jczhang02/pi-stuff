@@ -131,7 +131,7 @@ export const PONYTAIL_BENCHMARK_SCENARIOS: readonly BenchmarkScenario[] = [
 				'{\n\t"name": "notification-fixture",\n\t"private": true,\n\t"type": "module",\n\t"scripts": { "test": "bun test" }\n}\n',
 			"src/notification.ts":
 				'export function formatNotification(channel: string, message: string): string {\n\tthrow new Error("Not implemented");\n}\n',
-			"tests/notification.test.ts":
+			"test/notification.test.ts":
 				'import { expect, test } from "bun:test";\nimport { formatNotification } from "../src/notification.ts";\n\ntest("formats email notifications", () => {\n\texpect(formatNotification("email", "Server down")).toBe("[EMAIL] Server down");\n});\n\ntest("rejects unsupported channels", () => {\n\texpect(() => formatNotification("sms", "Server down")).toThrow("Unsupported channel: sms");\n});\n',
 		},
 		hiddenCheck:
@@ -146,7 +146,7 @@ export const PONYTAIL_BENCHMARK_SCENARIOS: readonly BenchmarkScenario[] = [
 				'{\n\t"name": "request-fixture",\n\t"private": true,\n\t"type": "module",\n\t"scripts": { "test": "bun test" }\n}\n',
 			"src/request.ts":
 				'export interface Response {\n\tstatus: number;\n\tbody: string;\n\trequestId?: string;\n}\n\nexport function handleRequest(path: string): Response {\n\treturn { status: 200, body: "handled: " + path };\n}\n',
-			"tests/request.test.ts":
+			"test/request.test.ts":
 				'import { expect, test } from "bun:test";\nimport { handleRequest } from "../src/request.ts";\n\ntest("returns a unique request ID per call", () => {\n\tconst first = handleRequest("/health");\n\tconst second = handleRequest("/health");\n\texpect(first.status).toBe(200);\n\texpect(first.body).toBe("handled: /health");\n\texpect(first.requestId).toBeTruthy();\n\texpect(second.requestId).toBeTruthy();\n\texpect(second.requestId).not.toBe(first.requestId);\n});\n',
 		},
 		hiddenCheck:
@@ -161,7 +161,7 @@ export const PONYTAIL_BENCHMARK_SCENARIOS: readonly BenchmarkScenario[] = [
 				'{\n\t"name": "retry-fixture",\n\t"private": true,\n\t"type": "module",\n\t"scripts": { "test": "bun test" }\n}\n',
 			"src/profile.ts":
 				"export async function fetchProfile(\n\tload: () => Promise<string>,\n\tmaxAttempts = 3,\n): Promise<string> {\n\treturn load();\n}\n",
-			"tests/profile.test.ts":
+			"test/profile.test.ts":
 				'import { expect, test } from "bun:test";\nimport { fetchProfile } from "../src/profile.ts";\n\ntest("returns the first successful attempt", async () => {\n\tlet calls = 0;\n\tconst result = await fetchProfile(async () => {\n\t\tcalls += 1;\n\t\tif (calls < 3) throw new Error("temporary " + calls);\n\t\treturn "alice";\n\t});\n\texpect(result).toBe("alice");\n\texpect(calls).toBe(3);\n});\n\ntest("rethrows after maxAttempts", async () => {\n\tlet calls = 0;\n\tawait expect(fetchProfile(async () => {\n\t\tcalls += 1;\n\t\tthrow new Error("failure " + calls);\n\t}, 2)).rejects.toThrow("failure 2");\n\texpect(calls).toBe(2);\n});\n',
 		},
 		hiddenCheck:
@@ -526,7 +526,7 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 			.filter((path) => before[path] !== after[path] && !path.startsWith(".pi/tasks/"))
 			.sort();
 		const protectedChanges = changedFiles.filter(
-			(path) => path === "package.json" || path.startsWith("tests/") || path.startsWith(".pi/"),
+			(path) => path === "package.json" || path.startsWith("test/") || path.startsWith(".pi/"),
 		);
 		const modeLedger = customModes(nestedValue(entries, ["entries"]) ?? entries);
 		const commands = skillCommands(nestedValue(commandResponse, ["commands"]) ?? commandResponse);

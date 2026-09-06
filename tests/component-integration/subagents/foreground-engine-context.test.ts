@@ -50,7 +50,7 @@ test("fits the private Context projection to the tightest child fallback model",
 	fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 	let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 	const requestedBudgets: number[] = [];
-	const smallAgent = { ...agent(), model: "tests/large", fallbackModels: ["tests/small"] };
+	const smallAgent = { ...agent(), model: "test/large", fallbackModels: ["test/small"] };
 	await executor(
 		cwd,
 		state(),
@@ -110,7 +110,7 @@ test("uses a native raw fork when the parent history fits without adding duplica
 		};
 	};
 	await executor(cwd, state(), (launch) => (captured = launch), {
-		agent: { ...agent(), model: "tests/small" },
+		agent: { ...agent(), model: "test/small" },
 		projectContext: async (_audience, _ctx, projectionOptions) => {
 			requestedBudgets.push(projectionOptions?.maxTokens ?? -1);
 			return { source: "magic-context", text: "memory", truncated: false };
@@ -148,7 +148,7 @@ test("converts an oversized raw fork into a bounded projected fork without cloni
 			captured = launch;
 		},
 		{
-			agent: { ...agent(), model: "tests/small" },
+			agent: { ...agent(), model: "test/small" },
 			projectContext: async (_audience, _context, options) => {
 				frozenProjectionMessages = options?.sourceMessages;
 				return {
@@ -193,7 +193,7 @@ test("projects multilingual parent history instead of admitting an overflowing r
 		let projectedSource = "";
 
 		const result = await executor(cwd, state(), undefined, {
-			agent: { ...agent(), model: "tests/small" },
+			agent: { ...agent(), model: "test/small" },
 			projectContext: async (_audience, _context, options) => {
 				projectedSource = JSON.stringify(options?.sourceMessages ?? []);
 				return { source: "native", text: "bounded multilingual history", truncated: true };
@@ -231,7 +231,7 @@ test("conservatively preflights multilingual and high-entropy fork inputs", asyn
 			() => {
 				engineCalls += 1;
 			},
-			{ agent: { ...agent(), model: "tests/small" } },
+			{ agent: { ...agent(), model: "test/small" } },
 		).execute(
 			`multilingual-${label}`,
 			{ agent: "general-purpose", context: "fork", task },
@@ -388,7 +388,7 @@ test("allows fresh context at the same parent usage because it does not clone th
 		() => {
 			engineCalls += 1;
 		},
-		{ agent: { ...agent(), model: "tests/small" } },
+		{ agent: { ...agent(), model: "test/small" } },
 	).execute(
 		"large-parent-fresh-call",
 		{ agent: "general-purpose", context: "fresh", task: "Inspect the parser" },
@@ -413,7 +413,7 @@ test("uses one projected fork so heterogeneous fallback candidates keep their or
 			captured = launch;
 		},
 		{
-			agent: { ...agent(), model: "tests/large", fallbackModels: ["tests/small"] },
+			agent: { ...agent(), model: "test/large", fallbackModels: ["test/small"] },
 			projectContext: async () => ({ source: "native", text: "bounded parent", truncated: true }),
 		},
 	).execute(
@@ -432,7 +432,7 @@ test("uses one projected fork so heterogeneous fallback candidates keep their or
 	);
 
 	expect(result.isError).not.toBe(true);
-	expect(captured?.modelCandidates).toEqual(["tests/large", "tests/small"]);
+	expect(captured?.modelCandidates).toEqual(["test/large", "test/small"]);
 	expect(captured?.sessionFile).toBeUndefined();
 	expect(captured?.task).toContain("bounded parent");
 });
@@ -450,7 +450,7 @@ test("uses the persisted branch estimator to avoid cloning an oversized raw bran
 		() => {
 			engineCalls += 1;
 		},
-		{ agent: { ...agent(), model: "tests/small" } },
+		{ agent: { ...agent(), model: "test/small" } },
 	).execute(
 		"estimated-fork-call",
 		{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
@@ -482,7 +482,7 @@ test("does not mistake Magic Context's effective usage for the larger persisted 
 			captured = launch;
 		},
 		{
-			agent: { ...agent(), model: "tests/large" },
+			agent: { ...agent(), model: "test/large" },
 			projectContext: async () => ({
 				source: "magic-context",
 				text: "bounded managed history",
@@ -525,7 +525,7 @@ test("uses a bounded projection when the persisted raw branch cannot be measured
 			captured = launch;
 		},
 		{
-			agent: { ...agent(), model: "tests/small" },
+			agent: { ...agent(), model: "test/small" },
 			projectContext: async () => ({
 				source: "magic-context",
 				text: "bounded fallback history",

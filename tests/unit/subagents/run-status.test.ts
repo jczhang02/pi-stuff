@@ -210,9 +210,9 @@ test("redacts only absolute path tokens in model-visible status text", () => {
 				{
 					agent: "scout",
 					status: "running",
-					label: "Inspect https://example.tests/a/b, repo/src/index.ts, input/output, /workspace/private/a.ts, and C:\\Users\\me\\b.ts",
+					label: "Inspect https://example.test/a/b, repo/src/index.ts, input/output, /workspace/private/a.ts, and C:\\Users\\me\\b.ts",
 					recentOutput: [
-						"See https://example.tests/c/d and repo/src/result.ts beside /tmp/private/result.ts and D:\\secret\\result.txt",
+						"See https://example.test/c/d and repo/src/result.ts beside /tmp/private/result.ts and D:\\secret\\result.txt",
 					],
 				},
 			],
@@ -221,8 +221,8 @@ test("redacts only absolute path tokens in model-visible status text", () => {
 
 	const text = resultText(inspectSubagentStatus({ action: "status", id: "mixed-paths" }, { state, now: () => 5_000 }));
 
-	expect(text).toContain("https://example.tests/a/b, repo/src/index.ts, input/output, a.ts, and b.ts");
-	expect(text).toContain("https://example.tests/c/d and repo/src/result.ts beside result.ts and result.txt");
+	expect(text).toContain("https://example.test/a/b, repo/src/index.ts, input/output, a.ts, and b.ts");
+	expect(text).toContain("https://example.test/c/d and repo/src/result.ts beside result.ts and result.txt");
 	expect(text).not.toMatch(/\/workspace\/private|C:\\Users|\/tmp\/private|D:\\secret/u);
 });
 

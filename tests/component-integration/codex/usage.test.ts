@@ -95,7 +95,7 @@ test("builds the authenticated usage request only when explicitly invoked", asyn
 	expect(request?.headers.get("chatgpt-account-id")).toBe("account-42");
 	expect(request?.headers.get("x-placeholder")).toBeNull();
 	expect(weeklyRemainingPercent(usage)).toBe(90);
-	expect(buildCodexUsageUrl("https://example.tests/codex/responses")).toBe("https://example.tests/wham/usage");
+	expect(buildCodexUsageUrl("https://example.test/codex/responses")).toBe("https://example.test/wham/usage");
 });
 
 test("preserves response and decoding failures", async () => {

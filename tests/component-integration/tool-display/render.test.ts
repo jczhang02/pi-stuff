@@ -615,7 +615,7 @@ test("uses every available target cell for Agent and other generic Tool Activiti
 			label: "Fetch",
 			state: "success" as const,
 			summary: "done",
-			target: "https://example.tests/a-very-long-resource-identifier-without-boundaries",
+			target: "https://example.test/a-very-long-resource-identifier-without-boundaries",
 		},
 		{
 			label: "Inspect",
