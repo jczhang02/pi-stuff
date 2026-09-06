@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: 6f07ce07c1c4b973d6a5e81d4c270a57911945108cbddd8f955f2bdb301682d4 -->
+<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: 5400f90bfe714d522ecfda808914a85c6344474cc5ffb9b485a31458e3a281a1 -->
 
 # Astra 指令与交付审查 — 2026-09-05
 
@@ -56,3 +56,5 @@ CI 证据不能证明审查质量、提交签名、分支保护、合并授权�
 ## 验收跟进 — 2026-09-06
 
 首次[分支 Acceptance 运行](https://github.com/jczhang02/pi-stuff/actions/runs/33976280826)的 Fast 通过，但 `test/goal-pty.test.ts` 失败：Ubuntu 的 tmux 3.4 不支持 `extended-keys-format`。在匹配到的 PTY 初始化中，只有 Goal 验证器未先探测就设置了这个可选项。使用真实 tmux 3.4 在本地运行同一测试，不到一秒即复现错误。复用既有服务器选项探测后，完整 Goal PTY 测试在 tmux 3.4、3.6a 和 Pi 0.85.0 上均通过。修复仅涉及验证环境初始化，不改变 Goal 行为或断言。
+
+`1724b346` 上的[下一次运行](https://github.com/jczhang02/pi-stuff/actions/runs/34000105818)通过了 Fast 和 Goal PTY，但 Context 多步恢复场景失败：fixture 记录了三次 Provider 请求，预期为两次。随后两次本地针对性运行分别失败和通过，确认存在间歇性失败。计数对应实际请求，并非误匹配经过转义的请求文本。本次变更未修改该场景或 Context 运行时；额外请求的原因仍未查明。其他隔离测试文件通过，但失败阻止了后续验收阶段。PR 228 保持草稿、未合并；完整验收与经验证的交付仍未完成。

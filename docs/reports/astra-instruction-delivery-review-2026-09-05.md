@@ -75,3 +75,10 @@ The first [branch Acceptance run](https://github.com/jczhang02/pi-stuff/actions/
 PTY setup that set this optional option without probing. The same test reproduced the error locally with real tmux
 3.4 in under one second. Reusing the existing server-option probe fixed it; the complete Goal PTY test then passed on
 both tmux 3.4 and 3.6a with Pi 0.85.0. This repairs verification setup without changing Goal behavior or assertions.
+
+The [next run](https://github.com/jczhang02/pi-stuff/actions/runs/34000105818), on `1724b346`, passed Fast and Goal PTY
+but failed the Context multi-step recovery scenario: the fixture recorded three Provider requests instead of two.
+Two focused local runs then failed and passed respectively, confirming an intermittent failure. The count reflects
+actual requests, not matching escaped request text. This change does not modify that scenario or the Context runtime;
+the extra request's cause remains unresolved. Other isolated test files passed, but the failed test stopped the later
+acceptance stages. PR 228 remains a draft and unmerged; full acceptance and verified delivery remain incomplete.
