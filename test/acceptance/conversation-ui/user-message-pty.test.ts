@@ -91,6 +91,7 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 				await session.start();
 				await session.waitForStatusline();
 				session.sendLiteral(`/skill:humanizer-zh ${PROMPT}`);
+				session.sendKey("Escape");
 				session.sendKey("Enter");
 				let screen = await session.waitForText("USER_MESSAGE_PTY_ACK");
 				expect(userRows(screen)).toEqual([`${LABEL} ${PROMPT}`]);

@@ -157,16 +157,15 @@ class GoalPtySession {
 				"-g",
 				"extended-keys",
 				"on",
-				";",
-				"set-option",
-				"-g",
-				"extended-keys-format",
-				"csi-u",
 			],
 			{ env: environment, stderr: "pipe", stdout: "pipe" },
 		);
 		if (result.exitCode !== 0) {
 			fail(`tmux could not start Pi: ${result.stderr.toString().trim() || result.stdout.toString().trim()}`);
+		}
+		const serverOptions = this.tmux(["show-options", "-s"]);
+		if (/^extended-keys-format\b/m.test(serverOptions)) {
+			this.tmux(["set-option", "-g", "extended-keys-format", "csi-u"]);
 		}
 		const geometry = this.tmux(["display-message", "-p", "-t", this.target, "#{pane_width}x#{pane_height}"]).trim();
 		if (geometry !== `${String(this.options.columns)}x${String(this.options.rows)}`) {

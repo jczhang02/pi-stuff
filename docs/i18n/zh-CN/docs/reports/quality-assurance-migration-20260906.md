@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: 859aa229500a19a74fb99bb4ca9f9418e360521771958737b992d9864499c459 -->
+<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: c2f5c788af3ec8c097ec2a498ffdda77bc4fcf9b3627b23e837ebde7d596ee58 -->
 
 # 质量保障迁移——2026-09-06
 
@@ -58,9 +58,15 @@ Web 直接 Provider API 的重定向声明检查已归入 Static Checks，一个
 
 CI workflow 拆为 `Plan`、`Checks`、`Tests`、`Verify`：Plan 选择 PR target range 或 main push 的 before/after range，manual dispatch 选择全部离线 Tests；Checks 独立运行，Tests 只依赖 Plan；Verify 校验 plan、每个必需 job 的结果、精确的选中文件覆盖和结构化 test report。Plan artifact 与 test report 分开上传，Verify 不重复执行实质工作。同一 PR 的 superseded run 可以取消，不同 main-push revision range 保留；branch protection 不变。
 
-源代码规模比较使用 `35225c57` 到当前 worktree 的 git diff 路径集合，包含新增未跟踪 JS/TS 路径并排除 artifacts：物理行数由 810 增至 1,760（+950）。这是变更路径集合比较，不是完整仓库大小，也不是 speedup 证据。
+源代码规模比较使用 `35225c57` 到当前 worktree 的 git diff 路径集合中的 23 个 JS/TS 文件，包含新增未跟踪源码路径并排除 artifacts：物理行数由 4,275 增至 5,176（+901）。这是变更路径集合比较，不是完整仓库大小，也不是 speedup 证据。
 
-本地聚焦证据已完成：9 个规划测试、3 个执行／契约测试、17 个 CI 聚合测试和 3 个 runner 测试。完整静态检查、Standards／Spec 审查及连续两轮独立 Thermo-Nuclear 审查均通过。首轮完整离线运行执行了全部 333 个文件、2,458 个原生用例，零跳过，用时 1,211.4 秒，另有 7.3 秒 Goal setup。三个文件失败：UI Host 与 RTK 元数据测试保留旧目录根路径，一次分别采样快照的 embedded-status PTY 颜色断言失败。两处路径已修复并聚焦通过；状态测试改为等待和断言同一 ANSI 帧，颜色要求不变，修改后真实 PTY 模式／主题组合重复 12 次全部通过。最终全量离线和托管验证仍待完成。首轮托管 CI 因停用缓存接口而在执行前失败；更新为受支持的固定缓存版本后，Plan 与 Checks 通过。基线 main CI 用时 89 秒，但跳过 Acceptance，验证范围不等价，不能作为整体加速证据。
+最新完整 `bun run check` 已通过。此前聚焦证据记录了 31 个通过测试；随后六文件聚焦结果见下文。针对最终修复范围的连续两轮独立 Thermo-Nuclear 审查均未发现问题。第二次完整离线运行执行了全部 333 个文件、2,459 个原生用例，零跳过，用时 1,131.173 秒，setup 用时 5.670 秒。两个文件失败：Magic multi-step 预期 2 个请求但实际观察到 3 个；UserMessage regular/dark 场景等待 ACK 超时，输入仍停留在 editor。首轮完整运行的 3 个失败现已通过。保留日志证明 Magic 的第三次请求是 SessionNaming prompt，原因是无效 partial settings 错误启用了 fallback；已使用现有 `disableSessionNamingForTest` 修复 fixture，Goal retry 分支也用 `DEFAULT` spread 修复了同一无效配置。Magic 前后各重复 10 次：之前 5 通过／5 失败，用时 62.85 秒；之后 10 通过／0 失败，用时 65.65 秒，并保留精确的 2 请求断言。UserMessage 失败来自 inline Skill autocomplete 消耗了 Enter；在 Enter 前发送 Escape 可保留提交行为。随后的完整四种 mode/theme 结果见下文。
+
+托管 CI 修复包括：为不支持的 tmux 3.4 Goal option 加 feature guard；MCP 断言等待 Host 完成标记 `Reloaded`，不再使用启动标记 `Welcome`；Code Mode CI 外层 deadline 从 180 秒提高到 300 秒，并加入每个 arm 的 progress；从 Acceptance 移除旧 envelope benchmark 及其 legacy fixture flags。ADR 0009 明确的当前 20% schema/input 与 cumulative gates 保留，32 个 TUI arm 也保留。托管运行 `34013094628` 基于较旧 HEAD，完成结果见下文。基线 main CI 跳过 Acceptance，范围仍不等价；不作 speedup 声称。
+
+随后六文件聚焦运行中，Magic recovery、User Message 全部四种 mode/theme 组合、Goal lifecycle、Goal PTY 和 MCP PTY 通过。Code Mode 首次冷启动报告 Context adapter 缺失；验证器现改为等待界面显示 Context 百分比后再输入，替代固定 750 毫秒等待。之后三轮完整重复在 267.97 秒内通过全部 96 个 TUI arm。这证明了已观察的 fixture 行为；原始注册失败没有保留足够诊断信息，尚不能确认底层产品缺陷。
+
+托管运行 `34013094628` 完成全部 333 个文件、2,459 个原生用例，零跳过，用时 1,693.223 秒，setup 12.878 秒。四处失败分别为 Code Mode 旧的 180 秒期限、Goal 的 tmux 选项、MCP reload 同步，以及 Tools liveness fixture 等待就绪事件。最后一处发生于响应时间测量前，仍未解决：旧验证器丢弃了请求日志和终端画面。验证器现在会在失败输出中包含这两项；原有 liveness 要求在本地 59.18 秒运行中通过。断网聚焦运行的两个完整文件均通过：Code Mode 95.86 秒，Tools 58.54 秒。更新后的托管 CI 仍待完成。聚合检查正确地将该轮判为失败。
 
 ## 可复用诊断
 

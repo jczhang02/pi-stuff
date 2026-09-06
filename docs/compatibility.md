@@ -24,17 +24,17 @@ reference. Acceptance exercises the complete Suite contract against the real Hos
 version match alone is insufficient: the Host must also pass the applicable real-Host capability acceptance. Pi Stuff
 does not rebuild or distribute Pi Host.
 
-CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, anti-slop
-lint, type surfaces, unused-code analysis, generated composition, and public-release safety. For pull requests, the scope classifier starts
-`Acceptance` when executable behavior or executable documentation changed; a direct push to `main` runs `Fast` only,
-and manual dispatch runs both checks. `Acceptance` obtains a supported Pi Host, Code Mode host,
-and RTK runtime
-before running every applicable offline test
-file in a fresh Bun or Node process, including real TUI verification and source installation in a
-network-isolated namespace. Per-file process isolation prevents one process- or PTY-heavy test from contaminating the
-native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip
-`Acceptance`; executable documentation remains covered by the same checks. A separate weekly upstream watch reports when
-the npm `latest` tag moves beyond the supported Host, but never changes support automatically.
+CI uses four jobs: `Plan`, `Checks`, `Tests`, and `Verify`. `Plan` runs for pull requests, pushes to `main`, and manual
+dispatch; it compares PRs against the target range, pushes against their before/after range, and selects the complete
+offline inventory for manual dispatch. It writes the scope and `tests_required` decision as an artifact. `Checks`
+validates the frozen dependency graph, repository formatting, anti-slop lint, type surfaces, unused-code analysis,
+generated composition, and public-release safety independently of `Tests`. When `Plan` requires Tests, that job obtains
+the supported Pi Host, Code Mode host, and RTK runtime, then runs the selected offline files one fresh Bun or Node
+process at a time inside a network-isolated namespace. `Tests` waits for `Plan`, not `Checks`; it is skipped only when a
+successful plan explicitly selects no tests. `Verify` always runs and validates the plan, every required job result,
+the exact selected-file coverage, and the structured test report. Plan and test reports are separate artifacts. Only
+superseded runs for the same pull request are cancelled; distinct main-push ranges remain available. The workflow
+configuration is implemented, while hosted execution and final migration certification remain pending.
 The repository toolchain uses Bun 1.4.0. The Host's bundled runtime and release packaging are Host details; they are not
 Pi Stuff compatibility admission criteria.
 Bun dependency upgrades are deliberate maintainer changes because the frozen Bun lockfile, exact repository toolchain,

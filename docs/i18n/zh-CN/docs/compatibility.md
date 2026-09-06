@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: caec3224bf6c5c194683aae0f2c725d3c07b12747d580e18fa7a30e4fdbce5ab -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: c206880fdd115c4f72b811a969f72b2c467e18d89a2bbf0193e0c96d04bc7fca -->
 
 # 兼容性
 
@@ -25,12 +25,14 @@
 以及保留空格的原生设置搜索。仅匹配版本还不够：Host 还必须通过适用的真实 Host 能力验收。Pi Stuff 不重建或
 分发 Pi Host。
 
-CI 提供两个稳定检查。`Fast` 始终验证冻结依赖图、仓库格式、anti-slop lint、类型接口、未使用代码分析、生成的
-组合以及公开 Release 安全。对 pull request，范围分类器会在可执行行为或可执行文档变化时启动 `Acceptance`；
-直接 push 到 `main` 只运行 `Fast`，手动触发则运行两者。`Acceptance` 获取受支持的 Pi Host、Code Mode
- Host 和 RTK runtime，然后在网络隔离 namespace 中逐个以全新 Bun 或 Node 进程运行所有适用的离线测试文件，包括真实 TUI 验证和源码安装。逐文件进程隔离可防止某个重进程或 PTY 测试污染后续测试使用的原生资源。只有
-Beads 元数据以及已记录的 PNG、GIF、HTML 或 ANSI 证据可以跳过 `Acceptance`；可执行文档仍由相同检查覆盖。每周
-另有上游观察任务报告 npm `latest` 是否超过当前 Host，但绝不会自动改变支持范围。
+CI 使用四个 job：`Plan`、`Checks`、`Tests`、`Verify`。它们在 pull request、push 到 `main` 和手动触发时运行；
+`Plan` 对 PR 比较 target range，对 push 比较 before/after range，手动触发则选择完整离线清单，并把范围与
+`tests_required` 决策写入 artifact。`Checks` 独立于 `Tests` 验证冻结依赖图、仓库格式、anti-slop lint、类型接口、
+未使用代码分析、生成组合和公开 Release 安全。当 `Plan` 要求 Tests 时，该 job 获取受支持的 Pi Host、Code Mode
+Host 和 RTK runtime，在网络隔离 namespace 中逐个以全新 Bun 或 Node 进程运行选中的离线文件。`Tests` 只等待
+`Plan`，不等待 `Checks`；只有成功的 plan 明确选择零测试时才跳过。`Verify` 始终运行，并校验 plan、每个必需
+job 的结果、精确的选中文件覆盖和结构化 test report。Plan 与 test report 是分开的 artifacts。同一 pull request
+只有过时运行会被取消；不同 main-push range 保留。workflow 配置已实现，但托管执行和最终迁移认证仍待完成。
 
 仓库工具链使用 Bun 1.4.0。Host 自带的 runtime 和 Release 打包属于 Host 细节，不是 Pi Stuff 的兼容性准入标准。
 

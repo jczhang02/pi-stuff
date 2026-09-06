@@ -5,6 +5,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
+import { DEFAULT_SESSION_NAMING_SETTINGS } from "../packages/pi-stuff/src/session-naming/settings.js";
 import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { createAssistantMessage } from "../test/fixtures/faux-provider.js";
@@ -675,7 +676,7 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			await writeFile(
 				join(agentDirectory, "pi-stuff.json"),
 				JSON.stringify({
-					sessionNaming: { enabled: false },
+					sessionNaming: { ...DEFAULT_SESSION_NAMING_SETTINGS, enabled: false },
 					goal: { experimental: { goals: true } },
 				}),
 			);

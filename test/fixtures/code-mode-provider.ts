@@ -8,9 +8,7 @@ const PROVIDER = "pi-stuff-code-mode-fixture";
 const MODEL = "fixture";
 const LOG_ENV = "PI_STUFF_CODE_MODE_FIXTURE_LOG";
 const DIRECT_ENV = "PI_STUFF_CODE_MODE_FIXTURE_DIRECT";
-const BENCHMARK_ENV = "PI_STUFF_CODE_MODE_FIXTURE_BENCHMARK";
 const HIDE_RESULT_ENV = "PI_STUFF_CODE_MODE_FIXTURE_HIDE_RESULT";
-const LEGACY_SURFACE_ENV = "PI_STUFF_CODE_MODE_FIXTURE_LEGACY_SURFACE";
 const SCENARIO_ENV = "PI_STUFF_CODE_MODE_FIXTURE_SCENARIO";
 const SKILL_PATH_ENV = "PI_STUFF_CODE_MODE_FIXTURE_SKILL_PATH";
 const SKILL_NAME = "code-mode-real-skill";
@@ -205,7 +203,6 @@ function fixtureStream(context: Context) {
 			})}\n`,
 		);
 	}
-	if (process.env[BENCHMARK_ENV] === "1") return textStream("BENCHMARK_COMPLETE");
 	if (!result) return direct ? directToolStream() : codeModeStream();
 	const resultText =
 		result?.role === "toolResult" && Array.isArray(result.content)
@@ -222,10 +219,6 @@ function fixtureStream(context: Context) {
 }
 
 export default function codeModeFixtureProvider(pi: ExtensionAPI): void {
-	if (process.env[LEGACY_SURFACE_ENV] === "1") {
-		pi.on("session_start", () => pi.setActiveTools(["codemode"]));
-		pi.on("before_agent_start", () => pi.setActiveTools(["codemode"]));
-	}
 	registerFixtureProvider(
 		pi,
 		PROVIDER,
