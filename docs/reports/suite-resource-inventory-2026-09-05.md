@@ -301,6 +301,58 @@ latency improvement; the measured saving is the helper work above. The exact nat
 checks pass. `commandInvocationMatching` in the numeric record retains the trials, Source and evidence hashes, resource
 snapshots and limits. First-Agent import stalls and the remaining whole-Suite acceptance stay open.
 
+## Skip status publication without an IPC recipient
+
+On 2026-09-06, `ps-yon.15` removes inactive status-publisher work from the shared Agent runner. At `c7ea40e9`,
+foreground execution installed a queue and fiber and scheduled 100 ms wakeups in the parent Host. The sender checked
+for an IPC recipient only after waking, although this Host had no `process.send`. Two guards now check the existing
+transport condition before installation and publication. Disk writes and in-process observers stay outside that
+condition; connected IPC keeps its existing progress cadence, terminal delivery and disconnect check at send time.
+No cache, dependency or scheduler was added. Production Source grows from 469 to 471 lines; the new regression has
+79 lines, for a net Source delta of +81.
+
+The regression fails on the old publisher: both absent and disconnected IPC schedule a sleep when zero is expected.
+The candidate passes all three cases, including connected IPC, with unchanged local observation and persisted terminal
+status. The focused foreground/background suite passes 54 tests and 235 assertions; the exact-Pi Package and execution
+matrix passes another five tests and 15 assertions, including nested delegation. `check:fast` passes. These checks
+establish functional evidence, not responsiveness acceptance.
+
+Five ordinary runs used the existing observer with `--suite --agent foreground|background --resource-scope` and
+`--repeat-tool`. Each launched two fresh-context children on the same exact Pi 0.85.0 executable and 120×40 terminal.
+Private configuration and temporary caches were fresh; the kernel page cache was not reset. Runs were sequential,
+without competing tests, scouts or profiling. Only the two production guards differed between ordinary variants.
+Observer start times below are on 2026-09-06 UTC.
+
+| Variant | Mode | Start, UTC | Spinner, ms | Input, ms | Selection, ms | Scoped CPU, seconds |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| Candidate `U4SAr9` | Foreground | 00:41:25.238 | 489.594 | 153.177 | 14.908 | 22.661818 |
+| Control `TYhuGV` | Foreground | 00:42:59.589 | 198.518 | 14.112 | 74.233 | 22.351724 |
+| Control `IJEc1t` | Background | 00:44:06.189 | 135.712 | 14.555 | 13.934 | 21.803517 |
+| Candidate `P2IXQw` | Background | 00:44:54.319 | 173.872 | 14.128 | 14.119 | 21.947347 |
+| Candidate `9fZiJk` | Foreground | 00:45:46.200 | 183.739 | 25.791 | 14.152 | 21.927803 |
+
+Only the background control passed every frozen gate. The candidate `U4SAr9` held one Spinner frame for 489.594 ms
+at observer-relative 39741.056–40230.650 ms, late in the second Agent call. That stall was not reproduced in the second
+ordinary foreground candidate, but its cause is unresolved; it is retained, not dismissed as noise. These samples do
+not demonstrate a stable whole-Host CPU, memory or latency improvement, or establish that the guards cannot regress
+responsiveness. First-Agent loading and later stalls still require attribution and acceptance.
+
+Two separate marked diagnostics counted calls to publication, publisher installation and the post-sleep sender.
+Candidate `X55jdH` started at 00:47:13.419 UTC and control `fNkYbj` at 00:48:13.302 UTC. Both actual parent Hosts had
+an absent sender and a disconnected channel. Across the same 22 publication requests, the control installed two
+publishers and woke eight times; the candidate installed none and woke zero times. This proves the omitted work in
+this two-child workload, not a whole-process wakeup or allocation count. Both diagnostics still failed responsiveness:
+candidate Spinner/input/selection maxima were 260.382/73.929/13.990 ms, versus control 195.956/14.125/73.245 ms.
+All temporary performance marks and Provider probes were removed after measurement.
+
+All seven runs completed both child Tools and reaped both child processes, requested and persisted automatic Naming
+once, and refreshed Usage once. Both background runs delivered two outcomes and observed parent-idle input/selection while children ran.
+Spinner absence was zero and every capture gap was below 25 ms; foreground samples retain over 36 seconds and 3,000
+active captures, background samples over 14 seconds and 1,190 captures. All seven resource scopes were unloaded after
+shutdown. The numeric record's `inactiveStatusPublication` retains every sample, source/fixture/evidence hashes,
+resource snapshots and diagnostic counts. Charged-memory peaks and RSS snapshots do not measure allocation, GC or
+peak process-tree RSS. Full resource and single-stall acceptance remain open.
+
 ## Skip the inactive root Agents implementation in children
 
 At `396e1cfc`, the Agents entrypoint statically imported the root management implementation. Its factory then returned

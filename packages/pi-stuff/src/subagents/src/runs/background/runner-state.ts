@@ -408,6 +408,7 @@ function sendPublishedStatus(): void {
 }
 
 function publishStatus(statusPath: string, status: RunnerStatus): void {
+	if (!isRuntimeFunction(process.send) || process.connected === false) return;
 	pendingPublishedStatus = { statusPath, status };
 	if (
 		status.state === "complete" ||
@@ -425,6 +426,7 @@ function publishStatus(statusPath: string, status: RunnerStatus): void {
 
 export function installStatusPublisher(): Effect.Effect<void, never, Scope.Scope> {
 	return Effect.gen(function* () {
+		if (!isRuntimeFunction(process.send) || process.connected === false) return;
 		const wake = yield* Queue.sliding<void>(1);
 		const offer = () => Queue.offerUnsafe(wake, undefined);
 		yield* Effect.acquireRelease(

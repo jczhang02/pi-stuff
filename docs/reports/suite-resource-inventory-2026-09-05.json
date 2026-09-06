@@ -1,4 +1,412 @@
 {
+	"inactiveStatusPublication": {
+		"bead": "ps-yon.15",
+		"base": "c7ea40e9d5bf5e7a0782ee693c241566b9f1f3ba",
+		"date": "2026-09-06",
+		"change": "Skip status-publisher installation and publication when IPC has no usable sender; preserve persistence, local observation and connected IPC behavior.",
+		"sourceLines": {
+			"runnerState": {
+				"before": 469,
+				"after": 471
+			},
+			"regression": {
+				"before": 0,
+				"after": 79
+			},
+			"net": 81
+		},
+		"sourceSha256": {
+			"control": "c60106fc63da9a1e7e69affb17fff6cefe66e778bd2c7bbf45500f0a1b48e911",
+			"candidate": "8457163410bba762f5ab2ce8741200d69559a302e2ce180f952c17c00b9f8f3b"
+		},
+		"command": "bun scripts/benchmark-responsiveness.ts --pi <certified-pi> --suite --agent <foreground|background> --resource-scope --gates docs/reports/suite-responsiveness-gates-2026-09-05.json --repeat-tool",
+		"isolation": "Same exact Pi 0.85.0 executable, 120x40 terminal and parent/two-child workload in isolated network/PID namespaces. Fresh private Host configuration and temporary caches; kernel page cache not reset. Sequential runs without competing tests, scouts or profiling.",
+		"fixtures": [
+			{
+				"file": "scripts/benchmark-responsiveness.ts",
+				"sha256": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9"
+			},
+			{
+				"file": "scripts/host-resource-scope.ts",
+				"sha256": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee"
+			},
+			{
+				"file": "scripts/pty-observation.ts",
+				"sha256": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40"
+			},
+			{
+				"file": "test/fixtures/responsiveness-provider.ts",
+				"sha256": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3"
+			},
+			{
+				"file": "test/fixtures/faux-provider.ts",
+				"sha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+			}
+		],
+		"diagnostic": {
+			"method": "Identical temporary marks at publication entry before its guard, installation after its guard, and the post-sleep sender; actual parent Provider reads counts and IPC availability at each request. All probes removed afterward.",
+			"providerSha256": "664db31fda88eadf726f4a27e628aa5b4b0678afe891e5d2fcb110abbb71e239"
+		},
+		"runs": [
+			{
+				"sample": "U4SAr9",
+				"variant": "candidate",
+				"diagnostic": false,
+				"mode": "foreground",
+				"startUtc": "2026-09-06T00:41:25.238Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"input"
+				],
+				"evidenceSha256": "e62c518e57cb5464d5261f54eac685d3b31fe19b4cc9f837df4a32ff8937e047",
+				"providerSha256": "75f4140655fb3521e03787d911c6a00500a1c9e367a0e89e1d34a1594ecb2277",
+				"sourceDiffSha256": "f5d4ad04abd9df332a31c795dff2298ffcddcd02dad904256808562f73d28bdd",
+				"maximumSpinnerFrameMs": 489.59406200000376,
+				"maximumSteadyInputMs": 153.17689699999755,
+				"maximumSelectionMs": 14.907651999999871,
+				"maximumStartupInputMs": 13.985986000000594,
+				"maximumObservationGapMs": 21.02807400000006,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 37744.960786999996,
+				"activeCaptureCount": 3163,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"backgroundOutcomes": 0,
+				"parentCompletedWhileChildRunning": false,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 22661818,
+				"peakChargedBytes": 1268924416,
+				"rssSnapshotBytes": 610336768,
+				"parentIo": {
+					"rchar": 241984060,
+					"wchar": 27473963,
+					"syscr": 22194,
+					"syscw": 7304,
+					"read_bytes": 1421824,
+					"write_bytes": 27207559,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "TYhuGV",
+				"variant": "control",
+				"diagnostic": false,
+				"mode": "foreground",
+				"startUtc": "2026-09-06T00:42:59.589Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"selection"
+				],
+				"evidenceSha256": "d604c3546fa2fb6257f088b29825eef9d60af68d828789871a0af65c186d20b4",
+				"providerSha256": "82a4bd78964c3cf5e247121313c016ef44b9d563fac832a04b0b284bb782930c",
+				"sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				"maximumSpinnerFrameMs": 198.51839199999995,
+				"maximumSteadyInputMs": 14.111704999995709,
+				"maximumSelectionMs": 74.23340699999972,
+				"maximumStartupInputMs": 14.199891000000207,
+				"maximumObservationGapMs": 16.46175200000016,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 36880.654671,
+				"activeCaptureCount": 3091,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"backgroundOutcomes": 0,
+				"parentCompletedWhileChildRunning": false,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 22351724,
+				"peakChargedBytes": 1271795712,
+				"rssSnapshotBytes": 617283584,
+				"parentIo": {
+					"rchar": 241981269,
+					"wchar": 27470741,
+					"syscr": 22067,
+					"syscw": 7279,
+					"read_bytes": 172032,
+					"write_bytes": 27207270,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "IJEc1t",
+				"variant": "control",
+				"diagnostic": false,
+				"mode": "background",
+				"startUtc": "2026-09-06T00:44:06.189Z",
+				"verdict": "PASS",
+				"breaches": [],
+				"evidenceSha256": "f89e1584879f37c1fc0050da66dfad31287795a4b10cfc09b25d3e9ecd23ccaf",
+				"providerSha256": "834f0fc4cb1672c2637b2854c3be3facdfd479ba47a690b2087a88ffb445ea88",
+				"sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				"maximumSpinnerFrameMs": 135.71220200000062,
+				"maximumSteadyInputMs": 14.555446999998821,
+				"maximumSelectionMs": 13.93398900000102,
+				"maximumStartupInputMs": 14.157570999999734,
+				"maximumObservationGapMs": 16.980977000000166,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 14388.106171000001,
+				"activeCaptureCount": 1198,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"backgroundOutcomes": 2,
+				"parentCompletedWhileChildRunning": true,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 21803517,
+				"peakChargedBytes": 1909870592,
+				"rssSnapshotBytes": 591237120,
+				"parentIo": {
+					"rchar": 275502778,
+					"wchar": 36647085,
+					"syscr": 32416,
+					"syscw": 11821,
+					"read_bytes": 172032,
+					"write_bytes": 36424173,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "P2IXQw",
+				"variant": "candidate",
+				"diagnostic": false,
+				"mode": "background",
+				"startUtc": "2026-09-06T00:44:54.319Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner"
+				],
+				"evidenceSha256": "9f82d5faaffd13630c64f9fcd852638a124ed922655b67a5266c3b2067378620",
+				"providerSha256": "1c59b949c9704a59163c72830a30fe8f970f2590d5e42a6c5c47791f8431569f",
+				"sourceDiffSha256": "f5d4ad04abd9df332a31c795dff2298ffcddcd02dad904256808562f73d28bdd",
+				"maximumSpinnerFrameMs": 173.87202500000058,
+				"maximumSteadyInputMs": 14.127592000000732,
+				"maximumSelectionMs": 14.119042000000263,
+				"maximumStartupInputMs": 13.880677999999534,
+				"maximumObservationGapMs": 24.947642000000087,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 14409.852918,
+				"activeCaptureCount": 1197,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"backgroundOutcomes": 2,
+				"parentCompletedWhileChildRunning": true,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 21947347,
+				"peakChargedBytes": 1928732672,
+				"rssSnapshotBytes": 610136064,
+				"parentIo": {
+					"rchar": 275495745,
+					"wchar": 36648401,
+					"syscr": 32406,
+					"syscw": 11821,
+					"read_bytes": 8192,
+					"write_bytes": 36424426,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "9fZiJk",
+				"variant": "candidate",
+				"diagnostic": false,
+				"mode": "foreground",
+				"startUtc": "2026-09-06T00:45:46.200Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner"
+				],
+				"evidenceSha256": "bee953524110a6b905ffa0170a9809f9be3347358e6e838c8039867fa2601f90",
+				"providerSha256": "bc0f3b73ccea99b640db3c7fcea0eed4df015426560d3f8ae2be86648b7bfaa5",
+				"sourceDiffSha256": "f5d4ad04abd9df332a31c795dff2298ffcddcd02dad904256808562f73d28bdd",
+				"maximumSpinnerFrameMs": 183.73889999999847,
+				"maximumSteadyInputMs": 25.790930999999546,
+				"maximumSelectionMs": 14.15186999999969,
+				"maximumStartupInputMs": 13.949236999999812,
+				"maximumObservationGapMs": 16.16253300000062,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 36738.969423,
+				"activeCaptureCount": 3080,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"backgroundOutcomes": 0,
+				"parentCompletedWhileChildRunning": false,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 21927803,
+				"peakChargedBytes": 1263677440,
+				"rssSnapshotBytes": 600608768,
+				"parentIo": {
+					"rchar": 241979540,
+					"wchar": 27470371,
+					"syscr": 22022,
+					"syscw": 7283,
+					"read_bytes": 872960,
+					"write_bytes": 27207466,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1
+			},
+			{
+				"sample": "X55jdH",
+				"variant": "candidate",
+				"diagnostic": true,
+				"mode": "foreground",
+				"startUtc": "2026-09-06T00:47:13.419Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"input"
+				],
+				"evidenceSha256": "f812402229bfd1f3651d5c51142cbfb58a79ba13e9d9f674e84cecf814229bc3",
+				"providerSha256": "5ef854a6f0fa6b1a46eeb4b8538f91b64c8d12298ceae88f67dda3a0980a8c85",
+				"sourceDiffSha256": "b9ecee860e63463d4a0461378f6c9cb1c0c2df4fd866b88dd9014a8efe7fdfcb",
+				"maximumSpinnerFrameMs": 260.3824689999983,
+				"maximumSteadyInputMs": 73.92879599999833,
+				"maximumSelectionMs": 13.989685999999892,
+				"maximumStartupInputMs": 13.993395000000419,
+				"maximumObservationGapMs": 17.18013499999961,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 36797.74256,
+				"activeCaptureCount": 3085,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"backgroundOutcomes": 0,
+				"parentCompletedWhileChildRunning": false,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 22168124,
+				"peakChargedBytes": 1269792768,
+				"rssSnapshotBytes": 608149504,
+				"parentIo": {
+					"rchar": 241981874,
+					"wchar": 27471345,
+					"syscr": 22014,
+					"syscw": 7284,
+					"read_bytes": 1312768,
+					"write_bytes": 27208592,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1,
+				"ipc": [
+					{
+						"requests": 0,
+						"installs": 0,
+						"wakeups": 0,
+						"sender": "undefined",
+						"connected": false
+					},
+					{
+						"requests": 11,
+						"installs": 0,
+						"wakeups": 0,
+						"sender": "undefined",
+						"connected": false
+					},
+					{
+						"requests": 22,
+						"installs": 0,
+						"wakeups": 0,
+						"sender": "undefined",
+						"connected": false
+					}
+				]
+			},
+			{
+				"sample": "fNkYbj",
+				"variant": "control",
+				"diagnostic": true,
+				"mode": "foreground",
+				"startUtc": "2026-09-06T00:48:13.302Z",
+				"verdict": "FAIL",
+				"breaches": [
+					"spinner",
+					"selection"
+				],
+				"evidenceSha256": "0505a989788cd0caab42e5796be63c3b20d30f38d79b49ece4003229910f52d9",
+				"providerSha256": "16de29d9501e70fb4ff2248c4fdcac70fba54e8812e7187c1c8681bddc81f1b3",
+				"sourceDiffSha256": "29d8b60d7f5d5c87065c6d0b17a034d69442c36bcaa866a8100e44027f5a1309",
+				"maximumSpinnerFrameMs": 195.95561199999975,
+				"maximumSteadyInputMs": 14.124748000002,
+				"maximumSelectionMs": 73.24470500000098,
+				"maximumStartupInputMs": 13.906338000000687,
+				"maximumObservationGapMs": 16.608790999999655,
+				"maximumSpinnerAbsenceMs": 0,
+				"activeDurationMs": 36711.876913,
+				"activeCaptureCount": 3077,
+				"completedChildTools": 2,
+				"reapedChildProcesses": 2,
+				"backgroundOutcomes": 0,
+				"parentCompletedWhileChildRunning": false,
+				"automaticUsageRefreshes": 1,
+				"cpuUs": 22174643,
+				"peakChargedBytes": 1274044416,
+				"rssSnapshotBytes": 588169216,
+				"parentIo": {
+					"rchar": 241982169,
+					"wchar": 27470996,
+					"syscr": 22072,
+					"syscw": 7281,
+					"read_bytes": 548864,
+					"write_bytes": 27208481,
+					"cancelled_write_bytes": 0
+				},
+				"namingRequests": 1,
+				"namingPersisted": 1,
+				"ipc": [
+					{
+						"requests": 0,
+						"installs": 0,
+						"wakeups": 0,
+						"sender": "undefined",
+						"connected": false
+					},
+					{
+						"requests": 11,
+						"installs": 1,
+						"wakeups": 4,
+						"sender": "undefined",
+						"connected": false
+					},
+					{
+						"requests": 22,
+						"installs": 2,
+						"wakeups": 8,
+						"sender": "undefined",
+						"connected": false
+					}
+				]
+			}
+		],
+		"lateFailure": {
+			"sample": "U4SAr9",
+			"observerRelativeStartMs": 39741.056431,
+			"observerRelativeEndMs": 40230.650493,
+			"maximumSpinnerFrameMs": 489.594062,
+			"attribution": "Unresolved late second-Agent-call stall; not reproduced in the second ordinary foreground candidate. Retained as a failure, not excluded as noise."
+		},
+		"functionalChecks": {
+			"focusedTests": 54,
+			"focusedAssertions": 235,
+			"nativeHostTests": 5,
+			"nativeHostAssertions": 15,
+			"fast": "PASS"
+		},
+		"cleanup": "All seven owned resource scopes were verified not-found/inactive/dead after shutdown; both child processes per run were birth-bound and reaped.",
+		"limits": [
+			"Direct marked evidence proves 22 publication requests with two publisher installations/eight timed wakeups in control and zero installations/wakeups in candidate, only for this two-child inactive-parent IPC workload.",
+			"Only the ordinary background control passed all frozen responsiveness gates; all candidates and both marked diagnostics failed at least one gate.",
+			"No stable whole-Host CPU, memory or latency improvement or no-regression guarantee is established by these samples.",
+			"CPU includes the owned process scope; parent I/O includes waited-child accounting. Charged-memory peaks and sampled RSS are not allocation, GC or peak process-tree RSS.",
+			"No selected-Skill or Code Mode workload is certified by this comparison. Full Capability/resource audit and single-stall acceptance remain open."
+		]
+	},
 	"childRootModuleLoading": {
 		"bead": "ps-yon.14",
 		"base": "396e1cfcc107e39d33b9b1f292fb2c02cfa54310",
