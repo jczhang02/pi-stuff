@@ -505,7 +505,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 					thinkingDisplay = true;
 					verified.push(
 						"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
-						"priority Statusline fields and responsive prompt bounds at all accepted widths",
+						"priority Statusline fields and responsive prompt bounds at the selected acceptance widths",
 						"latest-line, hidden, toggled, interleaved spacing, multi-run, settled, resumed, Session-, Provider-, and export-preserved Thinking",
 						"100 continuous deltas across 2,500 cumulative CJK characters kept every Vibe Line Spinner frame within 500ms and recovered",
 						"User/Assistant streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",

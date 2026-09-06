@@ -75,6 +75,7 @@ async function runPi(
 		detached: true,
 		env: {
 			...process.env,
+			MAGIC_CONTEXT_TEST_DATA_DIR: join(temporary, "data"),
 			PI_CODING_AGENT_DIR: join(temporary, "agent"),
 			PI_OFFLINE: "1",
 			PI_STUFF_CODE_MODE_DEFAULT: "on",
@@ -85,7 +86,7 @@ async function runPi(
 			PI_TELEMETRY: "0",
 			XDG_CACHE_HOME: join(temporary, "cache"),
 			XDG_CONFIG_HOME: join(temporary, "config"),
-			XDG_DATA_HOME: join(temporary, "data"),
+			XDG_DATA_HOME: undefined,
 			XDG_STATE_HOME: join(temporary, "state"),
 		},
 		stderr: "pipe",

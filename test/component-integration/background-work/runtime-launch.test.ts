@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { chmodSync } from "node:fs";
 import {
 	activateDiagnosticChannel,
 	type BackgroundWorkOutcome,
@@ -550,7 +551,7 @@ test("accepts a command acknowledgement after a fast supervisor exit", async () 
 				);
 				resolveCompletion({ code: 0, signal: null });
 			}, 0);
-			const control = Readable.from([]);
+			const control = Readable.from([Buffer.from('{"type":"ready"}\n')]);
 			return {
 				closeControl: () => control.destroy(),
 				completion,
@@ -566,6 +567,58 @@ test("accepts a command acknowledgement after a fast supervisor exit", async () 
 	const result = await active.executeBash({ command: ":" }, context(root));
 	expect(result.content).toEqual([{ type: "text", text: "(no output)" }]);
 	await active.shutdown();
+});
+
+test("waits for delayed supervisor readiness before publishing command authorization", async () => {
+	const root = temporaryRoot();
+	if (!Bun.which("node")) throw new Error("node is required for the delayed supervisor fixture");
+	const wrapper = join(root, "delayed-supervisor");
+	writeFileSync(wrapper, '#!/bin/sh\nsleep 3.2\nexec node "$@"\n');
+	chmodSync(wrapper, 0o755);
+	const active = configuredRuntime(root, { supervisorExecutable: wrapper });
+
+	const result = await active.executeBash({ command: "printf 'delayed-ready\\n'" }, context(root));
+
+	expect(result.content).toEqual([{ type: "text", text: "delayed-ready\n" }]);
+	await active.shutdown();
+});
+
+test("a supervisor that exits before readiness never receives the command", async () => {
+	const root = temporaryRoot();
+	const marker = join(root, "must-not-run");
+	const wrapper = join(root, "failed-supervisor");
+	writeFileSync(wrapper, "#!/bin/sh\nsleep 0.1\nexit 7\n", { mode: 0o755 });
+	const active = configuredRuntime(root, { supervisorExecutable: wrapper });
+	await expect(active.executeBash({ command: `touch '${marker}'` }, context(root))).rejects.toThrow(
+		"exited before becoming ready",
+	);
+	await active.shutdown();
+	expect(existsSync(marker)).toBeFalse();
+	expect(active.snapshot()).toHaveLength(0);
+});
+
+test("shutdown cancels a pending readiness handshake without releasing the command", async () => {
+	const root = temporaryRoot();
+	const marker = join(root, "must-not-run");
+	const wrapper = join(root, "not-ready.mjs");
+	writeFileSync(wrapper, "#!/usr/bin/env node\nsetTimeout(() => process.exit(7), 1000);\n", { mode: 0o755 });
+	let supervisorPid: number | undefined;
+	const active = configuredRuntime(root, {
+		supervisorExecutable: wrapper,
+		captureSupervisorIdentity: async (pid) => {
+			supervisorPid = pid;
+			return captureProcessIdentityWithRetry(pid);
+		},
+	});
+	const execution = active.executeBash({ command: `touch '${marker}'` }, context(root));
+	const rejected = expect(execution).rejects.toThrow();
+	await waitUntil(() => supervisorPid !== undefined);
+	await Bun.sleep(25);
+	await active.shutdown();
+	await rejected;
+	expect(existsSync(marker)).toBeFalse();
+	expect(supervisorPid !== undefined && processExists(supervisorPid)).toBeFalse();
+	expect(active.snapshot()).toHaveLength(0);
 });
 
 test("amortizes rollover writes across small output chunks", () => {

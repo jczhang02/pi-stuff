@@ -11,7 +11,7 @@ import { verifyUiPty } from "../../../scripts/verify-ui-pty.ts";
 const { PI_BIN = "/opt/bin/pi" } = process.env;
 const AGGREGATE_PACKAGE = resolve(import.meta.dir, "../../../packages/pi-stuff");
 
-test("real Pi renders and restores the integrated production UI at all accepted widths", async () => {
+test("real Pi renders and restores the integrated production UI at the selected acceptance widths", async () => {
 	const evidence = await verifyUiPty({ piBinary: PI_BIN, packagePath: AGGREGATE_PACKAGE });
 
 	expect(evidence.sizes).toEqual(
@@ -22,7 +22,7 @@ test("real Pi renders and restores the integrated production UI at all accepted 
 	expect(evidence.vibeLineMaximumFrameDurationMs).toBeLessThanOrEqual(500);
 	for (const required of [
 		"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
-		"priority Statusline fields and responsive prompt bounds at all accepted widths",
+		"priority Statusline fields and responsive prompt bounds at the selected acceptance widths",
 		"latest-line, hidden, toggled, interleaved spacing, multi-run, settled, resumed, Session-, Provider-, and export-preserved Thinking",
 		"100 continuous deltas across 2,500 cumulative CJK characters kept every Vibe Line Spinner frame within 500ms and recovered",
 		"native and inline autocomplete suppression and restoration",

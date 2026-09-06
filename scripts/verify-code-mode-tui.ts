@@ -132,6 +132,7 @@ async function runArm(
 	const socket = join(temporary, `${session}.sock`);
 	const env = {
 		COLORTERM: "truecolor",
+		MAGIC_CONTEXT_TEST_DATA_DIR: join(temporary, "data"),
 		PI_CODING_AGENT_DIR: join(temporary, "agent"),
 		PI_OFFLINE: "1",
 		PI_STUFF_CODE_MODE_DEFAULT: mode === "code" ? "on" : "off",
@@ -144,7 +145,6 @@ async function runArm(
 		TERM: "xterm-256color",
 		XDG_CACHE_HOME: join(temporary, "cache"),
 		XDG_CONFIG_HOME: join(temporary, "config"),
-		XDG_DATA_HOME: join(temporary, "data"),
 		XDG_STATE_HOME: join(temporary, "state"),
 	};
 	const scenarioId = scenario === "group" ? "8" : scenario === "failure" ? "9" : scenario === "media" ? "a" : "b";
@@ -173,6 +173,8 @@ async function runArm(
 	];
 	const command = [
 		"env",
+		"-u",
+		"XDG_DATA_HOME",
 		...Object.entries(env).map(([name, value]) => `${name}=${shellQuote(value)}`),
 		...arguments_.map(shellQuote),
 	].join(" ");
@@ -400,7 +402,7 @@ try {
 		);
 	}
 	console.log(
-		`Real Pi TUI ${selectedScenarios.join("/")} plain-screen layout and ANSI Tool Activity are identical with Code Mode on and off, before and after resume, at 100 and 64 columns (excluding truthful Context pressure and its responsive fixture model label)`,
+		`Real Pi TUI ${selectedScenarios.join("/")} plain-screen layout and ANSI Tool Activity are identical with Code Mode on and off, before and after resume, at ${sizes.map(([width]) => width).join(" and ")} columns (excluding truthful Context pressure and its responsive fixture model label)`,
 	);
 	console.log(
 		`Provider Tool schema: ${String(directRequest.toolNames.length)} Tools / ${String(directRequest.schemaChars)} chars direct; ${String(codeRequest.toolNames.length)} Tools / ${String(codeRequest.schemaChars)} chars full envelope`,
