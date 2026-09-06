@@ -2,7 +2,7 @@
 
 Date: 2026-09-06.
 Scope: ps-8ew.1; Context/Goal compaction and continuation, Code Mode nested Tool Display, and Conversation UI Host adapters.
-Baseline: `d620c43dba9f904e7c895c708a535ab5715fb4fc` (Pi 0.85.1); current audit source is the uncommitted candidate in this worktree.
+Baseline: `48a3de5072b2cb95e3e5b8320cbb29f297abdc67` (signed Pi runtime commit, Pi 0.85.1); current audit source is the uncommitted candidate in this worktree.
 
 This is a bounded source/history audit. It does not certify a live Provider or the combined repair candidate. The
 whole-Agents diagnosis recorded in `ps-qbn` is reused, including its deterministic evidence-loss replay and its
