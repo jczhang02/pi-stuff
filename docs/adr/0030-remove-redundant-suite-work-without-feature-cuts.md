@@ -27,6 +27,13 @@ the same behavior is preserved. Safety, permissions, data integrity, and canonic
 Moving unchanged computation to another thread does not by itself reduce total resource consumption. Resource
 efficiency and continuous interface responsiveness are separate requirements; both must be demonstrated.
 
+On 2026-09-06 the maintainer clarified that this distinction does not prohibit execution isolation. Prefer the smallest
+existing Worker or subprocess boundary for necessary independent computation and dependency evaluation. Pi keeps input,
+rendering and canonical Session commits; `async` or a timer yield alone is not parallel execution. Retain measured,
+simple deduplication, but do not expand this effort into speculative caches or an unbounded micro-optimization audit.
+An isolation change must separately verify input, cancellation, recovery and data consistency, and report its total
+resource cost even when memory or elapsed time increases.
+
 ### Confirmed resource trade-off
 
 A small, bounded amount of retained memory may replace repeated computation when measurements demonstrate a benefit.

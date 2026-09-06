@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 332599cba540108740a62fa3107d26141222907da970eba4bf97f171567319d0 -->
+<!-- translation-source: docs/reports/suite-responsiveness-observer-2026-09-05.md; translation-source-sha256: 7fc388529d492147a38d2e3059aa3f39591f949adb81aad256b1982094b44a7d -->
 
 # 连续响应观察器与 Ledger 首次加载复现
 
@@ -358,3 +358,60 @@ Goal 目前是独立工作负载，不能与 Agent、Context、Code Mode 或旧 
 耗时 51.963 ms，该样本仍为无结论。同一源码的独立 Context 复跑通过；数值证据保留两次结果。
 这些回归运行不应用产品性能门槛。
 加入持久化 Tool result 断言后，最终源码的 Goal 回归再次通过（一项测试、四条断言）。
+
+## 前台 Agent 执行隔离，2026-09-06
+
+共享子执行引擎移入现有 Pi 进程中的单次运行 Worker 后，最终的直接 Agent 样本通过了锁定交互门槛。
+同基线提交的进程内执行样本在 171.120 ms 处违反 Spinner 门槛，最终 Worker 样本为 128.513 ms。
+最终生产源码上的 Code Mode 加旧 Ledger 场景也通过。这些是在共享机器上的单次样本，不能保证统计性能，
+也不能证明总资源消耗下降。
+
+[Agents 契约](../../packages/pi-stuff/src/subagents/README.md) 拥有这条边界。Pi 保留输入、渲染和父 Session 提交；
+Worker 执行现有前台／后台共享子引擎，保留停止通道、写入进程身份、已提交的初始状态和完成文件。
+父进程等待 Worker 真正触发 close 后，恢复流程才回收子写入进程。没有新增运行时、持久 Worker 池或依赖。
+
+| 样本 | 负载与版本 | Spinner ms | 输入／准备 ms | 选择 ms | CPU 秒 | RSS 快照 MB | 峰值计费 MB | 锁定门槛 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `sXzhdc` | 进程内基线，直接调用 | 171.120 | 15.022 | 14.786 | 26.227454 | 593.441 | 1255.727 | Spinner 失败 |
+| `9h9eie` | 等待实际关闭前的 Worker 候选 | 115.963 | 15.444 | 14.455 | 25.021220 | 679.383 | 1544.212 | 通过 |
+| `6udvaY` | 同一候选，Code Mode 加旧 Ledger | 119.283 | 15.319 | 16.115 | 28.699533 | 705.307 | 1517.773 | 通过 |
+| `1fTkNY` | 最终 Worker，直接调用 | 128.513 | 25.853 | 14.774 | 26.826419 | 658.158 | 1575.174 | 通过 |
+| `gjH5mJ` | 最终 Worker，Code Mode 加旧 Ledger | 126.176 | 15.946 | 15.211 | 29.905843 | 724.828 | 1571.779 | 通过 |
+
+MB 为 1,000,000 字节。CPU 覆盖原生资源 scope，包括线程与子进程，不是主线程 CPU。最终直接样本相对基线
+多用 2.28% CPU，结算后 RSS 增加 64,716,800 字节，峰值计费内存增加 319,447,040 字节。执行隔离有实测内存
+代价。计费内存不是峰值 RSS；此次改动没有测量分配、GC 和唤醒。Code Mode 没有同基线提交的前置对照。
+
+每行都完成两个真实子 Bash Tool，回收两个经过出生身份验证的子进程，并持久化两个成功的父 Session Tool 结果。
+自动 Naming 请求一次、持久化名称一次，Usage 刷新一次。最终直接样本和 Code Mode 样本分别覆盖 38.075、
+39.098 秒活动区间，捕获 3,149、3,191 次；最大观察间隙为 16.263、16.182 ms，Spinner 无缺失。
+所有资源 scope 均已确认卸载。
+
+运行使用精确 Pi 0.85.0、内置 Bun 1.3.14、全新私有配置、120×40 几何和隔离的 PID／网络 namespace，
+没有 profiler、GC 标记或注入停顿。共享机器与内核页缓存未受控。
+[数值证据](../../../../../docs/reports/suite-responsiveness-agents-2026-09-05.json) 的 `foregroundWorkerIsolation` 保留原始工件 SHA-256、
+源码补丁及观察器快照的哈希、精确指标和失败候选。两个最终样本都匹配基于签名提交 `c9582271` 的最终生产补丁；
+后续测试和文字编辑不改变该生产补丁。较早候选没有最终的关闭等待，不能认证其清理行为。
+
+三个失败候选保留为证据，不算验收：`SX6bwV`、`iMPKpo` 在完整 Suite 中构建时无法解析 `effect/Effect`；
+`0E4M6y` 因 Worker argv 不再标识编译后的 Pi，选中了 PATH 包装器。Host 适配层现在解析 Package 的 Effect
+子路径，并传递已有 Pi 启动元数据。回归测试还发现 `Worker.terminate()` 在线程关闭前返回；最终实现等待
+`close`，对应测试在加入等待前失败、之后通过。另一项中断回归证明释放先于写入进程回收，并检查持久的 owner
+退出标记和失败状态。
+
+最终 Code Mode 捕获后，现有生命周期验证器在相同生产源码上通过 Ctrl-C 与关闭检查：返回编辑器 122.67 ms，
+关闭 111.16 ms。它验证被跟踪的 Agent、shell 和孙进程均退出，规范 Session 保留被取消的 Tool 调用回执；
+不要求取消后的 Tool 结果。随后，现有精确 Host 执行矩阵的八个单次／并行、fresh／fork、前台／后台场景全部通过。
+这些功能检查不替代上面单独的交互和资源测量。
+
+```bash
+bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --agent foreground --repeat-tool \
+  --resource-scope --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
+# 第二个最终负载加 --code-mode --ledger；保留上文的隔离包装。
+bun scripts/benchmark-lifecycle.ts --variants suite --scenarios fresh --actions agent-exit \
+  --sizes 120x40 --samples 1 --warmups 0
+bun scripts/verify-agents-execution-matrix.ts
+```
+
+本检查点处理前台执行边界，不关闭整个 Suite 的资源标准，也不认证 Pi 0.85.1。变更代码仍需交付版本上的 CI；
+不代表已合并或在本机安装。

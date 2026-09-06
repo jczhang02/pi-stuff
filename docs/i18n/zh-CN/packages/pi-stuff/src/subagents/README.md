@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 991301c6f5db3133b3f7e8139c55591b2ff64faddde80da9f5e94ff747c0c352 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 6f75b898e216fe5c26115fefd5421ed65786513fe69ca20d7b6ba689cb948ccf -->
 
 # Agents
 
@@ -67,9 +67,15 @@ Agent 定义与任务正文的摘要。最终构建阶段解析启动输入，�
 模型时加载。必要的恢复记录、writer 所有权与初始状态仍在 child 执行之前提交；重试快照仍在首次模型尝试之前冻结
 Session。
 
-前台启动只提交一次 writer 登记和初始状态，然后把该状态直接交给进程内 runner。runner 仍发送首次观察者更新，
+前台启动只提交一次 writer 登记和初始状态，然后把该状态交给同一 Pi 进程内、每次运行独立的 Bun Worker 中的共享 runner。runner 仍发送首次观察者更新，
 但不重新创建或重写这些启动 artifact。初始 turn 与 Tool 计数均为零；首次通知保留已提交的时间戳。
-这份交接状态不会序列化到后台 runner 配置。detached 启动、恢复握手、目录 claim 和取消操作仍由原有所有者负责。
+这份通过 structured clone 传递的状态不会持久化到后台 runner 配置。detached 启动、恢复握手、目录 claim 和取消操作仍由原有所有者负责。
+
+Worker 在 Pi UI 线程之外求值并执行共享 child 引擎。前台控制、状态投影和 Session 提交仍由 Pi 负责。
+适配器快照保存 parent Host 的可执行文件和入口参数，打包时保留 Source URL，并用 Host 解析器解析 Effect 依赖。
+完成前等待 Worker 的 close 事件；中断时随后复用现有恢复流程记录 owner 退出、回收 writer，再把状态转为终态。
+每次运行释放自己的 Worker 和 bundle URL。逐次打包避免引入新的 Session 缓存，但增加启动工作和临时内存；
+界面响应与总资源成本分别测量。
 
 必要依赖的首次加载前后各让出一个 timer turn。并发调用共享加载中的 Promise；失败允许重试，热态调用不增加 timer。
 无效启动输入不加载 builder。child protocol 在 spawn 之前加载完毕，恢复与所有权操作保持原有顺序。

@@ -18,7 +18,6 @@ import type { AsyncStatus, Details, NestedRunSummary } from "../../shared/types.
 import { readStatus } from "../../shared/utils.ts";
 import { deliverStopRequest } from "../background/control-channel.ts";
 import type { BackgroundRunnerStatus } from "../background/initial-status.ts";
-import { deferredModule } from "../shared/deferred-module.ts";
 import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { recordForegroundOwnerExit } from "./owner-exit.ts";
 import {
@@ -27,6 +26,7 @@ import {
 	projectForegroundCompletion,
 	projectForegroundStatus,
 } from "./result-projection.ts";
+import { runForegroundWorker } from "./worker.ts";
 
 export interface ForegroundExecutionDependencies {
 	acquireStatusClaim(asyncDir: string): { release(): void } | undefined;
@@ -43,18 +43,10 @@ export interface ForegroundExecutionDependencies {
 	writeStatus(filePath: string, status: AsyncStatus): void;
 }
 
-const loadRunner = deferredModule(() => import("../background/subagent-runner.ts"));
-
 const DEFAULT_DEPENDENCIES: ForegroundExecutionDependencies = {
 	acquireStatusClaim: tryAcquireStatusMutationClaim,
 	onStatus() {},
-	runConfigured(config, onStatus, committedStatus) {
-		return Effect.tryPromise({
-			try: async () =>
-				(await loadRunner()).runConfiguredBackground(config, { afterStatusUpdate: onStatus }, committedStatus),
-			catch: (error) => error,
-		});
-	},
+	runConfigured: runForegroundWorker,
 	readCompletion(filePath) {
 		const value = parseJsonValue(fs.readFileSync(filePath, "utf8"));
 		return validateCompletion(value, filePath);
@@ -340,6 +332,11 @@ export function runForegroundConfig(
 					details,
 				};
 			}),
+		),
+		Effect.onInterrupt(() =>
+			recoverForegroundRun(config, deps, notifyStatus, "Foreground Agent execution owner was interrupted.").pipe(
+				Effect.asVoid,
+			),
 		),
 	);
 	if (!signal) return execute;

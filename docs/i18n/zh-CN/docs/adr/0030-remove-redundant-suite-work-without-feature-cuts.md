@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0030-remove-redundant-suite-work-without-feature-cuts.md; translation-source-sha256: 71ebdf8b0a7f5cab53c9c870b07d6fc5aecebf02e83c56354d7e86d93de2fe1e -->
+<!-- translation-source: docs/adr/0030-remove-redundant-suite-work-without-feature-cuts.md; translation-source-sha256: f4d5b1e8a9684c16af8766eed98318121059c9166fcccba9d204a06dcd16f986 -->
 
 ---
 status: accepted
@@ -25,6 +25,11 @@ Vibe Line Spinner 卡顿。目标不限于 ADR 0028 覆盖的 Tool Display 路�
 
 仅把原有计算移到其他线程，并不意味着总资源消耗下降。资源效率和界面持续响应是两个独立要求，
 必须分别提供证据。
+
+维护者于 2026-09-06 澄清：上述区分不禁止执行隔离。必要且可独立执行的计算与依赖求值，优先采用最小的
+现有 Worker 或子进程边界。输入、渲染和规范 Session 提交仍由 Pi 负责；`async` 或让出一次 timer turn
+本身不等于并行执行。保留已有测量支持的简单去重，不把工作扩展成推测性缓存或无边界的微优化审计。
+隔离改动必须分别验证输入、取消、恢复和数据一致性；即使内存或耗时上升，也要如实报告总资源成本。
 
 ### 已确认的资源取舍
 

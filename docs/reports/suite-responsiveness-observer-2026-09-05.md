@@ -387,3 +387,65 @@ The focused regression group passed eight tests; Context sample `v3bIJA` failed 
 capture gap, including a 51.963 ms capture call. It remains inconclusive. The same-source isolated Context rerun passed;
 the numeric evidence records both outcomes. These regression runs do not apply product performance gates.
 After the persisted Tool-result assertion was added, the final-source Goal regression passed again (one test, four assertions).
+
+## Foreground Agent execution isolation, 2026-09-06
+
+The final direct-Agent sample passed the frozen interaction gates after the shared child engine moved into a
+per-run Worker in the existing Pi process. The same-base in-process baseline failed the Spinner gate at 171.120 ms;
+the final Worker sample measured 128.513 ms. Code Mode with an old Ledger also passed on final production Source.
+These are individual samples on a shared machine, not a statistical guarantee or proof of lower total resource use.
+
+The [Agents contract](../../packages/pi-stuff/src/subagents/README.md) owns this boundary. Pi retains input, rendering
+and parent Session commits. The Worker runs the existing foreground/background child engine, preserving its stop
+channel, writer identities, committed startup status and completion files. The parent waits for the actual Worker
+close event before recovery reaps child writers. No second runtime, persistent worker pool or new dependency was added.
+
+| Sample | Workload and revision | Spinner ms | Input/setup ms | Selection ms | CPU seconds | RSS snapshot MB | Peak charged MB | Frozen gates |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `sXzhdc` | In-process baseline, direct | 171.120 | 15.022 | 14.786 | 26.227454 | 593.441 | 1255.727 | Spinner failed |
+| `9h9eie` | Worker candidate, before close join | 115.963 | 15.444 | 14.455 | 25.021220 | 679.383 | 1544.212 | Passed |
+| `6udvaY` | Same candidate, Code Mode and old Ledger | 119.283 | 15.319 | 16.115 | 28.699533 | 705.307 | 1517.773 | Passed |
+| `1fTkNY` | Final Worker, direct | 128.513 | 25.853 | 14.774 | 26.826419 | 658.158 | 1575.174 | Passed |
+| `gjH5mJ` | Final Worker, Code Mode and old Ledger | 126.176 | 15.946 | 15.211 | 29.905843 | 724.828 | 1571.779 | Passed |
+
+MB means 1,000,000 bytes. CPU covers the native resource scope, including threads and children; it is not main-thread
+CPU. The final direct sample used 2.28% more CPU than the baseline, retained 64,716,800 more RSS bytes after settlement,
+and reached 319,447,040 more peak charged bytes. Execution isolation has a measured memory cost. Charged memory is not
+peak RSS; allocation, GC and wakeups were not measured for this change. There is no same-base Code Mode baseline.
+
+Each row completed two real child Bash Tools, reaped both birth-identified child processes and persisted two successful
+canonical parent Tool results. Automatic Naming requested and persisted one name; Usage refreshed once. Final direct
+and Code Mode samples covered 38.075 and 39.098 active seconds, with 3,149 and 3,191 active captures. Their largest
+observation gaps were 16.263 and 16.182 ms, with no missing Spinner. All resource scopes were verified unloaded.
+
+Runs used exact Pi 0.85.0, embedded Bun 1.3.14, fresh private configuration, 120×40 geometry and isolated PID/network
+namespaces. No profiler, GC marker or injected stall was active. The shared machine and kernel page cache were not
+controlled. The [numeric evidence](suite-responsiveness-agents-2026-09-05.json) retains raw-artifact SHA-256 values,
+source patches and observer snapshots by hash, exact metrics and failed candidates under `foregroundWorkerIsolation`.
+Both final samples match the final production patch based on signed commit `c9582271`; later test and prose edits do
+not change that production patch. Earlier candidates lack the final close join and do not certify its cleanup.
+
+Three failed candidates remain evidence, not acceptance: `SX6bwV` and `iMPKpo` could not resolve `effect/Effect` when
+building inside the complete Suite; `0E4M6y` selected a PATH wrapper because Worker argv no longer identified the
+compiled Pi. The Host adapter now resolves the Package's Effect subpaths and passes the existing Pi launch metadata.
+A regression also exposed that `Worker.terminate()` returns before the thread closes. The final implementation waits
+for `close`; its test failed before that join and passed afterward. A separate interruption regression proves release
+precedes writer reaping and checks the durable owner-exit marker and failed status.
+
+After the final Code Mode capture, the existing lifecycle verifier passed Ctrl-C and shutdown on the same production
+Source: editor return 122.67 ms, shutdown 111.16 ms. It verified that the tracked Agent, shell and grandchild exited and
+the canonical Session retained the cancelled Tool-call receipt. It does not require a cancelled Tool result. The
+existing exact-Host execution matrix then passed all eight single/parallel, fresh/fork and foreground/background
+scenarios. These functional checks do not substitute for the separate interaction and resource measurements above.
+
+```bash
+bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN" --suite --agent foreground --repeat-tool \
+  --resource-scope --gates docs/reports/suite-responsiveness-gates-2026-09-05.json
+# Add --code-mode --ledger for the second final workload; retain the isolation wrapper shown above.
+bun scripts/benchmark-lifecycle.ts --variants suite --scenarios fresh --actions agent-exit \
+  --sizes 120x40 --samples 1 --warmups 0
+bun scripts/verify-agents-execution-matrix.ts
+```
+
+This checkpoint addresses the foreground execution boundary. It does not close the Suite-wide resource criteria or
+certify Pi 0.85.1. The changed code still requires CI at its delivery revision; no merge or local installation is implied.

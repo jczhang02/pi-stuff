@@ -2,7 +2,473 @@
   "date": "2026-09-05",
   "purpose": "Agent observer, controls, gate failures, and initial native scope accounting; not a root-cause or resource-closure claim",
   "gates": "suite-responsiveness-gates-2026-09-05.json",
-  "environment": "Shared Linux machine; fixed official Pi 0.85.0; 120x40; isolated synthetic configuration. Suite samples retain full parent Naming/Usage with loopback HTTP in an isolated network namespace; native controls omit the Suite. No production changes. Profiles are explicitly excluded from acceptance.",
+  "environment": "Shared Linux machine; fixed official Pi 0.85.0; 120x40; isolated synthetic configuration. Suite samples retain full parent Naming/Usage with loopback HTTP in an isolated network namespace; native controls omit the Suite. Initial samples make no production changes; foregroundWorkerIsolation records the later production change. Profiles are explicitly excluded from acceptance.",
+  "foregroundWorkerIsolation": {
+    "date": "2026-09-06",
+    "scope": "Foreground execution isolation in the existing Pi process; response gates and recovery verified, not a total-resource reduction or ps-yon closure",
+    "hostBinarySha256": "0cfd1bf3e9468f1052d172502fa388e8e8e53dcdeb9fa97f1ef828fdd7757072",
+    "environment": "Serial 120x40 runs, exact Pi 0.85.0 / embedded Bun 1.3.14, fresh private configuration, isolated PID/network namespaces, full Suite Naming/Usage. No profiler, GC logging or injected stalls. Shared machine and kernel cache remain uncontrolled.",
+    "limits": {
+      "spinnerMs": 164.76752100000067,
+      "startupInputMs": 38.124123000000054,
+      "steadyInputMs": 40.46531200000072,
+      "selectionMs": 38.311641000000236,
+      "maximumObservationGapMs": 40,
+      "maximumActiveSpinnerAbsenceMs": 0
+    },
+    "productionHashes": {
+      "packages/pi-stuff/src/subagents/src/runs/foreground/execution.ts": "1ecc84489bf491e6555494b60853f2714b42fe662eab7bdab2d2bb104a0711b3",
+      "packages/pi-stuff/src/subagents/src/runs/foreground/worker.ts": "bdb087e00eb813726a14791fa3937f0ed2f1186d1c58e869645e51b1c2c9a156",
+      "packages/pi-stuff/src/subagents/src/runs/foreground/worker-entry.ts": "1310944331ca520450375ae292bf1c2940604d516b8eb26bde0235a18ffa0ba2"
+    },
+    "samples": [
+      {
+        "lookup": "sXzhdc",
+        "disposition": "baseline: Spinner gate failed",
+        "breaches": [
+          "maximumSpinnerFrameMs"
+        ],
+        "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+        "seededSession": false,
+        "codeMode": false,
+        "agentMode": "foreground",
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "requestedToolCount": 2,
+        "automaticUsageRefreshes": 1,
+        "columns": 120,
+        "rows": 40,
+        "captureCount": 3667,
+        "durationMs": 45326.29686,
+        "maximumCaptureMs": 6.499835999999959,
+        "maximumObservationGapMs": 16.960817999999563,
+        "maximumSpinnerAbsenceMs": 0,
+        "maximumSpinnerFrameMs": 171.11968100000013,
+        "activeDurationMs": 37650.784458,
+        "activeCaptureCount": 3048,
+        "maximumInputMs": 15.021568000000116,
+        "maximumStartupInputMs": 14.858978999999636,
+        "maximumSteadyInputMs": 15.021568000000116,
+        "maximumSelectionMs": 14.78599899999972,
+        "maximumSelectionSetupMs": 15.021568000000116,
+        "resourceScope": {
+          "boundary": "after-observation-before-host-shutdown",
+          "readStartedMs": 45750.375754,
+          "readCompletedMs": 45767.572138,
+          "cpuUs": {
+            "total": 26227454,
+            "user": 23215244,
+            "system": 3012210
+          },
+          "memoryCurrentChargedBytes": 611274752,
+          "memoryPeakChargedBytes": 1255727104,
+          "rssSnapshotBytes": 593440768,
+          "processes": [
+            {
+              "pid": 60,
+              "processStartIdentity": "linux:1871369",
+              "rssBytes": 593440768,
+              "io": {
+                "rchar": 241054278,
+                "wchar": 27447409,
+                "syscr": 22106,
+                "syscw": 7255,
+                "read_bytes": 480768,
+                "write_bytes": 27179035,
+                "cancelled_write_bytes": 0
+              }
+            }
+          ]
+        },
+        "namingRequests": 1,
+        "persistedNames": 1,
+        "successfulCanonicalToolResults": 2,
+        "sourceCommit": "c9582271b55546488e52a5a1569f46569ca2a779",
+        "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sourceHashes": {
+          "scripts/benchmark-responsiveness.ts": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9",
+          "scripts/host-resource-scope.ts": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee",
+          "scripts/pty-observation.ts": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40",
+          "test/fixtures/responsiveness-provider.ts": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3",
+          "test/fixtures/faux-provider.ts": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+        },
+        "evidenceSha256": "d23870b27e6de9d6ee8076fcb269494ca24301207f3e495e5dd55b6af0aa8664",
+        "providerSha256": "00912bd13f42f691f02fdd755be6bb81f317170821692c682bcfa7bd6dc9bcdc",
+        "sessionSha256": "21a219d060e1e00c32e99597d3b9376cb040ebf1ccc0f49b1be381a9c18d8868"
+      },
+      {
+        "lookup": "9h9eie",
+        "disposition": "candidate before actual Worker-close join: gates passed",
+        "breaches": [],
+        "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+        "seededSession": false,
+        "codeMode": false,
+        "agentMode": "foreground",
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "requestedToolCount": 2,
+        "automaticUsageRefreshes": 1,
+        "columns": 120,
+        "rows": 40,
+        "captureCount": 3726,
+        "durationMs": 44565.392864,
+        "maximumCaptureMs": 3.1008350000001883,
+        "maximumObservationGapMs": 17.106620999999905,
+        "maximumSpinnerAbsenceMs": 0,
+        "maximumSpinnerFrameMs": 115.96275800000149,
+        "activeDurationMs": 37736.382268,
+        "activeCaptureCount": 3157,
+        "maximumInputMs": 15.444148000000496,
+        "maximumStartupInputMs": 13.647788000000219,
+        "maximumSteadyInputMs": 15.444148000000496,
+        "maximumSelectionMs": 14.454737000000023,
+        "maximumSelectionSetupMs": 14.209355999999389,
+        "resourceScope": {
+          "boundary": "after-observation-before-host-shutdown",
+          "readStartedMs": 44947.325286,
+          "readCompletedMs": 44961.002163,
+          "cpuUs": {
+            "total": 25021220,
+            "user": 21660977,
+            "system": 3360243
+          },
+          "memoryCurrentChargedBytes": 698982400,
+          "memoryPeakChargedBytes": 1544212480,
+          "rssSnapshotBytes": 679383040,
+          "processes": [
+            {
+              "pid": 59,
+              "processStartIdentity": "linux:2150436",
+              "rssBytes": 679383040,
+              "io": {
+                "rchar": 297443048,
+                "wchar": 27506444,
+                "syscr": 46506,
+                "syscw": 30422,
+                "read_bytes": 7554048,
+                "write_bytes": 27049827,
+                "cancelled_write_bytes": 0
+              }
+            }
+          ]
+        },
+        "namingRequests": 1,
+        "persistedNames": 1,
+        "successfulCanonicalToolResults": 2,
+        "sourceCommit": "c9582271b55546488e52a5a1569f46569ca2a779",
+        "sourceDiffSha256": "5b95ed29e65e54439e90ea0e863510eb63257e607684bb73a13514573681239a",
+        "sourceHashes": {
+          "scripts/benchmark-responsiveness.ts": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9",
+          "scripts/host-resource-scope.ts": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee",
+          "scripts/pty-observation.ts": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40",
+          "test/fixtures/responsiveness-provider.ts": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3",
+          "test/fixtures/faux-provider.ts": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+        },
+        "evidenceSha256": "849eb450a92dae50355464d60e96a50c081d7dbaaee879b4e3ad9de502751f35",
+        "providerSha256": "2483ca8023a9d22479a1007a0bdef03757a6d6a8d799827f56e5b302a089d52a",
+        "sessionSha256": "572aa0e3da1af77468f57f4ed22d119ba950156510707688cade868a4092d6e7"
+      },
+      {
+        "lookup": "6udvaY",
+        "disposition": "Code Mode and old Ledger candidate before actual Worker-close join: gates passed",
+        "breaches": [],
+        "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+        "seededSession": true,
+        "codeMode": true,
+        "agentMode": "foreground",
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "requestedToolCount": 2,
+        "automaticUsageRefreshes": 1,
+        "columns": 120,
+        "rows": 40,
+        "captureCount": 3768,
+        "durationMs": 46076.627374,
+        "maximumCaptureMs": 5.134420999998838,
+        "maximumObservationGapMs": 19.09288800000013,
+        "maximumSpinnerAbsenceMs": 0,
+        "maximumSpinnerFrameMs": 119.28324799999973,
+        "activeDurationMs": 38468.282080000004,
+        "activeCaptureCount": 3154,
+        "maximumInputMs": 15.318599999999606,
+        "maximumStartupInputMs": 15.318599999999606,
+        "maximumSteadyInputMs": 14.90815400000065,
+        "maximumSelectionMs": 16.115026000000398,
+        "maximumSelectionSetupMs": 15.318599999999606,
+        "resourceScope": {
+          "boundary": "after-observation-before-host-shutdown",
+          "readStartedMs": 47505.989981,
+          "readCompletedMs": 47520.31159,
+          "cpuUs": {
+            "total": 28699533,
+            "user": 24734111,
+            "system": 3965421
+          },
+          "memoryCurrentChargedBytes": 691060736,
+          "memoryPeakChargedBytes": 1517772800,
+          "rssSnapshotBytes": 705306624,
+          "processes": [
+            {
+              "pid": 75,
+              "processStartIdentity": "linux:2202553",
+              "rssBytes": 696598528,
+              "io": {
+                "rchar": 316659346,
+                "wchar": 27258364,
+                "syscr": 46845,
+                "syscw": 30745,
+                "read_bytes": 0,
+                "write_bytes": 26746412,
+                "cancelled_write_bytes": 0
+              }
+            },
+            {
+              "pid": 1095,
+              "processStartIdentity": "linux:2203681",
+              "rssBytes": 8708096,
+              "io": {
+                "rchar": 164875,
+                "wchar": 2644,
+                "syscr": 18,
+                "syscw": 119,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "cancelled_write_bytes": 0
+              }
+            }
+          ]
+        },
+        "namingRequests": 1,
+        "persistedNames": 1,
+        "successfulCanonicalToolResults": 2,
+        "sourceCommit": "c9582271b55546488e52a5a1569f46569ca2a779",
+        "sourceDiffSha256": "3ef359f0404d5b6882e7ddf09ba102b4bbc398c888198eccebec341fcdf3a4fb",
+        "sourceHashes": {
+          "scripts/benchmark-responsiveness.ts": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9",
+          "scripts/host-resource-scope.ts": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee",
+          "scripts/pty-observation.ts": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40",
+          "test/fixtures/responsiveness-provider.ts": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3",
+          "test/fixtures/faux-provider.ts": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+        },
+        "evidenceSha256": "873786906b8054ee07367bc852e5f5bc1f2cc283c0ae2be8ac4c9b67007525af",
+        "providerSha256": "75f5d7914bb44b0ec129394573468c673e1dfd4a5b59ee04f8d1d9350f285917",
+        "sessionSha256": "1811e5aebc631420f312cd7b377fdfa8846d01efce0fda97c27a355b0e231de0"
+      },
+      {
+        "lookup": "1fTkNY",
+        "disposition": "final direct foreground: gates passed",
+        "breaches": [],
+        "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+        "seededSession": false,
+        "codeMode": false,
+        "agentMode": "foreground",
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "requestedToolCount": 2,
+        "automaticUsageRefreshes": 1,
+        "columns": 120,
+        "rows": 40,
+        "captureCount": 3737,
+        "durationMs": 45140.388896,
+        "maximumCaptureMs": 4.127042999999503,
+        "maximumObservationGapMs": 16.262909000000036,
+        "maximumSpinnerAbsenceMs": 0,
+        "maximumSpinnerFrameMs": 128.5127539999994,
+        "activeDurationMs": 38074.79338,
+        "activeCaptureCount": 3149,
+        "maximumInputMs": 25.85303500000009,
+        "maximumStartupInputMs": 13.467709000000468,
+        "maximumSteadyInputMs": 25.85303500000009,
+        "maximumSelectionMs": 14.773933999997098,
+        "maximumSelectionSetupMs": 25.85303500000009,
+        "resourceScope": {
+          "boundary": "after-observation-before-host-shutdown",
+          "readStartedMs": 45535.60504,
+          "readCompletedMs": 45549.433715,
+          "cpuUs": {
+            "total": 26826419,
+            "user": 23246426,
+            "system": 3579993
+          },
+          "memoryCurrentChargedBytes": 676962304,
+          "memoryPeakChargedBytes": 1575174144,
+          "rssSnapshotBytes": 658157568,
+          "processes": [
+            {
+              "pid": 59,
+              "processStartIdentity": "linux:2228983",
+              "rssBytes": 658157568,
+              "io": {
+                "rchar": 297445845,
+                "wchar": 27509329,
+                "syscr": 46645,
+                "syscw": 30440,
+                "read_bytes": 532480,
+                "write_bytes": 27049925,
+                "cancelled_write_bytes": 0
+              }
+            }
+          ]
+        },
+        "namingRequests": 1,
+        "persistedNames": 1,
+        "successfulCanonicalToolResults": 2,
+        "sourceCommit": "c9582271b55546488e52a5a1569f46569ca2a779",
+        "sourceDiffSha256": "0beb2fb2ce917a03eac0493ae525a475dc2d8e01679da1c3eca11d99e4755a0f",
+        "sourceHashes": {
+          "scripts/benchmark-responsiveness.ts": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9",
+          "scripts/host-resource-scope.ts": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee",
+          "scripts/pty-observation.ts": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40",
+          "test/fixtures/responsiveness-provider.ts": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3",
+          "test/fixtures/faux-provider.ts": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+        },
+        "evidenceSha256": "4515c6ee519e8b9f6e5fb6a0eec99e01cb42eedc68321cad9d12ffc11ed6cdda",
+        "providerSha256": "9fd416c7a2b0d5c8b6903d25aeb406b661ce40f5452a387becbd9fc87a17c041",
+        "sessionSha256": "6d6d5e1c41d161dbec35187afc6778d60698afe446c581d44dc48fd65121f2cc"
+      },
+      {
+        "lookup": "gjH5mJ",
+        "disposition": "final Code Mode and old Ledger: gates passed",
+        "breaches": [],
+        "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+        "seededSession": true,
+        "codeMode": true,
+        "agentMode": "foreground",
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "requestedToolCount": 2,
+        "automaticUsageRefreshes": 1,
+        "columns": 120,
+        "rows": 40,
+        "captureCount": 3760,
+        "durationMs": 46012.940549,
+        "maximumCaptureMs": 4.969017999999778,
+        "maximumObservationGapMs": 16.18243799999982,
+        "maximumSpinnerAbsenceMs": 0,
+        "maximumSpinnerFrameMs": 126.17621899999904,
+        "activeDurationMs": 39097.547588,
+        "activeCaptureCount": 3191,
+        "maximumInputMs": 15.94635500000004,
+        "maximumStartupInputMs": 14.940292999999656,
+        "maximumSteadyInputMs": 15.94635500000004,
+        "maximumSelectionMs": 15.211382999998023,
+        "maximumSelectionSetupMs": 15.94635500000004,
+        "resourceScope": {
+          "boundary": "after-observation-before-host-shutdown",
+          "readStartedMs": 47305.317713,
+          "readCompletedMs": 47323.166451,
+          "cpuUs": {
+            "total": 29905843,
+            "user": 25808709,
+            "system": 4097134
+          },
+          "memoryCurrentChargedBytes": 709906432,
+          "memoryPeakChargedBytes": 1571778560,
+          "rssSnapshotBytes": 724828160,
+          "processes": [
+            {
+              "pid": 83,
+              "processStartIdentity": "linux:2243947",
+              "rssBytes": 716091392,
+              "io": {
+                "rchar": 316706006,
+                "wchar": 27262275,
+                "syscr": 46991,
+                "syscw": 30764,
+                "read_bytes": 0,
+                "write_bytes": 26746524,
+                "cancelled_write_bytes": 0
+              }
+            },
+            {
+              "pid": 1070,
+              "processStartIdentity": "linux:2245013",
+              "rssBytes": 8736768,
+              "io": {
+                "rchar": 164875,
+                "wchar": 2644,
+                "syscr": 18,
+                "syscw": 119,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "cancelled_write_bytes": 0
+              }
+            }
+          ]
+        },
+        "namingRequests": 1,
+        "persistedNames": 1,
+        "successfulCanonicalToolResults": 2,
+        "sourceCommit": "c9582271b55546488e52a5a1569f46569ca2a779",
+        "sourceDiffSha256": "3f16799d701eae9200910217e5fc9358902f48224d9d6a9dd351e764814d4ad7",
+        "sourceHashes": {
+          "scripts/benchmark-responsiveness.ts": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9",
+          "scripts/host-resource-scope.ts": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee",
+          "scripts/pty-observation.ts": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40",
+          "test/fixtures/responsiveness-provider.ts": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3",
+          "test/fixtures/faux-provider.ts": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+        },
+        "evidenceSha256": "c7b16fd7370017ea4241faa3b972430b45bf15371cea8f89961421cef2761a16",
+        "providerSha256": "b7cd4733a684e541026f11cc6780cbef2b2bc0c81c7efc1d22889059aee253d8",
+        "sessionSha256": "f0db484aa28d9a975c9ca24300e66cd64978aaf6ae3da32dfdad4c92d177c278"
+      }
+    ],
+    "failedCandidates": [
+      {
+        "lookup": "SX6bwV",
+        "disposition": "failed diagnostic; not acceptance",
+        "cause": "Foreground Worker build could not resolve effect/Effect under the complete Suite",
+        "evidenceSha256": "f1589d233e1cfd68b157521716b5876fb572bef117df5babca01e4e58dbab772",
+        "sourceDiffSha256": "8e0029b3de4a29d6f02db8f9d8128b61f4fb45ceb9be56c6f13cd92bf5ed08f9"
+      },
+      {
+        "lookup": "iMPKpo",
+        "disposition": "failed diagnostic; not acceptance",
+        "cause": "Same unresolved effect/Effect build; improved error reached the canonical Tool result",
+        "evidenceSha256": "67575871c6e0265f93ed83d5b8c55757a55708cf50adda950f107ec42357cf79",
+        "sourceDiffSha256": "f246f4d079d6720a6d67e3e5f04827a662ab1e41ed9d78eccb645dc06c4452ad"
+      },
+      {
+        "lookup": "0E4M6y",
+        "disposition": "failed diagnostic; not acceptance",
+        "cause": "Worker argv selected the PATH wrapper instead of the certified Pi child executable",
+        "evidenceSha256": "123c49d6bd9703635cc3362f557a8b93271ffcb945b274a64cc71568c3d077af",
+        "sourceDiffSha256": "766a118864bc0be301e0ef79f71267ff6552d8db4f5f4ed76fb16d3c608f5e58"
+      }
+    ],
+    "cancellation": {
+      "generatedAt": "2026-09-06T12:48:04.310Z",
+      "host": {
+        "profile": "0.85.0+source.107d79f11072.binary.0cfd1bf3e946.bun.1.3.14",
+        "provenance": "release-binary-allowlist"
+      },
+      "sample": {
+        "action": "agent-exit",
+        "columns": 120,
+        "iteration": 0,
+        "rows": 40,
+        "scenario": "fresh",
+        "shutdownMs": 111.16,
+        "startupMs": 3607.47,
+        "variant": "suite",
+        "warmup": false,
+        "interruptMs": 122.67
+      },
+      "evidenceSha256": "5e61b24b6cf6f21835a3ad69e9395b2c7746be77aac69f4b57f00b3c26913d4d",
+      "result": "Existing lifecycle verifier passed tracked Agent, shell and grandchild exit and canonical Session Tool-call receipt; no cancelled Tool-result or Naming/Usage assertion."
+    },
+    "executionMatrix": {
+      "result": "All eight existing exact-Host execution-matrix scenarios passed on final production Source after the final gated sample and cancellation check.",
+      "command": "PI_BIN=<certified-pi> PI_STUFF_CODE_MODE_HOST=<verified-helper> bun scripts/verify-agents-execution-matrix.ts"
+    },
+    "limitations": [
+      "Single samples, not a statistical performance guarantee.",
+      "Direct baseline versus final: CPU +2.28%, post-settlement RSS +64,716,800 bytes, peak charged memory +319,447,040 bytes; no total-resource saving claim.",
+      "Charged memory is not peak RSS; RSS snapshots exclude already-exited children. Allocation, GC and wakeups were not measured for this change.",
+      "No same-base Code Mode baseline; pre-close candidates are retained but do not certify final cleanup.",
+      "Functional cancellation and execution-matrix checks do not establish ps-yon-wide resource bounds or final PR CI."
+    ]
+  },
   "sampleOrder": [
     "zmHdBv",
     "KHWw6O",

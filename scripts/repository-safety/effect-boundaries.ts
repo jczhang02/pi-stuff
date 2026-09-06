@@ -169,6 +169,8 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/subagents/src/runs/foreground/launch-builders.ts",
 		"packages/pi-stuff/src/subagents/src/runs/foreground/launch-preparation.ts",
 		"packages/pi-stuff/src/subagents/src/runs/foreground/subagent-executor.ts",
+		"packages/pi-stuff/src/subagents/src/runs/foreground/worker.ts",
+		"packages/pi-stuff/src/subagents/src/runs/foreground/worker-entry.ts",
 		"packages/pi-stuff/src/subagents/src/ui/agent-roster.ts",
 		"packages/pi-stuff/src/tool-display/index.ts",
 		"packages/pi-stuff/src/tool-display/registration.ts",
@@ -212,6 +214,8 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/web/runtime/xai-search.ts",
 	],
 	nativeAdapters: [
+		"packages/pi-stuff/src/subagents/src/runs/foreground/worker.ts",
+		"packages/pi-stuff/src/subagents/src/runs/foreground/worker-entry.ts",
 		"packages/pi-stuff/src/background-work/src/monitor-native.ts",
 		"packages/pi-stuff/src/background-work/src/process-supervisor.mjs",
 		"packages/pi-stuff/src/background-work/src/process.ts",

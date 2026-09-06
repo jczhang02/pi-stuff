@@ -69,10 +69,17 @@ and at least two model candidates. Required recovery records, writer ownership, 
 before child execution; fallback snapshots still freeze the Session before the first model attempt.
 
 Foreground startup commits the writer registry and initial status once, then passes that status directly to the
-in-process runner. The runner still publishes its first observer update without recreating or rewriting those startup
+shared runner in a per-run Bun Worker within the same Pi process. The runner still publishes its first observer update without recreating or rewriting those startup
 artifacts. Initial turn and Tool counts are zero; the first notification retains the committed timestamp. This
-handoff is never serialized into background runner configuration. Detached starts, revival handshakes, directory
+structured-clone handoff is never persisted in background runner configuration. Detached starts, revival handshakes, directory
 claims and cancellation keep their existing ownership.
+
+The Worker evaluates and executes the shared child engine off Pi's UI thread. Pi retains foreground controls, status
+projection and Session commits. The adapter snapshots the parent Host executable and entry arguments, preserves Source
+URLs during bundling, and uses the Host resolver for Effect dependencies. Completion waits for the Worker close event;
+interruption then records owner exit and reaps writers through the existing recovery path before terminalizing status.
+Each run releases its Worker and bundle URL. Per-run bundling avoids a new Session cache, but adds startup work and
+temporary memory; responsiveness and total resource cost are measured separately.
 
 Necessary first-use dependency loads yield a timer turn before and after each load. Concurrent callers share the
 pending import; failures allow a retry, and warm calls add no timers. Invalid launch inputs do not load builders.
