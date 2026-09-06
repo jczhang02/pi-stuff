@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { CommandMonitorEvidence } from "../../../packages/pi-stuff/src/background-work/src/command-monitor-evidence.js";
+import { spawnSupervisor } from "../../../packages/pi-stuff/src/background-work/src/process.js";
 import {
 	BoundedOutputFile,
 	captureProcessIdentity,
@@ -397,33 +398,30 @@ test("rolls back a spawned supervisor when post-spawn metadata persistence fails
 
 test("cancels and retains a published command when its acknowledgement is invalid", async () => {
 	const root = temporaryRoot();
-	class CorruptAcknowledgementStorage extends WorkRunStorage {
-		private acknowledgementWritten = false;
-
-		override commandAuthorizationPath(id: string): string {
-			const authorizationPath = super.commandAuthorizationPath(id);
-			if (!this.acknowledgementWritten) {
-				this.acknowledgementWritten = true;
-				writeFileSync(
-					`${authorizationPath}.ack`,
-					`${JSON.stringify({
-						supervisorPid: process.pid,
-						supervisorStarted: "wrong-identity",
-						token: "wrong-token",
-						version: 1,
-					})}\n`,
-					{ mode: 0o600 },
-				);
-			}
-			return authorizationPath;
-		}
-	}
 	let terminationAttempts = 0;
-	const storage = new CorruptAcknowledgementStorage(root, "work-test-session", {
+	const storage = new WorkRunStorage(root, "work-test-session", {
 		authorityKey: TEST_WORK_AUTHORITY_KEY,
 	});
 	const active = configuredRuntime(root, {
 		storage,
+		supervisorFactory: (executable, encoded, options) => {
+			const envelope: { commandAcknowledgementPath: string } = JSON.parse(
+				Buffer.from(encoded, "base64url").toString("utf8"),
+			);
+			writeFileSync(
+				envelope.commandAcknowledgementPath,
+				`${JSON.stringify({
+					supervisorPid: process.pid,
+					supervisorStarted: "wrong-identity",
+					token: "wrong-token",
+					version: 1,
+				})}\n`,
+				{ mode: 0o600 },
+			);
+			// The real supervisor must not overwrite the deliberately invalid acknowledgement.
+			envelope.commandAcknowledgementPath += ".supervisor";
+			return spawnSupervisor(executable, Buffer.from(JSON.stringify(envelope)).toString("base64url"), options);
+		},
 		signalSupervisor: (supervisor, identity, signal) => {
 			terminationAttempts += 1;
 			if (terminationAttempts === 1) return "unresolved";
