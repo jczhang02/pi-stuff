@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: eef26ee16e67c587d98ec4c6a5357a85202cef42ce0257cd8062d7a8626630fc -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 39c6e17fa3d9cbec69e9a4db06d42dad14bfd1d79d9f7df168b1d9cbe58b8690 -->
 
 # 兼容性
 
@@ -95,3 +95,5 @@ changelog、归档验收报告、研究笔记和已捕获 prototype 中的旧版
 
 Codex Capability 只为认证 Linux x64 profile 打包保留的原生 helper。在其他目标上，命令和普通 Pi turn 仍然
 可用，不可用的 Tool 会返回有界恢复错误。
+
+PTY 验证器会探测可选 tmux 服务端设置；Ubuntu 基线不依赖 `extended-keys-format`。同一版本的必需 CI 证据按照[验证策略](../../../../docs/code-quality.md#risk-based-verification)复用；[交付发布器](../../../../docs/agents/issue-tracker.md#verified-ci-evidence)会在报告交付前验证这些结果。独立的每周上游检查会报告 npm `latest` 超过支持版本的情况，不会自动更改支持范围。

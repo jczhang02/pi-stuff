@@ -165,7 +165,7 @@ class GoalPtySession {
 		}
 		const serverOptions = this.tmux(["show-options", "-s"]);
 		if (/^extended-keys-format\b/m.test(serverOptions)) {
-			this.tmux(["set-option", "-g", "extended-keys-format", "csi-u"]);
+			this.tmux(["set-option", "-s", "extended-keys-format", "csi-u"]);
 		}
 		const geometry = this.tmux(["display-message", "-p", "-t", this.target, "#{pane_width}x#{pane_height}"]).trim();
 		if (geometry !== `${String(this.options.columns)}x${String(this.options.rows)}`) {

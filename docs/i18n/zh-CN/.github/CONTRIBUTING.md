@@ -1,44 +1,25 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 25f0a1ec6be86536a64078bfb57a4bc48167b9f5465e40c1564e9d2f3e07ea7c -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 3e075199d77474cbe675f62269e755995dad0bf97e83b98bf201000770cc4a88 -->
 
 # 贡献指南
 
-## 开始之前
-
-1. 阅读 `AGENTS.md`、`CONTEXT.md` 和相关 ADR。
-2. 使用 Beads 管理已经接受的工作，并在实现前认领一个 ready issue。
-3. 让变更始终处于 Pi 原生 Package 与 Extension 契约之内。
-
-外部缺陷与功能请求可以先从 GitHub issue 表单进入。维护者会在实现前把接受的工作纳入 Beads。
+遵循 [AGENTS.md](../AGENTS.md) 中按任务读取的要求和工程边界。已接受的共享工作按 [Issue 跟踪契约](../docs/agents/issue-tracker.md)使用 Beads；外部请求先由维护者接纳。
 
 ## 开发
 
-使用 Bun 1.4.0：
+使用仓库固定的 Bun 版本，遵循[验证政策](../docs/code-quality.md#按风险验证)，包括纯文档变更路径和复用同一版本的必要 CI 证据。普通自动化测试保持离线且无需凭据；真实 Provider 或外部 Service 验收需要显式选择。
 
-```bash
-bun install --frozen-lockfile --ignore-scripts
-bun run check
-bun run test
-```
-
-测试必须覆盖约定的公开接缝；验证期间必须离线，而且不得调用 LLM 或要求凭据。
-
-命令范围和迁移状态见[质量保障指南](../docs/quality-assurance.md)。
+本地工作使用 `bun run check` 执行 Static Checks，使用 `bun run test` 执行离线 Tests，使用 `bun run verify` 执行只读 Plan/Checks/selected-Tests 流程。命令范围和迁移状态见[质量保障指南](../docs/quality-assurance.md)。
 
 ## Package 变更
 
-Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版本或发布。当行为变化需要持久的用户可见
-记录时，更新 `docs/releases/` 中的发布说明。详细变更历史由 Git 保留。
-
-不要只手工修改生成的组合输出。请修改 `packages/pi-stuff/suite.json`，运行 `bun run suite:generate`，再用
-`bun run test --file source-install` 验证源码安装。本仓库没有 registry 发布或 Changesets 流程。
+Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版本或发布。行为需要持久用户记录时更新 `docs/releases/`。Suite 组合变化时，修改 `packages/pi-stuff/suite.json` 并运行 `bun run suite:generate`。使用适用的 Acceptance 测试 `test/acceptance/repository/source-install.test.ts` 验证源码安装。本仓库没有 registry 发布或 Changesets 流程。
 
 ## 提交
 
 使用带签名的 Conventional Commit：
 
 ```text
-<type>(<scope>): <祈使句主题>
+<type>(<scope>): <imperative subject>
 ```
 
-维护者可以把已经验证的提交直接 push 到 `main`。外部贡献应以 pull request 作为代码交付和审查界面；接受
-的范围与状态仍按[问题跟踪契约](../docs/agents/issue-tracker.md)记录在 Beads 中。禁止 force-push 或删除 `main`。
+维护者可以把已验证的提交 push 到 `main`。外部贡献以 pull request 交付和审查；接受的范围与状态按 [issue-tracker 契约](../docs/agents/issue-tracker.md)记录在 Beads。禁止 force-push 或删除 `main`。

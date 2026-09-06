@@ -37,6 +37,7 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 
 ## Design and migration
 
+- [Astra instruction and delivery review](astra-instruction-delivery-review-2026-09-05.md)
 - [Single-Package migration](single-package-migration.md)
 - [Lifecycle performance](pi-stuff-lifecycle-performance.md)
 - [Context submission concurrency](context-submit-concurrency-research-2026-08-14.md)

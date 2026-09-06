@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: a074ffc164cf65d4f7e05830207705cb1b9f4c4876d56f2f06ff96a24353c769 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: fa65ca647d5235709f8e358829616938076720557c570b38850ea6dae5cad6eb -->
 
 # 报告
 
@@ -38,6 +38,7 @@
 
 ## 设计与迁移
 
+- [Astra 指令与交付审查](astra-instruction-delivery-review-2026-09-05.md)
 - [单 Package 迁移](single-package-migration.md)
 - [生命周期性能](pi-stuff-lifecycle-performance.md)
 - [Context 提交并发](context-submit-concurrency-research-2026-08-14.md)
@@ -45,5 +46,7 @@
 原始 JSON、ANSI、文本和图像证据与所属报告放在一起。历史版本、路径和哈希保持原样，便于确认当时的环境。
 
 - [ps-eck 恢复和 Host 边界（2026-09-05）](ps-eck-recovery-host-boundary-2026-09-05.md)
+
+- [质量保障迁移 — 2026-09-06](quality-assurance-migration-20260906.md)：命令、测试与 CI 分批迁移证据。
 
 - [质量保障迁移 — 2026-09-06](quality-assurance-migration-20260906.md)：命令、测试与 CI 分批迁移证据。

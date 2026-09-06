@@ -52,10 +52,12 @@ comment instead of blindly creating another. Report publication as incomplete un
 
 ## Delivery and closure
 
-For every repository work item, including work started through generic implementation skills:
+For accepted durable repository work, including work started through generic implementation skills. Read-only
+exploration, discussion, and current-turn checklists do not require tracker mutations:
 
 1. Read and claim the Bead. Keep scope and relationships there. Work in an isolated worktree.
-2. Finish the requested outcome, run the applicable checks and reviews, then sign and push coherent commits.
+2. Finish the requested outcome and the focused checks and review in [code quality](../code-quality.md), then sign and
+   push coherent commits. Reuse the required CI results for that revision instead of rerunning the whole suite locally.
 3. For code work, create or update a PR with the problem, resulting behavior, validation, and the full Issue URL.
    Reuse a PR for the branch rather than creating duplicates. A user-requested branch-only delivery may omit a PR,
    but its reason must be recorded. Do not merge merely to complete this workflow.
@@ -75,8 +77,8 @@ The delivery object has the following fields:
 | --- | --- |
 | `kind` | `code` or `no-code` |
 | `summary` | Nonempty public outcome, including limitations or remaining work |
-| `validation` | Nonempty public evidence of the applicable acceptance and review results |
-| `commits` | Full lowercase 40-character commit SHAs; at least one for code, empty for no-code |
+| `validation` | Nonempty account of focused checks, review, acceptance limitations, and remaining work; not a substitute for verified CI |
+| `commits` | Full lowercase 40-character SHAs; at least one for code, empty for no-code; branch-only lists the final delivery commit last |
 | `pull_request` | Optional positive PR number in this repository; code normally requires it |
 | `no_pr_reason` | Explicit reason for branch-only code delivery, or why no code/PR was needed |
 
@@ -85,6 +87,28 @@ For example, prepare an ignored JSON file containing the existing metadata plus 
 closure reason, missing remote commits, and a PR whose current head is absent from the recorded commits. It reads PR
 merge state directly instead of trusting a free-form claim. No-code work must have a reason and no commit/PR references.
 Open planning Beads may publish without a delivery record; their comment states that delivery is not yet recorded.
+
+### Verified CI evidence
+
+The publisher checks code delivery before synchronization and again before preparing the delivery comment. It reads
+this repository's `.github/workflows/ci.yml` runs for the target SHA, selects the latest eligible run by run number,
+and checks jobs from that run's exact attempt. Required jobs must each have one completed successful result. Missing,
+failed, cancelled, skipped, or pending required evidence rejects publication; a free-form validation statement cannot
+override it. The managed comment links the verified Actions attempt and names the checks that passed.
+
+- PR delivery targets the current PR head. Pull-request and manual runs are eligible. The publisher verifies the current
+  workflow's `Plan`, `Checks`, `Tests`, and `Verify` jobs rather than reclassifying paths; `Tests` may be skipped only
+  when the successful Plan explicitly requires no tests. An incomplete or stale workflow run blocks publication.
+- Branch-only delivery targets the last recorded commit. Push and manual runs are eligible and require the same four
+  jobs, with the same valid no-tests exception. An untested feature branch needs a manual CI run.
+- No-code and open planning records need no CI evidence. Historical code deliveries need retrievable evidence when
+  republished; missing history is not success.
+
+These checks certify recorded CI results, not review quality, signatures, branch protection, or permission to merge.
+Keep those obligations and any additional real-Host acceptance in the work item's criteria. A successful Plan/Checks/
+Tests/Verify aggregate records the workflow result for that revision; it does not replace required real-Host evidence
+outside that workflow. Publication still requires exact comment and Issue readback; remote changes are not transactional,
+so report partial publication and retry if a later check or write fails.
 
 Historical closed Beads follow the same validation when republished: recover their real public evidence and references
 first, and explicitly record branch-only or no-code outcomes where applicable. Do not invent a PR, merged state, or

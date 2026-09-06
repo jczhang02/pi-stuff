@@ -3,8 +3,19 @@ import { type GithubMutation, publishBeads } from "../../../scripts/publish-bead
 
 const SHA = "a".repeat(40);
 const URL = "https://github.com/example/suite";
+type WorkflowRunFixture = {
+	id: number;
+	html_url: string;
+	path: string;
+	head_sha: string;
+	event: string;
+	status: string;
+	conclusion: string | null;
+	run_number: number;
+	run_attempt: number;
+};
 
-function fixture() {
+function records() {
 	const bead = {
 		id: "ps-root",
 		title: "Deliver the change",
@@ -38,6 +49,28 @@ function fixture() {
 		html_url: `${URL}/issues/10#issuecomment-1`,
 		user: { login: "human" },
 	};
+	const workflowRun: WorkflowRunFixture = {
+		id: 20,
+		html_url: `${URL}/actions/runs/20`,
+		path: ".github/workflows/ci.yml",
+		head_sha: SHA,
+		event: "pull_request",
+		status: "completed",
+		conclusion: "success",
+		run_number: 1,
+		run_attempt: 1,
+	};
+	const jobs = [
+		{ name: "Plan", status: "completed", conclusion: "success" },
+		{ name: "Checks", status: "completed", conclusion: "success" },
+		{ name: "Tests", status: "completed", conclusion: "success" },
+		{ name: "Verify", status: "completed", conclusion: "success" },
+	];
+	return { bead, related, pull, human, workflowRun, jobs };
+}
+
+function fixture() {
+	const { bead, related, pull, human, workflowRun, jobs } = records();
 	const comments = [human];
 	const calls: string[][] = [];
 	let corruptReadback = false;
@@ -54,6 +87,13 @@ function fixture() {
 		if (command[1] === "repo") return "example/suite";
 		if (command[2] === "user") return "publisher";
 		const path = command[2] ?? "";
+		if (path.includes("actions/workflows/ci.yml/runs")) return JSON.stringify([{ workflow_runs: [workflowRun] }]);
+		if (path.includes("actions/runs/20/attempts/1/jobs"))
+			return JSON.stringify([
+				{
+					jobs,
+				},
+			]);
 		if (path.includes("/commits/")) return JSON.stringify({ sha: SHA });
 		if (path.includes("/pulls/")) return JSON.stringify(pull);
 		if (path.endsWith("comments?per_page=100")) return JSON.stringify([[human], comments.slice(1)]);
@@ -97,6 +137,8 @@ function fixture() {
 		failAfterCreate: () => {
 			failAfterCreate = true;
 		},
+		workflowRun,
+		jobs,
 	};
 }
 
@@ -219,4 +261,18 @@ test("unknown PR states fail instead of being reported as open", () => {
 	const f = fixture();
 	f.pull.state = "unexpected";
 	expect(() => publishBeads("ps-root", f.run)).toThrow("invalid delivery PR");
+});
+
+test("a no-tests Plan remains publishable with an explicit not-run result", () => {
+	const f = fixture();
+	f.jobs[2] = { name: "Tests", status: "completed", conclusion: "skipped" };
+	publishBeads("ps-root", f.run);
+	expect(f.comments[1]?.body).toContain("Plan, Checks, and Verify passed; Tests not run (verified no-tests plan)");
+});
+
+test("a failed Verify job never certifies delivery", () => {
+	const f = fixture();
+	f.jobs[3] = { name: "Verify", status: "completed", conclusion: "failure" };
+	expect(() => publishBeads("ps-root", f.run)).toThrow("Verify");
+	expect(f.calls.some((call) => call[1] === "github")).toBeFalse();
 });

@@ -12,8 +12,20 @@ import {
 	type MagicWorkerPort,
 	type MagicWorkerStarter,
 	MagicWorkerTransport,
+	startMagicWorkerFromBundle,
 } from "../../../packages/pi-stuff/src/context-management/magic-worker-transport.js";
 import { EffectFoundation } from "../../../packages/pi-stuff/src/shared/effect-foundation.js";
+
+test("native Worker release waits for close and remains safe after exit", async () => {
+	const handle = startMagicWorkerFromBundle(new Blob(["setInterval(() => {}, 1000);"]));
+	let closed = false;
+	handle.port.addEventListener("close", () => {
+		closed = true;
+	});
+	await handle.release();
+	expect(closed).toBeTrue();
+	await handle.release();
+});
 
 class FakeMagicWorkerPort implements MagicWorkerPort {
 	onerror: ((event: ErrorEvent) => void) | null = null;

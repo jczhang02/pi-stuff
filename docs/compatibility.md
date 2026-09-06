@@ -35,6 +35,12 @@ successful plan explicitly selects no tests. `Verify` always runs and validates 
 the exact selected-file coverage, and the structured test report. Plan and test reports are separate artifacts. Only
 superseded runs for the same pull request are cancelled; distinct main-push ranges remain available. Certification
 requires the current revision's applicable checks and real-Host evidence; workflow configuration alone is not evidence.
+PTY verifiers probe optional tmux server settings; the Ubuntu baseline works without `extended-keys-format`. Reuse
+required CI evidence for the same revision under [the verification policy](code-quality.md#risk-based-verification);
+the [delivery publisher](agents/issue-tracker.md#verified-ci-evidence) verifies those results before reporting delivery.
+A separate weekly upstream watch reports when npm `latest` moves beyond the supported Host without changing support
+automatically.
+
 The repository toolchain uses Bun 1.4.0. The Host's bundled runtime and release packaging are Host details; they are not
 Pi Stuff compatibility admission criteria.
 Bun dependency upgrades are deliberate maintainer changes because the frozen Bun lockfile, exact repository toolchain,
