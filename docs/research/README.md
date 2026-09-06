@@ -15,6 +15,7 @@ start from the [documentation index](../README.md).
 
 ## Architecture and feasibility
 
+- [Pi Stuff reliability repair plan](pi-stuff-reliability-repair-plan-20260906.md)
 - [Code Mode image benchmark](code-mode-image-benchmark-20260827.md)
 - [Skill Discovery startup-bounded real-model confirmation](skill-discovery-startup-bounded-confirmation-20260830.md)
 - [Skill Discovery isolated real-model confirmation](skill-discovery-isolated-confirmation-20260830.md)
