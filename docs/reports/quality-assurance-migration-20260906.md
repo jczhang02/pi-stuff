@@ -66,6 +66,18 @@ Paired same-host focused runs (single samples, including Bun startup): generator
 
 The Web direct-Provider redirect-declaration guard now runs with Static Checks; a small Component test protects the AST-based declaration count. This retains the previous parity constraint without claiming request-data-flow proof. Codex native Tool checks no longer skip unsupported/missing executables and passed three cases through the real local binaries. Missing Pi preflight was verified to leave the scenario unexecuted and emit an explicit failure report.
 
+## Batch 3: affected-test selection and CI orchestration checkpoint
+
+Base: `35225c57` (Batch 2 checkpoint). The current worktree still contains uncommitted Batch 3 implementation, so this section is checkpoint evidence rather than final acceptance. The current inventory is 334 files: 333 offline and one explicit live file. Offline files by level are Component 132, Component Integration 159, System 2, System Integration 10, and Acceptance 30. The increase from Batch 2's 332 files (331 offline) reflects one replacement with three Batch 3 planning, execution-contract, and CI-aggregate test files; the historical Batch 2 counts above remain unchanged.
+
+Batch 3 implements conservative local and CI scope selection. Local `verify` uses the merge base between `origin/main` and `HEAD` by default, unions committed, staged, unstaged, and untracked paths, and accepts `--base <ref>`. The planner parses TypeScript imports with an AST and walks reverse dependencies through test helpers; `.js` imports resolve to corresponding `.ts` sources. Shared infrastructure, unknown paths, dynamic or opaque imports, unresolved dependencies, and deleted paths fall back to all offline Tests. A narrow no-tests plan is allowed only when current, index, `HEAD`, and comparison-base contents prove that Markdown or Beads metadata contains no executable fence or script material. `--list` previews base, head, reason, selected files, and environment requirements; `--help` performs no work and unknown options fail. A normal run performs read-only Checks, then selected offline Tests, and writes a timestamped summary containing the plan, statuses, duration, and evidence paths.
+
+The CI workflow is `Plan`, `Checks`, `Tests`, and `Verify`: Plan selects PR target ranges or main-push before/after ranges, while manual dispatch selects all offline Tests. Checks runs independently, Tests waits only for Plan, and Verify validates the plan, every required job result, exact selected-file coverage, and the structured test report. Plan and test reports are separate artifacts; Verify does not rerun substantive work. Only superseded runs for the same PR are cancelled; distinct main-push revision ranges remain. Branch protection is unchanged.
+
+The source-size comparison uses the JS/TS path set from the `35225c57` to working-tree git diff, including new untracked source paths and excluding artifacts: 320 physical lines became 1,252 (+932). This is a changed-path comparison, not whole-repository size or a speedup claim.
+
+Local focused evidence completed: 8 planning tests, 3 execution/contract tests, 17 CI aggregate tests, and 3 runner tests, 31 focused tests in total. The earlier Batch 1 and Batch 2 evidence remains valid. The current worktree full offline run, hosted CI, final two Thermo-Nuclear review rounds, and baseline/full-CI wall-time and coverage comparison remain pending. Batch 3 status is verification pending; do not report migration completion or an affected-test speedup.
+
 ## Reusable diagnoses
 
 **RTK setup identity:** the maintainer's default executable failed the certified SHA-256 check. This was an environment

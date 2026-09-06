@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: 419c6950bdf68880213817c413c6a87d4e205b01c095e1f634175c3495b06d72 -->
+<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: b6e39a7d14d8e04169b3904a5e499648c4c189d44cd2cf989c974cf718353afc -->
 
 # 质量保障迁移——2026-09-06
 
@@ -49,6 +49,18 @@ Code Mode RPC/TUI offline Acceptance wrapper 使用真实 Host 与 fixture Provi
 同机单次聚焦对比（含 Bun 启动）：生成器迁移前 `0.185 s`、迁移后 `0.168 s`；Suite loader 迁移前 `0.573 s`、迁移后 `0.504 s`。干净基线与当前 worktree 均通过；微小差异不能证明整体加速。本批涉及 JavaScript/TypeScript 源码的物理行数为迁移前 79,366、迁移后 79,824（+458），大部分源码随文件移动而保留。
 
 Web 直接 Provider API 的重定向声明检查已归入 Static Checks，一个小型 Component 测试保护基于 AST 的声明计数；它保留旧有数量对应约束，不宣称证明请求数据流。Codex 原生工具检查不再因不支持或缺少可执行文件而跳过，真实本地二进制的三个场景已通过。缺少 Pi 的前置检查已验证：场景不执行，报告明确记录环境失败。静态检查、聚焦命令、原生工具、Node 兼容性和真实 Code Mode 验收检查已通过。针对完整 diff，两轮连续独立 Thermo-Nuclear 审查均无发现。
+
+## 第三批：受影响测试选择与 CI 编排检查点
+
+基线为第二批检查点 `35225c57`。当前 worktree 仍包含未提交的第三批实现，因此本节是检查点证据，不是最终验收。当前清单为 334 个文件：333 个离线文件和 1 个显式在线文件。离线文件按 Component、Component Integration、System、System Integration、Acceptance 分别为 132、159、2、10、30 个。第二批记录的 332 个文件（331 个离线文件）保持不变；数量变化表示一个文件替换成了三个第三批规划、执行契约和 CI 聚合测试文件。
+
+第三批实现了本地与 CI 的保守范围选择。本地 `verify` 默认使用 `origin/main` 与 `HEAD` 的 merge-base，合并已提交、暂存、未暂存和未跟踪路径，并接受 `--base <ref>`。规划器使用 AST 解析 TypeScript import，并沿测试 helper 的反向依赖遍历；`.js` import 可以解析到对应的 `.ts` 源文件。共享基础设施、未知路径、动态或不透明 import、无法解析的依赖以及删除路径都回退到全部离线 Tests。只有当当前文件、index、`HEAD` 和 comparison base 的内容都证明 Markdown 或 Beads 元数据不含 executable fence 或脚本材料时，才允许生成 narrow no-tests 计划。`--list` 预览 base、head、reason、选中文件和环境要求；`--help` 不执行工作，未知参数失败。普通运行只读执行 Checks，随后执行选中的 offline Tests，并写入包含 plan、状态、耗时和 evidence paths 的时间戳 summary。
+
+CI workflow 拆为 `Plan`、`Checks`、`Tests`、`Verify`：Plan 选择 PR target range 或 main push 的 before/after range，manual dispatch 选择全部离线 Tests；Checks 独立运行，Tests 只依赖 Plan；Verify 校验 plan、每个必需 job 的结果、精确的选中文件覆盖和结构化 test report。Plan artifact 与 test report 分开上传，Verify 不重复执行实质工作。同一 PR 的 superseded run 可以取消，不同 main-push revision range 保留；branch protection 不变。
+
+源代码规模比较使用 `35225c57` 到当前 worktree 的 git diff 路径集合，包含新增未跟踪 JS/TS 路径并排除 artifacts：物理行数由 320 增至 1,252（+932）。这是变更路径集合比较，不是完整仓库大小，也不是 speedup 证据。
+
+本地聚焦证据已完成：8 个规划测试、3 个执行／契约测试、17 个 CI 聚合测试、3 个 runner 测试，共 31 个聚焦测试。第一批和第二批的历史证据继续有效。当前 worktree 的完整离线运行、托管 CI、最终两轮 Thermo-Nuclear 审查，以及基线／完整 CI 的耗时和覆盖比较仍待完成。本批状态为 verification pending；不要报告迁移完成或受影响测试 speedup。
 
 ## 可复用诊断
 

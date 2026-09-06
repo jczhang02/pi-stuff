@@ -1,41 +1,12 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { preflightTests, requirementsForTest, type TestProfile } from "./test-environment.ts";
 import { prepareGoalTests } from "./test-goal-upstream.ts";
 import { discoverTestFiles } from "./test-inventory.ts";
+import { readVerificationPlan } from "./verification-plan-contract.ts";
 
 const LEVELS = new Set(["unit", "component-integration", "system", "system-integration", "acceptance"]);
-type VerificationPlan = {
-	version: number;
-	profile: "offline";
-	base: string | null;
-	head: string | null;
-	mode: "all" | "selected" | "none";
-	reason: string;
-	changedFiles: string[];
-	files: string[];
-};
-function readPlan(path: string, root: string): VerificationPlan {
-	const plan = JSON.parse(readFileSync(resolve(root, path), "utf8")) as Partial<VerificationPlan>;
-	if (plan.version !== 1 || plan.profile !== "offline" || !["all", "selected", "none"].includes(plan.mode ?? ""))
-		throw new Error("Invalid verification plan");
-	if (!Array.isArray(plan.files) || !Array.isArray(plan.changedFiles) || typeof plan.reason !== "string")
-		throw new Error("Invalid verification plan fields");
-	const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-	if (plan.head && plan.head !== head)
-		throw new Error(`Verification plan is stale: expected ${plan.head}, found ${head}`);
-	const known = new Set(discoverTestFiles(join(root, "test")).map((file) => relative(root, file)));
-	for (const file of plan.files)
-		if (typeof file !== "string" || !known.has(file) || file.endsWith("-live.test.ts"))
-			throw new Error(`Verification plan contains unknown or live test: ${file}`);
-	if (plan.mode === "none" && plan.files.length !== 0) throw new Error("A none verification plan must have no files");
-	if (plan.mode === "none" && !/metadata-only|no tests|explicit/iu.test(plan.reason))
-		throw new Error("A none verification plan requires an explicit no-tests reason");
-	if (plan.mode !== "none" && plan.files.length === 0) throw new Error("A selected/all plan must contain files");
-	return plan as VerificationPlan;
-}
 
 function runTestFiles(
 	testFiles: readonly string[],
@@ -127,15 +98,8 @@ function parseTestArguments(args: string[]) {
 	});
 }
 
-async function main(): Promise<void> {
-	const { values, positionals } = parseTestArguments(process.argv.slice(2));
-	if (values.help) {
-		console.log(
-			"Usage: bun run test [--level <level>] [--capability <name>] [--name <pattern>] [--file <path-fragment>] [file ...] [--list] [--profile offline|live] [--output <report.json>]",
-		);
-		console.log("Offline tests, one OS process per file. --list previews without executing tests.");
-		return;
-	}
+function selectTestFiles({ values, positionals }: ReturnType<typeof parseTestArguments>) {
+	if (values.plan === "" || values.output === "") throw new Error("--plan and --output require a non-empty path");
 	const profile = values.profile ?? "offline";
 	if (profile !== "offline" && profile !== "live") throw new Error(`Unknown test profile: ${profile}`);
 	const repositoryRoot = process.cwd();
@@ -144,7 +108,7 @@ async function main(): Promise<void> {
 	const levels = values.level ?? [];
 	const capabilities = values.capability ?? [];
 	const names = values.name ?? [];
-	const plan = values.plan ? readPlan(values.plan, repositoryRoot) : undefined;
+	const plan = values.plan ? readVerificationPlan(values.plan, repositoryRoot) : undefined;
 	if (plan && ([...filters, ...levels, ...capabilities, ...names].length > 0 || values.profile))
 		throw new Error("--plan cannot be combined with test selectors or --profile");
 	for (const level of levels) if (!LEVELS.has(level)) throw new Error(`Unknown test level: ${level}`);
@@ -175,9 +139,35 @@ async function main(): Promise<void> {
 			(capabilities.length === 0 || capabilities.includes(parts[2] ?? ""))
 		);
 	});
+	return { profile, repositoryRoot, levels, capabilities, names, plan, testFiles } as const;
+}
+
+async function main(): Promise<void> {
+	const { values, positionals } = parseTestArguments(process.argv.slice(2));
+	if (values.help) {
+		console.log(
+			"Usage: bun run test [--level <level>] [--capability <name>] [--name <pattern>] [--file <path-fragment>] [file ...] [--list] [--profile offline|live] [--plan <plan.json>] [--output <report.json>]",
+		);
+		console.log("Offline tests, one OS process per file. --list previews without executing tests.");
+		return;
+	}
+	const { profile, repositoryRoot, levels, capabilities, names, plan, testFiles } = selectTestFiles({
+		values,
+		positionals,
+	});
+	const reportPath = resolve(
+		values.output ?? `.artifacts/tests/${new Date().toISOString().replaceAll(":", "-")}-${process.pid}.json`,
+	);
 	if (testFiles.length === 0) {
 		if (plan?.mode === "none") {
 			console.log(`Plan selected no tests: ${plan.reason}`);
+			if (!values.list) {
+				mkdirSync(dirname(reportPath), { recursive: true });
+				writeFileSync(
+					reportPath,
+					`${JSON.stringify({ profile, status: "not-run", plan, results: [] }, null, 2)}\n`,
+				);
+			}
 			return;
 		}
 		console.error("No test files were discovered under test/.");
@@ -185,9 +175,6 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	const reportPath = resolve(
-		values.output ?? `.artifacts/tests/${new Date().toISOString().replaceAll(":", "-")}.json`,
-	);
 	console.log(
 		`Profile: ${profile}; ${profile === "offline" ? "no live Providers" : "live Provider calls"}. Report: ${reportPath}`,
 	);

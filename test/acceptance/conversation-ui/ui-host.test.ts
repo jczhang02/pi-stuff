@@ -6,7 +6,7 @@ const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
 
 test("the Suite exposes one unified UI settings command", async () => {
 	const result = await runPiRpcSmoke({
-		packages: [join(import.meta.dir, "..", "packages", "pi-stuff")],
+		packages: [join(import.meta.dir, "../../../packages/pi-stuff")],
 		piBinary: PI_BINARY,
 	});
 

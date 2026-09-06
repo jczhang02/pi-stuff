@@ -20,14 +20,15 @@ repository safety, the Capability Contract Catalog, and static Package/resource/
 source or execute Benchmarks. `fix` explicitly applies formatting and safe lint fixes; generated composition and
 snapshots have separate explicit update operations.
 
-`test` discovers 332 files (331 offline and one explicit live file) under five levels: Component (`unit`), Component Integration (`component-integration`),
-System (`system`), System Integration (`system-integration`), and Acceptance (`acceptance`). Within each level, files
-are grouped by Capability directory and scenario. It runs one OS process per file. The Goal runtime smoke is a native
-Bun test; the other 21 `.node.ts` compatibility files are compiled once and then run through Node. Repeated selectors
-within one dimension are a union; different dimensions are an intersection. `--name` uses the native test runner's
-regex candidate filter and does not scan source names. `--help` and `--list` execute no scenarios. Reports default to
-timestamped JSON under `.artifacts/tests/`; `--output <path>` changes the destination. The report records selected
-files, status, process duration, and setup duration. A failing or empty selected run returns nonzero.
+`test` currently discovers 334 files (333 offline and one explicit live file) under five levels: Component (`unit`),
+Component Integration (`component-integration`), System (`system`), System Integration (`system-integration`), and
+Acceptance (`acceptance`). The offline inventory is 132 / 159 / 2 / 10 / 30 files by those levels. Within each level,
+files are grouped by Capability directory and scenario. It runs one OS process per file. The Goal runtime smoke is a
+native Bun test; the other 21 `.node.ts` compatibility files are compiled once and then run through Node. Repeated
+selectors within one dimension are a union; different dimensions are an intersection. `--name` uses the native test
+runner's regex candidate filter and does not scan source names. `--help` and `--list` execute no scenarios. Reports
+default to timestamped JSON under `.artifacts/tests/`; `--output <path>` changes the destination. The report records
+selected files, status, process duration, and setup duration. A failing or empty selected run returns nonzero.
 
 The default profile is `offline`: deterministic fixture Providers, no credentials, and no live model calls. Real Pi,
 Node, Code Mode, RTK, Expect, tmux, and local system tools are still required where a scenario uses their public
@@ -68,12 +69,29 @@ assertion is a separate backstop. Stable focused certification of these targets 
 The Suite Outcome Evaluation branch is reserved for complete-Suite public-task evaluation. Historical Terminal-Bench
 manifests and reports do not constitute a runnable evaluation; `benchmark:suite` is not registered.
 
-## Migration status
+## Verification and migration status
 
 Batch 2 classifies and reduces the test corpus, moves files into the five-level/Capability map, adds stable level
-aliases, and removes obsolete acceptance aliases. The runner now supports `--level`, `--capability`, `--file`, and
-`--name` selection, explicit offline/live profiles, strict empty and unknown selection failures, environment reporting,
-and per-file/process/setup timing. Code Mode RPC and TUI have offline Acceptance homes using the real Host with a
-fixture Provider. The explicit live Magic Context wrapper remains separate and was not run. Affected-test selection,
-CI Plan/Checks/Tests/Verify orchestration, and final verification remain Batch 3 work under
-[ADR 0032](adr/0032-organize-quality-assurance-by-verification-purpose.md).
+aliases, and removes obsolete acceptance aliases. Code Mode RPC and TUI have offline Acceptance homes using the real
+Host with a fixture Provider. The explicit live Magic Context wrapper remains separate and was not run.
+
+Batch 3 now implements affected-test planning and CI orchestration. Local `verify` compares the merge base with
+`origin/main` by default, includes committed, staged, unstaged, and untracked paths, and accepts `--base <ref>`.
+Planning uses conservative TypeScript AST imports with reverse-dependency traversal, resolves `.js` imports to `.ts`
+sources, and falls back to all offline tests for shared, unknown, dynamic, opaque, or unresolved impact. Narrow
+metadata-only changes can produce an explicit no-tests plan only when the current, index, `HEAD`, and comparison-base
+contents prove that the paths contain no executable fences or script material. Deleted paths use the same conservative
+full-suite fallback. `--list` prints the base, head, reason, selected files, and environment requirements without
+running Checks or Tests; `--help` and unknown options are strict. A normal run performs read-only `check`, then the
+selected offline Tests, and writes a timestamped summary with plan, status, duration, and evidence paths.
+
+CI uses `Plan`, `Checks`, `Tests`, and `Verify`. Plan selects committed PR target ranges or main-push before/after
+ranges; manual dispatch selects all offline Tests. Checks runs independently, Tests waits only for Plan, and Verify
+validates the plan, required job results, exact selected-file coverage, and the structured test report. Plan and Verify
+do not rerun substantive work. The test report is a separate artifact from the plan; PR runs may cancel superseded
+PR runs, while distinct main-push ranges are retained. No branch-protection setting changes are part of this batch.
+
+This is an implementation checkpoint, not final certification. The current worktree's full offline run, hosted CI, and
+the required final Thermo-Nuclear review rounds remain pending. Do not report the migration or affected-test speedup
+as passed until those checks and the baseline/full-CI comparison are complete. See [ADR 0032](adr/0032-organize-quality-assurance-by-verification-purpose.md)
+and the dated [migration report](reports/quality-assurance-migration-20260906.md).
