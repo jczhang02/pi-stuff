@@ -19,6 +19,12 @@ bun run check
 
 Tests must exercise the agreed public seams, remain offline during verification, and never call an LLM or require credentials.
 
+CI records `Plan`, `Checks`, `Tests`, and `Verify` for the exact revision. Plan owns the existing conservative scope
+decision, Checks runs static verification, and Tests retains the disconnected test/benchmark/packed-Host sequence.
+Verify fails closed on missing or unsuccessful required jobs; a skipped Tests job is valid only after an explicit
+successful no-tests plan. Manual dispatch always requests full tests. Publication must use these current results,
+not relabel historical Fast/Acceptance runs. See the [compatibility contract](../docs/compatibility.md).
+
 For continuous native Spinner, input, and autocomplete-selection checks, use
 `bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN"`. It creates an isolated synthetic Session and retains raw
 observations outside the repository. The [observer report](../docs/reports/suite-responsiveness-observer-2026-09-05.md)

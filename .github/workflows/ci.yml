@@ -89,12 +89,12 @@ jobs:
             }' "$instance/trace"
           PROBE
 
-  fast:
-    name: Fast
+  plan:
+    name: Plan
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      acceptance_required: ${{ steps.scope.outputs.acceptance_required }}
+      tests_required: ${{ steps.scope.outputs.acceptance_required }}
 
     steps:
       - name: Check out repository
@@ -115,6 +115,21 @@ jobs:
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bun run ci:acceptance-scope
 
+  checks:
+    name: Checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
       - name: Verify Bun and install dependencies
         shell: bash
         run: |
@@ -124,15 +139,15 @@ jobs:
           bun pm untrusted
 
       - name: Verify acceptance classifier
-        run: bun test test/ci-acceptance-scope.test.ts
+        run: bun test test/ci-acceptance-scope.test.ts test/ci-result.test.ts
 
       - name: Run fast checks
         run: bun run check:fast
 
-  acceptance:
-    name: Acceptance
-    needs: fast
-    if: ${{ github.event_name != 'push' && needs.fast.outputs.acceptance_required == 'true' }}
+  tests:
+    name: Tests
+    needs: [plan, checks]
+    if: ${{ needs.plan.outputs.tests_required == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.probe_kernel_events && 55 || 30 }}
     env:
@@ -303,3 +318,28 @@ jobs:
             ${{ runner.temp }}/pi-stuff-ci
           if-no-files-found: warn
           retention-days: 7
+
+  verify:
+    name: Verify
+    if: ${{ always() }}
+    needs: [plan, checks, tests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Aggregate required results
+        env:
+          CI_PLAN_RESULT: ${{ needs.plan.result }}
+          CI_TESTS_REQUIRED: ${{ needs.plan.outputs.tests_required }}
+          CI_CHECKS_RESULT: ${{ needs.checks.result }}
+          CI_TESTS_RESULT: ${{ needs.tests.result }}
+        run: bun scripts/verify-ci-result.ts

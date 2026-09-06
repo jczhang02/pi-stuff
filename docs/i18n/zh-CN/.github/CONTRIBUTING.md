@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 9989b976cdd8b1bc800fc5f1e6ce2d9b3e20ea8ee40f75dfcdc6dba072d03473 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: cc9d5d7ba85f75c7da96b4a1388e6ab7d609b6563dc1bd7c7bf298814c7248b6 -->
 
 # 贡献指南
 
@@ -20,6 +20,11 @@ bun run check
 ```
 
 测试必须覆盖约定的公开接缝；验证期间必须离线，而且不得调用 LLM 或要求凭据。
+
+CI 为精确版本记录 `Plan`、`Checks`、`Tests` 和 `Verify`。Plan 拥有现有保守范围决策，Checks 运行静态验证，Tests
+保留断网测试/基准/打包 Host 验证顺序。缺失或未成功的必需任务使 Verify 失败；仅在显式、成功的不测试计划下才允许
+跳过 Tests。手动触发总是要求完整测试。发布须使用这些当前结果，不能重标历史 Fast/Acceptance 运行。
+参见[兼容性契约](../docs/compatibility.md)。
 
 连续检查原生 Spinner、输入和命令补全选择时，运行
 `bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN"`。脚本使用隔离的合成 Session，并在仓库外保留原始

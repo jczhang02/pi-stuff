@@ -26,17 +26,19 @@ Suite contract, including public `registerMarkdownTransformer()`, regular and fu
 space-preserving native settings search. The exact binary hash, rather than a reusable version string, is the executable
 identity. Pi Stuff does not rebuild or distribute Pi Host.
 
-CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, anti-slop
-lint, type surfaces, unused-code analysis, generated composition, and public-release safety. For pull requests, the scope classifier starts
-`Acceptance` when executable behavior or executable documentation changed; a direct push to `main` runs `Fast` only,
-and manual dispatch runs both checks. `Acceptance` downloads and verifies the certified Host release, Code Mode host,
-and RTK runtime
-before running every test
-file in a fresh Bun process, real TUI verification, the Tool Activity benchmark, and package verification in a
-network-isolated namespace. Per-file process isolation prevents one process- or PTY-heavy test from contaminating the
-native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip
-`Acceptance`; executable documentation remains fully certified. A separate weekly upstream watch reports when the npm
-`latest` tag moves beyond the certified Host, but never changes certification automatically.
+CI exposes `Plan`, `Checks`, `Tests`, and `Verify`. `Plan` uses the existing conservative scope classifier; manual
+dispatch, unknown ranges and empty changes require full tests. `Checks` always validates the frozen dependency graph,
+formatting, anti-slop lint, types, unused code, generated composition and public-release safety. `Tests` runs when
+the plan requires it, including pushes to `main`, after Plan and Checks succeed. The classifier exempts only Beads
+metadata, root Markdown, and Markdown/PNG/GIF/HTML/ANSI documentation under `docs/`; other paths require Tests.
+
+`Tests` downloads and verifies the same certified Host release, Code Mode host and RTK runtime, then runs every test
+file in a fresh Bun process, real TUI verification, the Tool Activity benchmark and Package verification in a
+network-isolated namespace. Per-file isolation prevents process- or PTY-heavy tests from contaminating later tests.
+`Verify` always aggregates the results: Plan and Checks must succeed, the plan must explicitly require or omit Tests,
+and Tests must succeed or be skipped respectively. Missing, failed or cancelled required results fail verification.
+These are real job results for delivery publication, not aliases for an earlier successful revision. A separate weekly
+upstream watch reports when npm `latest` moves beyond the certified Host, but never changes certification automatically.
 
 PTY verifiers probe optional tmux server settings before using them; Goal verification must work without
 `extended-keys-format` on the Ubuntu baseline. CI checks the Suite observer's user/network/PID namespace setup before

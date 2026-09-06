@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 547c9087cc35b1309fe2f99b9f803b5f7ce2b0f8f7b200cb6a3a55db9d07c44e -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: a7f28c71f21ac92c89dd81c02a8593ae1d4023e7a4e77a60241fbe02d2a85234 -->
 
 # 兼容性
 
@@ -27,13 +27,16 @@
 `registerMarkdownTransformer()`、常规与 fullscreen UI 行为，以及保留空格的原生设置搜索。可执行文件身份由
 精确二进制哈希确定，而不是可复用的版本字符串。Pi Stuff 不重建或分发 Pi Host。
 
-CI 提供两个稳定检查。`Fast` 始终验证冻结依赖图、仓库格式、anti-slop lint、类型接口、未使用代码分析、生成的
-组合以及公开 Release 安全。对 pull request，范围分类器会在可执行行为或可执行文档变化时启动 `Acceptance`；
-直接 push 到 `main` 只运行 `Fast`，手动触发则运行两者。`Acceptance` 下载并验证认证 Host Release、Code Mode
-Host 和 RTK runtime，然后在网络隔离 namespace 中逐个以全新 Bun 进程运行所有测试文件、真实 TUI 验证、Tool Activity
-benchmark 和 Package 验证。逐文件进程隔离可防止某个重进程或 PTY 测试污染后续测试使用的原生资源。只有
-Beads 元数据以及已记录的 PNG、GIF、HTML 或 ANSI 证据可以跳过 `Acceptance`；可执行文档仍须完整认证。每周
-另有上游观察任务报告 npm `latest` 是否超过当前 Host，但绝不会自动改变认证。
+CI 提供 `Plan`、`Checks`、`Tests` 和 `Verify`。`Plan` 使用现有保守范围分类器；手动触发、未知范围及空变更均要求
+完整测试。`Checks` 始终验证冻结依赖图、格式、anti-slop lint、类型、未使用代码、生成组合及公开 Release 安全。
+计划要求时，在 Plan 和 Checks 成功后运行 `Tests`，包括向 `main` 的 push。分类器仅豁免 Beads 元数据、根目录
+Markdown，以及 `docs/` 下的 Markdown/PNG/GIF/HTML/ANSI 文档；其他路径均要求 Tests。
+
+`Tests` 下载并验证相同的认证 Host Release、Code Mode host 和 RTK runtime，再在网络隔离 namespace 内逐个以
+全新 Bun 进程运行所有测试文件、真实 TUI 验证、Tool Activity benchmark 和 Package 验证。逐文件隔离避免重进程或
+PTY 测试污染后续测试。`Verify` 始终汇总结果：Plan 和 Checks 必须成功，计划必须显式要求或省略 Tests，Tests 则须
+相应成功或跳过。缺失、失败或取消的必需结果均导致验证失败。这些是供交付发布使用的真实任务结果，不是较早成功版本的
+别名。每周另有上游观察任务报告 npm `latest` 是否超过当前 Host，但绝不会自动改变认证。
 
 PTY 验证器使用可选 tmux 服务器设置前先探测支持情况；Ubuntu 基线上的 Goal 验证必须在没有
 `extended-keys-format` 时正常运行。CI 在运行验收测试前检查 Suite 观察器的用户、网络和 PID 命名空间设置。
