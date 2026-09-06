@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-lifecycle-comparison-2026-09-06.md; translation-source-sha256: a62c5b32828ed53cecc2730c33109bd698db8eb103b1cbbd7ab269f2b41e2b13 -->
+<!-- translation-source: docs/reports/suite-lifecycle-comparison-2026-09-06.md; translation-source-sha256: fb1ca94f16e39955fec73d449ff6404829708a430e51036c42b2787fe28e99be -->
 
 # Suite 生命周期资源前后对照
 
@@ -10,6 +10,10 @@
 完整 commit 与 Package 树身份、锁文件哈希，以及私有原始报告和读取器的哈希。两棵树的 Package 依赖声明相同。
 基线开发 SDK 为 0.84.4，候选为 0.85.0；双方均使用当前 benchmark/fixture 和精确的 0.85.0 Host。
 没有改动用户安装或正在运行的 Pi。
+
+原始基线也早于 Work Continuity、Goal 终态回复改动及 0.85.0 适配。这些总量包含期间的其他变更，不能
+单独归因于 `ps-yon` 优化。后续完整功能对照改用 `40101bb2`：这是已集成上述改动的最后一个优化前 Package，
+其依赖锁文件也与候选相同。下列观测对于各自注明的源码树仍然有效。
 
 ## 可比运行
 

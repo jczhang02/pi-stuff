@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 4525ed1ee7de5175ef277d534f165e54a4f26279da0126199b55f95865b30be8 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 35d01b53282d3eeb0c85615fd1e2ae73ff91e525ed828d426c27f843c7c23aaf -->
 
 # 贡献指南
 
@@ -27,7 +27,9 @@ bun run check
 对照与 Execution Ledger 首次加载复现。这些针对性检查不能替代完整资源或 Capability 验收。
 
 设置 `PI_STUFF_UI_PTY_ARTIFACT_DIR` 后，观察器还会在采集结束后把证据 JSON 复制到该目录。
-CI 通过现有失败附件保留合成场景的画面、交互时序和 Source 快照；不会复制 Host 可执行文件或私有夹具配置。
+CI 通过现有失败附件保留合成场景的画面、交互时序、Provider 事件日志、Session 记录和 Source 快照，
+调度工作负载失败时也会保留；不会复制 Host 可执行文件或私有夹具配置。调度汇总在每项工作负载完成后保存，
+后续负载失败也会上传。未完成的批次仅供诊断，不代表验收成功。
 
 手动触发 CI 时可设置 `probe_kernel_events=true`，先在独立的 GitHub 托管虚拟机上执行调度事件正控，
 再在普通验收之前运行七种诊断工作负载。它们复用响应性 observer，覆盖原生 Pi、Suite Tool、前台/后台

@@ -26,8 +26,10 @@ documents frozen gates, negative controls, and the cold Execution Ledger reprodu
 replace complete resource or Capability acceptance.
 
 When `PI_STUFF_UI_PTY_ARTIFACT_DIR` is set, the observer also copies its evidence JSON there after capture. CI retains
-these synthetic frames, interaction timings and Source snapshots in its existing failure attachment; Host binaries and
-private fixture configuration are not copied.
+these synthetic frames, interaction timings, Provider event logs, Session records and Source snapshots in its existing
+failure attachment, including when a scheduler workload fails. Host binaries and private fixture configuration are
+not copied. Scheduler summaries are saved after each completed workload and uploaded even if a later workload fails;
+an incomplete batch is diagnostic evidence, never successful acceptance.
 
 Manual CI dispatch accepts `probe_kernel_events=true` for a scheduler-event positive control on a separate
 GitHub-hosted VM, then seven diagnostic workloads before ordinary acceptance. The workloads reuse the responsiveness

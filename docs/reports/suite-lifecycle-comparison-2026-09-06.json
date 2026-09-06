@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "purpose": "paired-lifecycle-resource-comparison",
+  "comparisonLimit": "The original baseline predates Work Continuity, Goal terminal-response changes and the 0.85.0 adaptation; totals include intervening changes and do not isolate ps-yon optimization savings.",
   "responsivenessCertification": false,
   "host": {
     "version": "0.85.0",

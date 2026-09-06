@@ -4,6 +4,8 @@ This 2026-09-05 inventory covers the 16 Capabilities in [suite.json](../../packa
 loading/status/registration paths at `07d2f473`. It records investigation targets, not permission to remove features.
 The [continuous observer](suite-responsiveness-observer-2026-09-05.md) and the samples below record workload
 costs; the dated sections below distinguish measured operations from remaining source-level targets.
+The [matched Package comparison](suite-comparable-resources-2026-09-06.md) adds 32 full-workload observations against
+the comparable pre-optimization tree, including a retained candidate input failure and foreground RSS increases.
 Repeated source operations are not automatically redundant: discovery, validation, recovery and visible refresh may
 require them. Beads `ps-yon.3` owns the missing measurements under [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md).
 
@@ -14,7 +16,8 @@ same exact Host, with unchanged outputs and a passing normal Goal continuation s
 branch construction, Goal accounting or the remaining allocation/GC and recovery costs.
 The [paired lifecycle comparison](suite-lifecycle-comparison-2026-09-06.md) adds 48 fixed-Host runs across fresh/long
 Sessions, prompting, unchanged reload and idle shutdown. The six CPU medians fell 21.4–33.6% from the original Package;
-offline feature exclusions and non-process-tree memory accounting remain explicit.
+that baseline predates intervening compatibility and Work Continuity changes, so the totals do not isolate `ps-yon`
+savings. Offline feature exclusions and non-process-tree memory accounting remain explicit.
 The [GC and owner-cost follow-up](gc-and-owner-cost-2026-09-06.md) adds natural-GC observations on native/Suite
 workloads and measured Notification/Web retention behavior. Lifecycle marks separate cold module loading from
 registration and first-request Context activation; total allocation, exact wakeups and the remaining owner/recovery

@@ -16,6 +16,7 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 
 ## Benchmarks and acceptance
 
+- [Matched Package resources and a retained input failure](suite-comparable-resources-2026-09-06.md)
 - [Paired Suite lifecycle resource measurements](suite-lifecycle-comparison-2026-09-06.md)
 - [GC observations and retained owner costs](gc-and-owner-cost-2026-09-06.md)
 - [Naming and Goal history-selection cost](history-selection-cost-2026-09-06.md)

@@ -127,6 +127,7 @@ async function measure(args: string[], pi: string, helper: string) {
 				TMPDIR: capture,
 				PSYON_PARENT_NETNS: readlinkSync("/proc/self/ns/net"),
 				PI_STUFF_CODE_MODE_HOST: helper,
+				PI_STUFF_UI_PTY_ARTIFACT_DIR: process.env["PI_STUFF_UI_PTY_ARTIFACT_DIR"],
 			},
 			stdout: "pipe",
 			stderr: "pipe",
@@ -195,16 +196,14 @@ try {
 		events.map((event) => readFile(join(instance, "events/sched", event, "format"), "utf8")),
 	);
 	for (const event of events) await writeFile(join(instance, "events/sched", event, "enable"), "1");
+	const kernel = command("uname", "-r");
 	const samples = [];
 	for (const scenario of scenarios) {
 		const sample = await measure(scenario, pi, helper);
 		samples.push(sample);
+		await writeFile(values.output, JSON.stringify({ packageCommit, kernel, formats, samples }, null, 2));
 		console.log(JSON.stringify(sample));
 	}
-	await writeFile(
-		values.output,
-		JSON.stringify({ packageCommit, kernel: command("uname", "-r"), formats, samples }, null, 2),
-	);
 } finally {
 	if (created) {
 		await writeFile(join(instance, "tracing_on"), "0");

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 7c95dfa04c3b03b90840a33f572fbad2b302f72744d20229575476cd0b19052d -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 83752fd0e288917c8f9dd8e1cdb8fff232ceb08b7f384ed96839cebe95ae15bd -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [可比 Package 资源与保留的输入失败](suite-comparable-resources-2026-09-06.md)
 - [Suite 生命周期资源前后对照](suite-lifecycle-comparison-2026-09-06.md)
 - [GC 观测与保留的 owner 成本](gc-and-owner-cost-2026-09-06.md)
 - [Naming 与 Goal 历史选择成本](history-selection-cost-2026-09-06.md)

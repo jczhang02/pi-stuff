@@ -719,6 +719,12 @@ try {
 			JSON.stringify(
 				{
 					summary,
+					providerLog: await readFile(providerLogPath, "utf8"),
+					sessions: await Promise.all(
+						(await readdir(join(directory, "sessions")))
+							.filter((name) => name.endsWith(".jsonl"))
+							.map((name) => readFile(join(directory, "sessions", name), "utf8")),
+					),
 					observerTimeOriginMs: performance.timeOrigin,
 					observations,
 					actions,

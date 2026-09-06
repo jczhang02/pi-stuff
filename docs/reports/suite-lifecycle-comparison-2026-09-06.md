@@ -10,6 +10,11 @@ and Package-tree identities, lockfile hashes, and hashes of the private raw repo
 manifest is identical in both trees. The baseline development SDK is 0.84.4 and the candidate SDK is 0.85.0; the current
 benchmark/fixture and exact 0.85.0 Host were used for both. No user installation or running Pi changed.
 
+The original baseline also predates Work Continuity, Goal terminal-response changes and the 0.85.0 adaptation.
+These totals include those intervening changes and cannot isolate the savings from `ps-yon` optimizations.
+The subsequent full-feature comparison uses `40101bb2`, the last pre-optimization Package with those changes already
+integrated and the same dependency lockfile as the candidate. The observations below remain valid for their stated trees.
+
 ## Comparable runs
 
 Measurements ran sequentially from 17:07:36 to 17:11:13 UTC on 2026-09-06, on an Intel i9-13900H with 20 online logical

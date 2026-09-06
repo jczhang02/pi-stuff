@@ -232,11 +232,12 @@ jobs:
           SCHEDULER_BASELINE: ${{ inputs.scheduler_baseline }}
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/pi-stuff-scheduler"
+          mkdir -p "$RUNNER_TEMP/pi-stuff-scheduler" "$RUNNER_TEMP/pi-stuff-ci/ui"
           measure() {
             sudo env -i PATH="$SYSTEM_TOOL_BIN:$(dirname "$RTK_BIN"):$PATH" \
               GITHUB_ACTIONS=true RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
               PI_BIN="$PI_BIN" PI_STUFF_CODE_MODE_HOST="$PI_STUFF_CODE_MODE_HOST" \
+              PI_STUFF_UI_PTY_ARTIFACT_DIR="$RUNNER_TEMP/pi-stuff-ci/ui" \
               "$(command -v bun)" scripts/benchmark-scheduler-wakeups.ts \
               --uid "$(id -u)" --gid "$(id -g)" --package "$2" \
               --output "$RUNNER_TEMP/pi-stuff-scheduler/$1.json"
@@ -256,7 +257,7 @@ jobs:
           fi
 
       - name: Upload scheduler summary
-        if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.probe_kernel_events }}
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.probe_kernel_events }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: scheduler-summary-${{ github.run_id }}-${{ github.run_attempt }}

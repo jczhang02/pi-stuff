@@ -12,6 +12,8 @@ const SAMPLE_SCHEMA = Type.Object({
 });
 const EVIDENCE_SCHEMA = Type.Object({
 	actions: Type.Array(Type.Object({ phase: Type.String(), visibleMs: Type.Number() })),
+	providerLog: Type.String(),
+	sessions: Type.Array(Type.String(), { minItems: 1 }),
 });
 
 test.each(["startup", "pre-tool", "settlement"])(
@@ -49,6 +51,8 @@ test.each(["startup", "pre-tool", "settlement"])(
 			}
 			const evidence = parseJsonValue(evidenceText);
 			if (!Check(EVIDENCE_SCHEMA, evidence)) throw new Error("Missing continuous interaction evidence");
+			expect(evidence.providerLog).toContain('"response-complete"');
+			expect(evidence.sessions.join("\n")).toContain("PSYON_CADENCE_DONE");
 			// Negative-control detection floors, not product acceptance limits.
 			const observedPhase = phase === "pre-tool" ? "active" : phase;
 			const latencies = evidence.actions

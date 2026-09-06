@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 36d43f61740d3a47bd00d27b941ab83b93ac6492b460231ee03d5bc53ddaedc3 -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: b50d5114b63dd5be05d738dfaf751e32a3295170b343acad3db1b47a13ce7005 -->
 
 # Suite 资源源码清单
 
@@ -6,6 +6,8 @@
 Capability，以及共享加载、状态和注册路径。它记录待调查对象，不授权删除功能。
 [连续观察器](suite-responsiveness-observer-2026-09-05.md)及下文样本记录了工作负载成本；
 下文带日期的记录区分已测量操作和仍待验证的源码调查对象。
+[可比 Package 对照](suite-comparable-resources-2026-09-06.md)增加 32 次完整工作负载观测，使用可比的优化前
+源码树，保留候选输入失败及前台 RSS 增长。
 发现、校验、恢复和可见刷新可能需要重复执行；重复操作不自动等于浪费。
 Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md) 跟踪缺失的测量。
 
@@ -14,8 +16,9 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 [Naming 与 Goal 后续报告](history-selection-cost-2026-09-06.md)在同一精确 Host 上测量提前结束的历史选择，
 确认输出不变，并记录通过的普通 Goal 续行样本；不包含 Host 分支构建、Goal 记账，以及仍缺失的分配／GC 和恢复成本。
 [生命周期前后对照](suite-lifecycle-comparison-2026-09-06.md)补充 48 次固定 Host 运行，覆盖新/长 Session、
-提示、未变更重载和空闲退出。相对原始 Package，六个 CPU 中位数下降 21.4–33.6%；报告保留离线功能排除项，
-并明确内存记账不代表进程树合计峰值。
+提示、未变更重载和空闲退出。相对原始 Package，六个 CPU 中位数下降 21.4–33.6%；该基线早于期间的兼容性
+和 Work Continuity 变更，不能将总降幅单独归因于 `ps-yon`。报告保留离线功能排除项，并明确内存记账不代表
+进程树合计峰值。
 [GC 与 owner 成本后续报告](gc-and-owner-cost-2026-09-06.md)补充原生／Suite 工作负载中的自然 GC 观测，
 以及 Notification／Web 保留行为的测量。生命周期标记区分冷模块加载、注册与首次请求的 Context 激活；
 总分配量、精确唤醒与其余 owner／恢复审计尚未完成。
