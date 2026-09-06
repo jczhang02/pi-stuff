@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 1502e113ef379c1a0152b51e44d948488e29017eeb1a2130191158d6bc6225cf -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 2b8817ab659d1dfe327dc366b02f6d3521e0356e1abe920093408317d520857a -->
 
 # Context Management
 
@@ -28,6 +28,7 @@ token、当前错误，以及 Pi 是否会调用自动 Magic 超限恢复。
 - 已配置会话在编辑器就绪前激活，首次配置和迁移仍需直接交互授权。
 - 通过 `/ctx` 和持久化 Context Activity 提供状态与维护。
 - 引擎在 Worker 中运行，Pi 保留输入、轮次和会话生命周期。
+- 等待原生 Worker 的 `close` 事件后才完成资源释放；请求终止不代表终止已经完成。
 - Worker 只接收固定引擎需要的工具事件字段，Pi Session JSONL 保留原始记录。
 - 启用 Magic 后，投影和压缩始终由 Magic 负责，失败恢复也不使用原生兜底。
 - 本地估算仅供显示；偏高或未知估算不阻断有效投影。

@@ -120,3 +120,10 @@ separate Background Work PTY race. The terminal showed the Host rejecting `/relo
 running: seeing `MONITOR_RESUMED` text does not establish idle state. The fixture now exposes a command that awaits
 Pi's public `waitForIdle()` and reports readiness before the verifier sends `/reload`. This preserves reload assertions
 and avoids a timing sleep. The verifier grows from 267 to 269 lines and its Provider fixture from 101 to 107.
+
+[CI 34010463889](https://github.com/jczhang02/pi-stuff/actions/runs/34010463889) passed those scenarios but exposed a
+schema-migration lock race. Bun's native `Worker.terminate()` returns no Promise, so awaiting that call let release
+finish before the Worker closed. A native-Worker regression test reproduced this ordering failure. The existing
+transport now observes `close` from Worker creation and awaits it after requesting termination, including when exit
+has already happened. This changes the resource-release boundary, not database retry policy or migration assertions.
+The transport grows from 258 to 262 lines and its tests from 341 to 354.

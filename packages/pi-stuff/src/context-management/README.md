@@ -27,6 +27,7 @@ tokens, current errors, and whether Pi will invoke automatic Magic overflow reco
 - Keeps first-use configuration and migration behind direct interactive authority.
 - Exposes status and maintenance through `/ctx` and persistent Context Activity.
 - Runs the Context engine in a Worker without transferring Pi's input, Agent-turn, or Session lifecycle ownership.
+- Waits for the native Worker `close` event before release finishes; requesting termination alone is not completion.
 - Sends only the pinned engine's required Tool-event fields across the Worker boundary.
 - Projects derived context while Pi Session JSONL remains the raw record.
 - Keeps projection and compaction exclusively in Magic when enabled, including recovery after failure.

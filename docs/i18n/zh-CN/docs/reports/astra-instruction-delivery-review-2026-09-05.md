@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: b29bdf7b775f9a05069877c46e9aea6edbe1f94fc1ff08d8d4256c1339778e87 -->
+<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: e6896f312e695e8132064c8183257f75f11bcdf6a777fb5f5c05d54003f311d4 -->
 
 # Astra 指令与交付审查 — 2026-09-05
 
@@ -76,3 +76,5 @@ AGENTS 明确了用户指令优先级、已有授权，以及收到后续消息�
 这修复了此前间歇性计数问题的配置根因；完成交付仍需最终版本验证。恢复测试和 Goal 生命周期验证器各增加一行 import，不修改运行时代码。
 
 [下一次 CI](https://github.com/jczhang02/pi-stuff/actions/runs/34009462730)通过了 Context 恢复，但暴露出独立的 Background Work PTY 时序问题。终端显示 Host 因响应仍在运行而拒绝 `/reload`：看到 `MONITOR_RESUMED` 文字并不代表 Host 已空闲。fixture 现在提供一个命令，等待 Pi 公共 `waitForIdle()` 后报告就绪，验证器再发送 `/reload`。这保留了 reload 断言，也避免用固定睡眠猜测时序。验证器从 267 增至 269 行，Provider fixture 从 101 增至 107 行。
+
+[CI 34010463889](https://github.com/jczhang02/pi-stuff/actions/runs/34010463889)通过了上述场景，但暴露出 schema 迁移的锁竞争。Bun 原生 `Worker.terminate()` 不返回 Promise，原有 await 因此会在 Worker 关闭前完成释放。新增的原生 Worker 回归测试复现了这个顺序错误。现有 transport 现在从创建 Worker 起监听 `close`，请求终止后等待该事件，也能处理已经退出的情况。修改的是资源释放边界，不改变数据库重试政策或迁移断言。transport 从 258 增至 262 行，其测试从 341 增至 354 行。
