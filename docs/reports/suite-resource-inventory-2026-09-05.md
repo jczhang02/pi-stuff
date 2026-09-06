@@ -12,6 +12,9 @@ measured projector-lock I/O removal, three passing final native samples, and ret
 The [Naming and Goal follow-up](history-selection-cost-2026-09-06.md) measures early-exit history selection on the
 same exact Host, with unchanged outputs and a passing normal Goal continuation sample. It does not measure Host
 branch construction, Goal accounting or the remaining allocation/GC and recovery costs.
+The [GC and owner-cost follow-up](gc-and-owner-cost-2026-09-06.md) adds natural-GC observations on native/Suite
+workloads and measured Notification/Web retention behavior. It identifies the pre-Spinner allocation interval for
+further attribution; total allocation, exact wakeups and the remaining owner/recovery audit are still incomplete.
 
 ## Owners, triggers and scaling
 

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: c264581a854657293bc151dcc217770e0a51ce3df8e9847cb54b53dcc4c78900 -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 41d6e679487f305face9e5a69d2522b3d4874311c4cdbf41c9e16372a4c723ba -->
 
 # Suite 资源源码清单
 
@@ -13,6 +13,9 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 投影锁 I/O 移除的测量、三个最终原生通过样本，以及仍未归因的历史后段停顿。
 [Naming 与 Goal 后续报告](history-selection-cost-2026-09-06.md)在同一精确 Host 上测量提前结束的历史选择，
 确认输出不变，并记录通过的普通 Goal 续行样本；不包含 Host 分支构建、Goal 记账，以及仍缺失的分配／GC 和恢复成本。
+[GC 与 owner 成本后续报告](gc-and-owner-cost-2026-09-06.md)补充原生／Suite 工作负载中的自然 GC 观测，
+以及 Notification／Web 保留行为的测量。报告指出首个 Spinner 前的分配区间仍需归因；
+总分配量、精确唤醒与其余 owner／恢复审计尚未完成。
 
 ## 所有者、触发条件与增长变量
 

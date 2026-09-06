@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: a6e0a0c1bba9081885c6386964f2de7722219559e171bf04fb00febc51813c38 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: cf0b507eebe36e9c8d93b06764734ed9b8614fe1cd66c2a77f1aa0b9d02479b9 -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [GC 观测与保留的 owner 成本](gc-and-owner-cost-2026-09-06.md)
 - [Naming 与 Goal 历史选择成本](history-selection-cost-2026-09-06.md)
 - [Agents 冷加载与投影器成本](agents-loading-and-projector-cost-2026-09-06.md)
 - [Suite 资源源码清单](suite-resource-inventory-2026-09-05.md)
