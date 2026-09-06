@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 6f75b898e216fe5c26115fefd5421ed65786513fe69ca20d7b6ba689cb948ccf -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 19185a1d0f321c8e26b74ac21cdfc98195d6dac7d191566da75bfa7927fc3f1a -->
 
 # Agents
 
@@ -79,6 +79,9 @@ Worker 在 Pi UI 线程之外求值并执行共享 child 引擎。前台控制�
 
 必要依赖的首次加载前后各让出一个 timer turn。并发调用共享加载中的 Promise；失败允许重试，热态调用不增加 timer。
 无效启动输入不加载 builder。child protocol 在 spawn 之前加载完毕，恢复与所有权操作保持原有顺序。
+
+writer 监督器在 spawn 后立即启动两条管道的读取器，再让出执行权进入异步调度。
+这样可保留快速退出的 writer 的最终 stdout 帧和 stderr；前台与 detached 执行均保持原有背压和退出后排空行为。
 
 当前 Session governor 事务使用异步的稳定 inode 内核锁。获取锁时不再重写诊断用 owner 记录，也不强制刷盘；
 互斥与进程退出后的释放仍由内核保证。规范账本的提交方式与旧版本锁的处理保持不变。

@@ -85,6 +85,10 @@ Necessary first-use dependency loads yield a timer turn before and after each lo
 pending import; failures allow a retry, and warm calls add no timers. Invalid launch inputs do not load builders.
 Child protocol loading completes before spawn, and recovery/ownership work retains its existing order.
 
+The writer supervisor starts both pipe readers immediately after spawn, before yielding to asynchronous dispatch.
+This preserves final stdout frames and stderr from fast-exiting writers; backpressure and post-exit draining remain
+unchanged for foreground and detached execution.
+
 Current Session governor transactions use asynchronous stable-inode kernel claims. Acquiring a claim does not rewrite
 or flush diagnostic owner records; mutual exclusion and process-death release remain kernel-owned. Canonical ledger
 commits and legacy lock handling are unchanged.
