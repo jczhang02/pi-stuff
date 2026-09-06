@@ -10,7 +10,7 @@
 		"reason": "Loads the certified Host HTML exporter."
 	},
 	"scripts/verify-goal-pty.ts": {
-		"sha256": "18aa175a455402a11e2fbf1a15f97ff1ed57ec01a3d1a79a54e5ff23209a2c6d",
+		"sha256": "a3b85805e27bc724ed65942bd11d4bc923b0db463523e78645198159885083d1",
 		"dependencies": [],
 		"reason": "Loads the certified Host HTML exporter."
 	},
