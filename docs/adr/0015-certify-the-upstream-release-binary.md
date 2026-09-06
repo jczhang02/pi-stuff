@@ -11,7 +11,7 @@ model data, source hydration, build records, and crash-safe binary publication t
 
 ## Decision
 
-Support Pi `0.85.0` on Linux x64, retain the reviewed upstream source commit as provenance, and verify compatibility through
+Support Pi `0.85.1` on Linux x64, retain the reviewed upstream source commit as provenance, and verify compatibility through
 Pi's public APIs and real-Host capability acceptance. Acceptance must exercise the complete applicable Capability
 Contract Catalog against the actual Host; executable hashes, archive hashes, file sizes, embedded Bun banners, and byte
 offsets are not admission gates. Exact development dependencies continue to provide the released type surface.

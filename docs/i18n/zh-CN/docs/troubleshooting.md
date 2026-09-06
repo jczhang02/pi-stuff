@@ -1,4 +1,4 @@
-<!-- translation-source: docs/troubleshooting.md; translation-source-sha256: cce138d572e3433839baae797c22f3955ca7e41d8210edbfe3f8fe069f31d6b3 -->
+<!-- translation-source: docs/troubleshooting.md; translation-source-sha256: 5018966adfc674ac4e783d8da1c5a6b5b98ce04445e187165e692345e1c67b47 -->
 
 # 故障排查
 
@@ -10,7 +10,7 @@
 
 ### Package 没有加载
 
-1. 确认 `pi --version` 在已认证 Linux x64 路径上报告 `0.85.0`。
+1. 确认 `pi --version` 在已认证 Linux x64 路径上报告 `0.85.1`。
 2. 在仓库根目录重新运行 `pi install ./packages/pi-stuff`。
 3. 重启 Pi 并打开 `/diagnostics`。
 

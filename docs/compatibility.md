@@ -4,7 +4,7 @@
 
 | Contract | Certified version |
 | --- | --- |
-| Pi standalone host | `0.85.0`, upstream `107d79f11072bbc8a3a757ed7fd69596bee7d68c`, Linux x64 |
+| Pi standalone host | `0.85.1`, upstream `d981de1229ef899957bbe968bc8dcda02a21f477`, Linux x64 |
 | Repository Bun toolchain | 1.4.0 |
 | Pi Stuff Package | 0.3.3 |
 | Repository development package | 0.0.0 |
@@ -17,7 +17,7 @@
 | RTK release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
 | RTK release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
-The supported Host profile is Pi `0.85.0` on Linux x64. The upstream source commit above is retained as a provenance
+The supported Host profile is Pi `0.85.1` on Linux x64. The upstream source commit above is retained as a provenance
 reference. Acceptance exercises the complete Suite contract against the real Host and its public APIs, including public
 `registerMarkdownTransformer()`, regular and fullscreen UI behavior, and space-preserving native settings search. A
 version match alone is insufficient: the Host must also pass the applicable real-Host capability acceptance. Pi Stuff
@@ -32,8 +32,8 @@ A direct push to `main` runs `Fast` only; manual dispatch runs both checks. PTY 
 settings before using them; the Ubuntu baseline must work without `extended-keys-format`.
 
 `Acceptance` obtains the supported Pi Host, Code Mode host, and RTK runtime, then runs isolated tests, real TUI
-verification, the Tool Activity benchmark, and package verification in a network-isolated namespace. Per-file process
-isolation prevents process- or PTY-heavy tests from contaminating later tests. Reuse required CI evidence for the same
+verification, the Tool Activity benchmark, and package verification in a network-isolated namespace. The job allows 40 minutes; individual scenario timeouts and
+required coverage are unchanged. Per-file process isolation prevents process- or PTY-heavy tests from contaminating later tests. Reuse required CI evidence for the same
 revision under [the verification policy](code-quality.md#risk-based-verification); a Fast-only result does not certify
 full Host acceptance. The [delivery publisher](agents/issue-tracker.md#verified-ci-evidence) verifies the applicable
 checks before reporting delivery. A separate weekly upstream watch reports when npm `latest` moves beyond the
@@ -50,24 +50,22 @@ the supported version, public API seams, and real-Host capability evidence toget
 reproduce the upstream compilation process.
 
 Pi core imports remain wildcard peer dependencies because the Host supplies them. Development dependencies stay pinned
-to the released `0.85.0` type surface. The published `pi-coding-agent` SDK imports `pi-server` through its main entrypoint
-but omits that dependency from its manifest. The repository supplies exact `@earendil-works/pi-server@0.85.0` as a
-development dependency; its narrow Knip entry accounts for this SDK-owned runtime import. Neither the SDK source nor
-the standalone Host is patched, and the dependency is not added to the installed Suite. Remove this workaround when a
-later certified SDK declares its dependency correctly.
+to the released `0.85.1` type surface. The published `pi-coding-agent` SDK at `0.85.1` excludes the experimental remote
+harness from its published SDK surface, so the explicit development `pi-server` dependency and its narrow Knip exemption
+are removed. The public SDK and stdio RPC contracts remain unchanged.
 
-User Message presentation adapts Pi 0.85.0's native insertion/replay method, retaining native card and Markdown
+User Message presentation adapts Pi 0.85.1's native insertion/replay method, retaining native card and Markdown
 components. Inline Skill placement observes the card-local native Markdown token renderer without a second parser.
 The exact standalone Host must pass Skill-plus-prompt and Skill-only rendering, `Ctrl+O`, resize, replay,
 and reload acceptance. Structural preflight and runtime containment protect native messages; fallback is not a passing
 result for normal certified inputs. Tool alignment is certified at `outputPad=1`; other values remain configurable.
 
-The input-enhancement editor exposes Pi 0.85.0's native embedded working-status capability. The Host spinner and
+The input-enhancement editor exposes Pi 0.85.1's native embedded working-status capability. The Host spinner and
 working message use the editor's top border and native thinking-level colors, with no duplicate working row. Real-Host
 PTY coverage checks regular/fullscreen and dark/light presentation, narrow resize, dialog restoration, cancellation,
 reload, completion, and the existing 500 ms Vibe Line Spinner liveness limit.
 
-Pi 0.85.0 wraps Thinking content in a native clickable `MouseRegion`. The version-checked Thinking adapter projects
+Pi 0.85.1 wraps Thinking content in a native clickable `MouseRegion`. The version-checked Thinking adapter projects
 only that region's child, retaining the Host's visibility callback and click routing. Real-Host PTY acceptance covers
 both mouse and keyboard collapse/expand, latest-row rendering, and unchanged canonical Session content.
 
@@ -75,21 +73,21 @@ Version-sensitive verification scripts read the shared certified Host contract
 instead of maintaining independent Pi version constants. PowerShell is recognized as a Pi built-in for Tool lifecycle,
 MCP name-conflict, and child-Agent availability policy, but the certified Linux baseline does not contain `pwsh` and
 does not claim PowerShell execution or Windows behavior.
-Real RPC Provider fixtures populate each Tool call in `toolcall_start.partial`, as required by Pi 0.85.0's RPC
+Real RPC Provider fixtures populate each Tool call in `toolcall_start.partial`, as required by Pi 0.85.1's RPC
 serialization contract.
-Pi 0.85.0 also owns live compaction replay and the post-Tool threshold check before the next Assistant request: it
+Pi 0.85.1 also owns live compaction replay and the post-Tool threshold check before the next Assistant request: it
 validates the persisted boundary, rebuilds through `buildContextEntries()`, and renders the summary once. The Suite
 does not intercept either Host path. Packed acceptance proves a large Tool result triggers one native threshold
 compaction while an active Goal schedules exactly one continuation.
 
-Pi 0.85.0 owns RPC `clear_queue`, terminal settings, non-triggering custom-message ordering, Sessions, and Providers.
+Pi 0.85.1 owns RPC `clear_queue`, terminal settings, non-triggering custom-message ordering, Sessions, and Providers.
 Pi Stuff does not wrap or shadow those contracts. `clear_queue` returns the removed queues but exposes no Extension
 event, so Conversation UI cannot synchronously prune its observational attribution mirror. The next ambiguous mixed
 user/automatic delivery clears that mirror and fails closed to automatic attribution; real RPC acceptance covers this
 gap. The Host also defers `sendMessage({ triggerTurn: false })` content queued during Tool execution until every Tool
 result in that turn is persisted.
 
-Codex generated-image inlining uses Pi 0.85.0's public `detectSupportedImageMimeTypeFromFile()` seam for JPEG, PNG,
+Codex generated-image inlining uses Pi 0.85.1's public `detectSupportedImageMimeTypeFromFile()` seam for JPEG, PNG,
 GIF, WebP, and BMP. The existing four-image, 25 MiB, regular-file, and best-effort text fallback limits remain intact.
 An inline image result certifies model-visible media and Host rendering behavior, not image display through tmux;
 actual terminal display still depends on the Host, terminal protocol, and multiplexer passthrough. Pi Stuff neither

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0015-certify-the-upstream-release-binary.md; translation-source-sha256: 58cabb26e0eb3eda7fd629f9b70a6e6113a2bfd246cf09ce2f550d336ee5e806 -->
+<!-- translation-source: docs/adr/0015-certify-the-upstream-release-binary.md; translation-source-sha256: 2370d8bf07deadd53bd58257b3d898197927568b8787a3d44b3bc5ad0db00641 -->
 
 ---
 status: accepted
@@ -12,7 +12,7 @@ Pi Stuff 是 Pi 软件包，不是 Pi 宿主发行版。从固定的源码检出
 
 ## 决策
 
-支持 Linux x64 上的 Pi `0.85.0`，保留已审查的上游源码提交作为来源参考，并通过 Pi 公开 API 与真实 Host 能力
+支持 Linux x64 上的 Pi `0.85.1`，保留已审查的上游源码提交作为来源参考，并通过 Pi 公开 API 与真实 Host 能力
 验收验证兼容性。验收必须在实际 Host 上覆盖适用的 Capability Contract Catalog；可执行文件哈希、归档哈希、文件大小、
 内嵌 Bun banner 和字节偏移都不是准入门槛。精确版本的开发依赖继续提供已发布的类型表面。
 
