@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: 9ffa9991fb5ab721473f90fae82c9bc50ecd63ae4ae3a045ae07cc7968b07c95 -->
+<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: b29bdf7b775f9a05069877c46e9aea6edbe1f94fc1ff08d8d4256c1339778e87 -->
 
 # Astra 指令与交付审查 — 2026-09-05
 
@@ -74,3 +74,5 @@ AGENTS 明确了用户指令优先级、已有授权，以及收到后续消息�
 保留的请求和 Session 记录证明额外调用来自 Session Naming：请求开头要求命名编码会话，Session 末尾出现 `pi-stuff-session-naming-state`。恢复测试只写入 `enabled: false`，未通过命名空间 schema 校验，因此启用了内置默认配置。测试现在复用已有的 `disableSessionNamingForTest()` helper。Goal 生命周期 retry 验证器存在同样的不完整覆盖，现在关闭命名时保留默认设置的其他字段。Provider 匹配逻辑和恢复断言保持不变。
 
 这修复了此前间歇性计数问题的配置根因；完成交付仍需最终版本验证。恢复测试和 Goal 生命周期验证器各增加一行 import，不修改运行时代码。
+
+[下一次 CI](https://github.com/jczhang02/pi-stuff/actions/runs/34009462730)通过了 Context 恢复，但暴露出独立的 Background Work PTY 时序问题。终端显示 Host 因响应仍在运行而拒绝 `/reload`：看到 `MONITOR_RESUMED` 文字并不代表 Host 已空闲。fixture 现在提供一个命令，等待 Pi 公共 `waitForIdle()` 后报告就绪，验证器再发送 `/reload`。这保留了 reload 断言，也避免用固定睡眠猜测时序。验证器从 267 增至 269 行，Provider fixture 从 101 增至 107 行。

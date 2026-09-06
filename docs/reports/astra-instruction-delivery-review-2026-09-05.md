@@ -114,3 +114,9 @@ preserves the default settings fields when disabling naming. Provider matching a
 
 This resolves the configuration cause of the earlier intermittent count; completion still requires validation of the
 final revision. The recovery test and Goal lifecycle verifier each gain one import line; no runtime code changes.
+
+The [next CI run](https://github.com/jczhang02/pi-stuff/actions/runs/34009462730) passed Context recovery but exposed a
+separate Background Work PTY race. The terminal showed the Host rejecting `/reload` because its response was still
+running: seeing `MONITOR_RESUMED` text does not establish idle state. The fixture now exposes a command that awaits
+Pi's public `waitForIdle()` and reports readiness before the verifier sends `/reload`. This preserves reload assertions
+and avoids a timing sleep. The verifier grows from 267 to 269 lines and its Provider fixture from 101 to 107.
