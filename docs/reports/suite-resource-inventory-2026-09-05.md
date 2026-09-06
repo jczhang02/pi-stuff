@@ -604,3 +604,51 @@ bytes. These three samples do not establish a stable whole-Host CPU or memory im
 and temporary fixture changes were removed. The numeric record's `skillMetadataResolution` retains every trial,
 Source and evidence hashes, native resource snapshots and limits. Full Suite resource dimensions, first-Agent cold
 loading and final responsiveness acceptance remain open.
+
+## Resource disposition at e43cc9e1
+
+The dated investigations above keep their original failures and limits. The
+[matched resource report](suite-comparable-resources-2026-09-06.md) now adds 52 recovery-verifier runs over 176 native
+Host lifetimes, eight Agent tree-memory/GC/callback-interval diagnostics and six passing current-source frozen-gate
+Agent runs. The earlier matched 32-run ordinary batch and 28-run scheduler comparison remain intact. This table
+reconciles the finite owner audit; it does not claim that every possible payload or configured external service was tested.
+
+| Capability | Removed work or measured disposition | Necessary retained cost and evidence |
+| --- | --- | --- |
+| Conversation UI | Slash-free redraws no longer read the command registry; command matching avoids per-redraw matcher construction. The earlier paired editor counts/output hashes establish the cuts. | Native painting, Spinner cadence, command discovery after registry changes and input/selection remain functional. Long-Session lifecycle and the current six Agent gate runs cover their shared UI path. |
+| Session Naming | The [selector comparison](history-selection-cost-2026-09-06.md) reduces 10,000 inspected messages to six for the measured tail without adding a cache. | Canonical branch construction, bounded prompt selection and one automatic request remain. Full-feature ordinary/Agent observers verify request and persistence; the feature-specific recovery batch does not universally enable Naming. |
+| Tool Display | Ledger and shared guard cuts remove upstream duplicate work; no additional grouping/animation hotspot was established. | Five native Host phases per historical/resume run and five per grouping run exercise lifecycle, compaction, resume and tree changes. Historical registration, projection and unchanged animation cadence are required display behavior. |
+| RTK | The five exact executable reads were initial certification plus four drift checks, not repeated certification. Retain them. | Two-phase native execution/resume resource pairs preserve rewritten execution and raw Session history. Identity revalidation and bounded model projection remain security/compatibility cost. |
+| Codex | The [owner measurement](gc-and-owner-cost-2026-09-06.md#retained-owner-behavior) reads one 71-byte usage response once; no duplicate read was found there. | Full-feature observers perform automatic Usage HTTP once. Account refresh/parsing and configured helper behavior are functional; these fixtures do not certify live OAuth or external account availability. |
+| Goal | Reverse latest-state selection and shared runtime guards remove measured scans/lookups; canonical/legacy precedence stays unchanged. | Seven native lifecycle phases per resource run cover continuation, Code Mode, reload, two compaction routes, blockers and retry. Queue normalization, accounting and terminal policy remain Goal-owned work. |
+| Context Management | Reuse the existing Worker, projection sharing and invalidation; measurements did not justify another cache or snapshot protocol. | Eight native phases cover projection, persistence, resume and isolation; two further phases cover input/interruption. Direct-input configuration, Worker initialization and complete context recovery remain necessary. |
+| Ponytail | Existing first-read canonical-body reuse remains; no new mode cache was added. | Two-phase native mode/restore resource pairs cover Session-owned behavior. Skill-free and selected-Skill Agent evidence separately verifies omitted unused reads and retained requested Skill semantics. |
+| Web | The measured publication seam reuses its stored object; no extra payload clone was found. Retain current TTL/lookup semantics. | Owner tests measure 100/1,000/10,000 publications and release; native search/fetch/continuation/restart pairs add actual Session replay and SSRF rejection. Live services remain outside this deterministic evidence. |
+| MCP | Existing metadata/version/configuration invalidation and lazy connection remain; no unproven metadata cache was added. | Three native phases per resource run cover setup, connection, actual Tool use, failure and historical Session rendering. Configuration validation and connection/disconnect cleanup remain required. |
+| Background Work | Shared successful atomic publication omits only the measured redundant cleanup; recovery/process identity checks remain. | The six-path monitor matrix measures cancellation and command/file/HTTP/log/timeout outcomes. Agent background completion/recovery checks separately preserve durable results and parent independence. |
+| Agents | Removed root-only child imports, unused Skill reads/loading, repeated config discovery, unused lock-owner flushes, absent-IPC timers and discarded result scans. Foreground execution uses the per-run Worker; cold background launch separates recovery writing from reader/runner loading. | Real child execution, cancellation, canonical results, recovery and birth-bound reaping remain. Whole-tree CPU/RSS and scheduler counts include the isolation cost: foreground retained RSS and wakeups can rise. Current direct, Code Mode/Ledger and background gates pass without changing thresholds. |
+| Todo | No measured duplicate replay or overlay work justified a new cache. | Native dependency creation/completion plus cold Session replay pairs preserve identical task state. Dependency validation, Session-owned storage, replay and completion display remain functional work. |
+| BTW | Keep the existing bounded retained history and context-fitting behavior; no additional cache was introduced. | Three native phases per resource run exercise execution and retained history. Context conversion, overflow retry and history bounds are required behavior. |
+| Notification | Owner measurements found one cancellable grace timer, no recurring poll or duplicate idle scheduling. | Counts at 1/100/1,000 settlements verify cancellation and disposal; two native lifecycle phases per resource pair include the real owner. Retain delivery and its existing grace policy. |
+| Code Mode | Warm Ledger folding skips unchanged history; cold event-kind dispatch avoids repeated schema cleaning while preserving the unsafe-key-filtering clone. | Native cold Tool and foreground-Agent Ledger scenarios, approval/replay regressions and packed verification retain canonical validation and the shared helper. No fixed pre-Tool wait or replay bypass was added. |
+
+Shared startup, idle shutdown, first/repeated prompting, unchanged reload and long Sessions also have the
+[lifecycle comparison](suite-lifecycle-comparison-2026-09-06.md): 240 user/assistant turns and 1,000 historical Tool
+results. Its older baseline includes intervening Host/Work/Goal changes, so it is not an isolated optimization delta.
+The loader still fingerprints paths/metadata for drift and invokes installers transactionally; the
+[cold-start marks](gc-and-owner-cost-2026-09-06.md#cold-start-boundaries) distinguish fingerprinting, imports,
+registration and first-input Context activation. Shared status equality, Tool registration and recovery remain required
+coordination, not new optimization targets inferred from aggregate CPU.
+
+Resource axes now have explicit observations: waited/cgroup CPU, end/tail RSS, sequentially sampled tree RSS,
+complete-cycle GC allocation lower bounds and observed pauses, partial kernel I/O, scheduler wakeups and elapsed
+operation/callback intervals. Their limits are not interchangeable: sampled sums are not continuous peak RSS;
+tail snapshots are not guaranteed steady state; GC logs are not total allocation; context switches are not wakeups;
+callback gaps bound only wholly covered non-yielding tasks. The numeric reports retain each limit and failing sample.
+
+No further speculative per-owner resource probe is justified by this inventory. The
+[current-source failure disposition](suite-comparable-resources-2026-09-06.md#current-source-recheck-and-historical-failures)
+keeps pre-Worker holds and later failed source revisions distinct from current passing execution. Full worktree checks,
+two complete independent reviews and verified delivery remain the final engineering obligations, not another resource
+matrix or permission request. Conditional external-service acceptance is still unverified where the declared service
+or credentials were not exercised; deterministic Host evidence is not relabeled as live service evidence.

@@ -41,6 +41,32 @@ These APIs require no kernel tracing permission. See the pinned
 [Bun 1.3.14 benchmarking documentation](https://github.com/oven-sh/bun/blob/bun-v1.3.14/docs/project/benchmarking.mdx)
 and [`bun:jsc` declarations](https://github.com/oven-sh/bun/blob/bun-v1.3.14/packages/bun-types/jsc.d.ts).
 
+## Interpreting the GC diagnostics
+
+Bun 1.3.14's [build definition](https://github.com/oven-sh/bun/blob/bun-v1.3.14/scripts/build/deps/webkit.ts#L1-L5)
+pins WebKit `5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b`. The observed log format matches that source; the executable's
+Bun version alone does not prove that its builder left the WebKit override unset.
+
+The scheduler prints `ca=` from JSC's cycle allocation counter divided by 1,024. This is a floating-point value,
+not whole-KiB truncation; the [scheduler](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/StochasticSpaceTimeMutatorScheduler.cpp#L65-L75)
+and [`PrintStream`](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/WTF/wtf/PrintStream.cpp#L216-L219)
+show the conversion and six-decimal formatting. The counter sums ordinary and oversized allocations reported to JSC;
+see [`Heap.h`](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/Heap.h#L653).
+Both counters reset at collection completion. `p=` records an actual pause, including intermediate pauses before
+concurrent collection; `tp=` is a scheduling target. A cycle may contain several actual pauses. See
+[`Heap.cpp`](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/Heap.cpp#L1533-L1537),
+its [final pause](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/Heap.cpp#L1659-L1661),
+and [counter reset](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/Heap.cpp#L2382-L2386).
+
+Use only complete, unambiguous cycles associated with one process and VM. Parent and Worker text was observed
+interleaving within a line; assigning such a line to its first VM would mix their measurements. Discard ambiguous,
+truncated and orphaned records, and report how many starts were not accepted. For accepted cycles, summing
+`max(0, floor(ca * 1024) - 1)` with a bounded numeric range gives a conservative lower bound on the captured JSC-accounted
+allocation subset, allowing for decimal rounding. It excludes concurrent allocations after each start, the uncollected
+tail, missing records and native allocations not reported to JSC. Sum every accepted `p=`, but label the maximum as an
+observed maximum, not an upper bound on unobserved pauses. Logging also perturbs the workload; it cannot certify the
+ordinary responsiveness gates.
+
 ## The narrower kernel restriction
 
 The local `sched_wakeup` tracepoint ID was unreadable. A kernel-inclusive `perf_event_open` software context-switch
@@ -74,7 +100,9 @@ separates later PID generations. Linux emits its exit event before memory and fi
 [`do_exit`](https://github.com/torvalds/linux/blob/v6.17/kernel/exit.c) and the
 [event print formats](https://github.com/torvalds/linux/blob/v6.17/include/trace/events/sched.h).
 Unexpected formats, lost records, missing exits, root reuse, or an owned nonleader exec reject the measurement.
-Paired before-and-after Pi workload counts are still required; the control does not supply them.
+The subsequent [paired workload report](../reports/suite-comparable-resources-2026-09-06.md#completed-scheduler-comparison)
+records 28 traced Pi workloads from run `34052545498`, with no reported lost events and complete observed task exits.
+Those workload counts, not the control, supply the before-and-after wakeup comparison.
 
 Continue the ordinary-user resource and retained-stall investigation with existing observers. The responsiveness
 observer already has a separate `--cpu-profile` diagnostic mode; do not mix profiling with frozen liveness gates.

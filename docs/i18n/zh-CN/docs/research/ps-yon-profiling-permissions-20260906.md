@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/ps-yon-profiling-permissions-20260906.md; translation-source-sha256: 2a6b588e5b9cafb3eb898a586af911b6f0c093010274baa4da8cfdf68021bde0 -->
+<!-- translation-source: docs/research/ps-yon-profiling-permissions-20260906.md; translation-source-sha256: 8817ac5b364af83963ce76b246c4a30c6ac9fe6d035f426509a8df830b682274 -->
 
 # ps-yon 性能测量权限核查
 
@@ -41,6 +41,30 @@ Bun 文档说明了 JavaScript/原生堆的区分、堆统计，以及通过 `BU
 [Bun 1.3.14 基准测量文档](https://github.com/oven-sh/bun/blob/bun-v1.3.14/docs/project/benchmarking.mdx)
 和 [`bun:jsc` 声明](https://github.com/oven-sh/bun/blob/bun-v1.3.14/packages/bun-types/jsc.d.ts)。
 
+## GC 诊断的含义
+
+Bun 1.3.14 的[构建定义](https://github.com/oven-sh/bun/blob/bun-v1.3.14/scripts/build/deps/webkit.ts#L1-L5)
+固定使用 WebKit `5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b`。实测日志格式与该源码一致；仅凭
+可执行文件中的 Bun 版本号，不能证明构建者没有覆盖 WebKit 版本。
+
+调度器将 JSC 本周期分配计数除以 1,024 后输出为 `ca=`。这是浮点数，不是按整 KiB 截断；
+[调度器](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/StochasticSpaceTimeMutatorScheduler.cpp#L65-L75)
+与 [`PrintStream`](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/WTF/wtf/PrintStream.cpp#L216-L219)
+给出了换算方式和六位小数格式。计数器相加的是向 JSC 报告的普通分配和超大分配，参见
+[`Heap.h`](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/Heap.h#L653)。
+两个计数器都在回收完成时归零。`p=` 记录实际暂停，包括转入并发回收前的中间暂停；`tp=` 是调度目标。
+一个回收周期可以有多次实际暂停。参见
+[`Heap.cpp`](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/Heap.cpp#L1533-L1537)、
+[最后一次暂停](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/Heap.cpp#L1659-L1661)
+和[计数器归零](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/JavaScriptCore/heap/Heap.cpp#L2382-L2386)。
+
+只使用能明确关联到一个进程及 VM 的完整周期。实测发现主进程和 Worker 的文本会在同一行内交错；
+把整行归给第一个 VM 会混合两者的数据。丢弃有歧义、截断和缺少起始记录的内容，并报告有多少起始记录
+未被接受。对接受的周期，在限定数值范围内累加 `max(0, floor(ca * 1024) - 1)`，可得到所捕获
+JSC 计入分配子集的保守下界，预留小数舍入余量。它不包含各次起始时刻之后的并发分配、尚未回收的尾部、
+缺失记录，以及没有向 JSC 报告的原生分配。累加每一个被接受的 `p=`，但将最大值标为观测最大值，
+不能视为未观测暂停的上界。日志也会扰动工作负载，不能用于认证普通响应性门禁。
+
 ## 范围较窄的内核限制
 
 本机 `sched_wakeup` tracepoint ID 无法读取。包含内核的 `perf_event_open` 软件上下文切换事件返回
@@ -71,8 +95,10 @@ Bun 文档说明了 JavaScript/原生堆的区分、堆统计，以及通过 `BU
 解析器在内核退出清理期间保留任务归属，并区分后续 PID 复用。Linux 在内存和文件清理之前发出 exit
 事件，参见 [`do_exit`](https://github.com/torvalds/linux/blob/v6.17/kernel/exit.c) 和
 [事件输出格式](https://github.com/torvalds/linux/blob/v6.17/include/trace/events/sched.h)。未知格式、事件
-丢失、缺少 exit、根 PID 复用或归属任务发生非主线程 exec 都会使测量失败。仍须取得优化前后配对的
-Pi 工作负载计数；正控不能替代它们。
+丢失、缺少 exit、根 PID 复用或归属任务发生非主线程 exec 都会使测量失败。后续的
+[配对工作负载报告](../../../../../docs/reports/suite-comparable-resources-2026-09-06.md#completed-scheduler-comparison)
+记录了运行 `34052545498` 的 28 个 Pi 跟踪工作负载，报告的丢失事件为零，观测任务均已退出。
+优化前后的唤醒比较来自这些工作负载计数，而非正控。
 
 继续使用已有 observer，推进普通权限可完成的资源与历史卡顿调查。响应性 observer 已有独立的
 `--cpu-profile` 诊断模式；不得把 profiling 与冻结的活性门禁混跑。在已验证的 CI 环境中运行匹配的工作负载。

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: b50d5114b63dd5be05d738dfaf751e32a3295170b343acad3db1b47a13ce7005 -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: e9e0189c2e5bb0f22cded2156d0180028e64bec2f2b9bd54b1747be35e43bc5d -->
 
 # Suite 资源源码清单
 
@@ -543,3 +543,44 @@ child 各导入根实现一次，候选均为零；每个 child 的两次请求�
 不是精确的 Skill 专属字节数或物理磁盘读取量。这三次样本不能证明整个 Host 的 CPU 或内存稳定改善。
 所有 scope 均已卸载，临时 fixture 改动已撤掉。数值记录的 `skillMetadataResolution` 保留全部轮次、
 源码及证据哈希、原生资源快照和限制。整个 Suite 的完整资源维度、首次 Agent 冷加载和最终响应性验收仍未完成。
+
+## e43cc9e1 的资源处置
+
+上述带日期调查保留原有失败及限制。[可比资源报告](suite-comparable-resources-2026-09-06.md) 现已增加 52 次恢复
+验证器运行、176 个原生 Host 生命周期、八次 Agent 进程树内存/GC/回调间隔诊断，以及六次通过当前源码锁定门槛的
+Agent 运行。较早的 32 次可比普通运行和 28 次调度对照保持不变。下表汇总有限 owner 审计，不声明已测试所有可能
+载荷或所有已配置外部服务。
+
+| Capability | 已删除工作或测量处置 | 保留的必要成本与证据 |
+| --- | --- | --- |
+| Conversation UI | 无斜杠重绘不再读命令注册表；命令匹配不再每次重绘构造 matcher。此前配对编辑器计数及输出哈希证明这些删除。 | 原生绘制、Spinner 节奏、注册表变更后的命令发现及输入/选择均为功能。长 Session 生命周期及当前六次 Agent 门槛运行覆盖共享 UI 路径。 |
+| Session Naming | [选择器对照](history-selection-cost-2026-09-06.md) 将所测尾部的 10,000 条消息检查减至六条，没有新增缓存。 | 规范 branch 构建、有界 prompt 选择及一次自动请求保留。完整功能普通/Agent 观察器验证请求和持久化；功能专用恢复批次并未普遍启用 Naming。 |
+| Tool Display | Ledger 及共享 guard 删除上游重复工作；没有确认额外分组/动画热点。 | 历史/恢复每次五个原生 Host 阶段、分组每次五个阶段，覆盖生命周期、压缩、恢复及树变更。历史注册、投影及不变的动画节奏都是必要显示行为。 |
+| RTK | 五次精确二进制读取是首次认证加四次漂移检查，不是重复认证，予以保留。 | 两阶段原生执行/恢复资源对照保留重写执行及原始 Session 历史。身份重验证和有界模型投影仍是安全/兼容成本。 |
+| Codex | [owner 测量](gc-and-owner-cost-2026-09-06.md#retained-owner-behavior) 对一个 71 字节 usage 响应读取一次，该处未发现重复读取。 | 完整功能观察器执行一次自动 Usage HTTP。账户刷新/解析及已配置 helper 行为属于功能；这些 fixture 不认证线上 OAuth 或外部账户可用性。 |
+| Goal | 反向选择最新状态及共享 runtime guard 删除已测扫描/查找；规范/legacy 优先级不变。 | 每次资源运行七个原生生命周期阶段覆盖继续、Code Mode、重载、两类压缩、阻塞和重试。队列规范化、记账及终止策略仍由 Goal 拥有。 |
+| Context Management | 复用既有 Worker、投影共享和失效机制；测量未证明需要另一缓存或快照协议。 | 八个原生阶段覆盖投影、持久化、恢复和隔离，另外两个阶段覆盖输入/中断。直接输入配置、Worker 初始化及完整 Context 恢复保持必要。 |
+| Ponytail | 保留现有首次读取的规范正文复用；未新增模式缓存。 | 两阶段原生模式/恢复资源对照覆盖 Session 所有行为。无 Skill/指定 Skill 的 Agent 证据另行验证省去无用读取且保留请求的 Skill 语义。 |
+| Web | 所测发布接缝复用已存储对象，未发现额外载荷 clone。保留当前 TTL/查找语义。 | owner 测试测量 100/1,000/10,000 次发布及释放；原生搜索/抓取/续取/重启对照补充真实 Session 重放和 SSRF 拒绝。线上服务不在这些确定性证据中。 |
+| MCP | 保留现有元数据/版本/配置失效及惰性连接；未新增未经证明的元数据缓存。 | 每次资源运行三个原生阶段覆盖设置、连接、真实 Tool 使用、失败和历史 Session 渲染。配置验证及连接/断开清理仍必要。 |
+| Background Work | 共享成功原子发布只省去已测冗余清理；恢复/进程身份检查保留。 | 六路径 monitor 矩阵测量取消及命令/文件/HTTP/日志/超时结果。Agent 后台完成/恢复检查另行保留持久结果和父进程独立性。 |
+| Agents | 删除子进程 root-only 导入、无用 Skill 读取/加载、重复配置发现、无用锁 owner flush、无 IPC 定时器及丢弃的结果扫描。前台使用逐次 Worker；后台冷启动将恢复写入与读取器/runner 加载分开。 | 保留真实子执行、取消、规范结果、恢复和出生身份绑定回收。整个树的 CPU/RSS 及调度计数包含隔离成本：前台保留 RSS 和唤醒可增加。当前直接、Code Mode/Ledger 及后台门槛通过，未改阈值。 |
+| Todo | 没有已测重复重放或 overlay 工作证明应新增缓存。 | 原生依赖创建/完成及冷 Session 重放对照保持相同任务状态。依赖验证、Session 所有存储、重放及完成显示仍是功能工作。 |
+| BTW | 保持既有有界历史及 Context 适配行为；未引入额外缓存。 | 每次资源运行三个原生阶段覆盖执行和保留历史。Context 转换、溢出重试及历史边界是必要行为。 |
+| Notification | owner 测量发现一个可取消 grace timer，没有周期轮询或重复 idle 调度。 | 1/100/1,000 次结算计数验证取消和释放；每次资源对照两个原生生命周期阶段包含真实 owner。保留投递及现有 grace 策略。 |
+| Code Mode | 温态 Ledger 增量折叠跳过未变历史；冷态事件类型分派避免重复 schema 清理，同时保留过滤不安全 key 的 clone。 | 原生冷 Tool 和前台 Agent Ledger 场景、审批/重放回归及打包验证保留规范校验与共享 helper。没有增加固定 pre-Tool 等待或绕过重放。 |
+
+共享启动、idle 关闭、首次/重复 prompt、未变重载及长 Session 另有[生命周期对照](suite-lifecycle-comparison-2026-09-06.md)：
+240 轮 user/assistant 与 1,000 条历史 Tool 结果。其旧基线包含期间的 Host/Work/Goal 变化，不是隔离的优化差值。
+加载器继续为漂移检查生成路径/元数据指纹，并以事务顺序调用 installer；
+[冷启动标记](gc-and-owner-cost-2026-09-06.md#cold-start-boundaries) 区分指纹、导入、注册及首次输入 Context 激活。
+共享状态相等性、Tool 注册及恢复仍是必要协调，不能仅凭总 CPU 推断成新优化目标。
+
+资源维度现已有明确观察：等待退出/cgroup CPU、末次/尾部 RSS、顺序采样进程树 RSS、完整周期 GC 分配下界及观察到的
+暂停、部分内核 I/O、调度唤醒以及操作/回调耗时。其限制不能互换：采样和不是连续峰值 RSS，尾部快照不是已保证稳态，
+GC 日志不是总分配量，上下文切换不是唤醒，回调间隙仅约束完全被覆盖的非让出任务。数值报告保留每项限制及失败样本。
+
+本清单未证明需要进一步推测性的逐 owner 资源探针。
+[当前源码失败处置](suite-comparable-resources-2026-09-06.md#current-source-recheck-and-historical-failures) 将 Worker 前停顿、
+后续失败源码版本与当前通过的执行区分。完整 worktree 检查、两次完整独立审查和已验证交付是最终工程责任，不是再做资源
+矩阵或请求权限。未实际使用声明服务或凭据的条件外部服务验收仍未验证；不把确定性 Host 证据重标成线上服务证据。

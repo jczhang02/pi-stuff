@@ -222,3 +222,155 @@ did not run after that failure. Its one-Agent background sample `RRFa7j` had a 4
 the observer gap cannot explain that held frame. Both remain recorded, without assigning the hold to a function.
 This older CI result and the current local comparison do not close whole-Suite acceptance or the remaining resource
 and recovery matrix.
+
+## Recovery resource comparison
+
+The next batch completed 52 verifier runs across 176 native Host lifetimes, from 20:04:35 to 20:41:27 UTC on
+2026-09-06. Each workload used candidate/baseline/baseline/candidate order: Package `e43cc9e1` against `40101bb2`,
+with the same current verifier, exact Pi binary and fresh private configuration. User/network/PID namespaces kept
+the fixtures offline. No Host workloads or other profilers overlapped; ambient machine activity and kernel page
+caches were uncontrolled. Existing recovery assertions stayed intact.
+
+An external reader collected waited-process CPU, sampled process-tree RSS and I/O; the native Host emitted natural
+GC diagnostics. The [GC interpretation](../research/ps-yon-profiling-permissions-20260906.md) defines the accepted
+complete-cycle allocation lower bound and excludes ambiguous/interleaved records. These diagnostics add work and
+are not ordinary responsiveness samples. Two observations per variant provide descriptive comparisons only.
+
+| Workload | Native Hosts per run | CPU median, seconds: baseline → candidate | Maximum sampled tree RSS median, decimal MB: baseline → candidate | Captured GC allocation lower-bound median, decimal MB: baseline → candidate |
+| --- | ---: | ---: | ---: | ---: |
+| Work monitor cancellation and five completion/error paths | 1 | 13.705 → 11.887 | 942.0 → 944.1 | 1,304.5 → 620.4 |
+| Goal normal, Code Mode, reload, compaction, blocker and retry | 7 | 38.281 → 27.540 | 944.6 → 891.4 | 6,792.5 → 2,013.4 |
+| Context projection, persistence, resume and isolation | 8 | 33.826 → 21.298 | 827.9 → 709.7 | 7,609.4 → 2,125.5 |
+| Context input and interruption | 2 | 13.133 → 9.825 | 889.9 → 827.3 | 3,075.0 → 1,763.0 |
+| Tool historical rendering and resume | 5 | 27.799 → 20.275 | 852.9 → 739.4 | 4,967.1 → 1,534.6 |
+| Tool grouping lifecycle, compaction, resume and tree | 5 | 40.776 → 31.775 | 1,121.1 → 992.3 | 5,679.1 → 2,048.5 |
+| RTK execution and resume | 2 | 9.156 → 6.113 | 833.2 → 728.4 | 1,912.0 → 544.4 |
+| MCP setup, connection, Tool and historical Session | 3 | 14.136 → 9.307 | 846.4 → 820.6 | 3,006.7 → 858.3 |
+| BTW execution and retained history | 3 | 10.412 → 5.868 | 823.3 → 703.3 | 2,718.2 → 664.5 |
+| Notification lifecycle | 2 | 14.678 → 11.641 | 828.6 → 748.1 | 2,106.2 → 730.1 |
+| Ponytail mode and restore | 2 | 9.724 → 6.751 | 828.9 → 754.2 | 1,887.8 → 521.8 |
+| Todo dependency completion and cold replay | 2 | 7.976 → 5.112 | 849.0 → 707.5 | 1,817.4 → 450.5 |
+| Web search/fetch, continuation and cold replay | 2 | 9.492 → 5.315 | 850.8 → 713.0 | 2,094.8 → 494.5 |
+
+CPU medians fell in all 13 workloads. Work's sampled peak RSS rose slightly. The GC column is not total allocated
+bytes: coverage differs by run, and native allocations, uncollected tails, missing cycles and separate child logs
+are absent. The reader accepted 17,770 of 18,740 observed GC starts across this batch. Per-Host counts, rejected starts,
+pause sums/maxima, source and raw-evidence hashes remain in `recoveryResourceComparison` in the numeric record.
+No total-allocation or universal GC improvement is inferred from lower captured values.
+
+RSS is a sum of sequential per-process readings, not an instantaneous peak or a proved lower bound on that peak.
+There were 44,373 retained samples and 630 process-read races; maximum scan time was 44.846 ms, including scans with
+no surviving resident process. Last and tail-one-second median RSS are also retained, without calling them a
+steady-state plateau. CPU sums sequential Host lifetimes; the RSS column takes the largest sampled sum across those
+lifetimes, not the sum of their separate peaks. Workers share their Host's process RSS and are counted once.
+
+Waited CPU includes kernel-accounted descendants; the external reader, tmux/Expect and sibling HTTP fixtures remain
+outside it. Parent I/O maxima retain waited-child accounting where available, without adding child counters again.
+Unavailable or unreaped descendant I/O can be missing. Block operations are not bytes, and context switches are not
+wakeups. Output-block medians barely changed for Work and rose slightly for Context input and Notification. The
+paired scheduler evidence above remains the wakeup measurement; it was not rerun for these diagnostics.
+
+The two added fixtures exercise real native Tools and canonical Session replay. Todo creates two tasks, persists
+their dependency, completes both and restarts the same Session; the replayed task state must equal the final native
+Tool result. Web searches, fetches a document longer than 50,000 characters, retrieves an exact 2,000-character slice
+and restarts the same Session. The slice must remain identical without refetching, while a localhost fetch is rejected.
+Synthetic fetch responses and mount-private hosts/NSS files replace unavailable DNS inside the isolated namespace;
+production SSRF checks remain enabled. These fixtures do not certify live search services or external credentials.
+The feature-specific verifiers complement the separate full automatic Naming/Usage observations.
+
+Setup failures remain separate. Eight initial Work/Goal runs had no complete resource record because Bun's usage
+accessors were incorrectly serialized; explicitly reading those fields repaired the reader. The first grouping run
+used a terminal wider than its clipping fixture allows. Its corrected run passed functionally but lost the last
+reader record when the namespace exited; the harness now waits for its own final records. Two Web attempts retained
+the unavailable system NSS resolver and failed before continuation; private NSS configuration fixed the fixture.
+None of these incomplete attempts is included in the 52 comparisons, and no product assertion was weakened.
+
+## Agent tree memory and main-thread interval bounds
+
+Eight further runs, from 20:58:40 to 21:04:28 UTC, used the same two-child foreground-Ledger and background workloads,
+Package revisions, 120×40 terminal and candidate/baseline/baseline/candidate order. The existing cgroup reader counted
+Host, Workers and descendants; an external process sampled their RSS through shutdown. A private first Extension
+recorded 10-ms timer callback starts in memory. Neither probe changed production Source, and neither ran with acceptance
+gates. All eight completed and reaped both children, requested and persisted automatic Naming once and refreshed
+Usage once; background runs also retained both completion outcomes while the parent continued independently.
+
+| Workload | CPU median, seconds: baseline → candidate | Maximum sampled tree RSS median, decimal MB: baseline → candidate | Final live RSS median, decimal MB: baseline → candidate | Captured parent/Worker GC allocation lower-bound median, decimal MB: baseline → candidate |
+| --- | ---: | ---: | ---: | ---: |
+| Cold Ledger, two Code Mode foreground Agents | 35.358 → 29.859 | 1,631.9 → 1,621.4 | 667.1 → 718.0 | 4,070.3 → 3,055.5 |
+| Two background Agents | 33.934 → 24.522 | 2,519.0 → 2,148.1 | 639.0 → 588.4 | 3,542.6 → 2,593.3 |
+
+Foreground isolation still retains more final RSS. Its accepted GC pause-sum medians were 4,127.030 → 4,132.704 ms,
+and captured cycle counts increased; a lower captured allocation value does not mean less collection activity.
+Parent returned-read medians also rose from 270.1 to 299.6 MB. These counters include waited-child I/O and diagnostic
+logging, not a claim about exact source-file reads. Background returned-read medians fell from 286.7 to 257.5 MB.
+Child GC logs are not complete here, even though their CPU and sampled RSS remain inside the measured tree.
+
+| Workload | Largest extension-loading callback interval, ms: baseline → candidate | Largest active-Agent callback interval, ms: baseline → candidate | Largest settlement callback interval, ms: baseline → candidate |
+| --- | ---: | ---: | ---: |
+| Cold Ledger foreground | 5,710.463 → 3,220.157 | 582.492 → 42.545 | 17.573 → 24.812 |
+| Background | 5,874.372 → 3,641.249 | 542.673 → 41.691 | 24.183 → 31.689 |
+
+A callback interval bounds the elapsed duration of any non-yielding main-thread task wholly inside it. It also
+includes idle time, GC, scheduler wait and probe overhead; it is not an exact JavaScript-task duration. Coverage begins
+at probe evaluation and ends at its shutdown callback. Earlier Host startup and later teardown are outside it, and
+phase labels can straddle lifecycle events. Startup loading is reported separately instead of disappearing from the
+active-Agent maximum. `agentResourceComparison` retains individual maxima, exact interval locations, sampling gaps,
+process counts, GC coverage and evidence hashes.
+
+The RSS sampler's largest scan was 44.237 ms and its largest start-to-start gap was 58.189 ms. Those gaps limit memory
+resolution; they are not gaps in the separate terminal observer, whose maximum gap stayed below 28.473 ms with no
+missing active Spinner. Candidate Spinner/input/selection maxima were respectively 132.582/36.740/25.733 ms across
+these diagnostics. They do not replace uninstrumented frozen-gate acceptance or explain every historical hold.
+
+## Completed ordinary CI at the retained code revision
+
+[Run 34056256262](https://github.com/jczhang02/pi-stuff/actions/runs/34056256262) passed Fast and disconnected Acceptance
+at exact commit `e43cc9e11d509d1c068c42f63faf52919f53263d`. The latter completed `test:ci`, the Tool Activity benchmark
+and packed fixed-Pi verification. The optional scheduler probe was not requested; its earlier 28-run evidence remains
+valid for the source it measured. The prior failed CI and held-frame records are unchanged. This success establishes
+that revision's CI outcome, not retrospective attribution or completed whole-Suite acceptance.
+
+## Current-source recheck and historical failures
+
+Six uninstrumented Agent runs on `e43cc9e1` passed every frozen single-event gate from 21:20:05 to 21:24:36 UTC.
+They used the original 60-second budget, exact Pi binary, private fresh configuration/caches, isolated namespaces and
+120×40 terminal. The order was direct foreground, cold-Ledger Code Mode foreground, background, then the reverse.
+There were no warmups, discarded workload samples, overlapping tests or agents, GC logging, CPU profiling or callback
+marks. Only the existing external terminal and resource-scope observers ran. Ambient activity and kernel page caches
+were uncontrolled.
+
+| Sample | Largest Spinner, ms | Slowest steady input/setup, ms | Slowest selection, ms | Largest observation gap, ms |
+| --- | ---: | ---: | ---: | ---: |
+| Direct foreground 1 | 114.337 | 15.510 | 14.063 | 16.900 |
+| Cold-Ledger foreground 1 | 124.291 | 14.020 | 15.638 | 16.869 |
+| Background 1 | 123.633 | 25.376 | 14.056 | 16.112 |
+| Background 2 | 136.609 | 25.441 | 14.020 | 16.096 |
+| Cold-Ledger foreground 2 | 123.408 | 25.599 | 25.748 | 16.150 |
+| Direct foreground 2 | 113.060 | 14.636 | 25.899 | 15.899 |
+
+The gate file SHA-256 remains `db75fe458f275724b9a030c59395d888c0421d0515c4c6cca01c3e02ad39d677`.
+Each run completed two child Tools, reaped both birth-identified children, requested and persisted Naming once and
+refreshed Usage once. Both background runs retained two outcomes and independent parent completion. No active Spinner
+observation was missing; all scopes were unloaded, inactive and dead after shutdown. The first collector stopped
+after a valid native capture because it expected an empty whole-worktree diff and found the known report changes.
+It then validated that same capture against the exact documentation-only allowlist and continued the remaining five
+runs. The numeric record retains all six observations and the shared report-diff hash; no native sample was replaced.
+
+Historical failures fall into different source periods. The unassigned 270.053 ms `9LkXjG` and 489.594 ms `U4SAr9`
+holds occurred before [foreground execution isolation](suite-responsiveness-observer-2026-09-05.md#foreground-agent-execution-isolation-2026-09-06).
+The old parent execution path has since moved to the per-run Worker; necessary parent UI and Session commits remain.
+Neither trace can retrospectively identify its exact function, and neither is reclassified as Host-only. They remain
+failures of the earlier source, alongside the matched boundary comparison and current direct/Code Mode checks.
+
+The post-Worker CI foreground sample `Hpk3n9` at `e51caab5` must be distinguished from those older holds. Its slowest
+input/setup was 46.587 ms with a 27.253 ms observation gap. This is a foreground input failure under the local frozen
+gate, although that CI scenario only asserted functional completion. It is not the background probe's 46.790 ms CPU
+interval. The separate 238.574 ms CI background hold and the 48.868/72.710 ms local input failures also remain intact.
+The later background cold-loading change has its own reproduced loading interval and baseline failure, followed by
+two uninstrumented passing candidates. The six current runs above cover both foreground paths as well as background
+after that shared recovery-publication change; this is changed-source verification, not an unexplained retry of e51.
+
+The finite current-source gate checks are complete. They support the tested execution paths, not a claim that every
+historical delay has been causally explained or that rare stalls can never recur. A new attributable failure on current
+Source would reopen the owning path. Whole-worktree checks, complete independent reviews and verified public delivery
+remain separate from this dated measurement result.
