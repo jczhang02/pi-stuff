@@ -23,17 +23,21 @@ reference. Acceptance exercises the complete Suite contract against the real Hos
 version match alone is insufficient: the Host must also pass the applicable real-Host capability acceptance. Pi Stuff
 does not rebuild or distribute Pi Host.
 
-CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, anti-slop
-lint, type surfaces, unused-code analysis, generated composition, and public-release safety. For pull requests, the scope classifier starts
-`Acceptance` when executable behavior or executable documentation changed; a direct push to `main` runs `Fast` only,
-and manual dispatch runs both checks. `Acceptance` obtains a supported Pi Host, Code Mode host,
-and RTK runtime
-before running every test
-file in a fresh Bun process, real TUI verification, the Tool Activity benchmark, and package verification in a
-network-isolated namespace. Per-file process isolation prevents one process- or PTY-heavy test from contaminating the
-native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip
-`Acceptance`; executable documentation remains covered by the same checks. A separate weekly upstream watch reports when
-the npm `latest` tag moves beyond the supported Host, but never changes support automatically.
+CI exposes two stable checks. `Fast` always validates the frozen dependency graph, formatting, anti-slop lint,
+type surfaces, unused-code analysis, generated composition, and public-release safety. For PRs, the scope classifier
+starts `Acceptance` for executable or unknown-impact changes. Beads metadata, root Markdown, documentation evidence,
+Package/Module READMEs, and `.github/CONTRIBUTING.md` use `Fast` only; Runtime Skills, Prompt Templates, configuration,
+and executable examples remain outside the prose exemption. Renames include both old and new paths in classification.
+A direct push to `main` runs `Fast` only; manual dispatch runs both checks. PTY verifiers probe optional tmux server
+settings before using them; the Ubuntu baseline must work without `extended-keys-format`.
+
+`Acceptance` obtains the supported Pi Host, Code Mode host, and RTK runtime, then runs isolated tests, real TUI
+verification, the Tool Activity benchmark, and package verification in a network-isolated namespace. Per-file process
+isolation prevents process- or PTY-heavy tests from contaminating later tests. Reuse required CI evidence for the same
+revision under [the verification policy](code-quality.md#risk-based-verification); a Fast-only result does not certify
+full Host acceptance. The [delivery publisher](agents/issue-tracker.md#verified-ci-evidence) verifies the applicable
+checks before reporting delivery. A separate weekly upstream watch reports when npm `latest` moves beyond the
+supported Host, without changing support automatically.
 The repository toolchain uses Bun 1.4.0. The Host's bundled runtime and release packaging are Host details; they are not
 Pi Stuff compatibility admission criteria.
 Bun dependency upgrades are deliberate maintainer changes because the frozen Bun lockfile, exact repository toolchain,

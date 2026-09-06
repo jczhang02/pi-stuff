@@ -3,8 +3,19 @@ import { type GithubMutation, publishBeads } from "../scripts/publish-beads.ts";
 
 const SHA = "a".repeat(40);
 const URL = "https://github.com/example/suite";
+type WorkflowRunFixture = {
+	id: number;
+	html_url: string;
+	path: string;
+	head_sha: string;
+	event: string;
+	status: string;
+	conclusion: string | null;
+	run_number: number;
+	run_attempt: number;
+};
 
-function fixture() {
+function records() {
 	const bead = {
 		id: "ps-root",
 		title: "Deliver the change",
@@ -31,6 +42,7 @@ function fixture() {
 		body: `Refs ${URL}/issues/10`,
 		head: { sha: SHA },
 		base: { repo: { full_name: "example/suite" } },
+		changed_files: 1,
 	};
 	const human = {
 		id: 1,
@@ -38,11 +50,32 @@ function fixture() {
 		html_url: `${URL}/issues/10#issuecomment-1`,
 		user: { login: "human" },
 	};
+	const workflowRun: WorkflowRunFixture = {
+		id: 20,
+		html_url: `${URL}/actions/runs/20`,
+		path: ".github/workflows/ci.yml",
+		head_sha: SHA,
+		event: "pull_request",
+		status: "completed",
+		conclusion: "success",
+		run_number: 1,
+		run_attempt: 1,
+	};
+	const jobs = [
+		{ name: "Fast", status: "completed", conclusion: "success" },
+		{ name: "Acceptance", status: "completed", conclusion: "success" },
+	];
+	return { bead, related, pull, human, workflowRun, jobs };
+}
+
+function fixture() {
+	const { bead, related, pull, human, workflowRun, jobs } = records();
 	const comments = [human];
 	const calls: string[][] = [];
 	let corruptReadback = false;
 	let remoteState: string | undefined;
 	let failAfterCreate = false;
+	const paths = [{ filename: "packages/pi-stuff/index.ts" }];
 	const run = (command: readonly string[], input?: GithubMutation): string => {
 		calls.push([...command]);
 		if (command[0] === "bd") {
@@ -54,6 +87,14 @@ function fixture() {
 		if (command[1] === "repo") return "example/suite";
 		if (command[2] === "user") return "publisher";
 		const path = command[2] ?? "";
+		if (path.includes("actions/workflows/ci.yml/runs")) return JSON.stringify([{ workflow_runs: [workflowRun] }]);
+		if (path.includes("pulls/12/files")) return JSON.stringify([paths]);
+		if (path.includes("actions/runs/20/attempts/1/jobs"))
+			return JSON.stringify([
+				{
+					jobs,
+				},
+			]);
 		if (path.includes("/commits/")) return JSON.stringify({ sha: SHA });
 		if (path.includes("/pulls/")) return JSON.stringify(pull);
 		if (path.endsWith("comments?per_page=100")) return JSON.stringify([[human], comments.slice(1)]);
@@ -97,6 +138,9 @@ function fixture() {
 		failAfterCreate: () => {
 			failAfterCreate = true;
 		},
+		workflowRun,
+		jobs,
+		paths,
 	};
 }
 
@@ -219,4 +263,36 @@ test("unknown PR states fail instead of being reported as open", () => {
 	const f = fixture();
 	f.pull.state = "unexpected";
 	expect(() => publishBeads("ps-root", f.run)).toThrow("invalid delivery PR");
+});
+
+test("documentation PRs skip Acceptance but incomplete file evidence fails before sync", () => {
+	const f = fixture();
+	f.paths[0] = { filename: "packages/pi-stuff/README.md" };
+	f.jobs[1] = { name: "Acceptance", status: "completed", conclusion: "skipped" };
+	publishBeads("ps-root", f.run);
+	expect(f.comments[1]?.body).toContain("Fast passed");
+	expect(f.comments[1]?.body).not.toContain("Acceptance passed");
+	f.pull.changed_files = 2;
+	f.calls.length = 0;
+	expect(() => publishBeads("ps-root", f.run)).toThrow("file listing is incomplete");
+	expect(f.calls.some((call) => call[1] === "github")).toBeFalse();
+});
+
+test("renaming executable source into a README still requires Acceptance", () => {
+	const f = fixture();
+	f.jobs[1] = { name: "Acceptance", status: "completed", conclusion: "skipped" };
+	const run = (command: readonly string[], input?: GithubMutation): string => {
+		if (command[2]?.includes("pulls/12/files"))
+			return JSON.stringify([
+				[
+					{
+						filename: "packages/pi-stuff/README.md",
+						previous_filename: "packages/pi-stuff/index.ts",
+					},
+				],
+			]);
+		return f.run(command, input);
+	};
+	expect(() => publishBeads("ps-root", run)).toThrow("Acceptance");
+	expect(f.calls.some((call) => call[1] === "github")).toBeFalse();
 });

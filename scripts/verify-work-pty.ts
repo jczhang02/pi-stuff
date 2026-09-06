@@ -106,6 +106,8 @@ after 100
 stty rows $env(PI_STUFF_WORK_PTY_ROWS) columns $env(PI_STUFF_WORK_PTY_COLUMNS) < $work_pty
 exec touch release.flag
 must_expect "MONITOR_RESUMED"
+send -- "/work-wait-idle\r"
+must_expect "WORK_PTY_IDLE"
 send -- "/reload\r"
 must_expect "Reloaded keybindings, extensions"
 must_expect "context files"

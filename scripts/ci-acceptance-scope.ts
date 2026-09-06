@@ -3,7 +3,13 @@ import { appendFileSync } from "node:fs";
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const ZERO_SHA = "0".repeat(40);
-const FAST_ONLY_PATH_PATTERNS = [/^\.beads\//u, /^[^/]+\.md$/u, /^docs\/.*\.(?:ansi|gif|html|md|png)$/u];
+const FAST_ONLY_PATH_PATTERNS = [
+	/^\.beads\//u,
+	/^[^/]+\.md$/u,
+	/^docs\/.*\.(?:ansi|gif|html|md|png)$/u,
+	/^packages\/[^/]+(?:\/[^/]+)*\/README\.md$/u,
+	/^\.github\/CONTRIBUTING\.md$/u,
+];
 
 export function requiresFullAcceptance(paths: readonly string[]): boolean {
 	if (paths.length === 0) return true;
@@ -15,9 +21,13 @@ function validRangeEndpoint(value: string | undefined): value is string {
 }
 
 function changedPaths(base: string, head: string): string[] {
-	const output = execFileSync("git", ["diff", "--name-only", "--diff-filter=ACDMRTUXB", "-z", base, head], {
-		encoding: "utf8",
-	});
+	const output = execFileSync(
+		"git",
+		["diff", "--no-renames", "--name-only", "--diff-filter=ACDMRTUXB", "-z", base, head],
+		{
+			encoding: "utf8",
+		},
+	);
 	return output.split("\0").filter(Boolean);
 }
 

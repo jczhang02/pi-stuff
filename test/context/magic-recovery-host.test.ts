@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createRpcTransport } from "../../scripts/magic-context-real-rpc.js";
+import { disableSessionNamingForTest } from "../../scripts/session-naming-test-settings.js";
 import { verifyPiHostVersion } from "../../scripts/verify-pi-host-provenance.js";
 import { ZERO_USAGE } from "../fixtures/faux-provider.js";
 
@@ -66,7 +67,7 @@ async function fixture(mode = "recover") {
 			retry: { enabled: false },
 		}),
 	);
-	await writeFile(join(agent, "pi-stuff.json"), JSON.stringify({ sessionNaming: { enabled: false } }));
+	await disableSessionNamingForTest(agent);
 	const session = seedHistory(cwd, join(root, "sessions"), mode === "multi-step");
 	const requestLog = join(root, "requests.jsonl");
 	const magicLog = join(root, "magic.log");

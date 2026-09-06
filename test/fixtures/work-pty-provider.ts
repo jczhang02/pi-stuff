@@ -95,6 +95,12 @@ function fixtureStream(context: Context) {
 }
 
 export default function workPtyProvider(pi: ExtensionAPI): void {
+	pi.registerCommand("work-wait-idle", {
+		handler: async (_args, ctx) => {
+			await ctx.waitForIdle();
+			ctx.ui.notify("WORK_PTY_IDLE", "info");
+		},
+	});
 	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Work PTY fixture", (_model, context) =>
 		fixtureStream(context),
 	);

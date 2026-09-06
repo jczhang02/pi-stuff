@@ -46,8 +46,8 @@ This ADR defines the migration target; current checks and certification policy r
   Both run independently and neither has authority to block PRs.
 - Reviews cover requirements, architecture, code, security, test effectiveness, and evaluation methodology. Reviewers
   examine redundant assertions and implementation coupling. Ordinary changes receive scoped review; cross-Capability
-  and architecture changes receive independent review. Existing Thermo-Nuclear review requirements remain applicable,
-  with test quality explicitly in scope.
+  and architecture changes need independent judgment. The current Thermo-Nuclear standard in `docs/code-quality.md`
+  owns completion review, with test quality explicitly in scope.
 
 ### Benchmark scope
 
@@ -211,3 +211,19 @@ unrelated execution costs. Purpose-based organization and risk-based scheduling 
 selection rules. Specific test performance thresholds, execution details, and the migration plan require later
 implementation planning. Existing repository checks remain authoritative until the owning current documents and
 implementation are updated together to implement this decision.
+
+### First migration stage: 2026-09-05
+
+The Astra instruction review adopts focused local checks, reuse of required CI evidence for the same revision, and
+one review of the complete affected scope. Findings require fixes and review of the changed and affected scope;
+unchanged successful checks and fixed review-round quotas do not add evidence. Repository instructions specify the
+quality bar without prescribing Agent delegation roles or scheduling.
+
+The existing publisher now verifies commit-bound CI evidence rather than trusting validation prose. The shared path
+classifier adds Package/Module READMEs and contribution guidance to the existing prose exemptions. Runtime resources
+and unknown changes still require Acceptance on PRs. Direct-push and manual-run policies remain distinct and visible.
+
+Capability-based test selection, test-directory migration, and performance-threshold classification remain later work.
+The current Tool Activity benchmark and source/extracted-Package Host checks remain in the executable check until
+that work establishes a justified replacement. This stage reduces repeated execution without claiming a faster full
+suite or changing certified Host coverage.
