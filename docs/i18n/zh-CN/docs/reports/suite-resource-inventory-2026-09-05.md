@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 74fc2279b09c2295535b75b3bced0702d794879fca54393827987ef33aa32d93 -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 36d43f61740d3a47bd00d27b941ab83b93ac6492b460231ee03d5bc53ddaedc3 -->
 
 # Suite 资源源码清单
 
@@ -13,6 +13,9 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 投影锁 I/O 移除的测量、三个最终原生通过样本，以及仍未归因的历史后段停顿。
 [Naming 与 Goal 后续报告](history-selection-cost-2026-09-06.md)在同一精确 Host 上测量提前结束的历史选择，
 确认输出不变，并记录通过的普通 Goal 续行样本；不包含 Host 分支构建、Goal 记账，以及仍缺失的分配／GC 和恢复成本。
+[生命周期前后对照](suite-lifecycle-comparison-2026-09-06.md)补充 48 次固定 Host 运行，覆盖新/长 Session、
+提示、未变更重载和空闲退出。相对原始 Package，六个 CPU 中位数下降 21.4–33.6%；报告保留离线功能排除项，
+并明确内存记账不代表进程树合计峰值。
 [GC 与 owner 成本后续报告](gc-and-owner-cost-2026-09-06.md)补充原生／Suite 工作负载中的自然 GC 观测，
 以及 Notification／Web 保留行为的测量。生命周期标记区分冷模块加载、注册与首次请求的 Context 激活；
 总分配量、精确唤醒与其余 owner／恢复审计尚未完成。

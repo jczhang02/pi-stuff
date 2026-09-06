@@ -11,7 +11,12 @@ import { parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import { summarizeSchedulerWakeups } from "./scheduler-wakeup-summary.js";
 
 const { values } = parseArgs({
-	options: { uid: { type: "string" }, gid: { type: "string" }, output: { type: "string" } },
+	options: {
+		uid: { type: "string" },
+		gid: { type: "string" },
+		output: { type: "string" },
+		package: { type: "string" },
+	},
 	strict: true,
 	allowPositionals: false,
 });
@@ -25,6 +30,21 @@ assert(pi && helper, "Certified Pi and Code Mode executables must already be pre
 const traceRoot = "/sys/kernel/tracing";
 const instance = join(traceRoot, "instances", `pi-stuff-workload-${process.pid}`);
 const repository = resolve(import.meta.dir, "..");
+const packageDirectory = resolve(values.package ?? join(repository, "packages/pi-stuff"));
+const packageGit = (...args: string[]) =>
+	command(
+		"setpriv",
+		`--reuid=${values.uid}`,
+		`--regid=${values.gid}`,
+		"--clear-groups",
+		"git",
+		"-C",
+		packageDirectory,
+		...args,
+	);
+assert.equal(packageGit("rev-parse", "--show-prefix"), "packages/pi-stuff/");
+assert.equal(packageGit("status", "--porcelain", "--untracked-files=all", "--", "."), "");
+const packageCommit = packageGit("rev-parse", "HEAD");
 const events = ["sched_wakeup", "sched_wakeup_new", "sched_process_fork", "sched_process_exit", "sched_process_exec"];
 const scenarios = [
 	["raw", "--repeat-tool"],
@@ -94,6 +114,8 @@ async function measure(args: string[], pi: string, helper: string) {
 			join(repository, "scripts/benchmark-responsiveness.ts"),
 			"--pi",
 			pi,
+			"--package",
+			packageDirectory,
 			...options,
 		],
 		{
@@ -179,7 +201,10 @@ try {
 		samples.push(sample);
 		console.log(JSON.stringify(sample));
 	}
-	await writeFile(values.output, JSON.stringify({ kernel: command("uname", "-r"), formats, samples }, null, 2));
+	await writeFile(
+		values.output,
+		JSON.stringify({ packageCommit, kernel: command("uname", "-r"), formats, samples }, null, 2),
+	);
 } finally {
 	if (created) {
 		await writeFile(join(instance, "tracing_on"), "0");

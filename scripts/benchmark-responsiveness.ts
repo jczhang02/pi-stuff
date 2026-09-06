@@ -25,6 +25,7 @@ const { values } = parseArgs({
 	options: {
 		pi: { type: "string", default: process.env["PI_BIN"] ?? "/opt/bin/pi" },
 		suite: { type: "boolean", default: false },
+		package: { type: "string", default: join(root, "packages/pi-stuff") },
 		agent: { type: "string" },
 		context: { type: "boolean", default: false },
 		goal: { type: "boolean", default: false },
@@ -48,6 +49,7 @@ const rows = Number(values.rows);
 const blockMs = Number(values["block-ms"]);
 const blockPhase = values["block-phase"];
 const usage = values.suite;
+const packageDirectory = resolve(values.package);
 const codeMode = values["code-mode"];
 const profileCpu = values["cpu-profile"];
 const agentMode = values.agent;
@@ -309,6 +311,13 @@ const git = (...args: string[]): string => {
 const source = {
 	commit: git("rev-parse", "HEAD").trim(),
 	diff: git("diff", "HEAD"),
+	package: usage
+		? {
+				directory: packageDirectory,
+				commit: git("-C", packageDirectory, "rev-parse", "HEAD").trim(),
+				diff: git("-C", packageDirectory, "diff", "HEAD"),
+			}
+		: undefined,
 	snapshots: await Promise.all(
 		[
 			"scripts/benchmark-responsiveness.ts",
@@ -338,7 +347,7 @@ const command = [
 	...(usage ? [] : ["--offline"]),
 	"--tui-mode",
 	"fullscreen",
-	...(usage ? ["--extension", join(root, "packages/pi-stuff")] : []),
+	...(usage ? ["--extension", packageDirectory] : []),
 	// Register observation markers after every Suite lifecycle handler.
 	"--extension",
 	provider,

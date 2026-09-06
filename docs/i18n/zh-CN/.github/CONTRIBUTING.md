@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 39e3adda7c11059ab2da407e467ecad0a72969c32ee6ded90c56a52c2aae44e7 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 4525ed1ee7de5175ef277d534f165e54a4f26279da0126199b55f95865b30be8 -->
 
 # 贡献指南
 
@@ -35,8 +35,12 @@ Agent、Context、Goal 和冷 Ledger。只有采集器使用宿主机 root 跟�
 运行，并使用独立的用户、网络和 PID 命名空间。独占 tracefs 实例使用全局时钟，拒绝事件丢失、任务
 生命周期不完整、根进程身份不明确或不支持的非主线程 exec。唤醒按目标任务归属统计，覆盖线程/子进程
 创建、退出清理及 PID 复用。计数和内核事件格式保留为汇总附件；不上传全系统原始跟踪。
-这些诊断运行不证明资源节省或活性通过。普通验收仍在关闭跟踪后运行；只有请求额外测量的手动运行
-才增加十分钟 job 时限。
+将 `scheduler_baseline` 设为仓库完整 commit SHA，可在同一 runner 上按基线/候选/候选/基线顺序比较干净的
+Package 源码树。每批都用当前 observer 执行全部七种工作负载，记录实际选择的 Package commit；进程和配置
+均为新建，但不清空内核页缓存。observer 的 `--package` 参数也可用于本地对照，并分别保存 observer 与
+Package 的 commit/diff 来源。
+这些诊断运行不证明活性通过。普通验收仍在关闭跟踪后运行；请求额外测量的手动运行增加 25 分钟 job 时限，
+供串行对照使用。
 
 ## Package 变更
 

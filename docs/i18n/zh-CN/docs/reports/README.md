@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: cf0b507eebe36e9c8d93b06764734ed9b8614fe1cd66c2a77f1aa0b9d02479b9 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 7c95dfa04c3b03b90840a33f572fbad2b302f72744d20229575476cd0b19052d -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [Suite 生命周期资源前后对照](suite-lifecycle-comparison-2026-09-06.md)
 - [GC 观测与保留的 owner 成本](gc-and-owner-cost-2026-09-06.md)
 - [Naming 与 Goal 历史选择成本](history-selection-cost-2026-09-06.md)
 - [Agents 冷加载与投影器成本](agents-loading-and-projector-cost-2026-09-06.md)

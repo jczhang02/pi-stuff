@@ -88,6 +88,8 @@ test.each(["foreground", "background", "context", "goal"])(
 				"--pi",
 				process.env["PI_BIN"] ?? "/opt/bin/pi",
 				"--suite",
+				"--package",
+				resolve("packages/pi-stuff"),
 				...(agent ? ["--agent", mode] : [`--${mode}`]),
 			],
 			{
@@ -105,6 +107,22 @@ test.each(["foreground", "background", "context", "goal"])(
 			expect(stderr, stdout).toBe("");
 			expect(exitCode, stdout).toBe(0);
 			const sample = parseJsonValue(stdout);
+			if (!Check(SAMPLE_SCHEMA, sample)) throw new Error("Missing Suite observation summary");
+			const evidence = parseJsonValue(await readFile(join(sample.directory, "evidence.json"), "utf8"));
+			expect(
+				Check(
+					Type.Object({
+						source: Type.Object({
+							package: Type.Object({
+								directory: Type.Literal(resolve("packages/pi-stuff")),
+								commit: Type.String({ pattern: "^[a-f0-9]{40}$" }),
+								diff: Type.String(),
+							}),
+						}),
+					}),
+					evidence,
+				),
+			).toBe(true);
 			const schema = Type.Object({
 				completedChildTools: Type.Literal(agent ? 1 : 0),
 				reapedChildProcesses: Type.Literal(agent ? 1 : 0),

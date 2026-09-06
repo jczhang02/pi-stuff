@@ -11,6 +11,10 @@ on:
         description: Verify scheduler-event access on a separate ephemeral runner
         type: boolean
         default: false
+      scheduler_baseline:
+        description: Optional full commit SHA for paired scheduler measurements when probing
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -130,7 +134,7 @@ jobs:
     needs: fast
     if: ${{ github.event_name != 'push' && needs.fast.outputs.acceptance_required == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ inputs.probe_kernel_events && 40 || 30 }}
+    timeout-minutes: ${{ inputs.probe_kernel_events && 55 || 30 }}
     env:
       PI_BIN: ${{ github.workspace }}/.artifacts/pi-release/pi/pi
       PI_STUFF_CODE_MODE_HOST: ${{ github.workspace }}/.artifacts/code-mode-host/codex-code-mode-host
@@ -224,21 +228,39 @@ jobs:
       - name: Measure isolated Pi scheduler wakeups
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.probe_kernel_events }}
         shell: bash
+        env:
+          SCHEDULER_BASELINE: ${{ inputs.scheduler_baseline }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/pi-stuff-scheduler"
-          sudo env -i PATH="$SYSTEM_TOOL_BIN:$(dirname "$RTK_BIN"):$PATH" \
-            GITHUB_ACTIONS=true RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
-            PI_BIN="$PI_BIN" PI_STUFF_CODE_MODE_HOST="$PI_STUFF_CODE_MODE_HOST" \
-            "$(command -v bun)" scripts/benchmark-scheduler-wakeups.ts \
-            --uid "$(id -u)" --gid "$(id -g)" --output "$RUNNER_TEMP/pi-stuff-scheduler/summary.json"
+          measure() {
+            sudo env -i PATH="$SYSTEM_TOOL_BIN:$(dirname "$RTK_BIN"):$PATH" \
+              GITHUB_ACTIONS=true RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+              PI_BIN="$PI_BIN" PI_STUFF_CODE_MODE_HOST="$PI_STUFF_CODE_MODE_HOST" \
+              "$(command -v bun)" scripts/benchmark-scheduler-wakeups.ts \
+              --uid "$(id -u)" --gid "$(id -g)" --package "$2" \
+              --output "$RUNNER_TEMP/pi-stuff-scheduler/$1.json"
+          }
+          candidate="$PWD/packages/pi-stuff"
+          if [[ -n "$SCHEDULER_BASELINE" ]]; then
+            [[ "$SCHEDULER_BASELINE" =~ ^[a-f0-9]{40}$ ]]
+            baseline="$PWD/.worktrees/scheduler-baseline"
+            git worktree add --detach "$baseline" "$SCHEDULER_BASELINE"
+            (cd "$baseline" && bun install --frozen-lockfile --ignore-scripts)
+            measure baseline-1 "$baseline/packages/pi-stuff"
+            measure candidate-1 "$candidate"
+            measure candidate-2 "$candidate"
+            measure baseline-2 "$baseline/packages/pi-stuff"
+          else
+            measure candidate "$candidate"
+          fi
 
       - name: Upload scheduler summary
         if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.probe_kernel_events }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: scheduler-summary-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/pi-stuff-scheduler/summary.json
+          path: ${{ runner.temp }}/pi-stuff-scheduler/*.json
           if-no-files-found: error
           retention-days: 7
 

@@ -36,8 +36,12 @@ uses host-root tracing access; workloads run as the ordinary runner user in priv
 Owned tracefs instances use a global clock and reject loss, incomplete task lifetimes, ambiguous root identity, and
 unsupported nonleader exec. Wakeups follow the target task across thread/child births, exit cleanup, and PID reuse.
 Counts and kernel event formats are retained as a summary artifact; raw system-wide traces are never uploaded.
-These diagnostic runs do not certify resource savings or liveness. Ordinary acceptance still runs without tracing;
-only a dispatch requesting the extra measurements receives ten additional job minutes.
+Set `scheduler_baseline` to a full repository commit SHA to compare clean Package trees in baseline/candidate/candidate/baseline
+order on the same runner. Each batch runs all seven workloads with the current observer and records the selected
+Package commit; fresh processes/configuration are used, but kernel page caches are not reset. The observer's `--package`
+option also supports local comparisons and retains separate observer and Package commit/diff provenance.
+These diagnostic runs do not certify liveness. Ordinary acceptance still runs without tracing; a dispatch requesting
+the extra measurements receives 25 additional job minutes for the serial comparison.
 
 ## Package changes
 
