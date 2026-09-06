@@ -2,13 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 const root = new URL("../../../", import.meta.url).pathname;
 const commands = [
-	"benchmark-code-mode-image",
 	"benchmark-conversation-markdown",
-	"benchmark-effect-mainline",
 	"benchmark-lifecycle",
 	"benchmark-magic-context",
 	"benchmark-ponytail",
-	"benchmark-skill-discovery",
 	"benchmark-tool-activity",
 	"compare-magic-context",
 ] as const;
@@ -37,18 +34,11 @@ describe("benchmark command boundaries", () => {
 	});
 
 	test("live benchmarks require an explicit live profile", () => {
-		for (const [name, args] of [
-			["benchmark-ponytail", "--output /tmp/benchmark.json"],
-			["benchmark-code-mode-image", "--baseline-root /tmp"],
-			["benchmark-skill-discovery", "--auth /tmp/auth.json"],
-		] as const) {
-			const result = Bun.spawnSync([process.execPath, `${root}scripts/${name}.ts`, ...args.split(" ")], {
-				cwd: root,
-				stderr: "pipe",
-				stdout: "pipe",
-			});
-			expect(result.exitCode).not.toBe(0);
-			expect(`${result.stdout}\n${result.stderr}`).toContain("--profile live");
-		}
+		const result = Bun.spawnSync(
+			[process.execPath, `${root}scripts/benchmark-ponytail.ts`, "--output", "/tmp/benchmark.json"],
+			{ cwd: root, stderr: "pipe", stdout: "pipe" },
+		);
+		expect(result.exitCode).not.toBe(0);
+		expect(`${result.stdout}\n${result.stderr}`).toContain("--profile live");
 	});
 });

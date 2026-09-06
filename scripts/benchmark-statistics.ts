@@ -12,20 +12,7 @@ export interface PairedComparison {
 	readonly samples: number;
 }
 
-export interface NamedMeasurement {
-	readonly arm: "baseline" | "candidate";
-	readonly iteration: number;
-	readonly key: string;
-	readonly metric: string;
-	readonly value: number;
-}
-
-export interface NamedComparison extends PairedComparison {
-	readonly key: string;
-	readonly metric: string;
-}
-
-export const EFFECT_MAINLINE_THRESHOLDS = {
+export const PAIRED_COMPARISON_THRESHOLDS = {
 	bootstrapReplicates: 20_000,
 	bootstrapSeed: 20_260_901,
 	improvementRatio: 0.95,
@@ -67,8 +54,8 @@ function ratiosOf(pairs: readonly PairedSample[]): number[] {
 
 function bootstrapMedianConfidence95(ratios: readonly number[]): readonly [number, number] {
 	const medians: number[] = [];
-	let randomState: number = EFFECT_MAINLINE_THRESHOLDS.bootstrapSeed;
-	for (let replicate = 0; replicate < EFFECT_MAINLINE_THRESHOLDS.bootstrapReplicates; replicate += 1) {
+	let randomState: number = PAIRED_COMPARISON_THRESHOLDS.bootstrapSeed;
+	for (let replicate = 0; replicate < PAIRED_COMPARISON_THRESHOLDS.bootstrapReplicates; replicate += 1) {
 		const resampled: number[] = [];
 		for (let sample = 0; sample < ratios.length; sample += 1) {
 			randomState = nextRandom(randomState);
@@ -85,11 +72,11 @@ export function comparePairedSamples(pairs: readonly PairedSample[]): PairedComp
 	const ratios = ratiosOf(pairs);
 	const confidence95 = bootstrapMedianConfidence95(ratios);
 	const classification =
-		confidence95[1] <= EFFECT_MAINLINE_THRESHOLDS.improvementRatio
+		confidence95[1] <= PAIRED_COMPARISON_THRESHOLDS.improvementRatio
 			? "improved"
-			: confidence95[1] <= EFFECT_MAINLINE_THRESHOLDS.nonInferiorityRatio
+			: confidence95[1] <= PAIRED_COMPARISON_THRESHOLDS.nonInferiorityRatio
 				? "non-inferior"
-				: confidence95[0] > EFFECT_MAINLINE_THRESHOLDS.nonInferiorityRatio
+				: confidence95[0] > PAIRED_COMPARISON_THRESHOLDS.nonInferiorityRatio
 					? "regressed"
 					: "inconclusive";
 	return {
@@ -98,54 +85,4 @@ export function comparePairedSamples(pairs: readonly PairedSample[]): PairedComp
 		medianRatio: percentile(ratios, 0.5),
 		samples: pairs.length,
 	};
-}
-
-interface MeasurementPair {
-	baseline?: number;
-	candidate?: number;
-}
-
-interface MeasurementGroup {
-	readonly key: string;
-	readonly metric: string;
-	readonly pairs: Map<number, MeasurementPair>;
-}
-
-export function compareMeasurements(measurements: readonly NamedMeasurement[]): NamedComparison[] {
-	const groups = new Map<string, MeasurementGroup>();
-	for (const measurement of measurements) {
-		const groupId = `${measurement.key}\0${measurement.metric}`;
-		const group = groups.get(groupId) ?? {
-			key: measurement.key,
-			metric: measurement.metric,
-			pairs: new Map<number, MeasurementPair>(),
-		};
-		const pair = group.pairs.get(measurement.iteration) ?? {};
-		if (pair[measurement.arm] !== undefined) {
-			throw new Error(`duplicate ${measurement.arm} sample for ${measurement.key}/${measurement.metric}`);
-		}
-		pair[measurement.arm] = measurement.value;
-		group.pairs.set(measurement.iteration, pair);
-		groups.set(groupId, group);
-	}
-	return [...groups.values()]
-		.sort((left, right) => `${left.key}/${left.metric}`.localeCompare(`${right.key}/${right.metric}`))
-		.map((group) => {
-			const pairs = [...group.pairs.entries()]
-				.sort(([left], [right]) => left - right)
-				.map(([iteration, pair]) => {
-					if (pair.baseline === undefined) {
-						throw new Error(
-							`missing baseline sample for ${group.key}/${group.metric} iteration ${String(iteration)}`,
-						);
-					}
-					if (pair.candidate === undefined) {
-						throw new Error(
-							`missing candidate sample for ${group.key}/${group.metric} iteration ${String(iteration)}`,
-						);
-					}
-					return { baseline: pair.baseline, candidate: pair.candidate };
-				});
-			return { ...comparePairedSamples(pairs), key: group.key, metric: group.metric };
-		});
 }

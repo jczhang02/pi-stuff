@@ -22,9 +22,9 @@ repository safety, the Capability Contract Catalog, and static Package/resource/
 source or execute Benchmarks. `fix` explicitly applies formatting and safe lint fixes; generated composition and
 snapshots have separate explicit update operations.
 
-`test` currently discovers 337 files (336 offline and one explicit live file) under five levels: Component (`unit`),
+`test` currently discovers 335 files (334 offline and one explicit live file) under five levels: Component (`unit`),
 Component Integration (`component-integration`), System (`system`), System Integration (`system-integration`), and
-Acceptance (`acceptance`). The offline inventory is 137 / 159 / 2 / 10 / 28 files by those levels. Within each level,
+Acceptance (`acceptance`). The offline inventory is 135 / 159 / 2 / 10 / 28 files by those levels. Within each level,
 files are grouped by Capability directory and scenario. It runs one OS process per file. The Goal runtime smoke is a
 native Bun test; the other 21 `.node.ts` compatibility files are compiled once and then run through Node. Repeated
 selectors within one dimension are a union; different dimensions are an intersection. `--name` uses the native test
@@ -68,13 +68,14 @@ different contracts.
 
 ## Benchmarks
 
-Existing experiments are named `benchmark:capability:<name>`. Image transfer, Ponytail behavioral effectiveness,
-Skill Discovery, Markdown, Effect/mainline, lifecycle, Magic Context, and Tool Activity are Capability-scoped questions.
+Existing experiments are named `benchmark:capability:<name>`. Ponytail behavioral effectiveness, Markdown, lifecycle,
+Magic Context, and Tool Activity are Capability-scoped questions.
 Using a complete Host does not establish complete-Suite public-task outcomes.
 
-Use each command's `--help` or `--list` before execution. Ponytail, Code Mode image, and authenticated Skill Discovery
-experiments require `--profile live`; their help and previews do not use credentials. Historical reports remain dated
-evidence; newly generated reports use local artifacts unless an output is explicitly selected.
+Use each command's `--help` or `--list` before execution. Ponytail experiments require `--profile live`; their help and
+previews do not use credentials. Historical reports remain dated evidence; newly generated reports use local artifacts unless an output is explicitly selected.
+The retired Effect/mainline, Code Mode image, and Skill Discovery experiments remain available in Git history;
+their dated reports and locked inputs are retained as historical evidence.
 
 Completed experiments may report poor scores or performance regressions without failing the command. Setup failures and
 incomplete experiments remain failures. Tool Activity's former 250 ms and relative 25 ms benchmark values are retained

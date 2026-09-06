@@ -1,4 +1,4 @@
-<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: 0cdecc2b58c258b6e7ad31a95c6d6b53eb745afc7c16f85cea76219ef902407c -->
+<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: 02a9cbb56e78a18f6f641e5f953917c6968b22adf81d98e5f6e41fbb3b8079ae -->
 
 # 质量保障
 
@@ -19,7 +19,7 @@ bun run benchmark:capability:ponytail --help
 
 `check` 执行格式、lint、TypeScript、依赖和未使用源码、生成组合、仓库安全、Capability Contract Catalog 以及 Package/resource/license 静态验证；不会改写源码或运行 Benchmark。`fix` 才会执行格式和安全 lint 修复。
 
-`test` 当前发现五个层级下的 337 个文件（336 个离线文件、1 个显式在线文件）：Component (`unit`)、Component Integration (`component-integration`)、System (`system`)、System Integration (`system-integration`) 与 Acceptance (`acceptance`)。离线清单按上述层级分别有 137、159、2、10、28 个文件。目录按 `level/capability/scenario` 组织，每个文件独立 OS process。Goal smoke 是原生 Bun test；其余 21 个 `.node.ts` 保留 Node 兼容边界，只编译一次后运行。同一维度的重复 selector 取并集，不同维度取交集。`--name` 使用原生 test runner 的 regex candidate filter，不扫描源码名称。`--help` 和 `--list` 不执行场景。报告默认写入 `.artifacts/tests/`，记录文件状态、process duration、setup duration 和 Acceptance 矩阵；失败或空选择返回非零。
+`test` 当前发现五个层级下的 335 个文件（334 个离线文件、1 个显式在线文件）：Component (`unit`)、Component Integration (`component-integration`)、System (`system`)、System Integration (`system-integration`) 与 Acceptance (`acceptance`)。离线清单按上述层级分别有 135、159、2、10、28 个文件。目录按 `level/capability/scenario` 组织，每个文件独立 OS process。Goal smoke 是原生 Bun test；其余 21 个 `.node.ts` 保留 Node 兼容边界，只编译一次后运行。同一维度的重复 selector 取并集，不同维度取交集。`--name` 使用原生 test runner 的 regex candidate filter，不扫描源码名称。`--help` 和 `--list` 不执行场景。报告默认写入 `.artifacts/tests/`，记录文件状态、process duration、setup duration 和 Acceptance 矩阵；失败或空选择返回非零。
 
 Tests 在首个失败后停止剩余文件；缺少原生执行证据同样算失败。`--keep-going` 收集全部选中文件的结果，但不会把失败变成成功；`verify --keep-going` 也会在 Checks 命令失败后继续运行 Tests。每个文件开始前和结束后都持久化报告，区分已完成、尚未开始，以及执行中断时最后记录为进行中的文件。缺失、取消或未完成的证据不能通过 CI 汇总。
 
@@ -33,7 +33,7 @@ Pi、RTK 优先使用显式 `PI_BIN` / `RTK_BIN`，再查找 `PATH`（Pi 会排�
 
 ## Benchmarks
 
-现有实验使用 `benchmark:capability:<name>` 命名。它们是 Capability 范围问题，不建立 complete-Suite public-task 结果。执行前使用 `--help` 或 `--list`；需要 live 的实验必须显式选择 `--profile live`。历史报告仍是 dated evidence，新报告默认写入本地 artifacts。
+现有实验使用 `benchmark:capability:<name>` 命名，保留 Ponytail、Markdown、生命周期、Magic Context 和 Tool Activity。它们是 Capability 范围问题，不建立 complete-Suite public-task 结果。执行前使用 `--help` 或 `--list`；Ponytail 必须显式选择 `--profile live`。历史报告仍是 dated evidence，新报告默认写入本地 artifacts。已移除的 Effect/mainline、Code Mode 图片和 Skill Discovery 实验可从 Git 历史恢复；保留其带日期报告和锁定输入作为历史证据。
 
 完成的实验即使结果较差也可成功；setup failure 或 incomplete experiment 仍失败。Tool Activity 过去的 250 ms 和 relative 25 ms benchmark 值仅保留为诊断报告值。显式 PTY 要求仍为首个 Tool UI/input/selection 反馈 150 ms，以及不变 Vibe Line Spinner 帧不超过 200 ms；ADR 0025 的 500 ms severe-stall 是独立 backstop。Tools PTY 验证器报告每种终端尺寸的测量值，未满足必需目标时失败。`benchmark:suite` 尚未注册。
 

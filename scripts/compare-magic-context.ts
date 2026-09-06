@@ -4,11 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Check } from "typebox/value";
 import { handleBenchmarkMeta } from "./benchmark-cli.js";
-import {
-	balancedArmOrder,
-	comparePairedSamples,
-	EFFECT_MAINLINE_THRESHOLDS,
-} from "./effect-mainline-benchmark-core.js";
+import { balancedArmOrder, comparePairedSamples, PAIRED_COMPARISON_THRESHOLDS } from "./benchmark-statistics.js";
 import { MAGIC_CONTEXT_BENCHMARK_REPORT_SCHEMA, numericMagicContextMetrics } from "./magic-context-benchmark-core.js";
 
 type Arm = "baseline" | "candidate";
@@ -143,7 +139,7 @@ async function main(): Promise<void> {
 					})),
 				},
 				samples: measuredCount,
-				thresholds: EFFECT_MAINLINE_THRESHOLDS,
+				thresholds: PAIRED_COMPARISON_THRESHOLDS,
 				warmups: warmupCount,
 			},
 			null,
