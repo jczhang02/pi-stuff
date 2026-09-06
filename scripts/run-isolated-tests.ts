@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { preflightTests, requirementsForTest, type TestProfile } from "./test-environment.ts";
 import { prepareGoalTests } from "./test-goal-upstream.ts";
 import { discoverTestFiles } from "./test-inventory.ts";
@@ -67,7 +68,7 @@ function runTestFiles(
 			cwd: nodeTest ? nodeRoot : repositoryRoot,
 			env: {
 				...process.env,
-				PI_BIN: process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi",
+				PI_BIN: requirementsForTest(testFile).includes("pi") ? resolvePiBinary() : process.env["PI_BIN"],
 				PI_STUFF_TEST_PROFILE: profile,
 				PI_STUFF_ACCEPTANCE_MATRIX: acceptanceMatrix,
 			},

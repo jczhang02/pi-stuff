@@ -7,10 +7,10 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { selectAcceptanceMatrix } from "./acceptance-matrix.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 
 const execFileAsync = promisify(execFile);
-const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 const TIMEOUT_MS = 30_000;
 const VERIFIER_STARTED_AT = Date.now();
 const SCENARIO_FILTER = process.env["PI_STUFF_CODE_MODE_TUI_SCENARIO"];
@@ -94,7 +94,7 @@ function normalizeRuntimeMetrics(screen: string): string {
 }
 
 async function assertCertifiedPi(): Promise<void> {
-	const version = (await execFileAsync(PI_BINARY, ["--version"])).stdout.trim();
+	const version = (await execFileAsync(resolvePiBinary(), ["--version"])).stdout.trim();
 	if (version !== CERTIFIED_PI_VERSION)
 		throw new Error(`Code Mode TUI acceptance requires Pi ${CERTIFIED_PI_VERSION}, got ${version || "unknown"}`);
 }
@@ -150,7 +150,7 @@ async function runArm(
 	const scenarioId = scenario === "group" ? "8" : scenario === "failure" ? "9" : scenario === "media" ? "a" : "b";
 	const sessionId = `019fdc00-0000-7000-${scenarioId}000-${mode === "code" ? "1" : "2"}${String(width).padStart(11, "0")}`;
 	const arguments_ = [
-		PI_BINARY,
+		resolvePiBinary(),
 		"--session-dir",
 		join(temporary, "sessions"),
 		launchMode === "start" ? "--session-id" : "--session",

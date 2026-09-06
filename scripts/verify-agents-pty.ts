@@ -13,6 +13,7 @@ import {
 	fleetviewHelp,
 	verifyTerminalOutput,
 } from "./agents-pty-contract.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
@@ -730,7 +731,8 @@ Return the deterministic fixture result.
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/pi-coding-agent/pi", PI_STUFF_AGENTS_PTY_ARTIFACT_DIR } = process.env;
+	const PI_BIN = resolvePiBinary();
+	const { PI_STUFF_AGENTS_PTY_ARTIFACT_DIR } = process.env;
 	for (const [columns, rows] of selectAcceptanceMatrix(
 		[
 			[100, 32],

@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { CERTIFIED_PI_VERSION } from "../../../scripts/pi-host-contract.ts";
 import { runPiRpcSmoke } from "../../../scripts/smoke-pi.ts";
 
-const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
+const PI_BINARY = resolvePiBinary();
 
 await access(PI_BINARY).catch(() => {
 	throw new Error(`Set PI_BIN to the certified Pi ${CERTIFIED_PI_VERSION} standalone binary: ${PI_BINARY}`);

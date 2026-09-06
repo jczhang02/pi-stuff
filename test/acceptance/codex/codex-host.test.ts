@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
 import { join, resolve } from "node:path";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { runPiRpcSmoke } from "../../../scripts/smoke-pi.js";
 
 const REPOSITORY_ROOT = resolve(import.meta.dir, "../../..");
 const PI_STUFF_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff");
 const INSPECTOR = join(REPOSITORY_ROOT, "test", "fixtures", "assert-codex-tools.ts");
-const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
+const PI_BINARY = resolvePiBinary();
 
 test("the single Pi Stuff Package loads only the deliberate Codex surface and leaves no startup settings", async () => {
 	const result = await runPiRpcSmoke({

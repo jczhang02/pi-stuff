@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { PiRpcClient } from "./pi-rpc-client.js";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -43,7 +44,7 @@ export function buildPonytailBenchmarkEnvironment(
 export class PonytailBenchmarkRpc extends PiRpcClient {
 	constructor(project: string, sessions: string, runtime: string, temporary: string, observerLog: string) {
 		super({
-			executable: process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi",
+			executable: resolvePiBinary(),
 			arguments: [
 				"--mode",
 				"rpc",

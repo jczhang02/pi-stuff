@@ -6,6 +6,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
@@ -411,7 +412,7 @@ export async function verifyToolsResumePty(options: ToolsResumePtyOptions): Prom
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	const PI_BIN = resolvePiBinary();
 	await verifyToolsResumePty({ piBinary: PI_BIN, packagePath: join(root, "packages/pi-stuff") });
 	console.log("Certified compact Tool rows across in-process /resume and cold --session startup");
 }

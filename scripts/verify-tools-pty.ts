@@ -7,6 +7,7 @@ import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/
 import { CODE_MODE_NO_OUTPUT_MESSAGE } from "../packages/pi-stuff/src/code-mode/runtime.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { selectAcceptanceMatrix } from "./acceptance-matrix.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
@@ -622,7 +623,7 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	const PI_BIN = resolvePiBinary();
 	await verifyActiveToolParity({
 		piBinary: PI_BIN,
 		packagePath: join(root, "packages/pi-stuff"),

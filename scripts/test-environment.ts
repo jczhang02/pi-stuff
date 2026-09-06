@@ -5,7 +5,8 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { resolveNativeBinary } from "../packages/pi-stuff/src/codex/native-runner.js";
-import { CERTIFIED_RTK_LINUX_X64_SHA256, CERTIFIED_RTK_VERSION } from "../packages/pi-stuff/src/rtk/runtime.js";
+import { CERTIFIED_RTK_VERSION } from "../packages/pi-stuff/src/rtk/runtime.js";
+import { formatInstalledToolFailure, probeInstalledTool } from "./installed-tools.ts";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 
 export type TestProfile = "offline" | "live";
@@ -14,7 +15,11 @@ export function requirementsForTest(file: string): string[] {
 	const requirements = new Set<string>(["bun"]);
 	if (file.endsWith("codex/native-tools.test.ts")) requirements.add("codex-native");
 	if (file.endsWith(".node.ts")) requirements.add("node");
-	if (/^test\/(?:system|acceptance)\//u.test(file) || file.endsWith("system-integration/repository/smoke-pi.test.ts"))
+	if (
+		/^test\/(?:system|acceptance)\//u.test(file) ||
+		file.endsWith("system-integration/repository/smoke-pi.test.ts") ||
+		file.endsWith("system-integration/subagents/process-controls-recovery.test.ts")
+	)
 		requirements.add("pi");
 	if (/test\/(system-integration|acceptance)\/rtk\//u.test(file)) requirements.add("rtk");
 	if (
@@ -33,8 +38,7 @@ export function requirementsForTest(file: string): string[] {
 
 async function executable(name: string, args: string[] = ["--version"]): Promise<string | undefined> {
 	try {
-		const path = name === "pi" ? (process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi") : name;
-		const child = Bun.spawn([path, ...args], { stdout: "pipe", stderr: "pipe", timeout: 5_000 });
+		const child = Bun.spawn([name, ...args], { stdout: "pipe", stderr: "pipe", timeout: 5_000 });
 		const [exitCode, stdout, stderr] = await Promise.all([
 			child.exited,
 			new Response(child.stdout).text(),
@@ -44,20 +48,6 @@ async function executable(name: string, args: string[] = ["--version"]): Promise
 	} catch {
 		return undefined;
 	}
-}
-
-async function checkRtk(): Promise<string | undefined> {
-	const path = process.env["RTK_BIN"]?.trim() || Bun.which("rtk");
-	if (!path) return undefined;
-	const version = await executable(path);
-	if (version !== `rtk ${CERTIFIED_RTK_VERSION}`) return undefined;
-	if (process.platform === "linux" && process.arch === "x64") {
-		const digest = createHash("sha256")
-			.update(await readFile(path))
-			.digest("hex");
-		if (digest !== CERTIFIED_RTK_LINUX_X64_SHA256) return undefined;
-	}
-	return path;
 }
 
 async function checkCodeModeHost(): Promise<string | undefined> {
@@ -93,12 +83,16 @@ export async function preflightTests(files: readonly string[], profile: TestProf
 		}
 	}
 	if (requirements.has("node") && !(await executable("node"))) missing.push("Node");
-	if (requirements.has("pi") && (await executable("pi")) !== CERTIFIED_PI_VERSION)
-		missing.push(`Pi ${CERTIFIED_PI_VERSION}`);
+	if (requirements.has("pi")) {
+		const probe = await probeInstalledTool("Pi", CERTIFIED_PI_VERSION);
+		if (probe.status !== "ready") missing.push(formatInstalledToolFailure(probe, CERTIFIED_PI_VERSION));
+	}
 	if (requirements.has("tmux") && !Bun.which("tmux")) missing.push("tmux");
 	if (requirements.has("expect") && !Bun.which("expect")) missing.push("Expect");
-	if (requirements.has("rtk") && !(await checkRtk().catch(() => undefined)))
-		missing.push(`RTK ${CERTIFIED_RTK_VERSION} (certified executable)`);
+	if (requirements.has("rtk")) {
+		const probe = await probeInstalledTool("RTK", `rtk ${CERTIFIED_RTK_VERSION}`);
+		if (probe.status !== "ready") missing.push(formatInstalledToolFailure(probe, `rtk ${CERTIFIED_RTK_VERSION}`));
+	}
 	if (requirements.has("code-mode-host") && !(await checkCodeModeHost())) missing.push("certified Code Mode host");
 	if (requirements.has("live-magic-context")) {
 		if (profile !== "live") missing.push("live profile selection");

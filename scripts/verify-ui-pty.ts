@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { THOUGHT_PHASES, TODO_PTY_READY } from "../test/fixtures/ui-pty-provider.js";
 import { selectAcceptanceMatrix } from "./acceptance-matrix.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import * as flow from "./ui-pty-interactions.js";
 import * as pty from "./ui-pty-session.js";
@@ -649,7 +650,8 @@ export async function verifyThemeLifecyclePty(
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/bin/pi", PI_STUFF_UI_PTY_ARTIFACT_DIR, PI_STUFF_UI_PTY_THEME } = process.env;
+	const PI_BIN = resolvePiBinary();
+	const { PI_STUFF_UI_PTY_ARTIFACT_DIR, PI_STUFF_UI_PTY_THEME } = process.env;
 	const theme = PI_STUFF_UI_PTY_THEME?.trim() || "dark";
 	const verificationOptions = {
 		piBinary: PI_BIN,

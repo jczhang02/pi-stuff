@@ -9,6 +9,7 @@ import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { requireJsonInputValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import { handleBenchmarkMeta } from "./benchmark-cli.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import {
 	evaluateSkillDiscoveryBenchmark,
@@ -295,7 +296,7 @@ async function writeReport(
 }
 
 async function runBenchmark(authFile: string, output: string): Promise<void> {
-	const piBinary = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
+	const piBinary = resolvePiBinary();
 	const { codeModeHost, lock, manifest } = await preflight(authFile, piBinary);
 	const benchmarkRoot = await mkdtemp(join(tmpdir(), "pi-stuff-skill-discovery-benchmark-"));
 	await chmod(benchmarkRoot, 0o700);

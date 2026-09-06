@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 5800b424cf86f7c4422787e8a6d3d9771e1263453e813dcb7465c53be0339295 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 1c9a335ed0d7d4d994a8e0a9717ea7902c0cf0ae0c05c5f4446367d9ebf8bd50 -->
 
 # 兼容性
 
@@ -16,14 +16,16 @@
 | Code Mode Host | OpenAI Codex `rust-v0.145.0`，Linux x64 |
 | Code Mode Host Release archive | SHA-256 `ac23177956c30cc1f9f180c27bd80f5bb5b76780db55fb94dcc22644d490852e` |
 | Code Mode Host executable | SHA-256 `60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8` |
-| 可选 RTK runtime | 官方 `0.45.0`，源码 `b34be37caf3796b69a50952a28e60e32b5daad43`，Linux x64 |
-| RTK Release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
-| RTK Release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
+| 可选 RTK runtime | `0.45.0`，发布源码 `b34be37caf3796b69a50952a28e60e32b5daad43`，Linux x64 |
+| RTK CI 下载 archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
+| RTK CI 下载 executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
 受支持的 Host profile 是 Linux x64 上的 Pi `0.85.1`。上述上游源码提交作为来源参考保留。验收会在真实 Host 上
 通过 Pi 的公开 API 覆盖完整 Suite 契约，包括公开的 `registerMarkdownTransformer()`、常规与 fullscreen UI 行为，
 以及保留空格的原生设置搜索。仅匹配版本还不够：Host 还必须通过适用的真实 Host 能力验收。Pi Stuff 不重建或
 分发 Pi Host。
+
+本地验证通过 `PI_BIN` / `RTK_BIN` 或 `PATH` 复用已安装的 Pi、RTK，不自动下载或重装。兼容性准入检查版本与真实行为，不要求固定二进制哈希；RTK 源码构建和 PATH shim 可以满足该契约。CI 下载哈希标识干净 runner 准备的产物，不限制已有本地可执行文件。
 
 CI 使用 `Plan`、`Checks`、独立的 `Tests (shard N/M)` 和 `Verify`。Plan 在 PR、`main` push、手动触发与夜间计划中运行：PR/push 选择受影响离线测试，手动触发选择完整清单与完整矩阵；夜间仅复用同一 main SHA 的成功全量证据，否则运行全量。Plan 把必要范围与矩阵写入 artifacts。Checks 独立验证冻结依赖、格式、anti-slop lint、类型、未使用代码、生成组合和公开 Release 安全。每个必要 Tests 分片获取认证 Pi、Code Mode、RTK，在网络隔离 namespace 中逐文件使用全新 Bun/Node 进程。分片只等待 Plan，失败后停止剩余工作。Verify 始终检查计划、必要 job 状态、完整且唯一的文件覆盖、矩阵身份和完整结构化报告；只有明确的 no-tests 计划才允许跳过 Tests。计划、逐分片及汇总报告分别保留。仅取消同一 PR 的过时运行，不同 main-push 范围继续保留。认证需要当前 revision 的适用检查及真实 Host 证据，workflow 配置本身不构成证据。
 

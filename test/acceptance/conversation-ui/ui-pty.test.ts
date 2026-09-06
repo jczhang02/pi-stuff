@@ -4,11 +4,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { selectAcceptanceMatrix } from "../../../scripts/acceptance-matrix.ts";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import * as flow from "../../../scripts/ui-pty-interactions.ts";
 import * as pty from "../../../scripts/ui-pty-session.ts";
 import { verifyUiPty } from "../../../scripts/verify-ui-pty.ts";
 
-const { PI_BIN = "/opt/bin/pi" } = process.env;
+const PI_BIN = resolvePiBinary();
 const AGGREGATE_PACKAGE = resolve(import.meta.dir, "../../../packages/pi-stuff");
 
 test("real Pi renders and restores the integrated production UI at the selected acceptance widths", async () => {

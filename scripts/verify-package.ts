@@ -6,6 +6,7 @@ import { Check } from "typebox/value";
 import { parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { waitForDetachedProcess } from "./detached-process.ts";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { runPiRpcSmoke } from "./smoke-pi.ts";
 import { stageSupportedPiHost } from "./verify-pi-host-provenance.ts";
@@ -485,7 +486,7 @@ async function main(): Promise<void> {
 }
 
 export async function verifySourceInstallation(): Promise<void> {
-	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	const PI_BIN = resolvePiBinary();
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-local-package-"));
 	try {
 		const host = await stageSupportedPiHost(PI_BIN, temporaryDirectory);

@@ -23,12 +23,12 @@ import {
 	sanitizeBenchmarkSearchQuery,
 } from "./code-mode-image-benchmark-core.js";
 import { waitForDetachedProcess } from "./detached-process.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
 import { verifyPiHostVersion } from "./verify-pi-host-provenance.js";
 
 const root = resolve(import.meta.dir, "..");
 const observerExtension = join(root, "test/fixtures/code-mode-image-benchmark-observer.ts");
-const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 const PROVIDER = "openai-codex";
 const MODEL = "gpt-5.6-luna";
 const BASELINE_COMMIT = "65b6764";
@@ -96,7 +96,7 @@ async function runPi(
 	cwd: string,
 	environment: NodeJS.ProcessEnv,
 ): Promise<ProcessResult> {
-	const child = Bun.spawn([PI_BINARY, ...arguments_], {
+	const child = Bun.spawn([resolvePiBinary(), ...arguments_], {
 		cwd,
 		detached: true,
 		env: environment,
@@ -395,7 +395,7 @@ if (import.meta.main) {
 		["profile=live (Pi Host + live Provider credentials)", "image-transfer", "tool-choice", "session-persistence"],
 	);
 	const options = parseArguments(process.argv.slice(2));
-	await verifyPiHostVersion(PI_BINARY);
+	await verifyPiHostVersion(resolvePiBinary());
 	const baselinePackage = packageTree(options.baselineRoot, BASELINE_COMMIT);
 	const candidatePackage = packageTree(root, CANDIDATE_COMMIT);
 	await verifyPackageImport(options.baselineRoot, "baseline");

@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { verifyPonytailPty } from "../../../scripts/verify-ponytail-pty.ts";
 
-const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+const PI_BIN = resolvePiBinary();
 const packagePath = resolve(import.meta.dir, "../../../packages/pi-stuff");
 
 test("real Pi certifies the Ponytail Dialog, Statusline, settings, and hard-off Provider boundary", async () => {

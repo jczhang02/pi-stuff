@@ -1,9 +1,10 @@
 import { test } from "bun:test";
 import { resolve } from "node:path";
 import { selectAcceptanceMatrix } from "../../../scripts/acceptance-matrix.ts";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { verifyBtwPty } from "../../../scripts/verify-btw-pty.ts";
 
-const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+const PI_BIN = resolvePiBinary();
 const AGGREGATE_PACKAGE = resolve(import.meta.dir, "../../../packages/pi-stuff");
 
 test("real Pi TUI keeps BTW concurrent, fits oversized history, and remains focus-safe", async () => {

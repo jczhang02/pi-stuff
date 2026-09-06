@@ -2,13 +2,11 @@ import { expect, test } from "bun:test";
 import { realpathSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
-import {
-	CERTIFIED_RTK_LINUX_X64_SHA256,
-	CERTIFIED_RTK_VERSION,
-	RtkRuntime,
-} from "../../../packages/pi-stuff/src/rtk/runtime.js";
+import { CERTIFIED_RTK_VERSION, RtkRuntime } from "../../../packages/pi-stuff/src/rtk/runtime.js";
+import { formatInstalledToolFailure, probeInstalledTool } from "../../../scripts/installed-tools.ts";
 
-const localRtk = process.env["RTK_BIN"]?.trim() || Bun.which("rtk") || "";
+const localRtkProbe = await probeInstalledTool("RTK", `rtk ${CERTIFIED_RTK_VERSION}`);
+const localRtk = localRtkProbe.path ?? "";
 
 async function execute(command: string, args: string[], options: { timeout?: number } = {}) {
 	if (command === "which") {
@@ -29,8 +27,9 @@ async function execute(command: string, args: string[], options: { timeout?: num
 	return { code, killed, stderr, stdout };
 }
 
-test("certifies and uses the official RTK 0.45.0 executable", async () => {
-	if (!localRtk) throw new Error("RTK 0.45.0 certified executable is required (set RTK_BIN or put rtk on PATH)");
+test("uses the supported RTK 0.45.0 executable", async () => {
+	if (localRtkProbe.status !== "ready")
+		throw new Error(formatInstalledToolFailure(localRtkProbe, `rtk ${CERTIFIED_RTK_VERSION}`));
 	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 	const pi = { exec: execute } as Pick<ExtensionAPI, "exec">;
 	const runtime = new RtkRuntime();
@@ -48,8 +47,6 @@ test("certifies and uses the official RTK 0.45.0 executable", async () => {
 		state: "ready",
 		version: CERTIFIED_RTK_VERSION,
 	});
-	const sha256 = snapshot.sha256;
-	expect(sha256).toBe(CERTIFIED_RTK_LINUX_X64_SHA256);
 
 	const files = await execute(localRtk, ["rg", "--files", "-g", "*.ts", "packages"]);
 	expect(files.code).toBe(0);

@@ -6,6 +6,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeObject } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -713,7 +714,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	const PI_BIN = resolvePiBinary();
 	await verifyMcpPty({ packagePath: join(root, "packages/pi-stuff"), piBinary: PI_BIN });
 	console.log(
 		"Certified light/dark responsive setup at wide, narrow, and low sizes; reload/re-read, persisted connection policy, OAuth detail actions, MCP lifecycle, Tool call/resume rendering, and Command Dialog in real Pi TUI",

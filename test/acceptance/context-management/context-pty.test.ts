@@ -1,9 +1,10 @@
 import { test } from "bun:test";
 import { resolve } from "node:path";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { verifyContextInputFramePty } from "../../../scripts/verify-context-input-frame-pty.ts";
 import { verifyContextPty } from "../../../scripts/verify-context-pty.ts";
 
-const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+const PI_BIN = resolvePiBinary();
 
 test("real Pi TUI activates Magic Context, resumes it, owns compaction, and preserves input when Context is unavailable", async () => {
 	await verifyContextPty({

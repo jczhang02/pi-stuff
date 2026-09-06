@@ -11,6 +11,7 @@ import {
 	type NamedMeasurement,
 } from "./effect-mainline-benchmark-core.js";
 import { type LifecycleComparisonPlanName, runLifecycleComparison } from "./effect-mainline-lifecycle.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 
 type Arm = "baseline" | "candidate";
 type Profile = "import" | "lifecycle";
@@ -24,7 +25,7 @@ interface Options {
 	readonly deadlineAt: number;
 	readonly lifecyclePlan: LifecycleComparisonPlanName;
 	readonly output: string;
-	readonly piBinary: string;
+	readonly piBinary: string | undefined;
 	readonly profile: Profile;
 	readonly samples: number;
 	readonly warmups: number;
@@ -52,7 +53,6 @@ interface ImportProfileRun {
 
 const ROOT = resolve(import.meta.dir, "..");
 const DEFAULT_OUTPUT = join(ROOT, ".artifacts/effect-mainline-comparison/import.json");
-const DEFAULT_PI_BINARY = "/opt/pi-coding-agent/pi";
 const RATIO_METRICS = ["durationMs", "cpuMs", "maxRssKiB", "contextSwitches"] as const;
 function fail(message: string): never {
 	throw new Error(`Effect/mainline benchmark failed: ${message}`);
@@ -82,7 +82,7 @@ function parseOptions(arguments_: readonly string[]): Options {
 	let lifecyclePlan: LifecycleComparisonPlanName = "coverage";
 	let maxMinutes = 240;
 	let output = DEFAULT_OUTPUT;
-	let piBinary = process.env["PI_BIN"] ?? DEFAULT_PI_BINARY;
+	let piBinary: string | undefined;
 	let profile: Profile = "import";
 	let samples = 15;
 	let warmups = 3;
@@ -299,7 +299,7 @@ async function main(): Promise<void> {
 					baselineRoot: options.baselineRoot,
 					candidateRoot: options.candidateRoot,
 					deadlineAt: options.deadlineAt,
-					piBinary: options.piBinary,
+					piBinary: options.piBinary ?? resolvePiBinary(),
 					plan: options.lifecyclePlan,
 					samples: options.samples,
 					warmups: options.warmups,

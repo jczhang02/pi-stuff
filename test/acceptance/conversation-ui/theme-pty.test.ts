@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { selectAcceptanceMatrix } from "../../../scripts/acceptance-matrix.ts";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { verifyThemeLifecyclePty } from "../../../scripts/verify-ui-pty.ts";
 
-const { PI_BIN = "/opt/bin/pi" } = process.env;
+const PI_BIN = resolvePiBinary();
 const aggregatePackage = resolve(import.meta.dir, "../../../packages/pi-stuff");
 
 test("real Pi discovers, switches, reloads, and resumes the selected Catppuccin matrix", async () => {

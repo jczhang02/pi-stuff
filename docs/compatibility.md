@@ -14,15 +14,20 @@
 | Code Mode host | OpenAI Codex `rust-v0.145.0`, Linux x64 |
 | Code Mode host release archive | SHA-256 `ac23177956c30cc1f9f180c27bd80f5bb5b76780db55fb94dcc22644d490852e` |
 | Code Mode host executable | SHA-256 `60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8` |
-| Optional RTK runtime | Official `0.45.0`, source `b34be37caf3796b69a50952a28e60e32b5daad43`, Linux x64 |
-| RTK release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
-| RTK release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
+| Optional RTK runtime | `0.45.0`, release source `b34be37caf3796b69a50952a28e60e32b5daad43`, Linux x64 |
+| RTK CI download archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
+| RTK CI download executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
 The supported Host profile is Pi `0.85.1` on Linux x64. The upstream source commit above is retained as a provenance
 reference. Acceptance exercises the complete Suite contract against the real Host and its public APIs, including public
 `registerMarkdownTransformer()`, regular and fullscreen UI behavior, and space-preserving native settings search. A
 version match alone is insufficient: the Host must also pass the applicable real-Host capability acceptance. Pi Stuff
 does not rebuild or distribute Pi Host.
+
+Local verification reuses installed Pi and RTK through `PI_BIN` / `RTK_BIN` or `PATH`, without automatic downloads
+or reinstalls. Pi and RTK compatibility admission checks versions and real behavior, not fixed executable hashes.
+RTK source builds and PATH shims may satisfy that contract. CI download hashes identify the artifacts prepared on a
+clean runner; they do not constrain an already-installed local executable.
 
 CI uses `Plan`, `Checks`, independent `Tests (shard N/M)` jobs, and `Verify`. Plan runs for pull requests, pushes to
 `main`, manual dispatch, and nightly scheduling. PR and push ranges select affected offline tests; manual dispatch

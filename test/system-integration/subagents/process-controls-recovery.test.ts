@@ -34,6 +34,7 @@ import {
 	SUBAGENT_ASYNC_STATUS_EVENT,
 	type SubagentState,
 } from "../../../packages/pi-stuff/src/subagents/src/shared/types.ts";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { CERTIFIED_PI_VERSION } from "../../../scripts/pi-host-contract.ts";
 import { createTestAgentEffectOwner } from "../../agents/agent-effect-owner-fixture.ts";
 import { CONTEXT_USAGE_PROVIDER_EXTENSION_PATH } from "../../agents/fixtures/context-usage-provider.ts";
@@ -41,8 +42,7 @@ import { PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH } from "../../agents/fixtures/
 import { createExtensionApi } from "../../fixtures/extension-api.ts";
 
 const providerExtension = PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH;
-const PI_BIN_ENV = "PI_BIN";
-const piBinary = process.env[PI_BIN_ENV] ?? "/opt/pi-coding-agent/pi";
+const piBinary = resolvePiBinary();
 const AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 const PROCESS_CONTROLS_LOG_ENV = "PI_STUFF_PROCESS_CONTROLS_LOG";
 const SUBAGENT_PI_BINARY_ENV = "PI_SUBAGENT_PI_BINARY";
@@ -137,11 +137,10 @@ function fixtureRoot(prefix: string): string {
 	if (!piBinaryCertified) {
 		const version = Bun.spawnSync([piBinary, "--version"], { stdout: "pipe", stderr: "pipe" });
 		const reportedVersion = version.stdout.toString().trim();
-		if (version.exitCode !== 0 || reportedVersion !== CERTIFIED_PI_VERSION) {
+		if (version.exitCode !== 0 || reportedVersion !== CERTIFIED_PI_VERSION)
 			throw new Error(
-				`Set PI_BIN to the certified Pi ${CERTIFIED_PI_VERSION} standalone binary; '${piBinary}' reported '${reportedVersion || version.stderr.toString().trim()}'.`,
+				`Pi at '${piBinary}' reported '${reportedVersion || version.stderr.toString().trim()}'; expected ${CERTIFIED_PI_VERSION}`,
 			);
-		}
 		piBinaryCertified = true;
 	}
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));

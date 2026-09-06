@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { handleBenchmarkMeta } from "./benchmark-cli.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { prepareFixture } from "./lifecycle-benchmark-fixture.js";
 import { cellKey, runSample, summaries } from "./lifecycle-benchmark-sampling.js";
 import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
@@ -120,7 +121,6 @@ function fail(message: string): never {
 
 const ROOT = resolve(import.meta.dir, "..");
 const REPOSITORY_BUN_VERSION = "1.4.0";
-const DEFAULT_PI_BINARY = "/opt/pi-coding-agent/pi";
 const DEFAULT_PACKAGE = join(ROOT, "packages/pi-stuff");
 const DEFAULT_SAMPLES = 3;
 const DEFAULT_WARMUPS = 1;
@@ -174,7 +174,7 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 	let longSessionTools = 0;
 	let output = DEFAULT_OUTPUT;
 	let packagePath = DEFAULT_PACKAGE;
-	let piBinary = process.env["PI_BIN"] ?? DEFAULT_PI_BINARY;
+	let piBinary: string | undefined;
 	let promptRepetitions = 1;
 	let samples = DEFAULT_SAMPLES;
 	let scenarios: readonly Scenario[] = SCENARIOS;
@@ -265,7 +265,7 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 		longSessionTools,
 		output,
 		packagePath,
-		piBinary,
+		piBinary: piBinary ?? resolvePiBinary(),
 		promptRepetitions,
 		samples,
 		scenarios,

@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { runPiRpcSmoke } from "../../../scripts/smoke-pi.ts";
 
-const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
+const PI_BINARY = resolvePiBinary();
 const PI_STUFF_PACKAGE = resolve(import.meta.dir, "../../../packages/pi-stuff");
 
 test("the single Pi Stuff Package loads BTW without Extension errors", async () => {

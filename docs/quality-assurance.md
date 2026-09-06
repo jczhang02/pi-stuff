@@ -22,9 +22,9 @@ repository safety, the Capability Contract Catalog, and static Package/resource/
 source or execute Benchmarks. `fix` explicitly applies formatting and safe lint fixes; generated composition and
 snapshots have separate explicit update operations.
 
-`test` currently discovers 336 files (335 offline and one explicit live file) under five levels: Component (`unit`),
+`test` currently discovers 337 files (336 offline and one explicit live file) under five levels: Component (`unit`),
 Component Integration (`component-integration`), System (`system`), System Integration (`system-integration`), and
-Acceptance (`acceptance`). The offline inventory is 136 / 159 / 2 / 10 / 28 files by those levels. Within each level,
+Acceptance (`acceptance`). The offline inventory is 137 / 159 / 2 / 10 / 28 files by those levels. Within each level,
 files are grouped by Capability directory and scenario. It runs one OS process per file. The Goal runtime smoke is a
 native Bun test; the other 21 `.node.ts` compatibility files are compiled once and then run through Node. Repeated
 selectors within one dimension are a union; different dimensions are an intersection. `--name` uses the native test
@@ -43,6 +43,14 @@ Node, Code Mode, RTK, Expect, tmux, and local system tools are still required wh
 boundaries; missing required tools fail preflight or the scenario. Live Provider and Service evidence requires explicit
 `--profile live`; the only live Magic Context scenario is `magic-context-live`. Fixture Provider evidence is not live
 acceptance. `--list` reports tool requirements without setup or execution.
+
+Pi and RTK are resolved from explicit `PI_BIN` / `RTK_BIN` overrides, then `PATH` (excluding package-manager `node_modules/.bin` directories for Pi, which expose the development SDK CLI).
+Existing supported installations,
+including RTK source builds and shims, are reused. Local commands do not download or reinstall them. Preflight reports
+the selected path and distinguishes missing programs, non-executable files, wrong versions, and failed version probes
+before running dependent tests. Fixed Pi/RTK executable hashes are not admission gates. A clean CI runner prepares its
+dependencies separately; download-integrity checks do not replace real behavior tests. RTK PTY fixtures execute the
+exact `RTK_BIN` selection even when its filename is not `rtk`.
 
 ## Source installation and retained evidence
 

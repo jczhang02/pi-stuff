@@ -2,9 +2,10 @@ import { test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { verifyToolsGroupingPty } from "../../../scripts/verify-tools-grouping-pty.js";
 
-const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+const PI_BIN = resolvePiBinary();
 const AGGREGATE_PACKAGE = resolve(import.meta.dir, "../../../packages/pi-stuff");
 
 function tmux(socket: string, args: readonly string[]): string {

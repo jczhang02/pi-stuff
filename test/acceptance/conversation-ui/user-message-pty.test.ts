@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { selectAcceptanceMatrix } from "../../../scripts/acceptance-matrix.ts";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { readFixtureRecords, waitForFixtureRecords, writePtyEvidence } from "../../../scripts/ui-pty-interactions.js";
 import { createCase, TmuxPiSession } from "../../../scripts/ui-pty-session.js";
 import { stageSupportedPiHost } from "../../../scripts/verify-pi-host-provenance.js";
@@ -87,7 +88,8 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 			const directory = await mkdtemp(join(tmpdir(), "pi-user-message-"));
 			let session: TmuxPiSession | undefined;
 			try {
-				const { PI_BIN = "/opt/bin/pi", PI_STUFF_UI_PTY_ARTIFACT_DIR } = process.env;
+				const PI_BIN = resolvePiBinary();
+				const { PI_STUFF_UI_PTY_ARTIFACT_DIR } = process.env;
 				const host = await stageSupportedPiHost(PI_BIN, directory);
 				const packagePath = resolve(import.meta.dir, "../../../packages/pi-stuff");
 				const paths = await createCase(directory, "user-message", theme, packagePath);

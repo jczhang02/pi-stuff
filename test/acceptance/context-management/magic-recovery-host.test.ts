@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { resolvePiBinary } from "../../../scripts/installed-tools.ts";
 import { createRpcTransport } from "../../../scripts/magic-context-real-rpc.js";
 import { disableSessionNamingForTest } from "../../../scripts/session-naming-test-settings.ts";
 import { verifyPiHostVersion } from "../../../scripts/verify-pi-host-provenance.js";
@@ -11,7 +12,7 @@ import { ZERO_USAGE } from "../../fixtures/faux-provider.js";
 
 const suite = resolve(import.meta.dir, "../../../packages/pi-stuff");
 const provider = resolve(import.meta.dir, "../../fixtures/context-pty-provider.ts");
-const piBinary = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
+const piBinary = resolvePiBinary();
 beforeAll(async () => {
 	await verifyPiHostVersion(piBinary);
 });
