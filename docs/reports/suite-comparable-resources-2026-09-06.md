@@ -72,8 +72,8 @@ traced CI attempts at `e7b1170e` also stopped during baseline workloads before c
 [second](https://github.com/jczhang02/pi-stuff/actions/runs/34049432866)). Their final frames showed completed Tools
 while Pi remained in recovery; those logs did not identify the cause. Traced runs are diagnostics, not liveness gates.
 
-Allocation/GC, exact scheduler wakeups, peak process-tree RSS, largest main-thread work intervals and the remaining
-owner/recovery cases need separate evidence. These measurements preserve automatic features in the listed workloads;
+Allocation/GC, peak process-tree RSS, largest main-thread work intervals and the remaining owner/recovery cases need
+separate evidence. The scheduler comparison below supplies wakeup counts. These measurements preserve automatic features;
 they do not execute every configured external service or close the [resource inventory](suite-resource-inventory-2026-09-05.md).
 
 ## Config-directory follow-up
@@ -118,3 +118,50 @@ Scheduler diagnostics now request a separate 75-second observation budget. They 
 results identify the diagnostic purpose and budget. Ordinary 30/60-second observations, the collector's outer 90-second
 limit, isolation, completion checks and frozen responsiveness thresholds are unchanged. A successful future capture
 would establish scheduler evidence, not excuse the retained input failures.
+
+## Completed scheduler comparison
+
+[Run 34052545498](https://github.com/jczhang02/pi-stuff/actions/runs/34052545498) completed all 28 scheduler observations
+on kernel `6.17.0-1022-azure`, comparing Package `40101bb2` with `e51caab5` in baseline/candidate/candidate/baseline order.
+All samples had zero lost events and complete task birth/exit accounting. The private trace instance tracked the
+synthetic Host's threads, Workers and descendants through exit; the observer, tmux, HTTP fixture and Ledger seeding
+were outside that boundary. No local permission change was needed.
+
+| Workload | Median `sched_wakeup`: baseline → candidate | Change | Median `sched_wakeup_new`: baseline → candidate |
+| --- | ---: | ---: | ---: |
+| Native, two Bash Tools | 14,033 → 13,795.5 | −1.7% | 22 → 22 |
+| Suite, two Bash Tools | 28,308 → 26,766.5 | −5.4% | 51 → 51 |
+| Two foreground Agents | 77,201 → 82,507 | +6.9% | 122 → 128 |
+| One background Agent | 45,936 → 40,887 | −11.0% | 89 → 89 |
+| Context write/search | 24,096 → 23,637.5 | −1.9% | 25 → 25 |
+| Goal continuation | 23,730 → 23,318 | −1.7% | 25 → 25 |
+| Cold Ledger, two Code Mode Bash Tools | 28,730 → 27,274.5 | −5.1% | 61 → 60.5 |
+
+Foreground isolation costs more wakeups in these samples. Its task count, including threads, rose from 122 to 128
+while both implementations completed and reaped the same two child Agents. Internal task counts need not match when
+comparing an isolation change; their full cost stays in the result. The Ledger baseline had 61 tasks in both runs,
+while the candidate had 60 and 61. The summaries do not identify the source of that one-task variation.
+
+The background scenario here uses one Agent, unlike the local two-Agent CPU batch. Each Suite observation retained
+automatic Naming/Usage; foreground and background checks verified two and one child Tool completions respectively.
+Context made three projections and retrieved its evidence; Goal completed after continuation. Artifact hashes and all
+individual counters remain in `schedulerComparison` in the numeric record. Two observations per variant on a shared
+runner do not establish a distribution or a causal explanation of the retained stalls. Traced timing is not ordinary
+acceptance, and wakeups are not context switches.
+
+## Targeted background-input diagnostics
+
+Four separate diagnostics on `e51caab5` investigated the input failures without changing production behavior. The first
+CPU profile observed 49.579 ms feedback, with 44 of 47 samples in that interval at native layout rendering. Sampling
+also lengthened otherwise ordinary feedback, so those stacks do not establish the cause of either unprofiled failure.
+
+Direct render timing in the next run recorded 430 paints: 360.564 ms total and 4.700 ms maximum. A separate mark around
+the first FFI `flock` load measured 1.836 ms. Neither run reproduced the delayed feedback. A final file-syscall trace
+recorded 18,039 completed parent-main-thread calls totaling 198.967 ms, with an 8.947 ms maximum while creating a Jiti
+cache file during startup. Its slowest input/setup was 14.240 ms. These are observations from those runs, not bounds
+on rare rendering or I/O delays.
+
+All four workloads completed and reaped two child Agents, recorded two background outcomes and retained automatic
+Naming/Usage. The render wrapper, FFI marks and strace command were temporary and are removed. The numeric record binds
+the probes, profiles and observations to their hashes. No render rewrite, eager loading or filesystem change was made
+from these non-reproducing probes; the 48.868/72.710 ms failures and historical late holds remain unresolved.
