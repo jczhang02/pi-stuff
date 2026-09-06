@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 41d6e679487f305face9e5a69d2522b3d4874311c4cdbf41c9e16372a4c723ba -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 74fc2279b09c2295535b75b3bced0702d794879fca54393827987ef33aa32d93 -->
 
 # Suite 资源源码清单
 
@@ -14,7 +14,7 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 [Naming 与 Goal 后续报告](history-selection-cost-2026-09-06.md)在同一精确 Host 上测量提前结束的历史选择，
 确认输出不变，并记录通过的普通 Goal 续行样本；不包含 Host 分支构建、Goal 记账，以及仍缺失的分配／GC 和恢复成本。
 [GC 与 owner 成本后续报告](gc-and-owner-cost-2026-09-06.md)补充原生／Suite 工作负载中的自然 GC 观测，
-以及 Notification／Web 保留行为的测量。报告指出首个 Spinner 前的分配区间仍需归因；
+以及 Notification／Web 保留行为的测量。生命周期标记区分冷模块加载、注册与首次请求的 Context 激活；
 总分配量、精确唤醒与其余 owner／恢复审计尚未完成。
 
 ## 所有者、触发条件与增长变量
@@ -53,7 +53,7 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 
 | 所有者 | 触发条件与工作 | 已有保护 / 测量缺口 |
 | --- | --- | --- |
-| [Suite loader](../../../../../packages/pi-stuff/src/suite-loader.ts) | 加载/重载解析根路径，在导入缓存查找前计算源码树指纹。 | O(文件 + 源码字节)；指纹相同复用导入/安装，失败 Promise 被移除。改变漂移检测前测量未变更重载 I/O。 |
+| [Suite loader](../../../../../packages/pi-stuff/src/suite-loader.ts) | 加载/重载在导入缓存查找前对条目路径、元数据和符号链接目标计算指纹；不读取源码正文。 | 成本随条目／路径元数据及目录排序增长。相同指纹复用模块图；安装器重新执行，失败 Promise 被移除。[初次加载测量](gc-and-owner-cost-2026-09-06.md#冷启动边界)覆盖 648 个条目，耗时 16.976–25.338 ms；未变更重载 I/O 仍未测量。 |
 | [共享状态通道](../../../../../packages/pi-stuff/src/conversation-ui/statusline-channels.ts) | 发布时规范化并序列化新旧快照，再通知监听者。 | schema 小且固定，相同状态不重复通知。频率/成本待测。 |
 | [工具注册](../../../../../packages/pi-stuff/src/tool-display/registration.ts) | 最终覆盖校验枚举工具；重载交接恢复缺失的历史定义。 | O(T)；提前返回、只恢复缺失项。覆盖校验和历史渲染必须保持正确。 |
 

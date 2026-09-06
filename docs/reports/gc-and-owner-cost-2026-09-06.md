@@ -54,7 +54,58 @@ native, versus 2,202,750 KiB for Suite Bash and 2,194,613 KiB for Suite Agents. 
 Session initialization and first-prompt preparation; it does not isolate imports. Totals during the Agent-run interval
 were 107,271, 153,008 and 646,189 KiB respectively, classified by log arrival. Concurrent-cycle allocation, uncollected
 tail allocation, native allocations and child heaps remain outside these sums. They are not complete allocation totals
-or retained-memory measurements. Startup attribution is still required before removing work.
+or retained-memory measurements. The follow-up below separates the main startup boundaries.
+
+## Cold-start boundaries
+
+Three further full-Suite Bash diagnostics at `9a5c9730` reused the lifecycle observer's in-memory marks. A temporary
+prelude was verified to run before the Suite import, and a postlude bracketed the ordinary Host event handlers after
+the Suite and fixture Provider. Later runs added marks around the Agents root import and first-request owners, then
+inside Context activation. The patches and raw traces are hash-bound in `coldStartAttribution` in the numeric record.
+All temporary Source and observer changes were removed afterward; no production optimization was made in this step.
+
+| Sample, in execution order | Source fingerprint, ms | Suite runtime import, ms | Agents installer, ms | Session-start handlers, ms | Before-agent-start handlers, ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `3e2h9r`, 10:55:28.879 UTC | 25.338 | 4,131.331 | 960.159 | 57.188 | 1,333.697 |
+| `OIq1QG`, 10:59:41.528 UTC | 20.370 | 3,285.994 | 741.724 | 35.576 | 1,184.381 |
+| `s4V3Du`, 11:01:29.377 UTC | 16.976 | 3,299.364 | 769.196 | 50.927 | 1,134.303 |
+
+Times in the first column identify the first external capture. Each run used the same exact Host, fresh private
+configuration/caches, two successful Bash Tools and automatic Naming/Usage once. No local checks or scouts ran
+alongside the probes. Instrumentation differs across the rows; their variation is not an optimization result.
+Elapsed boundaries include scheduling and dependency work, not exclusive main-thread CPU.
+
+The finer marks show where to investigate next. Agents' root import took 739.795 and 767.343 ms; actual root
+registration took 1.907 and 1.837 ms. In those same runs, Context activation accounted for 1,168.706 and 1,113.019 ms
+of the first-request wait. Prompt contributions took 0.465 and 0.498 ms, Agents discovery 2.724 and 6.404 ms, and
+Code Mode project binding 0.171 and 0.178 ms. These results do not justify changing those small request-time paths.
+
+The last run split Context activation further. Startup preparation deferred first-use configuration in 5.117 ms;
+direct-input preparation then took 5.270 ms. The module facade loaded in 0.084 ms, while installation took
+1,096.278 ms: 1.793 ms before bundle construction, 140.632 ms building it, and 953.853 ms between completed bundle
+and installed module. The latter still combines Worker creation, module evaluation, initialization and Host-side
+registration. Replaying Session start took 9.104 ms. Keep the direct-input authority and transactional registration
+order; these measurements establish cost, not redundant work or permission to skip initialization.
+
+GC log-arrival bounds also separate the large pre-Spinner interval. Read arrivals wholly within the Suite runtime
+import contained `ca=` sums of 1,478,808, 1,439,905 and 1,487,884 KiB; arrivals within the Agents installer contained
+377,057, 380,620 and 382,122 KiB. First-request-handler arrivals contained about 40,800–41,000 KiB. Values whose
+read intervals crossed a boundary were kept separate. Allocation can precede collection and log arrival, so these
+are arrival buckets, not per-module allocated bytes. They focus the next probe on module loading without attributing
+all allocation to a named owner. Full allocation and Worker-specific CPU remain unmeasured.
+
+The [Suite loader](../../packages/pi-stuff/src/suite-loader.ts) fingerprints entry paths and filesystem metadata,
+including symlink targets; it does not read Source file bodies. Read-only enumeration after probe removal found
+648 entries, 61 directories including the root and no symlinks. With this tree, the implementation makes 648 `lstat`
+and 61 `readdir` calls per fingerprint, plus per-directory sorting. These are source-derived operation counts,
+not intercepted syscall totals. Matching fingerprints reuse the module graph; every Capability installer still
+runs fresh. Retain drift detection. The 16.976–25.338 ms measurements cover initial loading, not unchanged reload I/O.
+
+All three samples observed more than 16.38 seconds of active work with at least 1,357 captures, zero active Spinner
+absence and capture gaps below 19 ms. Spinner maxima were 116.553, 112.574 and 113.913 ms; largest logged GC pauses
+were 18.631, 16.179 and 18.061 ms. Logging and mark overhead remain unbounded, so these are not frozen-gate acceptance
+samples. The three resource scopes were verified unloaded. No Agent child, cold Ledger restore or live service was
+exercised; the historical late holds remain unexplained.
 
 ## Retained owner behavior
 
@@ -97,5 +148,5 @@ with imports completed beforehand. CPU includes all process threads. Their `getr
 numeric record; context switches are not exact wakeups, and `maxRSS` is a lifetime process high-water mark. No per-owner
 memory saving or before/after optimization claim follows from these timings.
 
-Whole-process allocation, exact wakeups, startup attribution, remaining owner/recovery workloads and the historical
+Whole-process allocation, exact wakeups, module-evaluation detail, remaining owner/recovery workloads and the historical
 late holds remain open under `ps-yon.3` and `ps-yon.6`.

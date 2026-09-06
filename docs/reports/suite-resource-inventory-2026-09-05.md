@@ -13,8 +13,9 @@ The [Naming and Goal follow-up](history-selection-cost-2026-09-06.md) measures e
 same exact Host, with unchanged outputs and a passing normal Goal continuation sample. It does not measure Host
 branch construction, Goal accounting or the remaining allocation/GC and recovery costs.
 The [GC and owner-cost follow-up](gc-and-owner-cost-2026-09-06.md) adds natural-GC observations on native/Suite
-workloads and measured Notification/Web retention behavior. It identifies the pre-Spinner allocation interval for
-further attribution; total allocation, exact wakeups and the remaining owner/recovery audit are still incomplete.
+workloads and measured Notification/Web retention behavior. Lifecycle marks separate cold module loading from
+registration and first-request Context activation; total allocation, exact wakeups and the remaining owner/recovery
+audit are still incomplete.
 
 ## Owners, triggers and scaling
 
@@ -52,7 +53,7 @@ The retention column describes observed safeguards; it does not certify a comple
 
 | Owner | Trigger and work | Existing safeguard / measurement gap |
 | --- | --- | --- |
-| [Suite loader](../../packages/pi-stuff/src/suite-loader.ts) | Load/reload resolves the root and fingerprints the source tree before import-cache lookup. | O(files + source bytes); matching fingerprints reuse import/install, failed promises are removed. Measure unchanged reload I/O before changing drift detection. |
+| [Suite loader](../../packages/pi-stuff/src/suite-loader.ts) | Load/reload fingerprints entry paths, metadata and symlink targets before import-cache lookup; no Source-body reads. | Cost grows with entries/path metadata plus directory sorting. Matching fingerprints reuse the module graph; installers run fresh and failed promises are removed. [Initial measurements](gc-and-owner-cost-2026-09-06.md#cold-start-boundaries) cover 648 entries in 16.976–25.338 ms; unchanged reload I/O remains unmeasured. |
 | [Shared status channel](../../packages/pi-stuff/src/conversation-ui/statusline-channels.ts) | Publication normalizes and serializes old/new snapshots before listener fan-out. | Small fixed schemas; equality avoids unchanged notifications. Frequency/cost unmeasured. |
 | [Tool registration](../../packages/pi-stuff/src/tool-display/registration.ts) | Final registry coverage validation enumerates Tools; reload handoff restores missing historical definitions. | O(T); early returns and missing-only recovery. Coverage and historical rendering must remain correct. |
 

@@ -458,6 +458,370 @@
       }
     }
   ],
+  "coldStartAttribution": {
+    "sourceCommit": "9a5c97304a58833795035d5b8bbcb516c9524138",
+    "productionChangesAfterProbeRemoval": false,
+    "summarizerSha256": "5ea7dc9b7ecda34c7e3908762fb4dc3fad0cc9649f0c935d135b5368efe3abd6",
+    "sourceTreeInventory": {
+      "entries": 648,
+      "directoriesIncludingRoot": 61,
+      "symlinks": 0,
+      "method": "Read-only enumeration after restoring Source; counts derive lstat/readdir/readlink calls from the exact fingerprint implementation, not intercepted syscall totals."
+    },
+    "samples": [
+      {
+        "id": "3e2h9r",
+        "firstCaptureUtc": "2026-09-06T10:55:28.879Z",
+        "evidenceSha256": "781350eb4210696a636e6750f3279647bf5c7847c1d72d3a4b000a06b0c192d0",
+        "sourceDiffSha256": "fea323aa7bceca0a0e725c52799e81001f0531e3340c30e5afbb8741b947dc40",
+        "gcLogSha256": "e6421370f0b2b839a30cb79f8a5a2846f361e5f05da4e2cf3cd78e30f560fdcb",
+        "lifecycleSha256": "af6e33289587809247bba3e9122dd370f7026f1aad56b824f10fa05d28f5cc58",
+        "providerLogSha256": "5b99eb35b43e45446e0ca9b6ee003a34f96a24571a2eeaeb024df5bc7aae1829",
+        "sessionSha256": "72b3bee83198ebcf211a9347a072fefcfabdbaef5299af4e2baacdfedc95996d",
+        "instrumentation": "GC plus existing lifecycle marks",
+        "intervalsMs": {
+          "fingerprint": 25.338,
+          "suiteRuntimeImport": 4131.331,
+          "capabilityInstallation": 1011.067,
+          "agentsInstallation": 960.159,
+          "sessionStartHandlers": 57.188195,
+          "beforeAgentStartHandlers": 1333.697092,
+          "contextHandlers": [
+            75.016238,
+            19.118233,
+            16.966228
+          ]
+        },
+        "capabilityInstallersMs": {
+          "conversation-ui": 16.347,
+          "session-naming": 0.799,
+          "tool-display": 1.394,
+          "rtk": 1.05,
+          "codex": 2.121,
+          "goal": 0.791,
+          "context-management": 1.385,
+          "ponytail": 1.264,
+          "web": 1.572,
+          "mcp": 0.704,
+          "background-work": 0.459,
+          "subagents": 960.159,
+          "todo": 0.575,
+          "btw": 0.066,
+          "notification": 19.839,
+          "code-mode": 0.879
+        },
+        "allocationArrivalBuckets": {
+          "suiteRuntimeImport": {
+            "count": 18,
+            "caKiBSum": 1478807.902345
+          },
+          "agentsInstallation": {
+            "count": 2,
+            "caKiBSum": 377056.864258
+          },
+          "sessionStartHandlers": {
+            "count": 2,
+            "caKiBSum": 4338.728515
+          },
+          "beforeAgentStartHandlers": {
+            "count": 38,
+            "caKiBSum": 40900.491212
+          },
+          "otherOrBoundaryOverlapping": {
+            "count": 596,
+            "caKiBSum": 561461.563473
+          }
+        },
+        "gcPrefix": {
+          "byteLength": 363526,
+          "sha256": "9dc1e0d6ac709aa8e76574ce3d2f7d29906b0deacd21fb6aee0c59fdefb73ae6",
+          "actualPauseCount": 690,
+          "actualPauseSumMs": 1818.741241,
+          "actualPauseMaxMs": 18.630776,
+          "readMaxMs": 0.2235259999997652
+        },
+        "observation": {
+          "activeMs": 16397.926657,
+          "activeCaptureCount": 1357,
+          "spinnerMaxMs": 116.55306000000019,
+          "inputMaxMs": 27.309892999999647,
+          "selectionMaxMs": 14.850873999999749,
+          "captureGapMaxMs": 18.8494069999997,
+          "spinnerAbsenceMs": 0,
+          "firstEditorMs": 5849.351122,
+          "promptToSpinnerMs": 1361.3899269999993
+        },
+        "resources": {
+          "cpuUs": {
+            "total": 15643725,
+            "user": 13725731,
+            "system": 1917993
+          },
+          "rssSnapshotBytes": 592265216,
+          "memoryCurrentChargedBytes": 610557952,
+          "memoryPeakChargedBytes": 887631872,
+          "parentIo": {
+            "rchar": 61577188,
+            "wchar": 25067134,
+            "syscr": 7119,
+            "syscw": 91828,
+            "read_bytes": 1345024,
+            "write_bytes": 24906911,
+            "cancelled_write_bytes": 0
+          }
+        },
+        "namingRequests": 1,
+        "namesPersisted": 1,
+        "usageRefreshes": 1,
+        "completedBashTools": 2
+      },
+      {
+        "id": "OIq1QG",
+        "firstCaptureUtc": "2026-09-06T10:59:41.528Z",
+        "evidenceSha256": "e5b60c1ee379fe6991e575a6aa68de0d8ef88a7167a3f9d5c4c2b7b84d9726c9",
+        "sourceDiffSha256": "e706fde6add20a573eb74e8991c2e2b82ae3327c69970f85b018e327a10b6605",
+        "gcLogSha256": "54b639e1ef85bb34ad18164500b190075b1a1f44705c17cb035f57eddd87f740",
+        "lifecycleSha256": "92b6a77aeac6d82ca216cfd7bc80e9ac977b832ad0857082fb1532c7d17e335e",
+        "providerLogSha256": "02801d7bea0270e749077e482d3f014287e3daba172cb6fa471060a730c2e2fa",
+        "sessionSha256": "7ea85c55064adfd729ae588d9cb33fccbc6fa6e2c68fe5b3fa7b0b1a3f0ae4d2",
+        "instrumentation": "plus Agents import and first-request owner boundaries",
+        "intervalsMs": {
+          "fingerprint": 20.37,
+          "suiteRuntimeImport": 3285.994,
+          "capabilityInstallation": 778.795,
+          "agentsInstallation": 741.724,
+          "sessionStartHandlers": 35.575698,
+          "beforeAgentStartHandlers": 1184.381137,
+          "contextHandlers": [
+            50.944998,
+            18.917149,
+            15.725317
+          ],
+          "agentsRootImport": 739.795,
+          "agentsRootRegistration": 1.907,
+          "contextActivationJoin": 1168.706,
+          "contextPreflight": 0.025,
+          "promptContributions": 0.465,
+          "agentsDiscovery": 2.724,
+          "codeModeProjectBinding": 0.171,
+          "codeModeApply": 0.078
+        },
+        "capabilityInstallersMs": {
+          "conversation-ui": 15.074,
+          "session-naming": 0.589,
+          "tool-display": 0.862,
+          "rtk": 0.542,
+          "codex": 1.535,
+          "goal": 0.625,
+          "context-management": 0.982,
+          "ponytail": 0.862,
+          "web": 1.259,
+          "mcp": 0.484,
+          "background-work": 0.357,
+          "subagents": 741.724,
+          "todo": 0.423,
+          "btw": 0.052,
+          "notification": 11.292,
+          "code-mode": 0.626
+        },
+        "allocationArrivalBuckets": {
+          "suiteRuntimeImport": {
+            "count": 17,
+            "caKiBSum": 1439905.016602
+          },
+          "agentsInstallation": {
+            "count": 2,
+            "caKiBSum": 380619.62207
+          },
+          "sessionStartHandlers": {
+            "count": 1,
+            "caKiBSum": 4519.157227
+          },
+          "beforeAgentStartHandlers": {
+            "count": 31,
+            "caKiBSum": 40952.46289
+          },
+          "otherOrBoundaryOverlapping": {
+            "count": 594,
+            "caKiBSum": 446951.206055
+          }
+        },
+        "gcPrefix": {
+          "byteLength": 353988,
+          "sha256": "a1366ccd8a305a7225aa6c530ea9d7b4334f2e378a689dc2ee7dacde232a6c87",
+          "actualPauseCount": 670,
+          "actualPauseSumMs": 1575.065625,
+          "actualPauseMaxMs": 16.178816,
+          "readMaxMs": 0.16767700000036712
+        },
+        "observation": {
+          "activeMs": 16383.487548000001,
+          "activeCaptureCount": 1373,
+          "spinnerMaxMs": 112.57357899999988,
+          "inputMaxMs": 13.83754399999998,
+          "selectionMaxMs": 26.088674000000537,
+          "captureGapMaxMs": 16.22334300000057,
+          "spinnerAbsenceMs": 0,
+          "firstEditorMs": 4628.745081,
+          "promptToSpinnerMs": 1217.1754930000006
+        },
+        "resources": {
+          "cpuUs": {
+            "total": 12526226,
+            "user": 10839729,
+            "system": 1686497
+          },
+          "rssSnapshotBytes": 574443520,
+          "memoryCurrentChargedBytes": 593178624,
+          "memoryPeakChargedBytes": 903507968,
+          "parentIo": {
+            "rchar": 61572643,
+            "wchar": 25062554,
+            "syscr": 6968,
+            "syscw": 89594,
+            "read_bytes": 0,
+            "write_bytes": 24899712,
+            "cancelled_write_bytes": 0
+          }
+        },
+        "namingRequests": 1,
+        "namesPersisted": 1,
+        "usageRefreshes": 1,
+        "completedBashTools": 2
+      },
+      {
+        "id": "s4V3Du",
+        "firstCaptureUtc": "2026-09-06T11:01:29.377Z",
+        "evidenceSha256": "f7f8f3307b15240bc75bb4d8616d5a66d18db5739b9ba6ab7e3f2843533aee66",
+        "sourceDiffSha256": "f833217ce2acfc3eb8d5d25824785a8804013dcc33078b7fbd777fcbd30eb24c",
+        "gcLogSha256": "e45ac0ba47dfe1643a460175cb92d47f9de8536b936522a1d542d2fd5ccfd322",
+        "lifecycleSha256": "2566adcd1368a330f1f313b6b26f46b252614d19c61ea6bdcb808880adc656b6",
+        "providerLogSha256": "e3b8502fb073f32d7e1ba12a20c3094f51998fbe8843f83a9bca35d35848c1b3",
+        "sessionSha256": "787674930c61147952aa8acd22096c069b0e1ae6457064ed4cf6e34497c675b3",
+        "instrumentation": "plus Context activation transaction and bundle boundaries",
+        "intervalsMs": {
+          "fingerprint": 16.976,
+          "suiteRuntimeImport": 3299.364,
+          "capabilityInstallation": 809.416,
+          "agentsInstallation": 769.196,
+          "sessionStartHandlers": 50.927481,
+          "beforeAgentStartHandlers": 1134.303293,
+          "contextHandlers": [
+            50.049846,
+            24.302147,
+            24.051258
+          ],
+          "agentsRootImport": 767.343,
+          "agentsRootRegistration": 1.837,
+          "contextActivationJoin": 1113.019,
+          "contextPreflight": 0.02,
+          "promptContributions": 0.498,
+          "agentsDiscovery": 6.404,
+          "codeModeProjectBinding": 0.178,
+          "codeModeApply": 0.07,
+          "contextStartupDeferredPreparation": 5.117,
+          "contextDirectInputPreparation": 5.27,
+          "contextModuleLoad": 0.084,
+        "contextModuleInstallation": 1096.278,
+        "contextBeforeBundle": 1.793,
+          "contextWorkerBundle": 140.632,
+          "contextAfterBundleToInstalled": 953.853,
+          "contextSessionReplay": 9.104
+        },
+        "capabilityInstallersMs": {
+          "conversation-ui": 15.471,
+          "session-naming": 0.556,
+          "tool-display": 0.861,
+          "rtk": 0.524,
+          "codex": 1.618,
+          "goal": 0.614,
+          "context-management": 0.944,
+          "ponytail": 0.772,
+          "web": 1.192,
+          "mcp": 0.485,
+          "background-work": 0.343,
+          "subagents": 769.196,
+          "todo": 0.452,
+          "btw": 0.053,
+          "notification": 13.926,
+          "code-mode": 0.776
+        },
+        "allocationArrivalBuckets": {
+          "suiteRuntimeImport": {
+            "count": 18,
+            "caKiBSum": 1487883.536132
+          },
+          "agentsInstallation": {
+            "count": 2,
+            "caKiBSum": 382122.377929
+          },
+          "sessionStartHandlers": {
+            "count": 1,
+            "caKiBSum": 3187.425781
+          },
+          "beforeAgentStartHandlers": {
+            "count": 29,
+            "caKiBSum": 40777.617189
+          },
+          "otherOrBoundaryOverlapping": {
+            "count": 577,
+            "caKiBSum": 543817.708006
+          }
+        },
+        "gcPrefix": {
+          "byteLength": 344957,
+          "sha256": "72ebbb0f451afac3aa31838e656ef3c903fb63c8d3da493910700099a27a619b",
+          "actualPauseCount": 651,
+          "actualPauseSumMs": 1648.714668,
+          "actualPauseMaxMs": 18.060552,
+          "readMaxMs": 0.17165099999874656
+        },
+        "observation": {
+          "activeMs": 16409.640750000002,
+          "activeCaptureCount": 1371,
+          "spinnerMaxMs": 113.91324200000054,
+          "inputMaxMs": 14.084059999999226,
+          "selectionMaxMs": 14.249778999999762,
+          "captureGapMaxMs": 16.828740999999354,
+          "spinnerAbsenceMs": 0,
+          "firstEditorMs": 4648.161359,
+          "promptToSpinnerMs": 1151.2434910000002
+        },
+        "resources": {
+          "cpuUs": {
+            "total": 13047237,
+            "user": 11384180,
+            "system": 1663056
+          },
+          "rssSnapshotBytes": 584568832,
+          "memoryCurrentChargedBytes": 602173440,
+          "memoryPeakChargedBytes": 941637632,
+          "parentIo": {
+            "rchar": 61577904,
+            "wchar": 25055151,
+            "syscr": 7073,
+            "syscw": 87244,
+            "read_bytes": 782336,
+            "write_bytes": 24900243,
+            "cancelled_write_bytes": 0
+          }
+        },
+        "namingRequests": 1,
+        "namesPersisted": 1,
+        "usageRefreshes": 1,
+        "completedBashTools": 2
+      }
+    ],
+    "limits": [
+      "Serial diagnostic runs with fresh isolated configuration and caches, exact Pi0.85.0/Bun1.3.14, full Suite, two Bash Tools and automatic Naming/Usage. No concurrent local tests/scouts/profiles; kernel page cache and ambient activity not controlled.",
+      "Instrumentation becomes more detailed across runs; these are not before/after optimization pairs or responsiveness acceptance. Durations include logging, scheduling, compilation and dependency work within each boundary, not exclusive main-thread CPU.",
+      "Prelude is verified before Suite import and postlude after Suite/Provider factory. Existing and temporary in-memory lifecycle marks are aligned through performance.timeOrigin; capture timestamps and 0.001ms-rounded Suite marks are observations, not hard real-time synchronization guarantees.",
+      "GC allocation buckets count only ca tokens whose complete external read-arrival bounds fit inside one disjoint named interval; boundary-overlapping or other arrivals stay separate. Allocation can precede collection/log arrival and overlap concurrent cycles; buckets are not per-owner allocated bytes.",
+      "Context after-bundle-to-installed includes Worker creation, module evaluation, initialization request and host-side registration; the measurement does not split those costs or isolate Worker CPU.",
+      "This workload does not launch an Agent child, exercise cold Ledger restoration, use live services or close remaining recovery/late-stall investigation. Full allocation, exact wakeups and peak process-tree RSS remain outside these measurements.",
+      "All three owned scopes were read back as not-found/inactive/dead; all temporary production/observer changes were removed and the observer hash restored. No function, cadence, permission, canonical record or production policy changed."
+    ]
+  },
   "ownerProbe": {
     "rawEvidenceSha256": "5983f62af6b0c3ad38a4416d2c132c1c3f09f04c9e147a3506a54d7158991084",
     "sourceHashes": [
