@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 2d0bed5310779ca058d12cec3dbcbe4cdd161f470911e7d6f4517962e860f278 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: a8ae97ccf82905ae20e132eab506f5471c6638de687afbe912b499f47a6c9c9b -->
 
 # Agents
 
@@ -34,7 +34,8 @@
 - 支持逐 Agent Tool allowlist 与 exclusion，不改变 parent Host。
 - 支持单个 Agent、并行 grouped task，以及 status 或生命周期 control call；`agent` 选择 launch definition，
   `id` 标识已有 Agent Target。
-- 默认后台运行；前台模式会等待结果。
+- 默认后台运行；结果会自动送达来源 main Agent，空闲时继续整合、忙碌时排队。
+- 取消或显式结束任务会抑制迟到结果重新启动，但保留结果、规范引用、Session/run 身份和去重信息供检查。
 - 送达紧凑 completion，不主动启动另一轮主 Agent。
 - 保留并发与嵌套边界，同时不为生产性工作设置累计 launch、默认运行时间或隐式 Tool timeout。
 - 把 attempts 与 resumes 聚合成一个持久 usage 总量；后续自动扩展会在文档规定的成本 guard 处暂停，但不会停止

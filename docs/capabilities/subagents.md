@@ -34,8 +34,9 @@ Launch one Agent in the background:
 }
 ```
 
-Background is the default. Continue independent work after launch; completion is delivered automatically. Set
-`"foreground": true` only when the result is required before the current Tool call can return.
+Background is the default. Completion is delivered automatically to the originating main Agent: an idle Agent resumes
+integration, and a busy Agent queues the bounded outcome. Set `"foreground": true` only when the result is required
+before the current Tool call can return.
 
 ## Tool shapes
 
@@ -85,9 +86,14 @@ resume after the cost guard requests attention. Use `/agents` for regular inspec
 
 ## Background and foreground
 
-Background launches return after admission and start. A terminal outcome creates a compact durable TUI result and does
-not start an unsolicited main Agent turn. Full reports remain available in `/agents`. Diagnostic event logs retain a
-bounded suffix; rolling that log does not redeliver already observed control events.
+Background launches return after admission and start. A terminal success, failure, or partial outcome creates a compact
+durable TUI result and is also delivered to the originating main Agent while its task remains open. Idle delivery resumes
+integration; busy delivery queues until the current turn settles. Full reports remain available in `/agents`. Diagnostic
+event logs retain a bounded suffix; rolling that log does not redeliver already observed control events.
+
+Delivery is bound to the originating Session and run and is deduplicated. User cancellation or explicit task ending
+suppresses a late continuation while retaining the outcome and canonical reference for inspection. A Goal-owned active
+run uses its canonical Goal query to coordinate continuation, so one outcome cannot create competing continuations.
 
 Foreground launches block until the result is ready and return it to the current Tool call. Nested fanout remains
 owned by the launching child and cannot detach beyond that owner.
@@ -130,8 +136,9 @@ child Tools have no implicit deadline. Supervisor and intercom Tools that legiti
 `excludeTools` subtracts names from ambient, explicit, MCP, and Suite-injected child Tools. Excluding `subagent`
 disables nested fanout for that Agent. Excluding `read` is rejected when the Agent needs it for lazy Skill loading.
 
-Each child uses the same Pi Host binary with the owning Package loaded and ambient discovery disabled. Non-fanout
-children do not receive the `subagent` Tool.
+Each child uses the same Pi Host binary with the owning Package loaded and ambient discovery disabled. Context Management
+and Magic own child Context pressure and projection; Agents preserves child protocol, Tool pairing, and recoverable
+evidence through that boundary. Non-fanout children do not receive the `subagent` Tool.
 
 ## Limits
 
