@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: d20bc91bc659bb47afa00bcc41c84230be523e644ed386338d5e5d97683016c0 -->
+<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: 9ffa9991fb5ab721473f90fae82c9bc50ecd63ae4ae3a045ae07cc7968b07c95 -->
 
 # Astra 指令与交付审查 — 2026-09-05
 
@@ -68,3 +68,9 @@ AGENTS 明确了用户指令优先级、已有授权，以及收到后续消息�
 本轮 AGENTS 从 54 增至 57 个物理行，贡献指南从 31 增至 32 行，质量文档从 41 增至 46 行。新增规则处理已发现的歧义和失败处置；验证命令只由一份政策文档负责。
 
 代码审查建议增加 PR SHA 格式校验，但源码证据排除了该问题：`readBead()` 验证每个交付 SHA，`deliveryLines()` 在查询 CI 前要求 PR head 属于这个已经验证的列表。因此无需修改可执行代码。指令审查和镜像/SHA 检查不能证明模型行为，也不能解决上述 Context 验收失败；本次不声称行为性能有所改善。
+
+## 合并验收诊断 — 2026-09-06
+
+保留的请求和 Session 记录证明额外调用来自 Session Naming：请求开头要求命名编码会话，Session 末尾出现 `pi-stuff-session-naming-state`。恢复测试只写入 `enabled: false`，未通过命名空间 schema 校验，因此启用了内置默认配置。测试现在复用已有的 `disableSessionNamingForTest()` helper。Goal 生命周期 retry 验证器存在同样的不完整覆盖，现在关闭命名时保留默认设置的其他字段。Provider 匹配逻辑和恢复断言保持不变。
+
+这修复了此前间歇性计数问题的配置根因；完成交付仍需最终版本验证。恢复测试和 Goal 生命周期验证器各增加一行 import，不修改运行时代码。

@@ -103,3 +103,14 @@ The code review's suggested extra PR SHA-format check was rejected with direct s
 every delivery SHA, and `deliveryLines()` requires the PR head to belong to that validated list before querying CI.
 No executable changes were needed. Instruction review and mirror/SHA checks cannot establish model behavior or resolve
 the Context acceptance failure above; no behavioral performance improvement is claimed.
+
+## Merge acceptance diagnosis — 2026-09-06
+
+Retained request and Session records identified the extra call as Session Naming: its prompt started with a request to
+name the coding session, and the Session ended with `pi-stuff-session-naming-state`. The recovery test wrote only
+`enabled: false`, which fails the namespace schema and activates built-in defaults. The test now uses the existing
+`disableSessionNamingForTest()` helper. The Goal lifecycle retry verifier had the same incomplete override and now
+preserves the default settings fields when disabling naming. Provider matching and recovery assertions are unchanged.
+
+This resolves the configuration cause of the earlier intermittent count; completion still requires validation of the
+final revision. The recovery test and Goal lifecycle verifier each gain one import line; no runtime code changes.
