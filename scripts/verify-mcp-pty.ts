@@ -6,6 +6,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeObject } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -185,7 +186,8 @@ must_expect "Disable broken?"
 send -- "\\033\\[B"
 send -- "\\r"
 must_expect "Disabled server"
-after 1000
+must_expect "Reloading keybindings"
+must_expect "Reloaded keybindings"
 send -- "/mcp\\r"
 must_expect "0/2 connected"
 must_expect "broken"
@@ -198,7 +200,8 @@ must_expect "Enable broken?"
 send -- "\\033\\[B"
 send -- "\\r"
 must_expect "Enabled server"
-after 1000
+must_expect "Reloading keybindings"
+must_expect "Reloaded keybindings"
 send -- "/mcp\\r"
 must_expect "0/3 connected"
 send -- "\\033\\[B"
@@ -214,7 +217,8 @@ must_expect "Cancel"
 send -- "\\033\\[B"
 send -- "\\r"
 must_expect "Automatic connection saved"
-after 1000
+must_expect "Reloading keybindings"
+must_expect "Reloaded keybindings"
 send -- "/mcp\\r"
 must_expect "0/3 connected"
 send -- "\\033\\[B"
@@ -710,7 +714,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	const PI_BIN = resolvePiBinary();
 	await verifyMcpPty({ packagePath: join(root, "packages/pi-stuff"), piBinary: PI_BIN });
 	console.log(
 		"Certified light/dark responsive setup at wide, narrow, and low sizes; reload/re-read, persisted connection policy, OAuth detail actions, MCP lifecycle, Tool call/resume rendering, and Command Dialog in real Pi TUI",

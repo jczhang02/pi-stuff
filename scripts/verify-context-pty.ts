@@ -20,6 +20,7 @@ import {
 	simpleProgram,
 	startupOnlyProgram,
 } from "./context-pty-drivers.js";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -759,7 +760,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	const PI_BIN = resolvePiBinary();
 	await verifyContextPty({ piBinary: PI_BIN, packagePath: join(root, "packages/pi-stuff") });
 	console.log(
 		"Certified Magic Context in a real 64x28 Pi TUI, including project isolation, native-compaction adoption, lexical recall, resume, and unavailable",

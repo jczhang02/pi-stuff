@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import { resolvePiBinary } from "./installed-tools.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/ponytail-pty-provider.ts");
@@ -566,7 +567,7 @@ export async function verifyPonytailPty(options: PonytailPtyVerificationOptions)
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	const PI_BIN = resolvePiBinary();
 	const evidence = await verifyPonytailPty({
 		piBinary: PI_BIN,
 		packagePath: join(root, "packages/pi-stuff"),

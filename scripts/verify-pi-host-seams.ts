@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { createRpcTransport } from "./magic-context-real-rpc.ts";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
@@ -140,7 +141,7 @@ export async function verifyPiHostSeams(options: {
 if (import.meta.main) {
 	await verifyPiHostSeams({
 		packagePath: resolve(root, "packages/pi-stuff"),
-		piBinary: process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi",
+		piBinary: resolvePiBinary(),
 	});
 	console.log(`Certified Pi ${CERTIFIED_PI_VERSION} queue-clear origin and Tool-phase message ordering`);
 }

@@ -8,6 +8,7 @@ import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeFunction } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { GOAL_FINAL_RESPONSE, GOAL_FINAL_RESPONSE_MARKER } from "../test/fixtures/ui-pty-provider.ts";
+import { resolvePiBinary } from "./installed-tools.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -442,7 +443,7 @@ exec /usr/bin/git "$@"
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	const PI_BIN = resolvePiBinary();
 	await verifyGoalPty({
 		piBinary: PI_BIN,
 		packagePath: join(root, "packages/pi-stuff"),
