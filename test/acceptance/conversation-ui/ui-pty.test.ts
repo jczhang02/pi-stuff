@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import * as flow from "../../../scripts/ui-pty-interactions.ts";
 import * as pty from "../../../scripts/ui-pty-session.ts";
 import { verifyUiPty } from "../../../scripts/verify-ui-pty.ts";
@@ -53,19 +54,22 @@ async function setThinkingLevel(session: pty.TmuxPiSession, level: "low" | "medi
 }
 
 async function expectEmbeddedStatus(session: pty.TmuxPiSession, columns: number): Promise<string> {
-	const screen = await session.waitFor((value) => WORKING_SPINNER.test(value), "running indicator");
+	// Synchronize and assert against one frame; a second capture can cross a redraw or completion.
+	let ansiScreen = "";
+	await session.waitFor(() => {
+		ansiScreen = session.captureAnsi();
+		return WORKING_SPINNER.test(ansiScreen);
+	}, "running indicator");
+	const screen = stripVTControlCharacters(ansiScreen);
 	const indicators = screen.split("\n").filter((line) => WORKING_SPINNER.test(line));
 	expect(indicators).toHaveLength(1);
 	expect(indicators[0]).toMatch(/^── [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] .+─+\s*$/u);
 	flow.verifyTerminalWidth(screen, columns, "embedded working status");
-	const ansiIndicator = session
-		.captureAnsi()
-		.split("\n")
-		.find((line) => WORKING_SPINNER.test(line));
+	const ansiIndicator = ansiScreen.split("\n").find((line) => WORKING_SPINNER.test(line));
 	const spinnerColor =
 		ansiIndicator && ansiColorBefore(ansiIndicator, ansiIndicator.match(WORKING_SPINNER)?.[0] ?? "");
 	const messageColor = ansiIndicator && ansiColorBefore(ansiIndicator, "Working");
-	expect(spinnerColor).toBeDefined();
+	expect(spinnerColor, JSON.stringify({ screen, ansiScreen })).toBeDefined();
 	expect(messageColor).toBe(spinnerColor);
 	expect(ansiIndicator && ansiColorBefore(ansiIndicator, "──")).toBe(spinnerColor);
 	return spinnerColor ?? "";

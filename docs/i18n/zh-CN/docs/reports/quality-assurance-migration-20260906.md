@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: b6e39a7d14d8e04169b3904a5e499648c4c189d44cd2cf989c974cf718353afc -->
+<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: 859aa229500a19a74fb99bb4ca9f9418e360521771958737b992d9864499c459 -->
 
 # 质量保障迁移——2026-09-06
 
@@ -52,15 +52,15 @@ Web 直接 Provider API 的重定向声明检查已归入 Static Checks，一个
 
 ## 第三批：受影响测试选择与 CI 编排检查点
 
-基线为第二批检查点 `35225c57`。当前 worktree 仍包含未提交的第三批实现，因此本节是检查点证据，不是最终验收。当前清单为 334 个文件：333 个离线文件和 1 个显式在线文件。离线文件按 Component、Component Integration、System、System Integration、Acceptance 分别为 132、159、2、10、30 个。第二批记录的 332 个文件（331 个离线文件）保持不变；数量变化表示一个文件替换成了三个第三批规划、执行契约和 CI 聚合测试文件。
+基线为第二批检查点 `35225c57`。第三批已有签名检查点与草稿 PR #230；最终离线和托管验收完成前，本节仍是检查点证据。当前清单为 334 个文件：333 个离线文件和 1 个显式在线文件。离线文件按 Component、Component Integration、System、System Integration、Acceptance 分别为 132、159、2、10、30 个。第二批记录的 332 个文件（331 个离线文件）保持不变；数量变化表示一个文件替换成了三个第三批规划、执行契约和 CI 聚合测试文件。
 
 第三批实现了本地与 CI 的保守范围选择。本地 `verify` 默认使用 `origin/main` 与 `HEAD` 的 merge-base，合并已提交、暂存、未暂存和未跟踪路径，并接受 `--base <ref>`。规划器使用 AST 解析 TypeScript import，并沿测试 helper 的反向依赖遍历；`.js` import 可以解析到对应的 `.ts` 源文件。共享基础设施、未知路径、动态或不透明 import、无法解析的依赖以及删除路径都回退到全部离线 Tests。只有当当前文件、index、`HEAD` 和 comparison base 的内容都证明 Markdown 或 Beads 元数据不含 executable fence 或脚本材料时，才允许生成 narrow no-tests 计划。`--list` 预览 base、head、reason、选中文件和环境要求；`--help` 不执行工作，未知参数失败。普通运行只读执行 Checks，随后执行选中的 offline Tests，并写入包含 plan、状态、耗时和 evidence paths 的时间戳 summary。
 
 CI workflow 拆为 `Plan`、`Checks`、`Tests`、`Verify`：Plan 选择 PR target range 或 main push 的 before/after range，manual dispatch 选择全部离线 Tests；Checks 独立运行，Tests 只依赖 Plan；Verify 校验 plan、每个必需 job 的结果、精确的选中文件覆盖和结构化 test report。Plan artifact 与 test report 分开上传，Verify 不重复执行实质工作。同一 PR 的 superseded run 可以取消，不同 main-push revision range 保留；branch protection 不变。
 
-源代码规模比较使用 `35225c57` 到当前 worktree 的 git diff 路径集合，包含新增未跟踪 JS/TS 路径并排除 artifacts：物理行数由 320 增至 1,252（+932）。这是变更路径集合比较，不是完整仓库大小，也不是 speedup 证据。
+源代码规模比较使用 `35225c57` 到当前 worktree 的 git diff 路径集合，包含新增未跟踪 JS/TS 路径并排除 artifacts：物理行数由 810 增至 1,760（+950）。这是变更路径集合比较，不是完整仓库大小，也不是 speedup 证据。
 
-本地聚焦证据已完成：8 个规划测试、3 个执行／契约测试、17 个 CI 聚合测试、3 个 runner 测试，共 31 个聚焦测试。第一批和第二批的历史证据继续有效。当前 worktree 的完整离线运行、托管 CI、最终两轮 Thermo-Nuclear 审查，以及基线／完整 CI 的耗时和覆盖比较仍待完成。本批状态为 verification pending；不要报告迁移完成或受影响测试 speedup。
+本地聚焦证据已完成：9 个规划测试、3 个执行／契约测试、17 个 CI 聚合测试和 3 个 runner 测试。完整静态检查、Standards／Spec 审查及连续两轮独立 Thermo-Nuclear 审查均通过。首轮完整离线运行执行了全部 333 个文件、2,458 个原生用例，零跳过，用时 1,211.4 秒，另有 7.3 秒 Goal setup。三个文件失败：UI Host 与 RTK 元数据测试保留旧目录根路径，一次分别采样快照的 embedded-status PTY 颜色断言失败。两处路径已修复并聚焦通过；状态测试改为等待和断言同一 ANSI 帧，颜色要求不变，修改后真实 PTY 模式／主题组合重复 12 次全部通过。最终全量离线和托管验证仍待完成。首轮托管 CI 因停用缓存接口而在执行前失败；更新为受支持的固定缓存版本后，Plan 与 Checks 通过。基线 main CI 用时 89 秒，但跳过 Acceptance，验证范围不等价，不能作为整体加速证据。
 
 ## 可复用诊断
 
@@ -70,3 +70,7 @@ CI workflow 拆为 `Plan`、`Checks`、`Tests`、`Verify`：Plan 选择 PR targe
 
 **删除调用审计：**文件名相似不足以证明覆盖重复。MCP 和 RTK PTY 调用原本没有测试调用方，已在检查点之前恢复。
 随后逐项将原聚合的全部 17 个调用对应到真实调用点及其终端尺寸／默认值；删除的十个验证器族已包含原场景。
+
+**迁移根路径：**中间目录存在不足以证明路径正确：`test/` 存在，但不是仓库根目录。完整运行发现 UI Package 加载和 RTK 来源记录仍从旧位置解析；两处保留原断言并改为指向实际源码树。
+
+**嵌入状态快照：**原始偶发失败没有保留 ANSI 原始证据，无法重建当时的具体帧切换。测试原本分别截取纯文本和 ANSI；现在等待并验证同一 ANSI 快照，从同一帧提取可见文本，并在失败时输出原始快照。没有把重跑通过当作修复；Host 渲染与颜色要求均未修改。

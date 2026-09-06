@@ -165,3 +165,17 @@ test("planner help and invalid arguments leave no artifact", async () => {
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("imports outside the analyzed graph force complete verification", async () => {
+	const { root } = await repo();
+	try {
+		await put(root, "scripts/bridge.ts", 'export * from "../packages/pi-stuff/src/alpha/value.js";');
+		await put(root, "test/unit/gamma/gamma.test.ts", 'import "../../../scripts/bridge.js";');
+		git(root, ["add", "."]);
+		git(root, ["commit", "-qm", "shared helper"]);
+		await put(root, "packages/pi-stuff/src/alpha/value.ts", "export const value = 2;");
+		expect(buildVerificationPlan(root, { VERIFY_BASE: "HEAD" }).mode).toBe("all");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});

@@ -35,7 +35,7 @@ bun run benchmark:capability:ponytail --help
 
 第二批完成测试分类与精简、五层 Capability 目录迁移、稳定层级 aliases、过时 acceptance aliases 清理。Code Mode RPC/TUI 已有使用真实 Host 与 fixture Provider 的 offline Acceptance 归属；live Magic Context wrapper 仍单独存在且未运行。
 
-第三批已实现受影响测试规划与 CI 编排。本地 `verify` 默认比较 `origin/main` 与当前 `HEAD` 的 merge-base，合并已提交、暂存、未暂存和未跟踪路径，并接受 `--base <ref>`。规划器使用保守的 TypeScript AST import 与反向依赖遍历，支持将 `.js` import 解析到 `.ts` 源码；共享基础设施、未知、动态、不透明或无法解析的影响均回退到全部离线 Tests。仅当当前文件、index、`HEAD` 和 comparison base 的内容都证明 Markdown 或 Beads 元数据不含 executable fence 或脚本材料时，才可生成明确的 no-tests 计划。删除路径同样回退到完整离线套件。`--list` 只显示 base、head、reason、选中文件和环境要求，不运行 Checks 或 Tests；`--help` 与未知参数严格失败。普通运行只读执行 `check`，随后运行选中的 offline Tests，并写入包含 plan、状态、耗时和 evidence paths 的时间戳 summary。
+第三批已实现受影响测试规划与 CI 编排。本地 `verify` 默认比较 `origin/main` 与当前 `HEAD` 的 merge-base，合并已提交、暂存、未暂存和未跟踪路径，并接受 `--base <ref>`。规划器使用保守的 TypeScript AST import 与反向依赖遍历，支持将 `.js` import 解析到 `.ts` 源码；共享基础设施、未知、动态、不透明或无法解析的影响均回退到全部离线 Tests。仅当当前文件、index、`HEAD` 和 comparison base 的内容都证明 Markdown 或 Beads 元数据不含 executable fence 或脚本材料时，才可生成明确的 no-tests 计划。删除路径同样回退到完整离线套件。`--list` 只显示 base、head、reason、选中文件和环境要求，不运行 Checks 或 Tests；`--help` 不执行工作，未知参数严格失败。普通运行只读执行 `check`，随后运行选中的 offline Tests，并写入包含 plan、状态、耗时和 evidence paths 的时间戳 summary。
 
 CI 使用 `Plan`、`Checks`、`Tests`、`Verify`。Plan 选择 PR target range 或 main push 的 before/after range；manual dispatch 选择全部离线 Tests。Checks 独立运行，Tests 只等待 Plan；Verify 校验 plan、必需 job 结果、精确的选中文件覆盖和结构化 test report。Plan 与 test report 是分开的 artifacts，Plan 和 Verify 不重复执行实质工作。同一 PR 的过时运行可以取消，不同 main-push revision range 保留；本批不修改 branch protection。
 

@@ -106,7 +106,7 @@ function sourceFiles(root: string): string[] {
 	);
 }
 function dependencyCapabilities(root: string, changed: string[], all: string[], capabilities: Set<string>) {
-	const files = [...new Set([...sourceFiles(root), ...all])];
+	const files = new Set([...sourceFiles(root), ...all]);
 	const reverse = new Map<string, Set<string>>();
 	let uncertain = false;
 	for (const file of files) {
@@ -115,7 +115,7 @@ function dependencyCapabilities(root: string, changed: string[], all: string[], 
 		for (const specifier of imports.specifiers) {
 			if (!specifier.startsWith(".")) continue;
 			const target = resolveImport(root, file, specifier);
-			if (!target) {
+			if (!target || (CODE.test(target) && !files.has(target))) {
 				uncertain = true;
 				continue;
 			}
