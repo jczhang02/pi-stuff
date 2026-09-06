@@ -1,5 +1,415 @@
 {
-	"successfulAtomicPublication": {
+  "skillFreeLaunchLoading": {
+    "bead": "ps-yon.17",
+    "base": "69807e538d5262b1492e1d69a0a994558fc33b79",
+    "date": "2026-09-06",
+    "change": "Skip loading the filesystem Skill resolver when neither per-call nor Agent configuration selects Skills; retain fresh selected-Skill resolution at preflight and final construction.",
+    "sourceLines": [
+      {
+        "file": "packages/pi-stuff/src/subagents/src/agents/skill-input.ts",
+        "before": 0,
+        "after": 32,
+        "sha256": "f06e8c3565743aeaf98e33c003492a093cc8afdceefea3c4ecdaa6861b6afa9a"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/agents/skills.ts",
+        "before": 690,
+        "after": 659,
+        "sha256": "7f815dd7e7c8e01f6e6b77a5df3149182416cb2d19f29eef40760eb3c00c4983"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/background/async-execution.ts",
+        "before": 608,
+        "after": 614,
+        "sha256": "16314983d8f155b48f5474aae8f2a66d9ca4223e1b5dee6b13bf07284909eb1f"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/background/resolved-task.ts",
+        "before": 446,
+        "after": 451,
+        "sha256": "de2ba9a67fe930b446f711a6686b584e5ee8d74f97d1e822d07092410a56d988"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/background/runner-work.ts",
+        "before": 137,
+        "after": 137,
+        "sha256": "bb73a23f17a1eaa7b9a93d1b288791ebe4ebdd32a27ae505270d23320cafb5ae"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/foreground/launch-builders.ts",
+        "before": 245,
+        "after": 255,
+        "sha256": "0181422ad93463bcdaf0e38b5849492ada0dbfda1aa06cec514f94d37a14a298"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/foreground/launch-model-planning.ts",
+        "before": 430,
+        "after": 437,
+        "sha256": "9b1133c37354b4baf3015c5418eae2e3d9907faf1008fd7440fcab36d35df7b4"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/foreground/launch-preparation.ts",
+        "before": 323,
+        "after": 323,
+        "sha256": "95483b58883fe6ce7b9faa3479d696e6e7aa4d90630d5ff4555b31cfc0e7253b"
+      },
+      {
+        "file": "test/agents/background-engine-recovery.test.ts",
+        "before": 585,
+        "after": 585,
+        "sha256": "d910c3093093563f4eb818df648373097e6570149264abb0d4d0bcb81e2f50d0"
+      },
+      {
+        "file": "test/agents/skill-loading.test.ts",
+        "before": 0,
+        "after": 42,
+        "sha256": "8db00f11757a2eebf2ae1624d873a90048a78437f6bd3646d7dc336af2854965"
+      }
+    ],
+    "netSourceLines": 71,
+    "command": "bun scripts/benchmark-responsiveness.ts --pi <certified-pi> --suite --agent foreground --resource-scope --gates docs/reports/suite-responsiveness-gates-2026-09-05.json --repeat-tool",
+    "isolation": "Exact Pi 0.85.0, 120x40, two fresh-context children, automatic Naming/Usage, isolated network/PID namespaces, fresh private configuration/temporary caches on ordinary filesystem; kernel page cache not reset. Sequential runs without overlapping tests, scouts or profilers.",
+    "regression": "Old source: 0 pass, 1 fail because a Skill-free launch loaded filesystem discovery. Candidate loading/resolver/recovery: 16 pass, 74 assertions. Foreground launch/admission/context/recovery/resume and background startup: 72 pass, 289 assertions. These Bun tests do not alone certify native public seams.",
+    "runs": [
+      {
+        "sample": "UX39W2",
+        "variant": "control",
+        "diagnostic": false,
+        "startUtc": "2026-09-06T03:33:27.341Z",
+        "verdict": "FAIL",
+        "evidenceSha256": "ade62e0f473f57443c003307bc1ac8e1648c9c354cdd33d26e46902168ca426e",
+        "providerSha256": "0c581497d9e224e61946c927796c78c81115e276a170012266fce153fe221626",
+        "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "maximumSpinnerFrameMs": 289.37740499999927,
+        "maximumStartupInputMs": 14.910283000000163,
+        "maximumSteadyInputMs": 66.86825099999987,
+        "maximumSelectionMs": 15.880220000000918,
+        "maximumObservationGapMs": 16.5845679999984,
+        "maximumSpinnerAbsenceMs": 0,
+        "activeDurationMs": 38677.24514,
+        "activeCaptureCount": 3089,
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "automaticUsageRefreshes": 1,
+        "namingRequests": 1,
+        "namingPersisted": 1,
+        "cpuUs": 28484953,
+        "rssSnapshotBytes": 598941696,
+        "peakChargedBytes": 1259331584,
+        "parentIo": {
+          "rchar": 241990312,
+          "wchar": 27481602,
+          "syscr": 22281,
+          "syscw": 7327,
+          "read_bytes": 483328,
+          "write_bytes": 27228084,
+          "cancelled_write_bytes": 0
+        }
+      },
+      {
+        "sample": "QK1Z2w",
+        "variant": "candidate",
+        "diagnostic": false,
+        "startUtc": "2026-09-06T03:41:30.353Z",
+        "verdict": "FAIL",
+        "evidenceSha256": "5df0d22f38e9d87164057989b347d1882093b19903bd271419a18ffdea012f9a",
+        "providerSha256": "e7b8e578be832945be20088c06eefde6a94f0cd71b467fdb9b601803bfc7af3f",
+        "sourceDiffSha256": "fd7d940708da52a30a993538db4cf4bfc0fd9b9e51705c18908b1b175748873a",
+        "maximumSpinnerFrameMs": 199.5450690000016,
+        "maximumStartupInputMs": 14.260549000000537,
+        "maximumSteadyInputMs": 122.9874830000008,
+        "maximumSelectionMs": 14.446320000002743,
+        "maximumObservationGapMs": 25.39549399999987,
+        "maximumSpinnerAbsenceMs": 0,
+        "activeDurationMs": 37248.607398,
+        "activeCaptureCount": 3091,
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "automaticUsageRefreshes": 1,
+        "namingRequests": 1,
+        "namingPersisted": 1,
+        "cpuUs": 24554871,
+        "rssSnapshotBytes": 607096832,
+        "peakChargedBytes": 1265033216,
+        "parentIo": {
+          "rchar": 241880780,
+          "wchar": 27450622,
+          "syscr": 22116,
+          "syscw": 7317,
+          "read_bytes": 977408,
+          "write_bytes": 27186460,
+          "cancelled_write_bytes": 0
+        }
+      },
+      {
+        "sample": "OtYWMh",
+        "variant": "control",
+        "diagnostic": true,
+        "startUtc": "2026-09-06T03:44:22.371Z",
+        "verdict": "FAIL",
+        "evidenceSha256": "0f757ed0c9efd36ceb152ab61012315e252253bb6b27d48719d8954873916c7e",
+        "providerSha256": "61252fa9b66d24961e29338e344e14811707aa024d872f8097f1cba201651130",
+        "sourceDiffSha256": "c20a9b7ee01f679abf536498a04d5a970c05a10cfbf3714f975c2d7150cd864e",
+        "maximumSpinnerFrameMs": 197.6753860000008,
+        "maximumStartupInputMs": 14.64271699999972,
+        "maximumSteadyInputMs": 26.458645999999135,
+        "maximumSelectionMs": 15.493246999998519,
+        "maximumObservationGapMs": 17.65444999999454,
+        "maximumSpinnerAbsenceMs": 0,
+        "activeDurationMs": 38068.285197,
+        "activeCaptureCount": 3062,
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "automaticUsageRefreshes": 1,
+        "namingRequests": 1,
+        "namingPersisted": 1,
+        "cpuUs": 28480455,
+        "rssSnapshotBytes": 606388224,
+        "peakChargedBytes": 1229959168,
+        "parentIo": {
+          "rchar": 241989432,
+          "wchar": 27477485,
+          "syscr": 22291,
+          "syscw": 7330,
+          "read_bytes": 178688,
+          "write_bytes": 27207756,
+          "cancelled_write_bytes": 0
+        },
+        "moduleLoads": [
+          {
+            "role": "parent",
+            "completedTools": 0,
+            "skillModuleLoads": 0
+          },
+          {
+            "role": "child",
+            "completedTools": 0,
+            "skillModuleLoads": 1
+          },
+          {
+            "role": "child",
+            "completedTools": 1,
+            "skillModuleLoads": 1
+          },
+          {
+            "role": "parent",
+            "completedTools": 1,
+            "skillModuleLoads": 1
+          },
+          {
+            "role": "child",
+            "completedTools": 0,
+            "skillModuleLoads": 1
+          },
+          {
+            "role": "child",
+            "completedTools": 1,
+            "skillModuleLoads": 1
+          },
+          {
+            "role": "parent",
+            "completedTools": 2,
+            "skillModuleLoads": 1
+          }
+        ]
+      },
+      {
+        "sample": "Z3TSO5",
+        "variant": "candidate",
+        "diagnostic": true,
+        "startUtc": "2026-09-06T03:45:21.663Z",
+        "verdict": "FAIL",
+        "evidenceSha256": "b8d12bf8a9e2c4b861e6ca1a03fca7212f05e9a241252b668f8db6052b5a8d35",
+        "providerSha256": "e08c30a3b25f0c06d4a71955237194792eb16e8b48863aa3270abec6e8b84870",
+        "sourceDiffSha256": "2d68d6c34e03afa9617cebabf0500da289efa6b6e1dc9a401473396e59f16a91",
+        "maximumSpinnerFrameMs": 259.5813359999993,
+        "maximumStartupInputMs": 17.28543300000092,
+        "maximumSteadyInputMs": 79.93455999999969,
+        "maximumSelectionMs": 15.976072999999815,
+        "maximumObservationGapMs": 20.12970499999983,
+        "maximumSpinnerAbsenceMs": 0,
+        "activeDurationMs": 37776.352419999996,
+        "activeCaptureCount": 3045,
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "automaticUsageRefreshes": 1,
+        "namingRequests": 1,
+        "namingPersisted": 1,
+        "cpuUs": 30243116,
+        "rssSnapshotBytes": 580534272,
+        "peakChargedBytes": 1251008512,
+        "parentIo": {
+          "rchar": 241870679,
+          "wchar": 27456309,
+          "syscr": 22161,
+          "syscw": 7297,
+          "read_bytes": 389120,
+          "write_bytes": 27186617,
+          "cancelled_write_bytes": 0
+        },
+        "moduleLoads": [
+          {
+            "role": "parent",
+            "completedTools": 0,
+            "skillModuleLoads": 0
+          },
+          {
+            "role": "child",
+            "completedTools": 0,
+            "skillModuleLoads": 0
+          },
+          {
+            "role": "child",
+            "completedTools": 1,
+            "skillModuleLoads": 0
+          },
+          {
+            "role": "parent",
+            "completedTools": 1,
+            "skillModuleLoads": 0
+          },
+          {
+            "role": "child",
+            "completedTools": 0,
+            "skillModuleLoads": 0
+          },
+          {
+            "role": "child",
+            "completedTools": 1,
+            "skillModuleLoads": 0
+          },
+          {
+            "role": "parent",
+            "completedTools": 2,
+            "skillModuleLoads": 0
+          }
+        ]
+      },
+      {
+        "sample": "1pkXGl",
+        "variant": "candidate-final-source",
+        "diagnostic": false,
+        "startUtc": "2026-09-06T03:59:45.111Z",
+        "verdict": "FAIL",
+        "evidenceSha256": "9d458bc189c443d3e9935144c0e26f976f4dbc0b1393a5fef6f9c64f62aa4471",
+        "providerSha256": "fb9e4d90f484311bc82c90c868cfa3d93e9617804e34e662e96f28de8ed2f16b",
+        "sourceDiffSha256": "057c2b652de22f6663e39dc2e47e5d90b7ed851bd418226e4f3eb1071938fe22",
+        "maximumSpinnerFrameMs": 280.6641440000003,
+        "maximumStartupInputMs": 31.174213999999665,
+        "maximumSteadyInputMs": 226.296663000001,
+        "maximumSelectionMs": 16.24060599999939,
+        "maximumObservationGapMs": 22.708540000000085,
+        "maximumSpinnerAbsenceMs": 0,
+        "activeDurationMs": 37944.93209,
+        "activeCaptureCount": 3051,
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "automaticUsageRefreshes": 1,
+        "namingRequests": 1,
+        "namingPersisted": 1,
+        "cpuUs": 30432384,
+        "rssSnapshotBytes": 591486976,
+        "peakChargedBytes": 1224912896,
+        "parentIo": {
+          "rchar": 241886614,
+          "wchar": 27456372,
+          "syscr": 22287,
+          "syscw": 7337,
+          "read_bytes": 13860352,
+          "write_bytes": 27186605,
+          "cancelled_write_bytes": 0
+        }
+      }
+    ],
+    "fixtures": [
+      {
+        "file": "scripts/benchmark-responsiveness.ts",
+        "sha256": "820d86f5322a486dd9ac41ca26c06226d30d1a542074890636f47e473ab31ef9"
+      },
+      {
+        "file": "scripts/host-resource-scope.ts",
+        "sha256": "a0c5347b33004bdcff59f6b8155ed3951507bf13cd1209001ce8af741cbdfaee"
+      },
+      {
+        "file": "scripts/pty-observation.ts",
+        "sha256": "462aa80ee6ea261e4063ad0fdbf0a5669bdf8bdc479115304ba8207e48680e40"
+      },
+      {
+        "file": "test/fixtures/responsiveness-provider.ts",
+        "sha256": "921ecc1e7fb94a7d6c077a4202578ee491a083c7e2707ba9477ee9b99e86c1d3"
+      },
+      {
+        "file": "test/fixtures/faux-provider.ts",
+        "sha256": "1e164539c4319c4e8392f84c5d3b56ac19910c8975fe4734ce78f7efd69df07e"
+      }
+    ],
+    "provenanceLimit": "The first four samples captured tracked diffs before the two new files were intent-to-add; candidate records QK1Z2w/Z3TSO5 omit their bodies. Current new-file hashes are retained above. The unmarked 1pkXGl rerun captures all ten Source/test files, including both additions, in its complete diff. Diagnostic marks and Provider counters were removed before that rerun.",
+    "limits": "Marked control loads the resolver once in the parent and once per child; marked candidate loads it zero times in all three Hosts. All five frozen-gate samples fail. Counts prove omitted module evaluation, not removal of every shared dependency or a stable whole-Host CPU, memory or latency saving. Charged-memory peaks are not peak process-tree RSS; /proc I/O includes waited-child accounting. Allocation/GC, wakeups, per-module byte savings, selected-Skill native coverage and full Suite acceptance are not established by these samples. All five owned scopes were verified unloaded.",
+    "selectedSkillExecution": {
+      "sample": "6vgOHC",
+      "startUtc": "2026-09-06T04:07:33.449Z",
+      "contractVerdict": "PASS",
+      "livenessVerdict": "FAIL",
+      "verifiedChildRequests": 4,
+      "contract": "Both requests in each of two real children asserted the selected name, XML-escaped description, Skill file location and active Read Tool before responding.",
+      "evidenceSha256": "69653d595d8ef20ea93a885186c1e1b4f2f8eed1add5a415c655ef15a373a524",
+      "providerSha256": "4e10c5495453a21f8d0137bfff8e0d124ed5a0970f23188de09b6cc1b67f9bea",
+      "sourceDiffSha256": "7e963a75e85cbe424f8ca73dfbbac491f1d5271778a08aa083fe667b70f8a84e",
+      "maximumSpinnerFrameMs": 328.5726489999997,
+      "maximumStartupInputMs": 26.3717630000001,
+      "maximumSteadyInputMs": 17.18055099999765,
+      "maximumSelectionMs": 64.32140600000093,
+      "maximumObservationGapMs": 19.407672999999704,
+      "maximumSpinnerAbsenceMs": 0,
+      "completedChildTools": 2,
+      "reapedChildProcesses": 2,
+      "namingRequests": 1,
+      "namingPersisted": 1,
+      "automaticUsageRefreshes": 1,
+      "cpuUs": 28119124,
+      "rssSnapshotBytes": 604094464,
+      "peakChargedBytes": 1258586112,
+      "parentIo": {
+        "rchar": 241913748,
+        "wchar": 27482248,
+        "syscr": 22247,
+        "syscw": 7334,
+        "read_bytes": 40960,
+        "write_bytes": 27213226,
+        "cancelled_write_bytes": 0
+      },
+      "fixtures": [
+        {
+          "file": "scripts/benchmark-responsiveness.ts",
+          "sha256": "3d54c1e0555b9404b2547fa6edf27b97a89580aad85fd1f0ab7c9d39c6cc1c8d"
+        },
+        {
+          "file": "test/fixtures/responsiveness-provider.ts",
+          "sha256": "9dae1bae885c52860d52df6c09eb02ba38866930762f4c042091279656831961"
+        }
+      ],
+      "limit": "One selected-Skill success contract sample, not a paired resource optimization or liveness PASS. Does not alone certify all selected-file modification, cancellation or recovery scenarios."
+    },
+    "failedSelectedSkillFixture": {
+      "sample": "9G2X3z",
+      "verdict": "INCOMPLETE",
+      "reason": "Temporary fixture used an unsupported unquoted bracket list; Agent parsing requested literal [selected-skill], so preflight correctly returned Skills not found before a child launched.",
+      "providerSha256": "54d7bf562c8ca6fb6f1023463702bbef850e28fa727600962c0abe15c8b5b845",
+      "evidenceExists": true,
+      "fixtures": [
+        {
+          "file": "scripts/benchmark-responsiveness.ts",
+          "sha256": "0be67ff12f9d9d78c30ed866ae0b869980597834e737d934baf463ebb8cd2b98"
+        },
+        {
+          "file": "test/fixtures/responsiveness-provider.ts",
+          "sha256": "9dae1bae885c52860d52df6c09eb02ba38866930762f4c042091279656831961"
+        }
+      ],
+      "failedEvidenceSha256": "2300eebdbb4635e4f4779fed8df433340cd66925951cb7dd742bfbfd80131e44"
+    }
+  },
+  "successfulAtomicPublication": {
 		"bead": "ps-yon.16",
 		"base": "55dbf85c37207cd270767c579b009054bc5bfe31",
 		"date": "2026-09-06",

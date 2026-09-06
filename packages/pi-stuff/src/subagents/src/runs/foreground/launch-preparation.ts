@@ -245,9 +245,9 @@ export async function prepareLaunch(
 	const context = contextFor(params);
 	const capabilityCeiling = resolveCurrentSubagentCapabilityCeiling(currentSessionId);
 	const maxSubagentDepth = resolveCurrentMaxSubagentDepth();
-	let modelPlan: ReturnType<typeof prepareLaunchModelPlan>;
+	let modelPlan: Awaited<ReturnType<typeof prepareLaunchModelPlan>>;
 	try {
-		modelPlan = prepareLaunchModelPlan({
+		modelPlan = await prepareLaunchModelPlan({
 			runId,
 			params,
 			agents,

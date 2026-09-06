@@ -349,7 +349,7 @@ test("keeps the detached runner independent from Host UI description fallback", 
 	expect(step).not.toHaveProperty("label");
 });
 
-test("builds one parallel group and resolves every task override before persistence", () => {
+test("builds one parallel group and resolves every task override before persistence", async () => {
 	const root = fixtureRoot();
 	const agents = [
 		agent(root, "writer", {
@@ -367,7 +367,7 @@ test("builds one parallel group and resolves every task override before persiste
 		}),
 	];
 
-	const built = buildAsyncParallelRunnerWork("run-parallel", {
+	const built = await buildAsyncParallelRunnerWork("run-parallel", {
 		tasks: [
 			{
 				agent: "writer",
@@ -463,9 +463,9 @@ test("builds one parallel group and resolves every task override before persiste
 	}
 });
 
-test("single recovery data retains the child session and limits without retired features", () => {
+test("single recovery data retains the child session and limits without retired features", async () => {
 	const root = fixtureRoot();
-	const built = buildAsyncSingleRunnerWork("run-single", {
+	const built = await buildAsyncSingleRunnerWork("run-single", {
 		agent: "writer",
 		task: "Continue the implementation",
 		agentConfig: agent(root, "writer", { excludeTools: ["write"] }),
@@ -521,9 +521,9 @@ test("single recovery data retains the child session and limits without retired 
 	}
 });
 
-test("keeps read available when a child inherits ambient Skills without an explicit skill list", () => {
+test("keeps read available when a child inherits ambient Skills without an explicit skill list", async () => {
 	const root = fixtureRoot();
-	const built = buildAsyncSingleRunnerWork("run-inherited-skills", {
+	const built = await buildAsyncSingleRunnerWork("run-inherited-skills", {
 		agent: "writer",
 		task: "Inspect the implementation",
 		agentConfig: agent(root, "writer", {
@@ -551,9 +551,9 @@ test("keeps read available when a child inherits ambient Skills without an expli
 	expect(built.work.task.tools).toEqual(["edit"]);
 });
 
-test("reads the selected child from a version 2 parallel recovery collection", () => {
+test("reads the selected child from a version 2 parallel recovery collection", async () => {
 	const root = fixtureRoot();
-	const built = buildAsyncParallelRunnerWork("recover-parallel", {
+	const built = await buildAsyncParallelRunnerWork("recover-parallel", {
 		tasks: [
 			{ agent: "writer", task: "Write" },
 			{ agent: "reviewer", task: "Review" },

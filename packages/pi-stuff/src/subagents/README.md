@@ -54,6 +54,10 @@ execution or recovery records or hashing Agent definitions and task bodies. Fina
 inputs and creates their digests, model metadata, and recovery record once. Planning projections are not cached across
 launches or reused as finalized child contracts.
 
+When neither per-call nor Agent configuration selects Skills, launch preparation does not load the filesystem Skill
+resolver. Selected Skills still resolve at preflight and final construction, preserving changed-file checks and
+missing-Skill errors before fork creation. Inheriting ambient Skills still keeps Read available.
+
 Skill path discovery does not read candidate Skill bodies. Selected files are read once per metadata cache miss;
 the bounded cache retains names, paths, sources and descriptions, not unused body text. Selected-file modification
 checks, discovery precedence, fallback paths and the advertised Skill prompt remain unchanged.

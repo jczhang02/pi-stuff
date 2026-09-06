@@ -5,7 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.ts";
 import type { PonytailMode } from "../../../../ponytail/types.ts";
 import type { AgentConfig } from "../../agents/agents.ts";
-import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
+import { normalizeSkillInput } from "../../agents/skill-input.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
 import { agentDefinitionDigest, type LaunchBindingInput, launchBindingDigest } from "../../shared/launch-contract.ts";
 import { findModelInfo, resolveEffectiveThinking } from "../../shared/model-info.ts";
@@ -360,25 +360,31 @@ function resolveTaskModels(input: ResolvedTaskBuildInput) {
 }
 
 /** Validate planning inputs without materializing execution or recovery records. */
-export function resolveTaskProjection(input: ResolvedTaskBuildInput): ResolvedTaskProjection | { error: string } {
+export async function resolveTaskProjection(
+	input: ResolvedTaskBuildInput,
+): Promise<ResolvedTaskProjection | { error: string }> {
 	const { taskInput, agent, params } = input;
 	const taskCwd = resolveChildCwd(input.runnerCwd, taskInput.cwd);
 	const normalizedTaskSkills = normalizeSkillInput(taskInput.skill);
 	const requestedSkills =
 		input.skills ?? (normalizedTaskSkills === false ? [] : normalizedTaskSkills) ?? agent.skills ?? [];
-	const { resolved: resolvedSkills, missing } = resolveSkillsWithFallback(
-		requestedSkills,
-		taskCwd,
-		params.ctx.cwd,
-		agent.skillPath,
-		agent.filePath ? path.dirname(agent.filePath) : taskCwd,
-	);
-	if (missing.length > 0) return { error: `Skills not found: ${missing.join(", ")}` };
-
 	let systemPrompt = agent.systemPrompt?.trim() ?? "";
-	if (resolvedSkills.length > 0) {
-		const injection = buildSkillInjection(resolvedSkills);
-		systemPrompt = systemPrompt ? `${systemPrompt}\n\n${injection}` : injection;
+	let skillNames: string[] = [];
+	if (requestedSkills.length > 0) {
+		const { buildSkillInjection, resolveSkillsWithFallback } = await import("../../agents/skills.ts");
+		const { resolved: resolvedSkills, missing } = resolveSkillsWithFallback(
+			requestedSkills,
+			taskCwd,
+			params.ctx.cwd,
+			agent.skillPath,
+			agent.filePath ? path.dirname(agent.filePath) : taskCwd,
+		);
+		if (missing.length > 0) return { error: `Skills not found: ${missing.join(", ")}` };
+		skillNames = resolvedSkills.map((skill) => skill.name);
+		if (resolvedSkills.length > 0) {
+			const injection = buildSkillInjection(resolvedSkills);
+			systemPrompt = systemPrompt ? `${systemPrompt}\n\n${injection}` : injection;
+		}
 	}
 
 	const { modelCandidates, modelOrigin, primaryModel, thinking } = resolveTaskModels(input);
@@ -401,13 +407,12 @@ export function resolveTaskProjection(input: ResolvedTaskBuildInput): ResolvedTa
 		mcpDirectTools: agent.mcpDirectTools,
 		cwd: taskCwd,
 		childBaseExtensionPath: params.childBaseExtensionPath,
-		requireReadTool: agent.inheritSkills || resolvedSkills.length > 0,
+		requireReadTool: agent.inheritSkills || skillNames.length > 0,
 		capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
 	const directMcpError = mcpContractError(agent, params.ctx.cwd, toolPlan);
 	if (directMcpError) return { error: directMcpError };
-	const skillNames = resolvedSkills.map((skill) => skill.name);
 	const projection: ResolvedTaskProjection = {
 		maxSubagentDepth,
 		modelCandidates,
@@ -425,8 +430,8 @@ export function resolveTaskProjection(input: ResolvedTaskBuildInput): ResolvedTa
 	return projection;
 }
 
-export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { error: string } {
-	const resolved = resolveTaskProjection(input);
+export async function buildResolvedTask(input: ResolvedTaskBuildInput): Promise<BuiltTask | { error: string }> {
+	const resolved = await resolveTaskProjection(input);
 	if ("error" in resolved) return resolved;
 	const built = projectBuiltTask(input, resolved);
 	const modelContextWindows: NonNullable<RunnerAgentTask["modelContextWindows"]> = [];

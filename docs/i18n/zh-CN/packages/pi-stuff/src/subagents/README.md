@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: f9f0a90440fccf884856d7a71396a98ae1b2abacc4aaf4a3592dfcb4c1f71b84 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 579b03204b56fe5f0206444244990b10e7d870fde39b41a90a4940ca404ae733 -->
 
 # Agents
 
@@ -53,6 +53,10 @@ child Host 不加载根 Agents 管理实现，因为该实现在这些进程中�
 规划阶段校验 Skills、候选模型、Tool 预算与超时，以及 capability/MCP 约束，但不创建执行或恢复记录，也不计算
 Agent 定义与任务正文的摘要。最终构建阶段解析启动输入，并一次性生成对应摘要、模型元数据和恢复记录。
 规划投影不会跨启动缓存，也不会被当作最终 child contract 复用。
+
+如果本次调用和 Agent 配置都未选择 Skill，启动准备不会加载文件系统 Skill 解析器。
+选中 Skill 仍在预检和最终构建时分别解析，保留文件变化检查，并在创建 fork 之前报告缺失 Skill。
+继承环境中的 Skill 时仍保留 Read。
 
 发现 Skill 路径时不读取候选 Skill 的正文。选中文件只在元数据缓存未命中时读取一次；有界缓存仅保留名称、
 路径、来源和描述，不保留未使用的正文。选中文件的修改检查、发现优先级、回退路径和提供给模型的 Skill

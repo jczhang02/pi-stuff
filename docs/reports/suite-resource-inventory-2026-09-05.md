@@ -301,6 +301,65 @@ latency improvement; the measured saving is the helper work above. The exact nat
 checks pass. `commandInvocationMatching` in the numeric record retains the trials, Source and evidence hashes, resource
 snapshots and limits. First-Agent import stalls and the remaining whole-Suite acceptance stay open.
 
+## Do not load Skill discovery for Skill-free launches
+
+On 2026-09-06, `ps-yon.17` removes unused filesystem Skill Module loading from Agent launches. At `69807e53`,
+an empty selection already skipped discovery, but static imports still loaded the resolver in the parent and both
+child Hosts. The shared [task projection](../../packages/pi-stuff/src/subagents/src/runs/background/resolved-task.ts)
+now imports that resolver only for a nonempty selection. Input normalization remains pure and shared by its three
+callers. Selected Skills are resolved at preflight and again at final construction; reusing the earlier selection
+would miss intervening file changes. Missing-Skill errors still precede fork creation. Ambient inherited Skills keep
+Read access. Foreground cancellation is checked after the async build and before claiming its run directory;
+background construction failure cleans up its already-claimed directory.
+
+The new loading regression fails on the old source because a Skill-free launch loads filesystem discovery. It passes
+on the candidate and confirms that a requested reserved Skill still reaches the real resolver and returns the same
+missing-Skill error. Resolver/loading/recovery tests pass 16 tests and 74 assertions; foreground
+launch/admission/context/recovery/resume and background-startup tests pass 72 tests and 289 assertions. These are
+repository Bun checks, not native public-seam certification.
+
+Five sequential runs used the existing foreground observer with `--repeat-tool`, exact Pi 0.85.0, 120×40 geometry,
+two fresh-context children, automatic Naming/Usage and unchanged frozen gates. Private configuration and temporary
+caches were fresh on the ordinary filesystem; the kernel page cache was not reset. No tests, scouts or profilers
+overlapped these runs. All starts below are on 2026-09-06 UTC.
+
+| Variant | Start, UTC | Spinner max, ms | Input max, ms | Selection max, ms | Scoped CPU, seconds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Control `UX39W2` | 03:33:27.341 | 289.377 | 66.868 | 15.880 | 28.484953 |
+| Candidate `QK1Z2w` | 03:41:30.353 | 199.545 | 122.987 | 14.446 | 24.554871 |
+| Marked control `OtYWMh` | 03:44:22.371 | 197.675 | 26.459 | 15.493 | 28.480455 |
+| Marked candidate `Z3TSO5` | 03:45:21.663 | 259.581 | 79.935 | 15.976 | 30.243116 |
+| Final-source candidate `1pkXGl` | 03:59:45.111 | 280.664 | 226.297 | 16.241 | 30.432384 |
+
+The marked pair added one Module-evaluation mark and read its count in existing Provider log events. Control loaded
+the Module once in the parent and once per child; candidate loaded it zero times in all three Hosts. This establishes
+three omitted evaluations, not that every shared dependency disappears. Both probes were removed before the final run.
+Every sample completed and reaped both children, requested and persisted Naming once and refreshed Usage once.
+Spinner absence was zero and observation gaps stayed below 26 ms. All five failed the frozen gates and all owned
+scopes were unloaded. Whole-run CPU and memory varied; no stable aggregate resource or latency saving is established.
+
+The first four samples captured tracked diffs before the two new files were added to Git's comparison. Thus the two
+candidate records omit those new-file bodies. Their current hashes are retained in the numeric record, and
+`1pkXGl` includes both files in its complete Source diff. That rerun closes this capture gap without changing the
+earlier evidence or converting a failed liveness sample into a pass.
+
+A separate selected-Skill native check, `6vgOHC`, started at 04:07:33.449 UTC with one synthetic local Skill.
+Both requests in each child asserted its name, escaped description, file location and active Read Tool. All four
+assertions passed; both children completed and were reaped, with Naming/Usage once. This functional check still failed
+the Spinner (328.573 ms) and selection (64.321 ms) gates. Its first attempt, `9G2X3z`, used an unsupported unquoted
+bracket list in the temporary Agent definition; preflight rejected the literal `[selected-skill]` name. That attempt
+is incomplete evidence, not a product regression or a pass. The corrected fixture used the existing list format.
+Both owned scopes were unloaded, and the temporary fixture/assertions were removed with their original hashes restored.
+
+Production Source grows by 29 physical lines and tests by 42, a net increase of 71 across ten files. The resolver
+shrinks from 690 to 659 lines; its 32-line normalizer now has no filesystem dependency. Async propagation preserves
+validation and cancellation ordering without adding a cache or loader abstraction. The numeric record's
+`skillFreeLaunchLoading` records every changed file's before/after count and hash, all five samples and their I/O,
+RSS and charged-memory counters. These counters do not establish allocation/GC, wakeups, peak process-tree RSS or
+per-Module byte savings. The separate selected-Skill check does not certify every modification, cancellation or
+recovery scenario. Remaining cold-launch work, the unexplained late Spinner hold and whole-Suite
+resource/responsiveness acceptance remain open.
+
 ## Skip cleanup after successful atomic publication
 
 On 2026-09-06, `ps-yon.16` removes one redundant filesystem operation per successful Agents atomic write. At

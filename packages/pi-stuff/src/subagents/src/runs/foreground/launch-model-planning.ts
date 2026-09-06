@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { isRuntimeFunction, isRuntimeNumber } from "../../../../shared/runtime-type.ts";
 import type { AgentConfig } from "../../agents/agents.ts";
-import { normalizeSkillInput } from "../../agents/skills.ts";
+import { normalizeSkillInput } from "../../agents/skill-input.ts";
 import { findModelInfo, type ModelInfo } from "../../shared/model-info.ts";
 import { type ResolvedToolBudget, wrapForkTask } from "../../shared/types.ts";
 import {
@@ -294,7 +294,11 @@ interface TaskModelPlanState {
 	readonly rawForkByIndex: boolean[];
 }
 
-function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: number): string[] | undefined {
+async function planTaskModels(
+	state: TaskModelPlanState,
+	task: TaskParam,
+	index: number,
+): Promise<string[] | undefined> {
 	const { input } = state;
 	const agent = input.agents.find((candidate) => candidate.name === task.agent);
 	if (!agent) throw new Error(`Unknown Agent: ${task.agent}`);
@@ -319,7 +323,7 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 		thinkingOverride: input.params.thinking,
 	};
 	if (taskInput.skill === false) buildInput.skills = [];
-	const resolved = resolveTaskProjection(buildInput);
+	const resolved = await resolveTaskProjection(buildInput);
 	if ("error" in resolved) throw new Error(resolved.error);
 	const candidates = resolved.modelCandidates;
 	const replacementPromptEstimate =
@@ -375,7 +379,7 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 	);
 }
 
-export function prepareLaunchModelPlan(input: LaunchModelPlanInput) {
+export async function prepareLaunchModelPlan(input: LaunchModelPlanInput) {
 	const tasks = taskInputs(input.params);
 	const forkSnapshot: { readonly messages?: ContextEvent["messages"]; readonly tokens: number } =
 		input.context === "fork" ? inheritedContextSnapshot(input.ctx) : { tokens: 0 };
@@ -389,7 +393,10 @@ export function prepareLaunchModelPlan(input: LaunchModelPlanInput) {
 		fixedInputTokensByIndex,
 		rawForkByIndex,
 	};
-	const modelCandidatesByIndex = tasks.map((task, index) => planTaskModels(state, task, index));
+	const modelCandidatesByIndex: Array<string[] | undefined> = [];
+	for (const [index, task] of tasks.entries()) {
+		modelCandidatesByIndex.push(await planTaskModels(state, task, index));
+	}
 	const plan: Pick<PreparedLaunch, "rawForkByIndex" | "fixedInputTokensByIndex" | "modelCandidatesByIndex"> &
 		Partial<Pick<PreparedLaunch, "forkContextTokens" | "forkSourceMessages">> = {
 		rawForkByIndex,

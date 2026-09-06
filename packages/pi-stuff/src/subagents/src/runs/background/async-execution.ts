@@ -535,11 +535,14 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		params.capabilityCeiling ?? resolveCurrentSubagentCapabilityCeiling(params.ctx.currentSessionId);
 	const deadlineAt = params.timeoutMs !== undefined ? Date.now() + params.timeoutMs : undefined;
 	const sessionDir = params.sessionRoot ? path.join(params.sessionRoot, `async-${id}`) : undefined;
-	const built = buildAsyncParallelRunnerWork(id, {
+	const built = await buildAsyncParallelRunnerWork(id, {
 		...params,
 		capabilityCeiling,
 		absoluteDeadlineAt: deadlineAt,
 		sessionDir,
+	}).catch((error) => {
+		location.cleanup();
+		throw error;
 	});
 	if ("error" in built) {
 		location.cleanup();
@@ -582,11 +585,14 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 	}
 	const sessionDir =
 		params.sessionDir ?? (params.sessionRoot ? path.join(params.sessionRoot, `async-${id}`) : undefined);
-	const built = buildAsyncSingleRunnerWork(id, {
+	const built = await buildAsyncSingleRunnerWork(id, {
 		...params,
 		capabilityCeiling,
 		absoluteDeadlineAt: deadlineAt,
 		sessionDir,
+	}).catch((error) => {
+		location.cleanup();
+		throw error;
 	});
 	if ("error" in built) {
 		location.cleanup();
