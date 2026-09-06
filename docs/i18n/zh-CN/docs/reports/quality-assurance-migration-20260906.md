@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: ded534a4155ce8199ce939aa83d0127babb3c6509598b68d377b59d46335845b -->
+<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: e2f7b50492f8a808460eadb889699eefbe41b67c898fec99c6149cdf9da90a35 -->
 
 # 质量保障迁移——2026-09-06
 
@@ -82,3 +82,5 @@ CI workflow 拆为 `Plan`、`Checks`、`Tests`、`Verify`：Plan 选择 PR targe
 **嵌入状态快照：**原始偶发失败没有保留 ANSI 原始证据，无法重建当时的具体帧切换。测试原本分别截取纯文本和 ANSI；现在等待并验证同一 ANSI 快照，从同一帧提取可见文本，并在失败时输出原始快照。没有把重跑通过当作修复；Host 渲染与颜色要求均未修改。
 
 **重复重载同步：**下一次完整离线运行执行了 333 个文件、2,459 个原生用例，零跳过，用时 1,153.368 秒，另有 6.177 秒准备时间。只有 User Message fullscreen/dark 失败：重复 `/reload` 匹配了上一次的 `Reloaded` 快照，在本次重载完成前发送了新建 Session 操作。夹具现在先等待新的 Session inventory 记录，再等待完成提示，并在首次重载前等待第三次响应。四种模式/主题组合各重复五次，20 次通过、零失败，用时 118.65 秒。静态检查已通过；合入并行 main 改动及最终全量验证仍待完成。
+
+**并行 main 整合：**将 `dfd0d209` 合入 QA 分支，保留原生 Context Worker 关闭、Work 空闲同步及绑定提交的交付证据。新增 Beads 交付测试迁入 Component/repository；合并后的清单共 335 个文件（334 个离线、1 个 live）。交付读取当前 Plan/Checks/Tests/Verify 结果；已验证的无测试计划明确显示为未运行。删除了已无用途的 PR 路径重分类请求。整合期间 15 个交付/发布用例和完整静态检查通过。最终绑定版本的 CI 证据记录在 PR #230 与 Beads 托管交付评论中。前文 334 个文件的清单为合并前 `9dd54c24` 检查点，源码比较对应 `c0403212`。
