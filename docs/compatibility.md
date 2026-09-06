@@ -33,8 +33,8 @@ the supported Pi Host, Code Mode host, and RTK runtime, then runs the selected o
 process at a time inside a network-isolated namespace. `Tests` waits for `Plan`, not `Checks`; it is skipped only when a
 successful plan explicitly selects no tests. `Verify` always runs and validates the plan, every required job result,
 the exact selected-file coverage, and the structured test report. Plan and test reports are separate artifacts. Only
-superseded runs for the same pull request are cancelled; distinct main-push ranges remain available. The workflow
-configuration is implemented, while hosted execution and final migration certification remain pending.
+superseded runs for the same pull request are cancelled; distinct main-push ranges remain available. Certification
+requires the current revision's applicable checks and real-Host evidence; workflow configuration alone is not evidence.
 The repository toolchain uses Bun 1.4.0. The Host's bundled runtime and release packaging are Host details; they are not
 Pi Stuff compatibility admission criteria.
 Bun dependency upgrades are deliberate maintainer changes because the frozen Bun lockfile, exact repository toolchain,

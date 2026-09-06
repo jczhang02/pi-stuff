@@ -1,4 +1,4 @@
-<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: 1df0453df4f0fbb85a8eebd352484257e8d3b6d679d29d635e237bde6ee36bcf -->
+<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: a7661a6ea9398b926e39ce673ef24a33595be6608103b469a729cf3638081cb4 -->
 
 # 质量保障
 
@@ -29,7 +29,7 @@ bun run benchmark:capability:ponytail --help
 
 现有实验使用 `benchmark:capability:<name>` 命名。它们是 Capability 范围问题，不建立 complete-Suite public-task 结果。执行前使用 `--help` 或 `--list`；需要 live 的实验必须显式选择 `--profile live`。历史报告仍是 dated evidence，新报告默认写入本地 artifacts。
 
-完成的实验即使结果较差也可成功；setup failure 或 incomplete experiment 仍失败。Tool Activity 过去的 250 ms 和 relative 25 ms benchmark 值仅保留为诊断报告值。显式 PTY 要求仍为首个 Tool UI/input/selection 反馈 150 ms，以及不变 Vibe Line Spinner 帧不超过 200 ms；ADR 0025 的 500 ms severe-stall 是独立 backstop，稳定的 focused certification 仍待完成。`benchmark:suite` 尚未注册。
+完成的实验即使结果较差也可成功；setup failure 或 incomplete experiment 仍失败。Tool Activity 过去的 250 ms 和 relative 25 ms benchmark 值仅保留为诊断报告值。显式 PTY 要求仍为首个 Tool UI/input/selection 反馈 150 ms，以及不变 Vibe Line Spinner 帧不超过 200 ms；ADR 0025 的 500 ms severe-stall 是独立 backstop。Tools PTY 验证器报告每种终端尺寸的测量值，未满足必需目标时失败。`benchmark:suite` 尚未注册。
 
 ## 验证与迁移状态
 
@@ -39,4 +39,4 @@ bun run benchmark:capability:ponytail --help
 
 CI 使用 `Plan`、`Checks`、`Tests`、`Verify`。Plan 选择 PR target range 或 main push 的 before/after range；manual dispatch 选择全部离线 Tests。Checks 独立运行，Tests 只等待 Plan；Verify 校验 plan、必需 job 结果、精确的选中文件覆盖和结构化 test report。Plan 与 test report 是分开的 artifacts，Plan 和 Verify 不重复执行实质工作。同一 PR 的过时运行可以取消，不同 main-push revision range 保留；本批不修改 branch protection。
 
-这仍是实现检查点，不是最终认证。当前 worktree 的完整离线运行、托管 CI、最终两轮 Thermo-Nuclear 审查，以及基线／完整 CI 对比仍待完成。在这些检查完成前，不要把迁移或受影响测试 speedup 报告为通过。见 [ADR 0032](../../../../docs/adr/0032-organize-quality-assurance-by-verification-purpose.md) 与日期化的[迁移报告](reports/quality-assurance-migration-20260906.md)。
+验证证据只适用于实际测试的 revision 和声明范围。应查看当前 CI `Verify` 结果及其 plan、test artifacts；历史通过记录不能认证后续修改。日期化的[迁移报告](reports/quality-assurance-migration-20260906.md) 记录检查点测量与可复用诊断，包括失败运行；交付 PR 记录最终验证。不同测试范围不能证明提速。已接受的边界见 [ADR 0032](../../../../docs/adr/0032-organize-quality-assurance-by-verification-purpose.md)。

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: c206880fdd115c4f72b811a969f72b2c467e18d89a2bbf0193e0c96d04bc7fca -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: eef26ee16e67c587d98ec4c6a5357a85202cef42ce0257cd8062d7a8626630fc -->
 
 # 兼容性
 
@@ -32,7 +32,7 @@ CI 使用四个 job：`Plan`、`Checks`、`Tests`、`Verify`。它们在 pull re
 Host 和 RTK runtime，在网络隔离 namespace 中逐个以全新 Bun 或 Node 进程运行选中的离线文件。`Tests` 只等待
 `Plan`，不等待 `Checks`；只有成功的 plan 明确选择零测试时才跳过。`Verify` 始终运行，并校验 plan、每个必需
 job 的结果、精确的选中文件覆盖和结构化 test report。Plan 与 test report 是分开的 artifacts。同一 pull request
-只有过时运行会被取消；不同 main-push range 保留。workflow 配置已实现，但托管执行和最终迁移认证仍待完成。
+只有过时运行会被取消；不同 main-push range 保留。认证需要当前 revision 的适用检查和真实 Host 证据；workflow 配置本身不构成证据。
 
 仓库工具链使用 Bun 1.4.0。Host 自带的 runtime 和 Release 打包属于 Host 细节，不是 Pi Stuff 的兼容性准入标准。
 

@@ -64,7 +64,8 @@ Completed experiments may report poor scores or performance regressions without 
 incomplete experiments remain failures. Tool Activity's former 250 ms and relative 25 ms benchmark values are retained
 as diagnostic report values rather than verification gates. The explicit PTY requirements remain 150 ms to first Tool
 UI/input/selection feedback and no unchanged Vibe Line Spinner frame beyond 200 ms; ADR 0025's 500 ms severe-stall
-assertion is a separate backstop. Stable focused certification of these targets remains pending.
+assertion is a separate backstop. The Tools PTY verifier reports the measured values for each terminal geometry and
+fails when a required target is unmet.
 
 The Suite Outcome Evaluation branch is reserved for complete-Suite public-task evaluation. Historical Terminal-Bench
 manifests and reports do not constitute a runnable evaluation; `benchmark:suite` is not registered.
@@ -91,7 +92,8 @@ validates the plan, required job results, exact selected-file coverage, and the 
 do not rerun substantive work. The test report is a separate artifact from the plan; PR runs may cancel superseded
 PR runs, while distinct main-push ranges are retained. No branch-protection setting changes are part of this batch.
 
-This is an implementation checkpoint, not final certification. The current worktree's full offline run, hosted CI, and
-the required final Thermo-Nuclear review rounds remain pending. Do not report the migration or affected-test speedup
-as passed until those checks and the baseline/full-CI comparison are complete. See [ADR 0032](adr/0032-organize-quality-assurance-by-verification-purpose.md)
-and the dated [migration report](reports/quality-assurance-migration-20260906.md).
+Verification evidence applies to the tested revision and declared scope. Check the current CI `Verify` result and its
+plan and test artifacts; a historical passing run does not certify later changes. The dated
+[migration report](reports/quality-assurance-migration-20260906.md) records checkpoint measurements and reusable
+diagnoses, including failed runs. The delivery PR records final validation. Different test scopes do not establish a
+speedup. See [ADR 0032](adr/0032-organize-quality-assurance-by-verification-purpose.md) for the accepted boundaries.
