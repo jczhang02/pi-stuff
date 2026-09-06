@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/pi-stuff-reliability-repair-plan-20260906.md; translation-source-sha256: fa6211948a7c8b2f70d9e7f0eba0850a69708f1a6630bea3e97f527aa297eae8 -->
+<!-- translation-source: docs/research/pi-stuff-reliability-repair-plan-20260906.md; translation-source-sha256: 5f3dea9837c3fb5a1d3419181606888d11e2a11f7b61943c569d80e105338ded -->
 
 # Pi Stuff 可靠性修复方案
 
@@ -6,9 +6,11 @@
 
 **日期：** 2026-09-06
 
-**状态：** Q1、Q2、Q3 已确认；完整实施方案等待最终共识确认。
+**状态：** 完整方案及测试边界已确认，可交由指定 Session 实施。
 
 **工作：** `ps-8ew`，在执行 `ps-yon` 的同一个指定 Session 中实施。
+
+**规格：** [ps-8ew / GitHub #239](https://github.com/jczhang02/pi-stuff/issues/239)。
 
 **本地证据基线：** `d620c43dba9f904e7c895c708a535ab5715fb4fc`，认证 Pi 0.85.1。
 
@@ -49,7 +51,7 @@
 主 Agent 进入空闲或发出非终态进展更新，本身不能解除尚待完成的委派工作。这些边界规则是已约定的本地契约，
 不代表每个参考 harness 都已实现。持久决策记录在 [ADR 0033](../adr/0033-continue-open-work-after-background-agent-results.md)，实现仍待完成。
 
-## 拟议实施顺序
+## 实施顺序
 
 1. 在相同 Host 与场景下，对照相关上游发布版本和集成候选版本的行为。直接复用 Package 能满足所需行为时优先复用；
    仅针对已证明的缺口增加最小适配或保留补丁。记录受影响 fork 改动的处置，包括曾删除的保护。
@@ -78,4 +80,4 @@ Q3 须明确覆盖结果递送期间切换 Session、退出和用户结束任务
 
 初始审计结合了源码及历史检查、确定性的生产路径探针、历史事件证据和 15 个通过的本地测试。这些证明了具体风险和
 已有可用界面，不能认证修复后的端到端流程。自动通知父代理本身也不能修复尚未完成的子代理内部丢失的证据。
-用户确认完整共识之前，方案保持开放。
+用户于 2026-09-06 确认了完整方案及测试边界。实现与验收仍由 `ps-8ew` 跟踪，尚未完成。

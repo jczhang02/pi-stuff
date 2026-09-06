@@ -4,9 +4,11 @@
 
 **Date:** 2026-09-06
 
-**Status:** Q1, Q2, and Q3 confirmed; complete implementation plan awaiting shared-understanding confirmation.
+**Status:** Complete plan and testing boundaries confirmed; ready for the designated implementation Session.
 
 **Work:** `ps-8ew`, to be implemented in the same designated Session as `ps-yon`.
+
+**Specification:** [ps-8ew / GitHub #239](https://github.com/jczhang02/pi-stuff/issues/239).
 
 **Local evidence baseline:** `d620c43dba9f904e7c895c708a535ab5715fb4fc`, certified Pi 0.85.1.
 
@@ -55,7 +57,7 @@ does not itself discharge pending delegated work. These edge-case rules are the 
 assertion that every reference harness implements them. The durable decision is recorded in
 [ADR 0033](../adr/0033-continue-open-work-after-background-agent-results.md); implementation remains pending.
 
-## Proposed implementation sequence
+## Implementation sequence
 
 1. Compare the relevant released upstream behavior with the integrated candidate on the same Host and scenario.
    Prefer direct package reuse when it satisfies the required behavior; add the smallest adapter or retained patch
@@ -88,4 +90,5 @@ deliverable, not merely the existence of a notification or Session entry.
 The initial audit combined source/history inspection, deterministic production-path probes, historical incident
 evidence, and 15 passing local tests. Those establish specific risks and existing working surfaces; they do not certify
 the repaired end-to-end workflow. Automatic parent notification also does not by itself repair evidence lost inside
-an unfinished child. The plan remains open until the user confirms the complete shared understanding.
+an unfinished child. The maintainer confirmed the complete plan and testing boundaries on 2026-09-06.
+Implementation and acceptance remain open under `ps-8ew`.

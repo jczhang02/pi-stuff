@@ -9,7 +9,7 @@ status: accepted
 Pi Stuff's reviewed completion path records a UI-visible result without putting it in the main Agent's context or
 requesting another turn. That can leave delegated work finished but its user's task unfinished. For delegated Agents,
 background placement does not remove the main Agent's responsibility to receive outcomes and finish the open task.
-The maintainer confirmed this product decision on 2026-09-06; implementation and final repair-plan confirmation are
+The maintainer confirmed this product decision and the complete repair plan on 2026-09-06; implementation remains
 pending under `ps-8ew.3`.
 
 ## Decision
