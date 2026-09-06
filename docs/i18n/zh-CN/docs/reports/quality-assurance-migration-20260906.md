@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: c2f5c788af3ec8c097ec2a498ffdda77bc4fcf9b3627b23e837ebde7d596ee58 -->
+<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: ded534a4155ce8199ce939aa83d0127babb3c6509598b68d377b59d46335845b -->
 
 # 质量保障迁移——2026-09-06
 
@@ -58,7 +58,7 @@ Web 直接 Provider API 的重定向声明检查已归入 Static Checks，一个
 
 CI workflow 拆为 `Plan`、`Checks`、`Tests`、`Verify`：Plan 选择 PR target range 或 main push 的 before/after range，manual dispatch 选择全部离线 Tests；Checks 独立运行，Tests 只依赖 Plan；Verify 校验 plan、每个必需 job 的结果、精确的选中文件覆盖和结构化 test report。Plan artifact 与 test report 分开上传，Verify 不重复执行实质工作。同一 PR 的 superseded run 可以取消，不同 main-push revision range 保留；branch protection 不变。
 
-源代码规模比较使用 `35225c57` 到当前 worktree 的 git diff 路径集合中的 23 个 JS/TS 文件，包含新增未跟踪源码路径并排除 artifacts：物理行数由 4,275 增至 5,176（+901）。这是变更路径集合比较，不是完整仓库大小，也不是 speedup 证据。
+源代码规模比较使用 `35225c57` 到当前 worktree 的 git diff 路径集合中的 23 个 JS/TS 文件，包含新增未跟踪源码路径并排除 artifacts：物理行数由 4,275 增至 5,181（+906）。这是变更路径集合比较，不是完整仓库大小，也不是 speedup 证据。
 
 最新完整 `bun run check` 已通过。此前聚焦证据记录了 31 个通过测试；随后六文件聚焦结果见下文。针对最终修复范围的连续两轮独立 Thermo-Nuclear 审查均未发现问题。第二次完整离线运行执行了全部 333 个文件、2,459 个原生用例，零跳过，用时 1,131.173 秒，setup 用时 5.670 秒。两个文件失败：Magic multi-step 预期 2 个请求但实际观察到 3 个；UserMessage regular/dark 场景等待 ACK 超时，输入仍停留在 editor。首轮完整运行的 3 个失败现已通过。保留日志证明 Magic 的第三次请求是 SessionNaming prompt，原因是无效 partial settings 错误启用了 fallback；已使用现有 `disableSessionNamingForTest` 修复 fixture，Goal retry 分支也用 `DEFAULT` spread 修复了同一无效配置。Magic 前后各重复 10 次：之前 5 通过／5 失败，用时 62.85 秒；之后 10 通过／0 失败，用时 65.65 秒，并保留精确的 2 请求断言。UserMessage 失败来自 inline Skill autocomplete 消耗了 Enter；在 Enter 前发送 Escape 可保留提交行为。随后的完整四种 mode/theme 结果见下文。
 
@@ -80,3 +80,5 @@ CI workflow 拆为 `Plan`、`Checks`、`Tests`、`Verify`：Plan 选择 PR targe
 **迁移根路径：**中间目录存在不足以证明路径正确：`test/` 存在，但不是仓库根目录。完整运行发现 UI Package 加载和 RTK 来源记录仍从旧位置解析；两处保留原断言并改为指向实际源码树。
 
 **嵌入状态快照：**原始偶发失败没有保留 ANSI 原始证据，无法重建当时的具体帧切换。测试原本分别截取纯文本和 ANSI；现在等待并验证同一 ANSI 快照，从同一帧提取可见文本，并在失败时输出原始快照。没有把重跑通过当作修复；Host 渲染与颜色要求均未修改。
+
+**重复重载同步：**下一次完整离线运行执行了 333 个文件、2,459 个原生用例，零跳过，用时 1,153.368 秒，另有 6.177 秒准备时间。只有 User Message fullscreen/dark 失败：重复 `/reload` 匹配了上一次的 `Reloaded` 快照，在本次重载完成前发送了新建 Session 操作。夹具现在先等待新的 Session inventory 记录，再等待完成提示，并在首次重载前等待第三次响应。四种模式/主题组合各重复五次，20 次通过、零失败，用时 118.65 秒。静态检查已通过；合入并行 main 改动及最终全量验证仍待完成。

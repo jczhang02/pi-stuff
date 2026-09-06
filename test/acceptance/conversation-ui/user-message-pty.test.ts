@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
-import { writePtyEvidence } from "../../../scripts/ui-pty-interactions.js";
+import { readFixtureRecords, waitForFixtureRecords, writePtyEvidence } from "../../../scripts/ui-pty-interactions.js";
 import { createCase, TmuxPiSession } from "../../../scripts/ui-pty-session.js";
 import { stageSupportedPiHost } from "../../../scripts/verify-pi-host-provenance.js";
 
@@ -18,12 +18,19 @@ function userRows(screen: string): string[] {
 		.map((row) => row.trimEnd());
 }
 
-async function verifySessionLifecycle(session: TmuxPiSession, sessionFile: string): Promise<void> {
+async function reloadSession(session: TmuxPiSession, log: string): Promise<void> {
+	const starts = (await readFixtureRecords(log)).filter((record) => record.type === "inventory").length;
+	session.sendLiteral("/reload");
+	session.sendKey("Enter");
+	await waitForFixtureRecords(log, "inventory", starts + 1);
+	await session.waitForAbsence("Reloading keybindings");
+	await session.waitForText("Reloaded");
+}
+
+async function verifySessionLifecycle(session: TmuxPiSession, sessionFile: string, log: string): Promise<void> {
 	const expected = [`${LABEL} ${PROMPT}`, LABEL, "  USER_MESSAGE_PTY_ORDINARY"];
 	for (let attempt = 0; attempt < 2; attempt += 1) {
-		session.sendLiteral("/reload");
-		session.sendKey("Enter");
-		await session.waitForText("Reloaded");
+		await reloadSession(session, log);
 		const screen = await session.waitForText("  USER_MESSAGE_PTY_ORDINARY");
 		expect(userRows(screen)).toEqual(expected);
 		expect(screen).not.toContain("styling is unavailable");
@@ -149,10 +156,8 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 				await session.waitForAbsence("Skill instructions");
 				session.sendLiteral("USER_MESSAGE_PTY_ORDINARY");
 				session.sendKey("Enter");
-				await session.waitForText("  USER_MESSAGE_PTY_ORDINARY");
-				session.sendLiteral("/reload");
-				session.sendKey("Enter");
-				await session.waitForText("Reloaded");
+				await session.waitFor((value) => value.split("USER_MESSAGE_PTY_ACK").length === 4, "third response");
+				await reloadSession(session, paths.log);
 				screen = await session.waitForText("  USER_MESSAGE_PTY_ORDINARY");
 				expect(userRows(screen)).toEqual([`${LABEL} ${PROMPT}`, LABEL, "  USER_MESSAGE_PTY_ORDINARY"]);
 				expect(screen).not.toContain("styling is unavailable");
@@ -168,7 +173,7 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 				expect(requests).toContain('"lastUser":"<skill name=\\"humanizer-zh\\"');
 				expect(persisted).not.toContain("");
 				expect(requests).not.toContain("");
-				await verifySessionLifecycle(session, join(paths.sessions, file));
+				await verifySessionLifecycle(session, join(paths.sessions, file), paths.log);
 				session.stop();
 				session = new TmuxPiSession(paths, options, 100, 32);
 				await session.start();
