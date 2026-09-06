@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Check } from "typebox/value";
+import { handleBenchmarkMeta } from "./benchmark-cli.js";
 import {
 	balancedArmOrder,
 	comparePairedSamples,
@@ -11,6 +12,7 @@ import {
 import { MAGIC_CONTEXT_BENCHMARK_REPORT_SCHEMA, numericMagicContextMetrics } from "./magic-context-benchmark-core.js";
 
 type Arm = "baseline" | "candidate";
+const DEFAULT_OUTPUT = resolve(".artifacts/magic-context-comparison/latest.json");
 
 interface ArmSample {
 	readonly packageVersion: string;
@@ -89,6 +91,11 @@ function compareArms(samples: ArmSamples) {
 }
 
 async function main(): Promise<void> {
+	handleBenchmarkMeta(
+		process.argv.slice(2),
+		"usage: compare-magic-context --baseline <report> --candidate <report> [--output <path>]",
+		["paired-metric-comparison"],
+	);
 	const { values } = parseArgs({
 		options: {
 			baseline: { type: "string" },
@@ -142,10 +149,8 @@ async function main(): Promise<void> {
 			null,
 			2,
 		)}\n`;
-		if (values.output) {
-			await mkdir(dirname(resolve(values.output)), { recursive: true });
-			await writeFile(resolve(values.output), report);
-		}
+		await mkdir(dirname(resolve(values.output ?? DEFAULT_OUTPUT)), { recursive: true });
+		await writeFile(resolve(values.output ?? DEFAULT_OUTPUT), report);
 		process.stdout.write(report);
 	} finally {
 		await rm(directory, { force: true, recursive: true });

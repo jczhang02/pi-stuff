@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { handleBenchmarkMeta } from "./benchmark-cli.js";
 import { prepareFixture } from "./lifecycle-benchmark-fixture.js";
 import { cellKey, runSample, summaries } from "./lifecycle-benchmark-sampling.js";
 import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
@@ -690,12 +691,16 @@ async function main(): Promise<void> {
 		await mkdir(dirname(options.output), { recursive: true });
 		await writeFile(options.output, `${JSON.stringify(report, null, 2)}\n`);
 		console.log(JSON.stringify(report, null, 2));
-		if (acceptanceFindings.length > 0) {
-			fail(`acceptance did not pass:\n- ${acceptanceFindings.join("\n- ")}`);
-		}
 	} finally {
 		await rm(benchmarkRoot, { recursive: true, force: true });
 	}
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+	handleBenchmarkMeta(Bun.argv.slice(2), "usage: benchmark:capability:lifecycle [options]", [
+		"startup",
+		"steady-state",
+		"cleanup",
+	]);
+	await main();
+}

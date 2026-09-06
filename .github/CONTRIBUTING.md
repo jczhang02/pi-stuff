@@ -15,7 +15,10 @@ Use Bun 1.4.0:
 ```bash
 bun install --frozen-lockfile --ignore-scripts
 bun run check
+bun run test
 ```
+
+See the [quality-assurance guide](../docs/quality-assurance.md) for command scope and migration status.
 
 Tests must exercise the agreed public seams, remain offline during verification, and never call an LLM or require credentials.
 
@@ -26,7 +29,7 @@ release notes under `docs/releases/` when a behavior change needs a durable user
 detailed change history.
 
 Do not hand-edit generated composition output alone. Change `packages/pi-stuff/suite.json`, run
-`bun run suite:generate`, and verify the extracted local Package with `bun run pack:verify`. There is no registry
+`bun run suite:generate`, and verify source installation with `bun run test --file source-install`. There is no registry
 publication or Changesets workflow.
 
 ## Commits

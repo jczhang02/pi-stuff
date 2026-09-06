@@ -28,8 +28,8 @@ lint, type surfaces, unused-code analysis, generated composition, and public-rel
 `Acceptance` when executable behavior or executable documentation changed; a direct push to `main` runs `Fast` only,
 and manual dispatch runs both checks. `Acceptance` obtains a supported Pi Host, Code Mode host,
 and RTK runtime
-before running every test
-file in a fresh Bun process, real TUI verification, the Tool Activity benchmark, and package verification in a
+before running every applicable offline test
+file in a fresh Bun or Node process, including real TUI verification and source installation in a
 network-isolated namespace. Per-file process isolation prevents one process- or PTY-heavy test from contaminating the
 native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip
 `Acceptance`; executable documentation remains covered by the same checks. A separate weekly upstream watch reports when

@@ -2,12 +2,13 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { requireJsonInputValue } from "../packages/pi-stuff/src/shared/json-value.js";
+import { handleBenchmarkMeta } from "./benchmark-cli.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import {
 	evaluateSkillDiscoveryBenchmark,
@@ -28,7 +29,8 @@ const CONTEXT_MODE = "native";
 const MANIFEST_PATH = "test/fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl";
 const OBSERVER_PATH = "test/fixtures/skill-discovery-benchmark-observer.ts";
 const LOCK_PATH = "test/fixtures/skill-discovery-startup-bounded-confirmation-run-lock.json";
-const REPORT_PATH = "docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json";
+const LOCK_REPORT_PATH = "docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json";
+const REPORT_PATH = ".artifacts/skill-discovery-benchmark/latest.json";
 const PACKAGE_EXTENSION = "packages/pi-stuff/index.ts";
 const RUNNER_SOURCES = [
 	"scripts/benchmark-skill-discovery.ts",
@@ -76,6 +78,7 @@ type SkillDiscoveryRunLock = Static<typeof RUN_LOCK_SCHEMA>;
 
 interface CliOptions {
 	readonly auth?: string;
+	readonly output?: string;
 	readonly prepareManifest: boolean;
 }
 
@@ -170,7 +173,7 @@ async function preflight(
 		lock.model !== MODEL ||
 		lock.reasoning !== REASONING ||
 		lock.contextMode !== CONTEXT_MODE ||
-		lock.reportPath !== REPORT_PATH ||
+		lock.reportPath !== LOCK_REPORT_PATH ||
 		lock.host.version !== CERTIFIED_PI_VERSION ||
 		lock.host.profile !== CERTIFIED_PI_HOST_PROFILE
 	)
@@ -242,6 +245,7 @@ async function writeReport(
 	lock: SkillDiscoveryRunLock,
 	observations: readonly SkillDiscoveryObservation[],
 	benchmarkRoot: string,
+	output: string,
 ): Promise<string> {
 	const armOrdersExact = manifest.tasks.every(
 		(task) => task.armOrder.length === 3 && new Set(task.armOrder).size === 3,
@@ -279,8 +283,9 @@ async function writeReport(
 	const reportValue = requireJsonInputValue(report, "Skill Discovery benchmark report");
 	assertSanitizedSkillDiscoveryReport(reportValue, manifest, [benchmarkRoot]);
 	const serialized = `${JSON.stringify(reportValue, null, 2)}\n`;
-	const destination = join(ROOT, REPORT_PATH);
-	await writeFile(destination, serialized, { flag: "wx", mode: 0o600 });
+	const destination = resolve(output);
+	await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+	await writeFile(destination, serialized, { mode: 0o600 });
 	const written = requireJsonInputValue(
 		JSON.parse(await readFile(destination, "utf8")),
 		"Skill Discovery benchmark report",
@@ -289,7 +294,7 @@ async function writeReport(
 	return sha256(serialized);
 }
 
-async function runBenchmark(authFile: string): Promise<void> {
+async function runBenchmark(authFile: string, output: string): Promise<void> {
 	const piBinary = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 	const { codeModeHost, lock, manifest } = await preflight(authFile, piBinary);
 	const benchmarkRoot = await mkdtemp(join(tmpdir(), "pi-stuff-skill-discovery-benchmark-"));
@@ -347,8 +352,10 @@ async function runBenchmark(authFile: string): Promise<void> {
 				);
 			}
 		}
-		const reportSha256 = await writeReport(manifest, lock, observations, benchmarkRoot);
+		const reportSha256 = await writeReport(manifest, lock, observations, benchmarkRoot, output);
 		process.stdout.write(`Skill Discovery benchmark report ${reportSha256}\n`);
+		if (observations.some((observation) => observation.instrumentationViolation))
+			fail("experiment instrumentation is incomplete; inspect the report");
 	} finally {
 		await rm(benchmarkRoot, { force: true, recursive: true });
 	}
@@ -356,9 +363,20 @@ async function runBenchmark(authFile: string): Promise<void> {
 
 function cli(arguments_: readonly string[]): CliOptions {
 	if (arguments_.length === 1 && arguments_[0] === "--prepare-manifest") return { prepareManifest: true };
-	if (arguments_.length === 2 && arguments_[0] === "--auth" && arguments_[1])
-		return { auth: arguments_[1], prepareManifest: false };
-	fail("usage: bun run benchmark:skill-discovery --prepare-manifest | --auth <absolute-auth-file>");
+	if (
+		(arguments_.length === 4 || arguments_.length === 6) &&
+		arguments_[0] === "--profile" &&
+		arguments_[1] === "live" &&
+		arguments_[2] === "--auth" &&
+		arguments_[3]
+	) {
+		if (arguments_.length === 4) return { auth: arguments_[3], prepareManifest: false };
+		if (arguments_[4] === "--output" && arguments_[5] && isAbsolute(arguments_[5]))
+			return { auth: arguments_[3], output: arguments_[5], prepareManifest: false };
+	}
+	fail(
+		"usage: bun run benchmark:capability:skill-discovery --prepare-manifest | --profile live --auth <absolute-auth-file> [--output <absolute-path>]",
+	);
 }
 
 export async function prepareSkillDiscoveryManifest(): Promise<string> {
@@ -368,7 +386,17 @@ export async function prepareSkillDiscoveryManifest(): Promise<string> {
 }
 
 if (import.meta.main) {
+	handleBenchmarkMeta(
+		process.argv.slice(2),
+		"usage: benchmark:capability:skill-discovery --prepare-manifest | --profile live --auth <absolute-auth-file> [--output <absolute-path>]",
+		[
+			"prepare-manifest (offline)",
+			"profile=live (Pi Host + live Provider + credentials)",
+			"startup-bounded-discovery",
+			"authentication-settlement",
+		],
+	);
 	const options = cli(process.argv.slice(2));
 	if (options.prepareManifest) process.stdout.write(`${await prepareSkillDiscoveryManifest()}\n`);
-	else if (options.auth) await runBenchmark(options.auth);
+	else if (options.auth) await runBenchmark(options.auth, options.output ?? join(ROOT, REPORT_PATH));
 }

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 3a6f7beabf7c66a4542902d52d60f9d80752c265e26e053f9972fc735eb57abb -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 61667032c213fdd2d0c396f9f48a8e76d65f630266615030e63422e8d0d28a02 -->
 
 # 兼容性
 
@@ -27,8 +27,7 @@
 CI 提供两个稳定检查。`Fast` 始终验证冻结依赖图、仓库格式、anti-slop lint、类型接口、未使用代码分析、生成的
 组合以及公开 Release 安全。对 pull request，范围分类器会在可执行行为或可执行文档变化时启动 `Acceptance`；
 直接 push 到 `main` 只运行 `Fast`，手动触发则运行两者。`Acceptance` 获取受支持的 Pi Host、Code Mode
- Host 和 RTK runtime，然后在网络隔离 namespace 中逐个以全新 Bun 进程运行所有测试文件、真实 TUI 验证、Tool Activity
-benchmark 和 Package 验证。逐文件进程隔离可防止某个重进程或 PTY 测试污染后续测试使用的原生资源。只有
+ Host 和 RTK runtime，然后在网络隔离 namespace 中逐个以全新 Bun 或 Node 进程运行所有适用的离线测试文件，包括真实 TUI 验证和源码安装。逐文件进程隔离可防止某个重进程或 PTY 测试污染后续测试使用的原生资源。只有
 Beads 元数据以及已记录的 PNG、GIF、HTML 或 ANSI 证据可以跳过 `Acceptance`；可执行文档仍由相同检查覆盖。每周
 另有上游观察任务报告 npm `latest` 是否超过当前 Host，但绝不会自动改变支持范围。
 

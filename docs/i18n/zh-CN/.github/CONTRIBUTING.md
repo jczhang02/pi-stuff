@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: fe5414604ed0c158fcd524fd550686695e68af1bf49fb640788335c18bbb1158 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 25f0a1ec6be86536a64078bfb57a4bc48167b9f5465e40c1564e9d2f3e07ea7c -->
 
 # 贡献指南
 
@@ -17,9 +17,12 @@
 ```bash
 bun install --frozen-lockfile --ignore-scripts
 bun run check
+bun run test
 ```
 
 测试必须覆盖约定的公开接缝；验证期间必须离线，而且不得调用 LLM 或要求凭据。
+
+命令范围和迁移状态见[质量保障指南](../docs/quality-assurance.md)。
 
 ## Package 变更
 
@@ -27,7 +30,7 @@ Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版
 记录时，更新 `docs/releases/` 中的发布说明。详细变更历史由 Git 保留。
 
 不要只手工修改生成的组合输出。请修改 `packages/pi-stuff/suite.json`，运行 `bun run suite:generate`，再用
-`bun run pack:verify` 验证提取后的本地 Package。本仓库没有 registry 发布或 Changesets 流程。
+`bun run test --file source-install` 验证源码安装。本仓库没有 registry 发布或 Changesets 流程。
 
 ## 提交
 

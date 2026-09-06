@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isJsonInputObject, parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isFiniteRuntimeNumber } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { handleBenchmarkMeta } from "./benchmark-cli.js";
 import {
 	balancedArmOrder,
 	compareMeasurements,
@@ -53,7 +54,6 @@ const ROOT = resolve(import.meta.dir, "..");
 const DEFAULT_OUTPUT = join(ROOT, ".artifacts/effect-mainline-comparison/import.json");
 const DEFAULT_PI_BINARY = "/opt/pi-coding-agent/pi";
 const RATIO_METRICS = ["durationMs", "cpuMs", "maxRssKiB", "contextSwitches"] as const;
-
 function fail(message: string): never {
 	throw new Error(`Effect/mainline benchmark failed: ${message}`);
 }
@@ -349,4 +349,10 @@ async function main(): Promise<void> {
 	if (!complete) process.exitCode = 2;
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+	handleBenchmarkMeta(Bun.argv.slice(2), "usage: benchmark:capability:effect-mainline [options]", [
+		"import",
+		"lifecycle",
+	]);
+	await main();
+}

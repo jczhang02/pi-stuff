@@ -1,4 +1,4 @@
-<!-- translation-source: AGENTS.md; translation-source-sha256: 816cb604d12674a2d6de637130373f1318cd408366f7d1dcf57cb39ead08f324 -->
+<!-- translation-source: AGENTS.md; translation-source-sha256: abac1297a2dc1ed189812dfa467868a71258640da21bb7f24d3df9a3efabd832 -->
 
 # 仓库指令
 
@@ -49,8 +49,8 @@
 
 - 所有 Pi Stuff Git worktree 都放在仓库内的 `.worktrees/` 下。
 - 使用 `docs/compatibility.md` 指定的版本；直接依赖必须精确，`trustedDependencies` 必须为空。
-- 开发期间，从包含变更的 worktree 根目录运行聚焦测试和 `bun run check:fast`。PR 标记 ready 或合并前，
-  在同一 worktree 针对最终变更运行 `bun run check`。其他 worktree 的检查不能认证这些变更。mock 不能用于
+- 开发期间，从包含变更的 worktree 根目录运行聚焦测试和 `bun run check`。PR 标记 ready 或合并前，
+  在同一 worktree 针对最终变更运行 `bun run check` 和 `bun run test`。其他 worktree 的检查不能认证这些变更。mock 不能用于
   声称公开 seam 已认证。
 - 不要仅凭 ancestry 推断已合并。报告 merge 或清理状态前，检查相关 patch 或 commit、每个关联 worktree 的
   tracked/untracked 状态以及目标分支。

@@ -59,7 +59,7 @@ jobs:
         run: bun test test/ci-acceptance-scope.test.ts
 
       - name: Run fast checks
-        run: bun run check:fast
+        run: bun run check
 
   acceptance:
     name: Acceptance
@@ -162,9 +162,7 @@ jobs:
                 echo "network namespace is not isolated" >&2
                 exit 1
               fi
-              bun run test:ci
-              bun run benchmark:tool-activity
-              bun run pack:verify
+              bun run test
             ' 2>&1 | tee "$RUNNER_TEMP/pi-stuff-ci/acceptance.log"
 
       - name: Upload failure evidence

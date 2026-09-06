@@ -6,6 +6,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { assertDecodableSupportedCodeModeImages } from "../packages/pi-stuff/src/code-mode/image-content.js";
 import { type JsonValue, parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
+import { handleBenchmarkMeta } from "./benchmark-cli.js";
 import {
 	type Arm,
 	analyzeSession,
@@ -53,6 +54,7 @@ interface BenchmarkArguments {
 	readonly baselineRoot: string;
 	readonly output: string;
 }
+const DEFAULT_OUTPUT = join(root, ".artifacts/code-mode-image-benchmark/latest.json");
 interface ProcessResult {
 	readonly exitCode: number | null;
 	readonly stdout: string;
@@ -311,8 +313,8 @@ async function runCase(
 	const shared = commonArguments(packageRoot, paths["sessions"], name);
 	const prompt =
 		"Inspect challenge.png with the available image Tool. Reply with exactly the six digits shown and nothing else. Do not use shell commands or encode the file as text.";
-	let first: ProcessResult = { exitCode: null, stdout: "", timedOut: true };
-	let resumed: ProcessResult = { exitCode: null, stdout: "", timedOut: true };
+	let first: ProcessResult = { exitCode: null, stdout: "", timedOut: false };
+	let resumed: ProcessResult = { exitCode: null, stdout: "", timedOut: false };
 	try {
 		first = await runPi(
 			[...shared, "--session-id", sessionId, "--", prompt],
@@ -329,8 +331,11 @@ async function runCase(
 			);
 		}
 		return await completedCase(arm, code, repetition, paths, expectedHash, first, resumed, analysis);
-	} catch {
+	} catch (cause) {
+		if (!first.timedOut && !resumed.timedOut)
+			throw new Error("Image benchmark case could not be measured", { cause });
 		const observed = await observations(paths.log).catch(() => []);
+		if (observed.length === 0) throw new Error("Image benchmark timed out without Provider evidence", { cause });
 		return {
 			answer: safeAnswer(lastLine(first.stdout)),
 			arm,
@@ -363,23 +368,32 @@ async function runCase(
 function parseArguments(arguments_: readonly string[]): BenchmarkArguments {
 	let baselineRoot: string | undefined;
 	let output: string | undefined;
+	let profile: string | undefined;
 	for (let index = 0; index < arguments_.length; index += 1) {
 		const argument = arguments_[index];
 		const value = arguments_[index + 1];
-		if ((argument === "--baseline-root" || argument === "--output") && value) {
+		if ((argument === "--baseline-root" || argument === "--output" || argument === "--profile") && value) {
 			if (argument === "--baseline-root") baselineRoot = value;
-			else output = value;
+			else if (argument === "--output") output = value;
+			else profile = value;
 			index += 1;
 			continue;
 		}
-		fail("usage: bun run benchmark:code-mode-image --baseline-root <absolute-path> --output <absolute-path>");
+		fail(
+			"usage: bun run benchmark:capability:code-mode-image --baseline-root <absolute-path> --output <absolute-path>",
+		);
 	}
-	if (!baselineRoot || !output || !isAbsolute(baselineRoot) || !isAbsolute(output))
-		fail("baseline root and output must be absolute paths");
-	return { baselineRoot, output };
+	if (profile !== "live") fail("--profile live is required for this benchmark");
+	if (!baselineRoot || !isAbsolute(baselineRoot)) fail("baseline root must be an absolute path");
+	return { baselineRoot, output: output ? resolve(output) : DEFAULT_OUTPUT };
 }
 
 if (import.meta.main) {
+	handleBenchmarkMeta(
+		process.argv.slice(2),
+		"usage: benchmark:capability:code-mode-image --profile live --baseline-root <absolute-path> [--output <absolute-path>]",
+		["profile=live (Pi Host + live Provider credentials)", "image-transfer", "tool-choice", "session-persistence"],
+	);
 	const options = parseArguments(process.argv.slice(2));
 	await verifyPiHostVersion(PI_BINARY);
 	const baselinePackage = packageTree(options.baselineRoot, BASELINE_COMMIT);
@@ -433,7 +447,8 @@ if (import.meta.main) {
 		await mkdir(resolve(options.output, ".."), { recursive: true, mode: 0o700 });
 		await writeFile(options.output, `${JSON.stringify(report, null, "\t")}\n`, { mode: 0o600 });
 		console.log(JSON.stringify(report, null, "\t"));
-		if (!evaluation.candidatePass) process.exitCode = 1;
+		if (cases.some((result) => !result.instrumentationValid && !result.timedOut))
+			fail("experiment instrumentation is incomplete; inspect the report");
 	} finally {
 		await rm(benchmarkRoot, { recursive: true, force: true });
 	}
