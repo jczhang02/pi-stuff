@@ -156,6 +156,33 @@ coverage from retained reports alone.
   not imply execution of repository orchestration. Use Bun's script listing and native filtering/reporters where they
   satisfy the agreed interface. Remove redundant script aliases when migrating all callers and documentation together.
 
+### Migration stages and CI execution design
+
+- Migrate in three independently verifiable batches: first command and execution boundaries with duplicate invocations
+  removed; then test classification, repair, consolidation, and deletion; finally affected-test selection, CI orchestration,
+  and remaining directory moves. Update documentation in each batch; temporary old paths do not justify duplicate runs.
+- Model CI as `Plan`, `Checks`, `Tests`, and a final `Verify` result. `Plan` determines the required test scope; `Checks`
+  runs independently while `Tests` waits only for the plan, not for static-check completion. Checks and Tests are the two
+  substantive verification categories; planning and aggregation do not rerun them. Five test levels are classification
+  boundaries, not a requirement to create five CI jobs.
+- Run the same conservative risk-selection policy for PRs and pushes to `main`. PRs compare against the target branch;
+  pushes use the before/after revision range. Missing or unreliable ranges select all applicable tests. Manual full
+  verification remains available. Preserve the approved certified platform rather than copying unrelated Node/OS matrices.
+- Always trigger the required verification workflow for supported events; decide whether Tests are needed inside the
+  workflow. `Verify` evaluates the plan and every required job even when dependencies fail or skip. It accepts skipped
+  Tests only when a successful plan explicitly required none; required failures, cancellations, missing results, or
+  unexpected skips cannot produce a passing aggregate. Use this stable result for any future required-check configuration.
+- Keep per-file OS-process isolation until equivalent behavior is demonstrated. Measure file and environment setup costs
+  before introducing bounded test shards; retain conservative concurrency for PTY/native-resource scenarios. Do not create
+  one CI job per test or reuse flaky retries to disguise resource contention. Share local and CI execution definitions.
+- Cancel superseded runs of the same PR. Do not cancel an earlier main-push validation merely because a later push has
+  a different selected scope; preserve evidence for both revision ranges. Cache dependency downloads with toolchain and
+  lockfile keys, preserve exact artifact verification and offline test execution, and retain failure reports.
+- Benchmarks never participate in this CI gate. No five-minute target or new timeout limit has been accepted: report
+  before/after wall time and execution coverage, then optimize demonstrated bottlenecks. Branch protection and direct-push
+  permissions are separate repository settings and are not changed by this architecture decision; main-push validation
+  detects issues after a direct push rather than preventing that push.
+
 ### Public practice references
 
 The exact names above are repository conventions, not a universal software-testing standard. Reviewed on 2026-09-05:
@@ -168,6 +195,14 @@ The exact names above are repository conventions, not a universal software-testi
   verification and repair.
 - [Bun runtime](https://bun.com/docs/runtime) distinguishes native commands from package scripts and forwards script
   arguments; [Bun reporters](https://bun.com/docs/test/reporters) supply native console and JUnit reporting.
+
+Additional CI references reviewed on 2026-09-06:
+
+- [Vite CI](https://github.com/vitejs/vite/blob/main/.github/workflows/ci.yml) and
+  [Vitest CI](https://github.com/vitest-dev/vitest/blob/main/.github/workflows/ci.yml) separate change detection, static
+  work, and tests, and validate both PRs and main pushes. Their matrices are project-specific, not templates to copy.
+- [GitHub job conditions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions)
+  treat skipped jobs as successful for required-check purposes; explicitly validate planned execution in the aggregate.
 
 ## Consequences
 
