@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 09540cca81d8e9728b5961d0354a6529ce69d299ba3448e16fc5edb631631fd9 -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 37cfbef220ce2aa61970d6eed2d34004810b583b088cf595b9c80442eda2d322 -->
 
 # Agents
 
@@ -34,7 +34,7 @@ Pi settings 可以通过 `subagents.agentScanDirs` 增加递归扫描根。用�
 }
 ```
 
-后台是默认方式。启动后继续独立工作；完成结果会自动送达。只有当前 Tool call 必须等待结果时，才设置
+后台是默认方式。完成结果会自动送达来源 main Agent；空闲时继续整合，忙碌时排队。只有当前 Tool call 必须等待结果时，才设置
 `"foreground": true`。
 
 ## Tool 形态
@@ -84,8 +84,9 @@ Grouped task 会在当前容量内并发运行。同一条 Assistant response �
 
 ## 后台与前台
 
-后台 launch 在 admission 和启动后返回。最终结果会生成紧凑、持久的 TUI result，不会主动开启另一轮主 Agent。
-完整报告保留在 `/agents` 中。诊断事件日志仅保留有界尾部；滚动日志不会重复发送已观测的控制事件。
+后台 launch 在 admission 和启动后返回。成功、失败或 partial 结果会生成紧凑、持久的 TUI result，并在原任务仍开放时送达来源 main Agent；空闲时继续整合，忙碌时等当前 turn 结束后排队处理。完整报告保留在 `/agents` 中。诊断事件日志仅保留有界尾部；滚动日志不会重复发送已观测的控制事件。
+
+delivery 绑定来源 Session/run 并去重。用户取消或显式结束任务会抑制迟到结果继续运行，但保留结果和规范引用供检查。活跃 Goal 使用其规范查询协调继续，避免同一结果产生竞争 continuation。
 
 前台 launch 会等到结果就绪，再把它返回当前 Tool call。嵌套 fanout 始终归启动它的 child 所有，不能脱离该 owner。
 
@@ -125,8 +126,9 @@ Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以
 `excludeTools` 从 child 的 ambient、显式、MCP 与 Suite 注入 Tool 中减去指定名称。排除 `subagent` 会关闭该
 Agent 的嵌套 fanout；如果 Agent 的 Skill lazy loading 需要 `read`，则排除 `read` 会在启动前被拒绝。
 
-每个 child 使用同一个 Pi Host binary，显式加载所属 Package，并关闭 ambient discovery。非 fanout child
-不会得到 `subagent` Tool。
+每个 child 使用同一个 Pi Host binary，显式加载所属 Package，并关闭 ambient discovery。Context Management/Magic
+拥有 child Context 压力和投影；Agents 保留 child protocol、Tool pairing 和可恢复证据。非 fanout child 不会得到
+`subagent` Tool。
 
 ## 限制
 

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: 71ccdb7bc7e87ea869e47b5c3743bb82331c2b157af9964197819c47ef4e2cd6 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 7df94251f6eb1efd02348725508a04b8b5adef639ecd00f9f065829f6212b538 -->
 
 # 研究
 
@@ -17,6 +17,7 @@
 ## 架构与可行性
 
 - [Pi Stuff 可靠性修复方案](pi-stuff-reliability-repair-plan-20260906.md)
+- [Pi Stuff 可靠性 fork 适配审计](pi-stuff-reliability-fork-audit-20260906.md)
 - [Code Mode 图像基准](code-mode-image-benchmark-20260827.md)
 - [Skill Discovery 启动有界真实模型确认](skill-discovery-startup-bounded-confirmation-20260830.md)
 - [Skill Discovery 隔离真实模型确认](skill-discovery-isolated-confirmation-20260830.md)
