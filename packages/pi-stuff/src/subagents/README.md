@@ -49,6 +49,9 @@ Continue independent work after launch. Open `/agents` to inspect, steer, stop, 
 Child Hosts skip the root Agents management implementation, which registers nothing in those processes. The parent
 loads it during Suite installation; authorized nested delegation keeps its existing child Extension.
 
+Agent, Skill and MCP project paths use Pi's public `CONFIG_DIR_NAME`. Walking project ancestors does not rediscover
+that Host constant through synchronous executable or package-metadata reads; discovery precedence is unchanged.
+
 Planning validates Skills, model candidates, Tool budgets and timeouts, and capability/MCP constraints without creating
 execution or recovery records or hashing Agent definitions and task bodies. Final construction resolves the launch
 inputs and creates their digests, model metadata, and recovery record once. Planning projections are not cached across

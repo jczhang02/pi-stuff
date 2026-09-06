@@ -1840,6 +1840,235 @@
       "seededSession": true,
       "codeMode": true
     }
-  ]
+  ],
+  "configDirectoryFollowup": {
+    "purpose": "config-directory-deduplication-comparison",
+    "baselineCommit": "7fee89edf992daf80aafb8c681ab6fbbdb477e34",
+    "candidateBaseCommit": "7fee89edf992daf80aafb8c681ab6fbbdb477e34",
+    "candidateChange": "Reuse public CONFIG_DIR_NAME in the shared Agents utility; source diff retained in evidence",
+    "candidateUtilitySha256": "066200ea388d3d9b0c1c49b0dad61f7ae32359fab84dbff9ba3bdb1c70ec1786",
+    "driverSha256": "3863bcdd4808c896c32092e09ec7214a69d9a0a9c2a685ec90b87b59606a93d9",
+    "privatePairedRecordSha256": "2ae9c3b06dd2181b4e6d1ac6f8346b3279be0e2e4103c51d0d74d19c1bd2b846",
+    "synchronousDiscoveryOperations": {
+      "before": {
+        "realpath": 4,
+        "metadataReadAttempts": 32
+      },
+      "after": {
+        "realpath": 0,
+        "metadataReadAttempts": 0
+      }
+    },
+    "samples": [
+      {
+        "label": "0-baseline",
+        "variant": "baseline",
+        "exitCode": 0,
+        "breaches": [],
+        "evidenceSha256": "698ce96d19e8ea1fd69988f10a05028c4801185dc00f5089f42a8a52cc07ce0b",
+        "observerDiffSha256": "2d86d17b3c67f854ffc54c7b4684b2ee1010b8520cefbfecb7bc62675f038bb6",
+        "packageDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "startedAt": "2026-09-06T18:32:14.131Z",
+        "endedAt": "2026-09-06T18:32:43.320Z",
+        "cpuUs": {
+          "total": 20994788,
+          "user": 18304814,
+          "system": 2689973
+        },
+        "chargedMemoryPeakBytes": 1950474240,
+        "chargedMemoryFinalBytes": 605659136,
+        "rssFinalBytes": 587456512,
+        "finalProcessIo": [
+          {
+            "rchar": 256909193,
+            "wchar": 36617058,
+            "syscr": 32169,
+            "syscw": 11821,
+            "read_bytes": 34473984,
+            "write_bytes": 36406056,
+            "cancelled_write_bytes": 0
+          }
+        ],
+        "durationMs": 29189.555366,
+        "activeDurationMs": 14399.826699999998,
+        "captureCount": 2456,
+        "maximumObservationGapMs": 16.47520600000007,
+        "maximumSpinnerAbsenceMs": 0,
+        "maximumSpinnerFrameMs": 160.4550560000007,
+        "maximumStartupInputMs": 13.780792999999903,
+        "maximumSteadyInputMs": 37.472733999999036,
+        "maximumSelectionMs": 13.777404000000388,
+        "maximumSelectionSetupMs": 37.472733999999036,
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "automaticUsageRefreshes": 1,
+        "backgroundOutcomes": 2,
+        "parentCompletedWhileChildRunning": true,
+        "observationTimeoutMs": 60000
+      },
+      {
+        "label": "1-candidate",
+        "variant": "candidate",
+        "exitCode": 1,
+        "breaches": [
+          {
+            "metric": "maximumSteadyInputMs",
+            "actual": 72.7096930000007,
+            "limit": 40.46531200000072
+          }
+        ],
+        "evidenceSha256": "72fa8cb1d855b1cec7e9b7315a523641f0e59cc3629175d363ea766deb397e5f",
+        "observerDiffSha256": "2d86d17b3c67f854ffc54c7b4684b2ee1010b8520cefbfecb7bc62675f038bb6",
+        "packageDiffSha256": "2d86d17b3c67f854ffc54c7b4684b2ee1010b8520cefbfecb7bc62675f038bb6",
+        "startedAt": "2026-09-06T18:32:43.851Z",
+        "endedAt": "2026-09-06T18:33:13.279Z",
+        "cpuUs": {
+          "total": 21266931,
+          "user": 18728737,
+          "system": 2538193
+        },
+        "chargedMemoryPeakBytes": 1959346176,
+        "chargedMemoryFinalBytes": 615321600,
+        "rssFinalBytes": 597270528,
+        "finalProcessIo": [
+          {
+            "rchar": 256790035,
+            "wchar": 36603026,
+            "syscr": 32194,
+            "syscw": 11823,
+            "read_bytes": 20043264,
+            "write_bytes": 36391403,
+            "cancelled_write_bytes": 0
+          }
+        ],
+        "durationMs": 29427.753055,
+        "activeDurationMs": 14412.940235000002,
+        "captureCount": 2475,
+        "maximumObservationGapMs": 15.995198999999957,
+        "maximumSpinnerAbsenceMs": 0,
+        "maximumSpinnerFrameMs": 123.9372489999987,
+        "maximumStartupInputMs": 13.581897000000026,
+        "maximumSteadyInputMs": 72.7096930000007,
+        "maximumSelectionMs": 13.766881999999896,
+        "maximumSelectionSetupMs": 72.7096930000007,
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "automaticUsageRefreshes": 1,
+        "backgroundOutcomes": 2,
+        "parentCompletedWhileChildRunning": true,
+        "observationTimeoutMs": 60000
+      },
+      {
+        "label": "2-candidate",
+        "variant": "candidate",
+        "exitCode": 0,
+        "breaches": [],
+        "evidenceSha256": "e3612a8837995d23e0fe50ea3454b1238277b4a32f925359296979897d5d741b",
+        "observerDiffSha256": "2d86d17b3c67f854ffc54c7b4684b2ee1010b8520cefbfecb7bc62675f038bb6",
+        "packageDiffSha256": "2d86d17b3c67f854ffc54c7b4684b2ee1010b8520cefbfecb7bc62675f038bb6",
+        "startedAt": "2026-09-06T18:33:13.822Z",
+        "endedAt": "2026-09-06T18:33:43.237Z",
+        "cpuUs": {
+          "total": 21254676,
+          "user": 18620333,
+          "system": 2634343
+        },
+        "chargedMemoryPeakBytes": 1916772352,
+        "chargedMemoryFinalBytes": 614027264,
+        "rssFinalBytes": 595542016,
+        "finalProcessIo": [
+          {
+            "rchar": 256787719,
+            "wchar": 36602656,
+            "syscr": 32124,
+            "syscw": 11814,
+            "read_bytes": 57344,
+            "write_bytes": 36391402,
+            "cancelled_write_bytes": 0
+          }
+        ],
+        "durationMs": 29415.536041,
+        "activeDurationMs": 14390.803069,
+        "captureCount": 2471,
+        "maximumObservationGapMs": 24.819282999999814,
+        "maximumSpinnerAbsenceMs": 0,
+        "maximumSpinnerFrameMs": 111.6178979999986,
+        "maximumStartupInputMs": 13.252031999999417,
+        "maximumSteadyInputMs": 14.059217000001809,
+        "maximumSelectionMs": 13.808600000000297,
+        "maximumSelectionSetupMs": 14.059217000001809,
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "automaticUsageRefreshes": 1,
+        "backgroundOutcomes": 2,
+        "parentCompletedWhileChildRunning": true,
+        "observationTimeoutMs": 60000
+      },
+      {
+        "label": "3-baseline",
+        "variant": "baseline",
+        "exitCode": 0,
+        "breaches": [],
+        "evidenceSha256": "a7d4807e0e3175d6598c8d04e64b12c54da539742678b19a4e972b2c82938173",
+        "observerDiffSha256": "2d86d17b3c67f854ffc54c7b4684b2ee1010b8520cefbfecb7bc62675f038bb6",
+        "packageDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "startedAt": "2026-09-06T18:33:43.774Z",
+        "endedAt": "2026-09-06T18:34:13.064Z",
+        "cpuUs": {
+          "total": 21236649,
+          "user": 18542613,
+          "system": 2694035
+        },
+        "chargedMemoryPeakBytes": 1938247680,
+        "chargedMemoryFinalBytes": 607670272,
+        "rssFinalBytes": 589066240,
+        "finalProcessIo": [
+          {
+            "rchar": 256907354,
+            "wchar": 36617948,
+            "syscr": 32153,
+            "syscw": 11825,
+            "read_bytes": 2150400,
+            "write_bytes": 36397861,
+            "cancelled_write_bytes": 0
+          }
+        ],
+        "durationMs": 29290.524299,
+        "activeDurationMs": 14413.613826999997,
+        "captureCount": 2460,
+        "maximumObservationGapMs": 26.229428000000098,
+        "maximumSpinnerAbsenceMs": 0,
+        "maximumSpinnerFrameMs": 114.08917699999984,
+        "maximumStartupInputMs": 13.43636400000014,
+        "maximumSteadyInputMs": 14.18296299999929,
+        "maximumSelectionMs": 14.292211999998472,
+        "maximumSelectionSetupMs": 13.7819240000008,
+        "completedChildTools": 2,
+        "reapedChildProcesses": 2,
+        "automaticUsageRefreshes": 1,
+        "backgroundOutcomes": 2,
+        "parentCompletedWhileChildRunning": true,
+        "observationTimeoutMs": 60000
+      }
+    ]
+  },
+  "tracedDeadlineFailure": {
+    "runUrl": "https://github.com/jczhang02/pi-stuff/actions/runs/34051108002",
+    "observerCommit": "7fee89edf992daf80aafb8c681ab6fbbdb477e34",
+    "packageCommit": "40101bb24e1576bfab9e530a4e42f5fd0abd75d7",
+    "evidenceSha256": "a89c56afadd7392771cd07ad3968182aa7143dd70e16c2a688c08c9298fc0598",
+    "successfulChildCompletions": 2,
+    "providerErrors": 0,
+    "lastParentRequestMs": 1788718736993.8667,
+    "expectedFinalTimerMs": 1788718740993.8667,
+    "lastCaptureMs": 1788718738831.9834,
+    "remainingTimerMs": 2161.88330078125,
+    "diagnosis": "The observer ended before the fixture final-response timer could fire; this run does not show a Provider deadlock. Earlier failures remain unattributed.",
+    "diagnosticObservationBudgetMs": 75000,
+    "unchangedOrdinaryBudgetMs": {
+      "other": 30000,
+      "agentsAndGoal": 60000
+    },
+    "unchangedCollectorProcessBudgetMs": 90000
+  }
 }
-

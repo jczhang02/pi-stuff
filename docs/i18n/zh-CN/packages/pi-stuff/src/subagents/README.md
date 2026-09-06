@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 19185a1d0f321c8e26b74ac21cdfc98195d6dac7d191566da75bfa7927fc3f1a -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 5a4ac372eadaeb1ac5ca21b93e796ed392e2cb092536a1f534408a97c89b894a -->
 
 # Agents
 
@@ -49,6 +49,9 @@
 
 child Host 不加载根 Agents 管理实现，因为该实现在这些进程中不注册任何内容。parent 在 Suite 安装阶段加载它；
 获准的嵌套委派仍由现有 child Extension 负责。
+
+Agent、Skill 和 MCP 项目路径使用 Pi 公开的 `CONFIG_DIR_NAME`。遍历项目上级目录时，不再通过同步读取
+可执行文件路径和 package 元数据来重复解析这个 Host 常量；发现优先级不变。
 
 规划阶段校验 Skills、候选模型、Tool 预算与超时，以及 capability/MCP 约束，但不创建执行或恢复记录，也不计算
 Agent 定义与任务正文的摘要。最终构建阶段解析启动输入，并一次性生成对应摘要、模型元数据和恢复记录。

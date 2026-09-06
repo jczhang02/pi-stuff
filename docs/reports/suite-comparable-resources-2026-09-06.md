@@ -75,3 +75,46 @@ while Pi remained in recovery; those logs did not identify the cause. Traced run
 Allocation/GC, exact scheduler wakeups, peak process-tree RSS, largest main-thread work intervals and the remaining
 owner/recovery cases need separate evidence. These measurements preserve automatic features in the listed workloads;
 they do not execute every configured external service or close the [resource inventory](suite-resource-inventory-2026-09-05.md).
+
+## Config-directory follow-up
+
+A background-Agent CPU diagnostic at `7fee89ed` sampled `realpathSync` through `getProjectConfigDir` during delayed
+autocomplete feedback. The helper rediscovered Pi's immutable config-directory name from the executable and package
+metadata on every call, including every project ancestor. It now uses the public Host constant already available
+through its SDK import. The actual discovery regression changed from four synchronous realpath calls and 32 metadata
+read attempts to zero for the same nested/root lookups. Existing path precedence, selected Skills and MCP checks pass.
+The utility shrank from 510 to 441 lines; no cache or dependency was added.
+
+Four unprofiled background-Agent runs compared clean `7fee89ed` with this one-file Package change in baseline/candidate/
+candidate/baseline order. They reused the fixed binary, namespaces, terminal, fresh profiles, resource scope and frozen
+gates above. Each completed and reaped two children, recorded two background outcomes and automatic Naming/Usage once.
+The first setup attempt lacked the new baseline worktree's dependencies and failed before Session start; it produced
+no workload sample. After frozen dependency installation, the four-run batch completed without discarded samples.
+
+| Sample | CPU, seconds | Final RSS, decimal MB | Charged-memory peak, decimal MB | Longest Spinner, ms | Slowest input/setup, ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baseline 1 | 20.995 | 587.5 | 1,950.5 | 160.455 | 37.473 |
+| Candidate 1 | 21.267 | 597.3 | 1,959.3 | 123.937 | 72.710 |
+| Candidate 2 | 21.255 | 595.5 | 1,916.8 | 111.618 | 14.059 |
+| Baseline 2 | 21.237 | 589.1 | 1,938.2 | 114.089 | 14.183 |
+
+This establishes removal of redundant operations, not a whole-workload resource saving or a stall fix. Candidate 1
+still failed the 40.465 ms input gate; its evidence hash is
+`72fa8cb1d855b1cec7e9b7315a523641f0e59cc3629175d363ea766deb397e5f`. Autocomplete setup began at 10,683.870 ms
+and appeared with the queued Agent roster at 10,756.580 ms. All capture gaps were below 26.230 ms and no active Spinner
+observation was missing. The profiler's earlier stack does not attribute this unprofiled failure, nor the original
+48.868 ms event. The numeric record retains all four results and their Source/diff hashes.
+
+## Traced CI deadline failure
+
+The retained Provider and Session records from [run 34051108002](https://github.com/jczhang02/pi-stuff/actions/runs/34051108002)
+identify why its baseline foreground observation was incomplete. Both children completed successfully. The parent
+requested its final response at 2026-09-06 18:18:56.993 UTC; the fixture schedules that response four seconds later.
+The last capture was at 18:18:58.831 UTC, 2,161.883 ms before the timer could fire. There was no Provider error in the
+record. The 60-second observation budget ended before this traced workload finished; completed Tools were not evidence
+of a Provider deadlock. Earlier failures without these records remain unattributed.
+
+Scheduler diagnostics now request a separate 75-second observation budget. They cannot use acceptance gates, and their
+results identify the diagnostic purpose and budget. Ordinary 30/60-second observations, the collector's outer 90-second
+limit, isolation, completion checks and frozen responsiveness thresholds are unchanged. A successful future capture
+would establish scheduler evidence, not excuse the retained input failures.
