@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: 7129dd602facf61cd293a7ff6c51968e7bd2c0f072d0546042e915c8454b6193 -->
+<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: 0d21e389e4b5fe4613999ed4e52f793e2a1882855525ac1afa26373fda1d412a -->
 
 # Goal
 
@@ -32,6 +32,11 @@
 - 在当前 Session 中保存目标、状态、budget 和可选队列。
 - 跨 Pi 原生 compaction 生命周期保持 Goal identity。
 - 在共享 Statusline 中显示当前状态、用量、budget 和经过时间。
+
+恢复从后向前查找最新规范 Goal 条目，仅在不存在规范条目时使用旧版状态。无效或已清除的规范状态不会
+重新启用更早或更晚的旧版 Goal。校验和队列规范化不变；
+[测量记录](../../../../docs/reports/history-selection-cost-2026-09-06.md)覆盖选择器移除的已丢弃历史扫描，
+不包含 Goal 记账或 Host 分支构建。
 
 ## 压缩后的继续执行
 

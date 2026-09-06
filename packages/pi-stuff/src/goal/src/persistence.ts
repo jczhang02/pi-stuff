@@ -113,16 +113,15 @@ export function serializeGoalState(
 
 export function loadGoalStateFromSession(ctx: SessionContext): LoadedGoalState {
 	const entries = ctx.sessionManager?.getBranch?.() ?? ctx.sessionManager?.getEntries?.() ?? [];
-	const canonicalEntry = entries
-		.filter((entry) => entry.type === "custom" && entry.customType === GOAL_STATE_ENTRY_TYPE)
-		.pop();
-	if (canonicalEntry) {
-		return loadCanonicalGoalState(isJsonInputValue(canonicalEntry.data) ? canonicalEntry.data : undefined);
+	let legacyEntry: SessionEntry | undefined;
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (entry?.type !== "custom") continue;
+		if (entry.customType === GOAL_STATE_ENTRY_TYPE) {
+			return loadCanonicalGoalState(isJsonInputValue(entry.data) ? entry.data : undefined);
+		}
+		if (!legacyEntry && entry.customType === LEGACY_GOALS_STATE_ENTRY_TYPE) legacyEntry = entry;
 	}
-
-	const legacyEntry = entries
-		.filter((entry) => entry.type === "custom" && entry.customType === LEGACY_GOALS_STATE_ENTRY_TYPE)
-		.pop();
 	return legacyEntry
 		? loadLegacyGoalsState(isJsonInputValue(legacyEntry.data) ? legacyEntry.data : undefined)
 		: emptyGoalState("none");

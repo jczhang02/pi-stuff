@@ -9,6 +9,9 @@ require them. Beads `ps-yon.3` owns the missing measurements under [ADR 0030](..
 
 The [2026-09-06 Agents follow-up](agents-loading-and-projector-cost-2026-09-06.md) records first-use loading changes,
 measured projector-lock I/O removal, three passing final native samples, and retained unresolved late holds.
+The [Naming and Goal follow-up](history-selection-cost-2026-09-06.md) measures early-exit history selection on the
+same exact Host, with unchanged outputs and a passing normal Goal continuation sample. It does not measure Host
+branch construction, Goal accounting or the remaining allocation/GC and recovery costs.
 
 ## Owners, triggers and scaling
 

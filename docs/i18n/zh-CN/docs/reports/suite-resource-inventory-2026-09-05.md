@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 1be2819c1468d6fe9ff632a0759976246ecd59560e7ec4b2ab7990317fd4abea -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: c264581a854657293bc151dcc217770e0a51ce3df8e9847cb54b53dcc4c78900 -->
 
 # Suite 资源源码清单
 
@@ -11,6 +11,8 @@ Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-
 
 [2026-09-06 Agents 后续报告](agents-loading-and-projector-cost-2026-09-06.md)记录首次加载改动、
 投影锁 I/O 移除的测量、三个最终原生通过样本，以及仍未归因的历史后段停顿。
+[Naming 与 Goal 后续报告](history-selection-cost-2026-09-06.md)在同一精确 Host 上测量提前结束的历史选择，
+确认输出不变，并记录通过的普通 Goal 续行样本；不包含 Host 分支构建、Goal 记账，以及仍缺失的分配／GC 和恢复成本。
 
 ## 所有者、触发条件与增长变量
 

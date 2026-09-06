@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 0fe90731533d5434248f9a6700c43c8e9bc60cd9317ad5abe899f2ba799733ab -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: a6e0a0c1bba9081885c6386964f2de7722219559e171bf04fb00febc51813c38 -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [Naming 与 Goal 历史选择成本](history-selection-cost-2026-09-06.md)
 - [Agents 冷加载与投影器成本](agents-loading-and-projector-cost-2026-09-06.md)
 - [Suite 资源源码清单](suite-resource-inventory-2026-09-05.md)
 - [连续响应观察器与 Ledger 首次加载复现](suite-responsiveness-observer-2026-09-05.md)

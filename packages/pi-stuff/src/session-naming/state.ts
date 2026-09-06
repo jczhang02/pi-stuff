@@ -75,16 +75,14 @@ function messageFromEntry(entry: SessionEntry): NamingMessage | undefined {
 }
 
 export function namingMessages(entries: readonly SessionEntry[], initial: boolean): NamingMessage[] {
-	const messages = entries.flatMap((entry) => {
+	const messages: NamingMessage[] = [];
+	for (let index = entries.length - 1; index >= 0 && messages.length < 6; index -= 1) {
+		const entry = entries[index];
+		if (!entry) continue;
 		const message = messageFromEntry(entry);
-		return message ? [message] : [];
-	});
-	if (!initial) return messages.slice(-6);
-	if (messages.length > 2) return messages.slice(-6);
-	const firstUserIndex = messages.findIndex((message) => message.role === "user");
-	if (firstUserIndex < 0) return [];
-	const firstAssistantIndex = messages.findIndex(
-		(message, index) => index > firstUserIndex && message.role === "assistant",
-	);
-	return firstAssistantIndex < 0 ? [] : messages.slice(firstUserIndex, firstAssistantIndex + 1);
+		if (message) messages.push(message);
+	}
+	messages.reverse();
+	if (!initial || messages.length > 2) return messages;
+	return messages[0]?.role === "user" && messages[1]?.role === "assistant" ? messages : [];
 }
