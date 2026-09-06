@@ -454,6 +454,10 @@ export function installStatusPublisher(): Effect.Effect<void, never, Scope.Scope
 export function writeStatus(statusPath: string, status: RunnerStatus): void {
 	updateRunProjection(status);
 	writePrivateAtomicJson(statusPath, status);
+	notifyStatusUpdate(statusPath, status);
+}
+
+export function notifyStatusUpdate(statusPath: string, status: RunnerStatus): void {
 	publishStatus(statusPath, status);
 	try {
 		statusUpdateObservers.get(statusPath)?.(status);

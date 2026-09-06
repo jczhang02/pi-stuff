@@ -301,6 +301,49 @@ latency improvement; the measured saving is the helper work above. The exact nat
 checks pass. `commandInvocationMatching` in the numeric record retains the trials, Source and evidence hashes, resource
 snapshots and limits. First-Agent import stalls and the remaining whole-Suite acceptance stay open.
 
+## Reuse the committed foreground start
+
+On 2026-09-06, `ps-yon.6` removes duplicate foreground startup work from `e48a6c4f`.
+The foreground lifecycle already committed a writer registry and initial status before binding its run directory.
+Its in-process runner then initialized the same registry, recreated the status and wrote it again.
+The [regression](../../test/agents/foreground-initialization.test.ts) exercises both real startup stages and queues a
+stop before child dispatch. It observes actual atomic publications: the old source writes each initial artifact twice;
+the candidate writes each once and still delivers the first running/pending observer notification with zero counters.
+The final regression fails on the old production source and passes on the candidate. Seven focused files pass
+76 tests and 315 assertions, including startup, cancellation, persistence failure, completion and recovery cases.
+
+The lifecycle now hands its committed status to the runner through an in-process parameter, outside serialized runner
+configuration. Initial counts are explicit zeroes, so the runner can notify without another projection or write;
+the first notification keeps the committed timestamp. No clone is added: the previous observer already shared the
+runner's nested status objects after that first notification, before control installation can mutate them.
+Detached and revival starts still initialize their own registry and status. The redundant directory creation inside
+the work runner is also removed; initial atomic publication already creates its parent directory.
+
+Four sequential native runs used exact Pi 0.85.0, the complete Suite, 120×40 geometry, two fresh-context foreground
+children and unchanged frozen gates. Code Mode used the prepared certified helper. Each run had fresh private
+configuration and caches on the ordinary filesystem; the kernel page cache was not reset. No checks, scouts or
+profilers overlapped these samples. Observer time origins below are on 2026-09-06 UTC.
+
+| Variant | Invocation | Observer origin, UTC | Spinner max, ms | Input max, ms | Selection max, ms | Scoped CPU, seconds |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| Control `TVrDGm` | Direct | 05:45:53.598 | 286.535 | 15.717 | 15.244 | 26.615752 |
+| Candidate `BlA6hk` | Direct | 05:47:06.535 | 200.347 | 99.017 | 15.211 | 24.935834 |
+| Control `Y8Mu2F` | Code Mode | 05:49:52.263 | 326.343 | 137.966 | 15.835 | 29.310988 |
+| Candidate `U5AeSJ` | Code Mode | 05:50:59.813 | 222.701 | 75.123 | 15.242 | 28.378905 |
+
+Every run completed and reaped both children, requested and persisted Naming once, and refreshed Usage once.
+Spinner absence was zero, observation gaps stayed below 18 ms, and all four owned scopes were unloaded.
+All four runs failed the frozen gates. The direct candidate's input maximum worsened; these pairs do not establish a
+stable whole-process CPU, memory or latency saving. The removed publications are proven by the regression, not inferred
+from these noisy totals. First-module loading and the previously recorded late Spinner hold remain unresolved.
+
+Production Source grows by 24 physical lines and the focused test adds 93, a net increase of 117; every affected file
+stays below 500 lines. Both control captures include the unexecuted new test, while both candidate captures include
+all five production diffs and that test's complete body. No runtime probes were added. The numeric record's
+`foregroundStartupHandoff` retains Source counts/hashes, full maxima and I/O, RSS and charged-memory counters. It does
+not establish allocation/GC, whole-process wakeups or peak process-tree RSS. Full-Suite resource and responsiveness
+acceptance remains open.
+
 ## Do not load Skill discovery for Skill-free launches
 
 On 2026-09-06, `ps-yon.17` removes unused filesystem Skill Module loading from Agent launches. At `69807e53`,

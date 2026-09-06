@@ -32,6 +32,7 @@ import { appendDiagnosticEvent, boundRunResultOutputs } from "./runner-output.ts
 import {
 	failedResult,
 	installStatusPublisher,
+	notifyStatusUpdate,
 	runBackgroundWork,
 	setStatusUpdateObserver,
 	taskList,
@@ -59,15 +60,16 @@ let taskRunnerModulePromise: Promise<typeof import("./child-task-runner.ts")> | 
 
 function runConfiguredWork(
 	config: BackgroundRunnerConfig,
+	committedStatus: RunnerStatus | undefined,
 	onWriterProcess?: (index: number, writer: WriterRuntimeState) => void,
 	beforeFinalPersistence?: () => void | Promise<void>,
 	beforeWorktreeEvidence?: () => void,
 	beforeResultPersistence?: () => void,
 ): Promise<{ nestedProjectionCommitted: boolean }> {
-	const startedAt = config.startedAt ?? Date.now();
 	const statusPath = path.join(config.asyncDir, "status.json");
 	const eventsPath = path.join(config.asyncDir, "events.jsonl");
-	const status = createInitialStatus(config, startedAt);
+	const status = committedStatus ?? createInitialStatus(config, config.startedAt ?? Date.now());
+	const startedAt = status.startedAt;
 	const control = new BackgroundRunControl(config, status, statusPath, eventsPath);
 	return Effect.runPromise(
 		Effect.scoped(
@@ -75,8 +77,8 @@ function runConfiguredWork(
 				yield* installStatusPublisher();
 				yield* Effect.try({
 					try: () => {
-						fs.mkdirSync(config.asyncDir, { recursive: true });
-						writeStatus(statusPath, status);
+						if (committedStatus) notifyStatusUpdate(statusPath, status);
+						else writeStatus(statusPath, status);
 						appendDiagnosticEvent(eventsPath, {
 							type: "subagent.run.started",
 							ts: startedAt,
@@ -241,6 +243,7 @@ async function completeRevivalHandshake(
 	fs.rmSync(proceedPath, { force: true });
 }
 
+/** Only the foreground lifecycle supplies already-committed state, never a serialized runner config. */
 export async function runConfiguredBackground(
 	config: BackgroundRunnerConfig,
 	hooks: {
@@ -250,6 +253,7 @@ export async function runConfiguredBackground(
 		beforeWorktreeEvidence?: () => void;
 		beforeResultPersistence?: () => void;
 	} = {},
+	committedStatus?: RunnerStatus,
 ): Promise<void> {
 	if (config.version !== 2) throw new Error("Background runner config version must be 2.");
 	if (taskList(config.work).length > MAX_BACKGROUND_TASKS) {
@@ -277,7 +281,9 @@ export async function runConfiguredBackground(
 			startupCommitted = true;
 			fs.rmSync(gatePath, { force: true });
 		}
-		initializeWriterProcessRegistry(config.asyncDir, config.id, process.pid, taskList(config.work).length);
+		if (!committedStatus) {
+			initializeWriterProcessRegistry(config.asyncDir, config.id, process.pid, taskList(config.work).length);
+		}
 		if (config.revivalLease) {
 			lease = acquireSessionLease(config.revivalLease, { inspectWriterLiveness: inspectWriterProcessLiveness });
 			await completeRevivalHandshake(config, startupPath, lease);
@@ -285,6 +291,7 @@ export async function runConfiguredBackground(
 		}
 		await runConfiguredWork(
 			config,
+			committedStatus,
 			(index, writer) => {
 				updateWriterProcessRegistry(config.asyncDir, index, writer);
 				if (lease && index === 0) lease.updateWriter(writer);

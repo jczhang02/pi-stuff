@@ -68,6 +68,12 @@ load only when requested. Session fallback snapshot operations load only when a 
 and at least two model candidates. Required recovery records, writer ownership, and initial status are still committed
 before child execution; fallback snapshots still freeze the Session before the first model attempt.
 
+Foreground startup commits the writer registry and initial status once, then passes that status directly to the
+in-process runner. The runner still publishes its first observer update without recreating or rewriting those startup
+artifacts. Initial turn and Tool counts are zero; the first notification retains the committed timestamp. This
+handoff is never serialized into background runner configuration. Detached starts, revival handshakes, directory
+claims and cancellation keep their existing ownership.
+
 Current Session governor transactions use asynchronous stable-inode kernel claims. Acquiring a claim does not rewrite
 or flush diagnostic owner records; mutual exclusion and process-death release remain kernel-owned. Canonical ledger
 commits and legacy lock handling are unchanged.

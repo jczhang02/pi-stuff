@@ -1,4 +1,270 @@
 {
+  "foregroundStartupHandoff": {
+    "bead": "ps-yon.6",
+    "base": "e48a6c4f4fdd40fedaa5df4c1dc261ec3f30a6d7",
+    "date": "2026-09-06",
+    "change": "Reuse already-committed foreground registry/status through a nonserialized in-process handoff; keep initial observer delivery, committed timestamp, zero counters, claims, cancellation and detached/revival initialization.",
+    "sourceLines": [
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/background/initial-status.ts",
+        "before": 77,
+        "after": 79,
+        "sha256": "d0c07b2cc63ce37ce188ff88201f2327745ed0d05bc75dce914cc06048aa31cd"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/background/runner-state.ts",
+        "before": 471,
+        "after": 475,
+        "sha256": "6f346794a91446124e4611655245687769f065f994014a6af38d3c7588885902"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.ts",
+        "before": 439,
+        "after": 446,
+        "sha256": "3baa12b0808ddf72af8777295f64d7fc570b3a19551f5ca92cbc5f8995e28b76"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/foreground/execution.ts",
+        "before": 339,
+        "after": 345,
+        "sha256": "d5c6d2e5355064a81d72a1846a822c8b7448148fa058a3d487a71d215a6af6a6"
+      },
+      {
+        "file": "packages/pi-stuff/src/subagents/src/runs/foreground/foreground-lifecycle.ts",
+        "before": 250,
+        "after": 255,
+        "sha256": "d70c5b844630960cd063d9c82fede9a086078e4bb680bef56920813bce251fff"
+      },
+      {
+        "file": "test/agents/foreground-initialization.test.ts",
+        "before": 0,
+        "after": 93,
+        "sha256": "6e58ff975642562a9658033d937b161835cc6ba71f6b0dfecc1f0ac93b0ca3f5"
+      }
+    ],
+    "netProductionLines": 24,
+    "netTestLines": 93,
+    "netSourceLines": 117,
+    "command": "bun scripts/benchmark-responsiveness.ts --pi <certified-pi> --suite --agent foreground --resource-scope --gates docs/reports/suite-responsiveness-gates-2026-09-05.json --repeat-tool; Code Mode adds --code-mode and PI_STUFF_CODE_MODE_HOST=<prepared-certified-helper>",
+    "isolation": "Sequential network/PID-isolated runs; complete Suite,120x40,two fresh-context children,automatic Naming/Usage,fresh private configuration/caches,ordinary filesystem,kernel page cache not reset; no tests/scouts/profilers overlapped.",
+    "regression": {
+      "file": "test/agents/foreground-initialization.test.ts",
+      "command": "bun test test/agents/foreground-initialization.test.ts",
+      "control": {
+        "exitCode": 1,
+        "registryPublications": 2,
+        "initialStatusPublications": 2
+      },
+      "candidate": {
+        "exitCode": 0,
+        "registryPublications": 1,
+        "initialStatusPublications": 1
+      },
+      "retained": "First running/pending observer notification with zero turn/Tool counts and stop-before-child dispatch through the real foreground lifecycle and runner.",
+      "focused": {
+        "files": 7,
+        "tests": 76,
+        "assertions": 315,
+        "failures": 0
+      }
+    },
+    "runs": [
+      {
+        "id": "TVrDGm",
+        "variant": "control",
+        "mode": "direct",
+        "observerTimeOriginUtc": "2026-09-06T05:45:53.598Z",
+        "evidenceSha256": "c224036eb46c3a3b6c924a16d5bf48a02ac2f64b054e9f1ac68d58372859557f",
+        "providerSha256": "224475d898784e01d5f400caaee65178109c16fac49ab92ac3038e457211edc0",
+        "sourceCommit": "e48a6c4f4fdd40fedaa5df4c1dc261ec3f30a6d7",
+        "sourceDiffSha256": "934ff2223a66f89a4c7a44eb8066bb1ddca58ebd492100cb37de1ba5d582aad3",
+        "sourceFiles": [
+          "test/agents/foreground-initialization.test.ts"
+        ],
+        "spinnerMs": 286.5352219999986,
+        "startupInputMs": 13.77523900000051,
+        "steadyInputMs": 15.717303000001266,
+        "selectionMs": 15.244182999998884,
+        "observationGapMs": 17.504609999999957,
+        "spinnerAbsenceMs": 0,
+        "activeDurationMs": 37631.271605999995,
+        "activeCaptureCount": 3097,
+        "completedChildren": 2,
+        "reapedChildren": 2,
+        "namingRequests": 1,
+        "namingPersisted": 1,
+        "usageRefreshes": 1,
+        "cpuUs": {
+          "total": 26615752,
+          "user": 23098522,
+          "system": 3517229
+        },
+        "rssSnapshotBytes": 602959872,
+        "memoryCurrentChargedBytes": 621821952,
+        "memoryPeakChargedBytes": 1253203968,
+        "io": {
+          "rchar": 241877139,
+          "wchar": 27455782,
+          "syscr": 22135,
+          "syscw": 7310,
+          "read_bytes": 122880,
+          "write_bytes": 27186383,
+          "cancelled_write_bytes": 0
+        },
+        "verdict": "FAIL",
+        "scopeUnloaded": true
+      },
+      {
+        "id": "BlA6hk",
+        "variant": "candidate",
+        "mode": "direct",
+        "observerTimeOriginUtc": "2026-09-06T05:47:06.535Z",
+        "evidenceSha256": "1ace545a598dce1053acbc415a854e23d9c4b388994347940d8ac464a3a541a4",
+        "providerSha256": "57feb38370aa88a39a3fd4a6ad13c4b99c366a9a6b878134a0688238ec00ab35",
+        "sourceCommit": "e48a6c4f4fdd40fedaa5df4c1dc261ec3f30a6d7",
+        "sourceDiffSha256": "76a52c79cbb36f4c229d3e1d5b6895abf849332be704a231c6f2ef3610869405",
+        "sourceFiles": [
+          "packages/pi-stuff/src/subagents/src/runs/background/initial-status.ts",
+          "packages/pi-stuff/src/subagents/src/runs/background/runner-state.ts",
+          "packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.ts",
+          "packages/pi-stuff/src/subagents/src/runs/foreground/execution.ts",
+          "packages/pi-stuff/src/subagents/src/runs/foreground/foreground-lifecycle.ts",
+          "test/agents/foreground-initialization.test.ts"
+        ],
+        "spinnerMs": 200.34729900000093,
+        "startupInputMs": 15.012778000000253,
+        "steadyInputMs": 99.016939000001,
+        "selectionMs": 15.211253000001307,
+        "observationGapMs": 16.591310999999223,
+        "spinnerAbsenceMs": 0,
+        "activeDurationMs": 37293.909107,
+        "activeCaptureCount": 3089,
+        "completedChildren": 2,
+        "reapedChildren": 2,
+        "namingRequests": 1,
+        "namingPersisted": 1,
+        "usageRefreshes": 1,
+        "cpuUs": {
+          "total": 24935834,
+          "user": 21732064,
+          "system": 3203769
+        },
+        "rssSnapshotBytes": 597598208,
+        "memoryCurrentChargedBytes": 616099840,
+        "memoryPeakChargedBytes": 1267048448,
+        "io": {
+          "rchar": 241879822,
+          "wchar": 27450162,
+          "syscr": 22119,
+          "syscw": 7318,
+          "read_bytes": 21504,
+          "write_bytes": 27183414,
+          "cancelled_write_bytes": 0
+        },
+        "verdict": "FAIL",
+        "scopeUnloaded": true
+      },
+      {
+        "id": "Y8Mu2F",
+        "variant": "control",
+        "mode": "code-mode",
+        "observerTimeOriginUtc": "2026-09-06T05:49:52.263Z",
+        "evidenceSha256": "2e3ee7880963d9a53a661900f6af81fdcf3fea3379302520491aafcc80c570f4",
+        "providerSha256": "5fe8c564411c9e771bf0d35121f942273f1f61d87b6382891b310393a8090e29",
+        "sourceCommit": "e48a6c4f4fdd40fedaa5df4c1dc261ec3f30a6d7",
+        "sourceDiffSha256": "934ff2223a66f89a4c7a44eb8066bb1ddca58ebd492100cb37de1ba5d582aad3",
+        "sourceFiles": [
+          "test/agents/foreground-initialization.test.ts"
+        ],
+        "spinnerMs": 326.34256300000015,
+        "startupInputMs": 14.413911999999982,
+        "steadyInputMs": 137.965787000001,
+        "selectionMs": 15.834841999998389,
+        "observationGapMs": 17.84396800000013,
+        "spinnerAbsenceMs": 0,
+        "activeDurationMs": 38125.398411,
+        "activeCaptureCount": 3087,
+        "completedChildren": 2,
+        "reapedChildren": 2,
+        "namingRequests": 1,
+        "namingPersisted": 1,
+        "usageRefreshes": 1,
+        "helperSha256": "60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8",
+        "cpuUs": {
+          "total": 29310988,
+          "user": 25559969,
+          "system": 3751019
+        },
+        "rssSnapshotBytes": 591372288,
+        "memoryCurrentChargedBytes": 611336192,
+        "memoryPeakChargedBytes": 1264553984,
+        "io": {
+          "rchar": 242221267,
+          "wchar": 27515686,
+          "syscr": 22937,
+          "syscw": 7750,
+          "read_bytes": 1483264,
+          "write_bytes": 27209403,
+          "cancelled_write_bytes": 0
+        },
+        "verdict": "FAIL",
+        "scopeUnloaded": true
+      },
+      {
+        "id": "U5AeSJ",
+        "variant": "candidate",
+        "mode": "code-mode",
+        "observerTimeOriginUtc": "2026-09-06T05:50:59.813Z",
+        "evidenceSha256": "1515ab2934553008b6e2a9c15c55003e1031286b3e0c2bd1beda6094f01ed05e",
+        "providerSha256": "92ec6388bcf2d26aee989abd8e212794893fcf7ee342b625401045fb29a07b9d",
+        "sourceCommit": "e48a6c4f4fdd40fedaa5df4c1dc261ec3f30a6d7",
+        "sourceDiffSha256": "76a52c79cbb36f4c229d3e1d5b6895abf849332be704a231c6f2ef3610869405",
+        "sourceFiles": [
+          "packages/pi-stuff/src/subagents/src/runs/background/initial-status.ts",
+          "packages/pi-stuff/src/subagents/src/runs/background/runner-state.ts",
+          "packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.ts",
+          "packages/pi-stuff/src/subagents/src/runs/foreground/execution.ts",
+          "packages/pi-stuff/src/subagents/src/runs/foreground/foreground-lifecycle.ts",
+          "test/agents/foreground-initialization.test.ts"
+        ],
+        "spinnerMs": 222.70062400000097,
+        "startupInputMs": 14.459043000000747,
+        "steadyInputMs": 75.12301900000057,
+        "selectionMs": 15.241737999996985,
+        "observationGapMs": 17.57944999999927,
+        "spinnerAbsenceMs": 0,
+        "activeDurationMs": 38089.603722,
+        "activeCaptureCount": 3106,
+        "completedChildren": 2,
+        "reapedChildren": 2,
+        "namingRequests": 1,
+        "namingPersisted": 1,
+        "usageRefreshes": 1,
+        "helperSha256": "60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8",
+        "cpuUs": {
+          "total": 28378905,
+          "user": 24701556,
+          "system": 3677348
+        },
+        "rssSnapshotBytes": 605126656,
+        "memoryCurrentChargedBytes": 624713728,
+        "memoryPeakChargedBytes": 1246965760,
+        "io": {
+          "rchar": 242207289,
+          "wchar": 27514560,
+          "syscr": 22601,
+          "syscw": 7746,
+          "read_bytes": 32768,
+          "write_bytes": 27206664,
+          "cancelled_write_bytes": 0
+        },
+        "verdict": "FAIL",
+        "scopeUnloaded": true
+      }
+    ],
+    "provenanceLimit": "Controls include only the unexecuted new test diff; candidates include all5 production diffs and the complete test. No runtime probes. Source hashes bind the measured candidate; no claim that focused tests certify full Suite liveness.",
+    "limits": "All4 runs fail frozen gates. Direct candidate input worsens. One pair per invocation cannot establish stable aggregate CPU/memory/latency savings. Counters do not measure allocation/GC,whole-process wakeups or peak process-tree RSS. Cold loading,late Spinner hold and full16-Capability resource acceptance remain open."
+  },
   "skillFreeLaunchLoading": {
     "bead": "ps-yon.17",
     "base": "69807e538d5262b1492e1d69a0a994558fc33b79",

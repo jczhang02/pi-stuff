@@ -17,6 +17,7 @@ import { tryAcquireStatusMutationClaim } from "../../shared/status-mutation.ts";
 import type { AsyncStatus, Details, NestedRunSummary } from "../../shared/types.ts";
 import { readStatus } from "../../shared/utils.ts";
 import { deliverStopRequest } from "../background/control-channel.ts";
+import type { BackgroundRunnerStatus } from "../background/initial-status.ts";
 import { runConfiguredBackground } from "../background/subagent-runner.ts";
 import { reapOrphanWriterProcesses } from "../background/writer-process-registry.ts";
 import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
@@ -31,7 +32,11 @@ import {
 export interface ForegroundExecutionDependencies {
 	acquireStatusClaim(asyncDir: string): { release(): void } | undefined;
 	onStatus(status: AsyncStatus): void;
-	runConfigured(config: BackgroundRunnerConfig, onStatus: (status: AsyncStatus) => void): Effect.Effect<void, unknown>;
+	runConfigured(
+		config: BackgroundRunnerConfig,
+		onStatus: (status: AsyncStatus) => void,
+		committedStatus?: BackgroundRunnerStatus,
+	): Effect.Effect<void, unknown>;
 	readCompletion(filePath: string): ForegroundCompletion;
 	readNestedChildren(asyncDir: string, runId: string): NestedRunSummary[] | undefined;
 	requestStop(asyncDir: string): void;
@@ -42,9 +47,9 @@ export interface ForegroundExecutionDependencies {
 const DEFAULT_DEPENDENCIES: ForegroundExecutionDependencies = {
 	acquireStatusClaim: tryAcquireStatusMutationClaim,
 	onStatus() {},
-	runConfigured(config, onStatus) {
+	runConfigured(config, onStatus, committedStatus) {
 		return Effect.tryPromise({
-			try: () => runConfiguredBackground(config, { afterStatusUpdate: onStatus }),
+			try: () => runConfiguredBackground(config, { afterStatusUpdate: onStatus }, committedStatus),
 			catch: (error) => error,
 		});
 	},
@@ -235,6 +240,7 @@ export function runForegroundConfig(
 	config: BackgroundRunnerConfig,
 	signal?: AbortSignal,
 	dependencies: Partial<ForegroundExecutionDependencies> = {},
+	committedStatus?: BackgroundRunnerStatus,
 ): Effect.Effect<AgentToolResult<Details> & { isError?: boolean }, unknown> {
 	const deps = { ...DEFAULT_DEPENDENCIES, ...dependencies };
 	const notifyStatus = (status: AsyncStatus) => {
@@ -262,7 +268,7 @@ export function runForegroundConfig(
 		}
 	};
 	const execute = Effect.gen(function* () {
-		yield* deps.runConfigured(config, notifyStatus);
+		yield* deps.runConfigured(config, notifyStatus, committedStatus);
 		const projected = yield* Effect.try({
 			try: () => {
 				const completion = deps.readCompletion(config.resultPath);
