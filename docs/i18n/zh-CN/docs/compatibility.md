@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: cecad7ed39d77d55afae80a1f8f86d11e77dd90ebab8d6aea8e0420ca53f678c -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 547c9087cc35b1309fe2f99b9f803b5f7ce2b0f8f7b200cb6a3a55db9d07c44e -->
 
 # 兼容性
 
@@ -37,8 +37,10 @@ Beads 元数据以及已记录的 PNG、GIF、HTML 或 ANSI 证据可以跳过 `
 
 PTY 验证器使用可选 tmux 服务器设置前先探测支持情况；Ubuntu 基线上的 Goal 验证必须在没有
 `extended-keys-format` 时正常运行。CI 在运行验收测试前检查 Suite 观察器的用户、网络和 PID 命名空间设置。
-设置失败会停止验收并输出相关内核审计信息，不会禁用隔离或跳过测试。Context 激活测试显式指定原生压缩策略，
-不继承 runner 的个人设置。
+设置失败会停止验收并输出相关内核审计信息，不会禁用隔离或跳过测试。Ubuntu 的 AppArmor 策略要求显式许可
+用户命名空间；临时 CI runner 只为 `SYSTEM_TOOL_BIN` 中的专用 `unshare` 副本加载 profile。副本保持普通
+Host 用户权限，root 映射仅在新用户命名空间内有效。AppArmor 保持启用，其全局用户命名空间限制、逐场景
+网络／PID 隔离及后代进程回收不变。Context 激活测试显式指定原生压缩策略，不继承 runner 的个人设置。
 
 打包后的 Goal Code Mode 场景与其他原生 Code Mode 验证器共用二进制路径解析规则，把已准备好的 helper
 路径传入隔离的子进程环境，不能依赖向该子进程的空私有缓存下载 Release。其他 Goal 场景不要求该 helper；

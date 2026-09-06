@@ -41,8 +41,12 @@ native resources used by a later test. Only Beads metadata and recorded PNG, GIF
 PTY verifiers probe optional tmux server settings before using them; Goal verification must work without
 `extended-keys-format` on the Ubuntu baseline. CI checks the Suite observer's user/network/PID namespace setup before
 running the acceptance suite. A failed setup stops acceptance and prints relevant kernel audit messages; it never
-disables isolation or substitutes a skipped test. Context activation fixtures select their native-compaction policy
-explicitly instead of inheriting the runner's personal settings.
+disables isolation or substitutes a skipped test. Ubuntu's AppArmor policy requires explicit user-namespace permission:
+the ephemeral CI runner loads a profile for its dedicated copy of `unshare` in `SYSTEM_TOOL_BIN`. The copy retains
+ordinary host-user permissions; root mapping applies only inside the new user namespace. AppArmor stays enabled and
+its system-wide user-namespace restriction, per-scenario network/PID isolation and descendant reaping remain unchanged.
+Context activation fixtures select their
+native-compaction policy explicitly instead of inheriting the runner's personal settings.
 
 The packed Goal Code Mode scenario resolves the already-prepared helper through the same binary-path contract as
 other native Code Mode verifiers and passes that path into its isolated child environment. It must not rely on a
