@@ -277,6 +277,7 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/subagents/src/extension/index.ts",
 		"packages/pi-stuff/src/subagents/src/intercom/native-supervisor-storage.ts",
 		"packages/pi-stuff/src/subagents/src/intercom/native-supervisor-channel.ts",
+		"packages/pi-stuff/src/subagents/src/runs/shared/deferred-module.ts",
 		"packages/pi-stuff/src/subagents/src/runs/shared/nested-registry-projection.ts",
 		"packages/pi-stuff/src/subagents/src/runs/shared/session-lease.ts",
 		"packages/pi-stuff/src/subagents/src/runs/shared/worktree.ts",

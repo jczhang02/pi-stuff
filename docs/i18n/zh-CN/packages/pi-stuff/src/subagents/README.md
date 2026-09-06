@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 03458b186c16fe920e34c797ac0e671f88cedd439962a7f958b458d80ad96756 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 991301c6f5db3133b3f7e8139c55591b2ff64faddde80da9f5e94ff747c0c352 -->
 
 # Agents
 
@@ -71,8 +71,14 @@ Session。
 但不重新创建或重写这些启动 artifact。初始 turn 与 Tool 计数均为零；首次通知保留已提交的时间戳。
 这份交接状态不会序列化到后台 runner 配置。detached 启动、恢复握手、目录 claim 和取消操作仍由原有所有者负责。
 
+必要依赖的首次加载前后各让出一个 timer turn。并发调用共享加载中的 Promise；失败允许重试，热态调用不增加 timer。
+无效启动输入不加载 builder。child protocol 在 spawn 之前加载完毕，恢复与所有权操作保持原有顺序。
+
 当前 Session governor 事务使用异步的稳定 inode 内核锁。获取锁时不再重写诊断用 owner 记录，也不强制刷盘；
 互斥与进程退出后的释放仍由内核保证。规范账本的提交方式与旧版本锁的处理保持不变。
+
+嵌套 registry 的投影与退役复用同一稳定 inode 内核锁，不重写或刷新无用的诊断 owner 记录。
+事件排空、持久投影、锁竞争和精确路由退役保持不变。
 
 只有当前进程具备已连接的 IPC 发送通道时，状态发布才创建队列、fiber 和定时唤醒。没有该通道的 Host
 仍持久化状态并通知进程内观察者；已连接的后台 runner 保持原有进度发送频率和终态立即送达行为。

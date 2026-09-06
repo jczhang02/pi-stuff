@@ -12,24 +12,29 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { isRuntimeFunction, isRuntimeNumber } from "../../../../shared/runtime-type.ts";
 import type { AgentConfig } from "../../agents/agents.ts";
-import { normalizeSkillInput } from "../../agents/skill-input.ts";
 import { findModelInfo, type ModelInfo } from "../../shared/model-info.ts";
 import { type ResolvedToolBudget, wrapForkTask } from "../../shared/types.ts";
-import {
-	type AsyncExecutionContext,
-	type AsyncParallelTaskInput,
-	type ResolvedTaskBuildInput,
-	type ResolvedTaskProjection,
-	resolveTaskProjection,
+import type {
+	AsyncExecutionContext,
+	ResolvedTaskBuildInput,
+	ResolvedTaskProjection,
 } from "../background/resolved-task.ts";
 import type { resolveCurrentSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
+import { deferredModule } from "../shared/deferred-module.ts";
 import { buildModelCandidates, resolveEffectiveSubagentModel, resolveModelOrigin } from "../shared/model-fallback.ts";
 import type { RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
-import type { PreparedLaunch, SubagentParamsLike, TaskParam } from "./executor-contract.ts";
+import {
+	type PreparedLaunch,
+	resolvedTaskInput,
+	type SubagentParamsLike,
+	type TaskParam,
+	taskInputs,
+} from "./executor-contract.ts";
 
 const CHILD_RUNTIME_RESERVE_RATIO = 0.25;
+const loadResolvedTask = deferredModule(() => import("../background/resolved-task.ts"));
 const CHILD_TOOL_REQUEST_FRAMING_TOKENS = 512;
 const CHILD_UNKNOWN_TOOL_SURFACE_TOKENS = 32 * 1024;
 const CHILD_EXPLICIT_EXTENSION_SURFACE_TOKENS = 16 * 1024;
@@ -303,7 +308,7 @@ async function planTaskModels(
 	const agent = input.agents.find((candidate) => candidate.name === task.agent);
 	if (!agent) throw new Error(`Unknown Agent: ${task.agent}`);
 	const taskInput = resolvedTaskInput(task, input.context === "fork" ? wrapForkTask(task.task) : task.task);
-	const buildInput: Parameters<typeof resolveTaskProjection>[0] = {
+	const buildInput: ResolvedTaskBuildInput = {
 		runId: input.runId,
 		index,
 		taskInput,
@@ -323,6 +328,7 @@ async function planTaskModels(
 		thinkingOverride: input.params.thinking,
 	};
 	if (taskInput.skill === false) buildInput.skills = [];
+	const { resolveTaskProjection } = await loadResolvedTask();
 	const resolved = await resolveTaskProjection(buildInput);
 	if ("error" in resolved) throw new Error(resolved.error);
 	const candidates = resolved.modelCandidates;
@@ -406,32 +412,4 @@ export async function prepareLaunchModelPlan(input: LaunchModelPlanInput) {
 	if (input.context === "fork") plan.forkContextTokens = forkSnapshot.tokens;
 	if (input.context === "fork" && forkSnapshot.messages) plan.forkSourceMessages = forkSnapshot.messages;
 	return plan;
-}
-export function taskInputs(params: SubagentParamsLike): TaskParam[] {
-	if (params.tasks?.length) return params.tasks;
-	if (!params.agent || !params.task) return [];
-	const task: TaskParam = { agent: params.agent, task: params.task };
-	if (params.description) task.description = params.description;
-	if (params.model) task.model = params.model;
-	if (params.skill !== undefined) task.skill = params.skill;
-	if (params.toolBudget) task.toolBudget = params.toolBudget;
-	if (params.toolTimeoutMs !== undefined) task.toolTimeoutMs = params.toolTimeoutMs;
-	return [task];
-}
-
-export function resolvedTaskInput(
-	task: TaskParam,
-	projectedTask: string,
-	delegatedTask?: string,
-): AsyncParallelTaskInput {
-	const input: AsyncParallelTaskInput = { agent: task.agent, task: projectedTask };
-	if (task.description) input.description = task.description;
-	if (delegatedTask) input.delegatedTask = delegatedTask;
-	if (task.cwd) input.cwd = task.cwd;
-	if (task.model) input.model = task.model;
-	const skill = normalizeSkillInput(task.skill);
-	if (skill !== undefined) input.skill = skill;
-	if (task.toolBudget) input.toolBudget = task.toolBudget;
-	if (task.toolTimeoutMs !== undefined) input.toolTimeoutMs = task.toolTimeoutMs;
-	return input;
 }

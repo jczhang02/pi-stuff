@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 367876c43dbfd57f11fb4b3875b7cc126a76ffcd7a484ac2023ead5288128202 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 0fe90731533d5434248f9a6700c43c8e9bc60cd9317ad5abe899f2ba799733ab -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [Agents 冷加载与投影器成本](agents-loading-and-projector-cost-2026-09-06.md)
 - [Suite 资源源码清单](suite-resource-inventory-2026-09-05.md)
 - [连续响应观察器与 Ledger 首次加载复现](suite-responsiveness-observer-2026-09-05.md)
 - [Pi 0.85.0 Suite 资源基线](suite-resource-baseline-2026-09-05.md)

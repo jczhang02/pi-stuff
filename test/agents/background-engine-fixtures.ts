@@ -42,15 +42,17 @@ import { appendDiagnosticEvent } from "../../packages/pi-stuff/src/subagents/src
 import type { BackgroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/background/runner-state.js";
 import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/runs/background/stale-run-reconciler.js";
 import {
-	buildWriterProcessEnv,
-	buildWriterSpawnCommand,
-	captureWriterProcessStartIdentity,
 	createBackgroundCompletion,
 	createInitialStatus,
 	runBackgroundWork as runBackgroundWorkEffect,
 	runConfiguredBackground,
 	waitForStartupControl,
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.js";
+import {
+	buildWriterProcessEnv,
+	buildWriterSpawnCommand,
+	captureWriterProcessStartIdentity,
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-lifecycle.js";
 import {
 	initializeWriterProcessRegistry,
 	inspectWriterProcessLiveness,

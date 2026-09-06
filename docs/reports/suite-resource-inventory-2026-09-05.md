@@ -7,6 +7,9 @@ costs; the dated sections below distinguish measured operations from remaining s
 Repeated source operations are not automatically redundant: discovery, validation, recovery and visible refresh may
 require them. Beads `ps-yon.3` owns the missing measurements under [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md).
 
+The [2026-09-06 Agents follow-up](agents-loading-and-projector-cost-2026-09-06.md) records first-use loading changes,
+measured projector-lock I/O removal, three passing final native samples, and retained unresolved late holds.
+
 ## Owners, triggers and scaling
 
 `B` means Session branch entries, `T` means Tools or tasks in the indicated owner, and `P` means payload bytes.

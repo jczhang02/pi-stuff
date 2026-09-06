@@ -74,9 +74,16 @@ artifacts. Initial turn and Tool counts are zero; the first notification retains
 handoff is never serialized into background runner configuration. Detached starts, revival handshakes, directory
 claims and cancellation keep their existing ownership.
 
+Necessary first-use dependency loads yield a timer turn before and after each load. Concurrent callers share the
+pending import; failures allow a retry, and warm calls add no timers. Invalid launch inputs do not load builders.
+Child protocol loading completes before spawn, and recovery/ownership work retains its existing order.
+
 Current Session governor transactions use asynchronous stable-inode kernel claims. Acquiring a claim does not rewrite
 or flush diagnostic owner records; mutual exclusion and process-death release remain kernel-owned. Canonical ledger
 commits and legacy lock handling are unchanged.
+
+Nested-registry projection and retirement use the same stable-inode kernel claims without rewriting or flushing
+unused diagnostic owner records. Event draining, durable projection, contention and exact-route retirement remain intact.
 
 Status publication creates its queue, fiber and timed wakeups only when the current process has a connected IPC
 sender. Hosts without that channel still persist status and notify in-process observers; connected background runners

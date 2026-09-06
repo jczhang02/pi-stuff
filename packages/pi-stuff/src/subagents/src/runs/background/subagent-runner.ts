@@ -15,6 +15,7 @@ import {
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
+import { deferredModule } from "../shared/deferred-module.ts";
 import { assertModelCandidateLimit } from "../shared/model-fallback.ts";
 import { finalizeNestedRouteRoot } from "../shared/nested-events.ts";
 import {
@@ -26,8 +27,7 @@ import {
 import { acquireSessionLease } from "../shared/session-lease.ts";
 import { createInitialStatus, type BackgroundRunnerStatus as RunnerStatus } from "./initial-status.ts";
 import { markProcessTerminalCandidateLeaseRelease } from "./process-terminal.ts";
-import { BackgroundRunControl } from "./runner-control.ts";
-import { finalizeConfiguredRun, type PreparedWorktrees } from "./runner-finalization.ts";
+import type { PreparedWorktrees } from "./runner-finalization.ts";
 import { appendDiagnosticEvent, boundRunResultOutputs } from "./runner-output.ts";
 import {
 	failedResult,
@@ -39,7 +39,6 @@ import {
 	terminalizeRejectedStep,
 	writeStatus,
 } from "./runner-state.ts";
-import { BACKGROUND_RUNNER_CONFIG_ENV, BACKGROUND_RUNNER_SENTINEL_ENV } from "./writer-process-lifecycle.ts";
 import {
 	initializeWriterProcessRegistry,
 	inspectWriterProcessLiveness,
@@ -49,14 +48,10 @@ import {
 
 export { createInitialStatus } from "./initial-status.ts";
 export { createBackgroundCompletion, runBackgroundWork } from "./runner-state.ts";
-export {
-	buildWriterProcessEnv,
-	buildWriterSpawnCommand,
-	captureWriterProcessStartIdentity,
-	ponytailWriterEnvironmentOverrides,
-} from "./writer-process-lifecycle.ts";
 
-let taskRunnerModulePromise: Promise<typeof import("./child-task-runner.ts")> | undefined;
+const loadTaskRunner = deferredModule(() => import("./child-task-runner.ts"));
+const loadFinalization = deferredModule(() => import("./runner-finalization.ts"));
+const loadControl = deferredModule(() => import("./runner-control.ts"));
 
 function runConfiguredWork(
 	config: BackgroundRunnerConfig,
@@ -70,10 +65,15 @@ function runConfiguredWork(
 	const eventsPath = path.join(config.asyncDir, "events.jsonl");
 	const status = committedStatus ?? createInitialStatus(config, config.startedAt ?? Date.now());
 	const startedAt = status.startedAt;
-	const control = new BackgroundRunControl(config, status, statusPath, eventsPath);
 	return Effect.runPromise(
 		Effect.scoped(
 			Effect.gen(function* () {
+				const { BackgroundRunControl } = yield* Effect.tryPromise({ try: loadControl, catch: (error) => error });
+				const control = new BackgroundRunControl(config, status, statusPath, eventsPath);
+				const { finalizeConfiguredRun } = yield* Effect.tryPromise({
+					try: loadFinalization,
+					catch: (error) => error,
+				});
 				yield* installStatusPublisher();
 				yield* Effect.try({
 					try: () => {
@@ -110,39 +110,28 @@ function runConfiguredWork(
 					const taskResults = yield* runBackgroundWork(
 						config.work,
 						(task, index) =>
-							Effect.gen(function* () {
-								if (!taskRunnerModulePromise) yield* Effect.yieldNow;
-								return yield* Effect.tryPromise({
-									try: async () => {
-										if (!taskRunnerModulePromise) {
-											taskRunnerModulePromise = import("./child-task-runner.ts").catch((error) => {
-												taskRunnerModulePromise = undefined;
-												throw error;
-											});
-										}
-										const { runResolvedTask } = await taskRunnerModulePromise;
-										return runResolvedTask({
-											config,
-											task,
-											index,
-											taskCwd: worktreeSetup?.setup.worktrees[index]?.agentCwd ?? task.cwd,
-											status,
-											statusPath,
-											eventsPath,
-											activeControls: control.activeControls,
-											consumeScheduledStop: (index) => control.consumeScheduledStop(index),
-											onWriterProcess: onWriterProcess
-												? (writer) => onWriterProcess(index, writer)
-												: undefined,
-										});
-									},
-									catch: (error) => error,
-								}).pipe(
-									Effect.tapError((error) =>
-										Effect.sync(() => terminalizeRejectedStep(status, statusPath, eventsPath, index, error)),
-									),
-								);
-							}),
+							Effect.tryPromise({
+								try: async () => {
+									const { runResolvedTask } = await loadTaskRunner();
+									return runResolvedTask({
+										config,
+										task,
+										index,
+										taskCwd: worktreeSetup?.setup.worktrees[index]?.agentCwd ?? task.cwd,
+										status,
+										statusPath,
+										eventsPath,
+										activeControls: control.activeControls,
+										consumeScheduledStop: (index) => control.consumeScheduledStop(index),
+										onWriterProcess: onWriterProcess ? (writer) => onWriterProcess(index, writer) : undefined,
+									});
+								},
+								catch: (error) => error,
+							}).pipe(
+								Effect.tapError((error) =>
+									Effect.sync(() => terminalizeRejectedStep(status, statusPath, eventsPath, index, error)),
+								),
+							),
 						{ runId: config.id, terminalCause: () => control.preStartTerminalCause() },
 					);
 					return yield* Effect.try({ try: () => boundRunResultOutputs(taskResults), catch: (error) => error });
@@ -431,9 +420,9 @@ function startFromConfigPath(configPath: string): void {
 	startConfiguredBackground(config);
 }
 
-const runnerConfigPath = process.env[BACKGROUND_RUNNER_CONFIG_ENV];
+const runnerConfigPath = process.env["PI_STUFF_BACKGROUND_RUNNER_CONFIG"];
 if (
-	process.env[BACKGROUND_RUNNER_SENTINEL_ENV] === "1" &&
+	process.env["PI_STUFF_BACKGROUND_RUNNER"] === "1" &&
 	runnerConfigPath !== undefined &&
 	process.argv[2] === runnerConfigPath
 ) {

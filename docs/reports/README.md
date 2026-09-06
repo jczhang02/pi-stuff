@@ -16,6 +16,7 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 
 ## Benchmarks and acceptance
 
+- [Agents cold loading and projector cost](agents-loading-and-projector-cost-2026-09-06.md)
 - [Suite resource source inventory](suite-resource-inventory-2026-09-05.md)
 - [Continuous responsiveness observer and cold Ledger reproduction](suite-responsiveness-observer-2026-09-05.md)
 - [Pi 0.85.0 Suite resource baseline](suite-resource-baseline-2026-09-05.md)

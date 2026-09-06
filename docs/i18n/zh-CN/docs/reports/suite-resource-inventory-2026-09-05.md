@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 0aa21385a321669d1ccf1734bf2d93f76f1664619da1831abbc497528e13204c -->
+<!-- translation-source: docs/reports/suite-resource-inventory-2026-09-05.md; translation-source-sha256: 1be2819c1468d6fe9ff632a0759976246ecd59560e7ec4b2ab7990317fd4abea -->
 
 # Suite 资源源码清单
 
@@ -8,6 +8,9 @@ Capability，以及共享加载、状态和注册路径。它记录待调查对�
 下文带日期的记录区分已测量操作和仍待验证的源码调查对象。
 发现、校验、恢复和可见刷新可能需要重复执行；重复操作不自动等于浪费。
 Beads `ps-yon.3` 按 [ADR 0030](../adr/0030-remove-redundant-suite-work-without-feature-cuts.md) 跟踪缺失的测量。
+
+[2026-09-06 Agents 后续报告](agents-loading-and-projector-cost-2026-09-06.md)记录首次加载改动、
+投影锁 I/O 移除的测量、三个最终原生通过样本，以及仍未归因的历史后段停顿。
 
 ## 所有者、触发条件与增长变量
 

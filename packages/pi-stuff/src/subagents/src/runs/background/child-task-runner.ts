@@ -17,6 +17,7 @@ import {
 	type ToolBudgetState,
 } from "../../shared/types.ts";
 import { detectSubagentError, findLatestSessionFile } from "../../shared/utils.ts";
+import { deferredModule } from "../shared/deferred-module.ts";
 import {
 	formatModelAttemptNote,
 	formatSubagentModelVerificationError,
@@ -26,12 +27,7 @@ import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } fr
 import { PI_STUFF_AGENT_PATH_ENV } from "../shared/pi-args.ts";
 import { terminalOutcome } from "../shared/terminal-outcome.ts";
 import { toolBudgetState } from "../shared/tool-budget.ts";
-import {
-	ChildProcessEngine,
-	type ChildProcessResult,
-	type ChildRuntimeControl,
-	type WriterProcess,
-} from "./child-process-engine.ts";
+import type { ChildProcessResult, ChildRuntimeControl, WriterProcess } from "./child-process-engine.ts";
 import type {
 	BackgroundRunnerStatus as RunnerStatus,
 	BackgroundRunnerStatusStep as RunnerStatusStep,
@@ -50,6 +46,8 @@ import {
 } from "./runner-output.ts";
 import { applyTerminalResultToStep, stoppedResult, taskList, writeStatus } from "./runner-state.ts";
 import type { WriterRuntimeState } from "./writer-process-registry.ts";
+
+const loadProcessEngine = deferredModule(() => import("./child-process-engine.ts"));
 
 function createTranscript(config: BackgroundRunnerConfig, task: RunnerAgentTask, index: number, count: number) {
 	let artifactPaths: ArtifactPaths | undefined;
@@ -327,6 +325,7 @@ async function runAttempts(
 			clearStaleContextUsage(input, statusStep);
 			let run: ChildProcessResult;
 			try {
+				const { ChildProcessEngine } = await loadProcessEngine();
 				run = await Effect.runPromise(
 					new ChildProcessEngine({
 						config: input.config,

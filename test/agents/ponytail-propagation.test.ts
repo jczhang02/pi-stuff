@@ -5,7 +5,7 @@ import { PONYTAIL_CHILD_MODE_ENV, type PonytailMode } from "../../packages/pi-st
 import {
 	buildWriterProcessEnv,
 	ponytailWriterEnvironmentOverrides,
-} from "../../packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-lifecycle.js";
 import { ponytailLaunchSnapshot } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/launch-builders.js";
 
 const owners: object[] = [];

@@ -9,6 +9,7 @@ import { type Details, resolveChildMaxSubagentDepth, wrapForkTask } from "../../
 import type { AsyncParallelTaskInput } from "../background/resolved-task.ts";
 import { buildAsyncParallelRunnerWork, buildAsyncSingleRunnerWork } from "../background/runner-work.ts";
 import { resolveBunRuntimeCommand } from "../shared/bun-runtime.ts";
+import { deferredModule } from "../shared/deferred-module.ts";
 import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
 import {
 	type AgentToolResult,
@@ -16,12 +17,17 @@ import {
 	type ExecutorEngines,
 	errorResult,
 	type PreparedLaunch,
+	resolvedTaskInput,
 	type SubagentExecutionHooks,
 	type TaskParam,
+	taskInputs,
 } from "./executor-contract.ts";
-import { executeForegroundLifecycle, type PreparedForegroundConfig } from "./foreground-lifecycle.ts";
+import type { PreparedForegroundConfig } from "./foreground-lifecycle.ts";
 import { claimForegroundRunDirectory } from "./foreground-run-claim.ts";
-import { resolvedTaskInput, taskInputs } from "./launch-model-planning.ts";
+
+const loadForegroundLifecycle = deferredModule(() => import("./foreground-lifecycle.ts"));
+const loadForegroundProjection = deferredModule(() => import("./foreground-projection.ts"));
+const loadControlChannel = deferredModule(() => import("../background/control-channel.ts"));
 
 function childTask(data: PreparedLaunch, task: TaskParam, index: number): string {
 	const taskText = data.context === "fork" ? wrapForkTask(task.task) : task.task;
@@ -219,6 +225,15 @@ export function launchForeground(
 	onLifecycleCommitted?: () => void,
 ): Effect.Effect<AgentToolResult<Details>, unknown, Scope.Scope> {
 	return Effect.gen(function* () {
+		const { executeForegroundLifecycle } = yield* Effect.tryPromise({
+			try: async () => {
+				// Load the lifecycle's required dependencies in separate turns before acquiring the run directory.
+				await loadControlChannel();
+				await loadForegroundProjection();
+				return loadForegroundLifecycle();
+			},
+			catch: (error) => error,
+		});
 		if (signal.aborted) {
 			return errorResult(data.mode, "Foreground Agent cancelled before launch.", {
 				runId: data.runId,

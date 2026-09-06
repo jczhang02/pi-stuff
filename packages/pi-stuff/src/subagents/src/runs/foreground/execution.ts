@@ -18,8 +18,7 @@ import type { AsyncStatus, Details, NestedRunSummary } from "../../shared/types.
 import { readStatus } from "../../shared/utils.ts";
 import { deliverStopRequest } from "../background/control-channel.ts";
 import type { BackgroundRunnerStatus } from "../background/initial-status.ts";
-import { runConfiguredBackground } from "../background/subagent-runner.ts";
-import { reapOrphanWriterProcesses } from "../background/writer-process-registry.ts";
+import { deferredModule } from "../shared/deferred-module.ts";
 import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { recordForegroundOwnerExit } from "./owner-exit.ts";
 import {
@@ -44,12 +43,15 @@ export interface ForegroundExecutionDependencies {
 	writeStatus(filePath: string, status: AsyncStatus): void;
 }
 
+const loadRunner = deferredModule(() => import("../background/subagent-runner.ts"));
+
 const DEFAULT_DEPENDENCIES: ForegroundExecutionDependencies = {
 	acquireStatusClaim: tryAcquireStatusMutationClaim,
 	onStatus() {},
 	runConfigured(config, onStatus, committedStatus) {
 		return Effect.tryPromise({
-			try: () => runConfiguredBackground(config, { afterStatusUpdate: onStatus }, committedStatus),
+			try: async () =>
+				(await loadRunner()).runConfiguredBackground(config, { afterStatusUpdate: onStatus }, committedStatus),
 			catch: (error) => error,
 		});
 	},
@@ -73,7 +75,11 @@ const DEFAULT_DEPENDENCIES: ForegroundExecutionDependencies = {
 	requestStop(asyncDir) {
 		deliverStopRequest({ asyncDir, source: "foreground-cancel" });
 	},
-	reapWriters: reapOrphanWriterProcesses,
+	reapWriters: (asyncDir) =>
+		Effect.tryPromise({
+			try: () => import("../background/writer-process-registry.ts"),
+			catch: (error) => error,
+		}).pipe(Effect.flatMap(({ reapOrphanWriterProcesses }) => reapOrphanWriterProcesses(asyncDir))),
 	writeStatus: writePrivateAtomicJson,
 };
 

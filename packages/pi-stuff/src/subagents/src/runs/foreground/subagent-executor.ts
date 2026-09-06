@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
 import type { Details } from "../../shared/types.ts";
+import { deferredModule } from "../shared/deferred-module.ts";
 import { retireUnusedNestedRoute } from "../shared/nested-events.ts";
 import type {
 	AgentToolResult,
@@ -11,7 +12,6 @@ import type {
 	SubagentParamsLike,
 } from "./executor-contract.ts";
 import { errorResult } from "./executor-contract.ts";
-import { attachContextProjection, prepareLaunch } from "./launch-preparation.ts";
 
 export type {
 	ForegroundStartBinding,
@@ -19,10 +19,11 @@ export type {
 	SubagentExecutionHooks,
 	SubagentParamsLike,
 } from "./executor-contract.ts";
-export { deriveLaunchRunId } from "./launch-preparation.ts";
+export { deriveLaunchRunId } from "./executor-contract.ts";
 
-let launchBuildersModulePromise: Promise<typeof import("./launch-builders.ts")> | undefined;
-let foregroundModulePromise: Promise<typeof import("./execution.ts")> | undefined;
+const loadPreparation = deferredModule(() => import("./launch-preparation.ts"));
+const loadLaunchBuilders = deferredModule(() => import("./launch-builders.ts"));
+const loadForegroundEngine = deferredModule(() => import("./execution.ts"));
 let backgroundModulePromise: Promise<typeof import("../background/async-execution.ts")> | undefined;
 
 function loadBackgroundEngine(): Promise<typeof import("../background/async-execution.ts")> {
@@ -40,15 +41,7 @@ const DEFAULT_ENGINES: ExecutorEngines = {
 	backgroundParallel: async (...args) => (await loadBackgroundEngine()).executeAsyncParallel(...args),
 	foreground: (...args) =>
 		Effect.tryPromise({
-			try: () => {
-				if (!foregroundModulePromise) {
-					foregroundModulePromise = import("./execution.ts").catch((error) => {
-						foregroundModulePromise = undefined;
-						throw error;
-					});
-				}
-				return foregroundModulePromise;
-			},
+			try: loadForegroundEngine,
 			catch: (error) => error,
 		}).pipe(Effect.flatMap(({ runForegroundConfig }) => runForegroundConfig(...args))),
 };
@@ -90,16 +83,11 @@ export function createSubagentExecutor(deps: ExecutorDeps) {
 		let backgroundOwnsRoute = false;
 		let foregroundLifecycleOwnsRoute = false;
 		try {
-			if (!launchBuildersModulePromise) {
-				launchBuildersModulePromise = import("./launch-builders.ts").catch((error) => {
-					launchBuildersModulePromise = undefined;
-					throw error;
-				});
-			}
-			const { launchBackground, launchForeground } = await launchBuildersModulePromise;
+			const { attachContextProjection, prepareLaunch } = await loadPreparation();
 			const prepared = await prepareLaunch(id, params, ctx, deps);
 			if ("content" in prepared) return prepared;
 			if (!prepared.inheritedNestedRoute) ownedNestedRoute = prepared.nestedRoute;
+			const { launchBackground, launchForeground } = await loadLaunchBuilders();
 			let result: AgentToolResult<Details>;
 			if (foreground) {
 				result = await Effect.runPromise(
