@@ -88,6 +88,11 @@ Necessary first-use dependency loads yield a timer turn before and after each lo
 pending import; failures allow a retry, and warm calls add no timers. Invalid launch inputs do not load builders.
 Child protocol loading completes before spawn, and recovery/ownership work retains its existing order.
 
+New foreground and background launches publish finalized recovery records without loading the recovery reader's
+schemas. Resume still validates every retained record at the read boundary. Background launch preparation and
+detached runner startup load in separate first-use stages; an import failure before spawn cleans the owned,
+unstarted run directory. Warm launches share the already-loaded modules.
+
 The writer supervisor starts both pipe readers immediately after spawn, before yielding to asynchronous dispatch.
 This preserves final stdout frames and stderr from fast-exiting writers; backpressure and post-exit draining remain
 unchanged for foreground and detached execution.

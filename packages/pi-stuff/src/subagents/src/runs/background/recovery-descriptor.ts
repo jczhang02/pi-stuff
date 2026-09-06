@@ -1,4 +1,4 @@
-/** Persist, validate, and load durable Agent recovery descriptors. */
+/** Validate and load durable Agent recovery descriptors. */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -6,7 +6,6 @@ import { type Static, type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.ts";
 import { isRuntimeObject } from "../../../../shared/runtime-type.ts";
-import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import type { ArtifactConfig, ResolvedControlConfig } from "../../shared/types.ts";
 import { getErrorMessage } from "../../shared/utils.ts";
@@ -23,19 +22,6 @@ export type LegacyRecoveryDescriptor = Omit<BackgroundRecoveryDescriptor, "versi
 	version: 1;
 };
 export type AsyncRecoveryDescriptor = LegacyRecoveryDescriptor | BackgroundRecoveryDescriptor;
-
-export function persistRecoveries(asyncDir: string, recoveries: BackgroundRecoveryDescriptor[]): void {
-	if (recoveries.length === 1) {
-		const recovery = recoveries[0];
-		if (!recovery) throw new Error("Background recovery descriptor is missing.");
-		writePrivateAtomicJson(path.join(asyncDir, "recovery-descriptor.json"), recovery);
-		return;
-	}
-	writePrivateAtomicJson(path.join(asyncDir, "recovery-descriptors.json"), {
-		version: 2,
-		children: recoveries,
-	});
-}
 
 const MAX_RECOVERY_DESCRIPTOR_BYTES = 2 * 1024 * 1024;
 const NONEMPTY_STRING = Type.String({ pattern: "\\S" });

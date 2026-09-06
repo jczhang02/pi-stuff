@@ -24,17 +24,7 @@ export { deriveLaunchRunId } from "./executor-contract.ts";
 const loadPreparation = deferredModule(() => import("./launch-preparation.ts"));
 const loadLaunchBuilders = deferredModule(() => import("./launch-builders.ts"));
 const loadForegroundEngine = deferredModule(() => import("./execution.ts"));
-let backgroundModulePromise: Promise<typeof import("../background/async-execution.ts")> | undefined;
-
-function loadBackgroundEngine(): Promise<typeof import("../background/async-execution.ts")> {
-	if (!backgroundModulePromise) {
-		backgroundModulePromise = import("../background/async-execution.ts").catch((error) => {
-			backgroundModulePromise = undefined;
-			throw error;
-		});
-	}
-	return backgroundModulePromise;
-}
+const loadBackgroundEngine = deferredModule(() => import("../background/async-execution.ts"));
 
 const DEFAULT_ENGINES: ExecutorEngines = {
 	backgroundSingle: async (...args) => (await loadBackgroundEngine()).executeAsyncSingle(...args),

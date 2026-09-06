@@ -24,6 +24,7 @@ import {
 	type ResolvedSubagentCapabilityCeiling,
 	resolveCurrentSubagentCapabilityCeiling,
 } from "../shared/capability-ceiling.ts";
+import { deferredModule } from "../shared/deferred-module.ts";
 import {
 	nestedResultsPath,
 	resolveInheritedNestedRouteFromEnv,
@@ -33,9 +34,9 @@ import {
 import type { BackgroundRunnerConfig, BackgroundRunnerWork } from "../shared/parallel-utils.ts";
 import { resolvePiPackageRoot, resolveStandalonePiHostExecutable } from "../shared/pi-spawn.ts";
 import type { SessionLeaseIntent } from "../shared/session-lease.ts";
-import { persistRecoveries } from "./recovery-descriptor.ts";
+import { persistRecoveries } from "./recovery-writer.ts";
 import type { AsyncExecutionContext, BackgroundRecoveryDescriptor } from "./resolved-task.ts";
-import { type SpawnedRunnerLifecycle, spawnRunner } from "./runner-process.ts";
+import type { SpawnedRunnerLifecycle } from "./runner-process.ts";
 import type { AsyncParallelRunnerWorkBuildParams, AsyncSingleRunnerWorkBuildParams } from "./runner-work.ts";
 import { buildAsyncParallelRunnerWork, buildAsyncSingleRunnerWork } from "./runner-work.ts";
 
@@ -47,16 +48,6 @@ export type {
 	CommonBuildParams,
 	ResolvedTaskBuildInput,
 } from "./resolved-task.ts";
-export {
-	acquireRunnerProcessStartIdentity,
-	finalizeSpawnedRunnerClose,
-	initializePreIdentityWriterAbsenceProof,
-	isAsyncAvailable,
-	removeRunnerStartupMarkerBestEffort,
-	resolveAsyncRunnerBunCommand,
-	resolveAsyncRunnerLogPaths,
-	terminateRunnerBeforeProceed,
-} from "./runner-process.ts";
 export type {
 	AsyncParallelRunnerWorkBuildParams,
 	AsyncRunnerWorkBuildResult,
@@ -64,7 +55,8 @@ export type {
 	AsyncSingleRunnerWorkBuildResult,
 } from "./runner-work.ts";
 export { buildAsyncParallelRunnerWork, buildAsyncSingleRunnerWork } from "./runner-work.ts";
-export { buildNestedTerminalFallbackStatus, resolveNestedTerminalStatus } from "./terminal-status.ts";
+
+const loadRunner = deferredModule(() => import("./runner-process.ts"));
 
 const START_EVENT_TASK_PREVIEW_CODE_UNITS = 500;
 
@@ -446,6 +438,10 @@ function emitPreparedStarted(
 
 async function executePreparedAsync(input: PreparedAsyncLaunch): Promise<AsyncExecutionResult> {
 	const { id, params, location, work } = input;
+	const { spawnRunner } = await loadRunner().catch((error) => {
+		location.cleanup();
+		throw error;
+	});
 	const mode = work.mode;
 	const subject = mode === "single" ? "Background Agent" : "Background Agents";
 	const config = createAsyncRunnerConfig(input);

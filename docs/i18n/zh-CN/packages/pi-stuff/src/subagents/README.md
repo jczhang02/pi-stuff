@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 5a4ac372eadaeb1ac5ca21b93e796ed392e2cb092536a1f534408a97c89b894a -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: b362575096beb683816c94f5c26070565524e915051b1955ae1f22d9b0f9e89a -->
 
 # Agents
 
@@ -82,6 +82,10 @@ Worker 在 Pi UI 线程之外求值并执行共享 child 引擎。前台控制�
 
 必要依赖的首次加载前后各让出一个 timer turn。并发调用共享加载中的 Promise；失败允许重试，热态调用不增加 timer。
 无效启动输入不加载 builder。child protocol 在 spawn 之前加载完毕，恢复与所有权操作保持原有顺序。
+
+新的前台与后台启动直接发布已完成构建的恢复记录，不加载恢复读取器的 schema。resume 仍在读取边界完整校验
+保留记录。后台启动准备与 detached runner 启动分为两个首次加载阶段；spawn 之前的导入失败会清理本次拥有且尚未
+启动的运行目录。热态启动复用已加载的模块。
 
 writer 监督器在 spawn 后立即启动两条管道的读取器，再让出执行权进入异步调度。
 这样可保留快速退出的 writer 的最终 stdout 帧和 stderr；前台与 detached 执行均保持原有背压和退出后排空行为。

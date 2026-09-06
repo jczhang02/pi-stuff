@@ -4148,5 +4148,774 @@
       "maximumOperation": "openat creating a first-use Jiti cache file during startup",
       "limitation": "Elapsed syscall durations include tracer and scheduling effects; no 48.868/72.710 ms action reproduced in this run."
     }
+  },
+  "backgroundColdLoading": {
+    "baseCommit": "f6a3285ef4e94761ce2702db2c6c97ceec3b4797",
+    "purpose": "Attribute a reproduced first-background-launch delay, remove recovery-reader loading from publication, and stage necessary runner loading.",
+    "diagnostics": {
+      "probeSourceSha256": "4884448decc812f09b959015ce2be51b737a51a6b3c07f4e4b6e875d2b1fcd7b",
+      "measurement": "Temporary first-use marks record performance.now and main-thread /proc schedstat; private probe records bind clock origins. All ten diagnostics retained two children/outcomes/reaps and Naming/Usage once.",
+      "limits": [
+        "Marks perturb scheduling; these are not frozen-gate acceptance samples.",
+        "CPU accounting updates can exceed short elapsed intervals by roughly one millisecond; awaited intervals do not prove one uninterrupted JavaScript task.",
+        "Explicitly importing already-required dependencies changes their evaluation order in the final two diagnostic samples.",
+        "The reproduced event does not retrospectively identify the function responsible for every earlier uninstrumented failure."
+      ],
+      "batches": [
+        {
+          "batch": "dispatch",
+          "privateRecordSha256": "d289d8c17ad4a553f4aed0e85d17d9776f4c261aabb973e007f155fa5b3fe5f3",
+          "samples": [
+            {
+              "sample": "pi-stuff-responsiveness-ZXlR6r",
+              "evidenceSha256": "4c3790ce3361a4ad9b3dc1d464ad0a60e15bb6ba5288761b7a504fe3ec91eeaf",
+              "sourceDiffSha256": "3aeff751ed8031bfcf6459e7fb8ea7635be0c8039e39dd216746aae01b1207d3",
+              "probeRecordSha256": "fbdab43c0751bcfd232b544dd214cbef9642e4d2ce79318e821e52948a70310c",
+              "maximumSpinnerFrameMs": 146.33515199999965,
+              "maximumInputMs": 13.91125699999975,
+              "maximumSelectionMs": 14.198088000001007,
+              "maximumObservationGapMs": 15.788841000000502,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [],
+              "firstLaunchPhases": [
+                {
+                  "start": "request-enter",
+                  "end": "executor-loaded",
+                  "startedObserverMs": 10688.91521225,
+                  "completedObserverMs": 10708.25928325,
+                  "elapsedMs": 19.34407099999953,
+                  "mainThreadCpuMs": 17.265535,
+                  "mainThreadSchedulerWaitMs": 0.02462
+                },
+                {
+                  "start": "governor-start",
+                  "end": "governor-end",
+                  "startedObserverMs": 10712.22923025,
+                  "completedObserverMs": 10720.46804225,
+                  "elapsedMs": 8.238812000001417,
+                  "mainThreadCpuMs": 6.232301,
+                  "mainThreadSchedulerWaitMs": 0.005404
+                },
+                {
+                  "start": "engine-start",
+                  "end": "engine-end",
+                  "startedObserverMs": 10722.26269525,
+                  "completedObserverMs": 10881.81138325,
+                  "elapsedMs": 159.54868800000077,
+                  "mainThreadCpuMs": 144.875235,
+                  "mainThreadSchedulerWaitMs": 0.242308
+                }
+              ]
+            },
+            {
+              "sample": "pi-stuff-responsiveness-efRySJ",
+              "evidenceSha256": "2d8ebcecbecc7029c63c76182a88fe51bdf23a80bae6033bbdcbf4d95914be75",
+              "sourceDiffSha256": "3aeff751ed8031bfcf6459e7fb8ea7635be0c8039e39dd216746aae01b1207d3",
+              "probeRecordSha256": "7583e9bc2b3942ab2a7054ad1a51ef3aa94f9a212e9112f84d5770f585ef4897",
+              "maximumSpinnerFrameMs": 146.2346800000014,
+              "maximumInputMs": 14.597515999999814,
+              "maximumSelectionMs": 13.997070000001258,
+              "maximumObservationGapMs": 16.343488999999863,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [],
+              "firstLaunchPhases": [
+                {
+                  "start": "request-enter",
+                  "end": "executor-loaded",
+                  "startedObserverMs": 10515.4225756875,
+                  "completedObserverMs": 10539.3697696875,
+                  "elapsedMs": 23.94719400000031,
+                  "mainThreadCpuMs": 21.778344,
+                  "mainThreadSchedulerWaitMs": 0.028784
+                },
+                {
+                  "start": "governor-start",
+                  "end": "governor-end",
+                  "startedObserverMs": 10539.9515996875,
+                  "completedObserverMs": 10549.2411686875,
+                  "elapsedMs": 9.289569000000483,
+                  "mainThreadCpuMs": 7.097942,
+                  "mainThreadSchedulerWaitMs": 0.006408
+                },
+                {
+                  "start": "engine-start",
+                  "end": "engine-end",
+                  "startedObserverMs": 10551.1457016875,
+                  "completedObserverMs": 10703.2558846875,
+                  "elapsedMs": 152.1101830000007,
+                  "mainThreadCpuMs": 139.684255,
+                  "mainThreadSchedulerWaitMs": 0.424774
+                }
+              ]
+            },
+            {
+              "sample": "pi-stuff-responsiveness-Mlx5y7",
+              "evidenceSha256": "cbfaef72baa9af1b8a7de7a7d13185dc53509a8de5934a53c45962829a3d0b57",
+              "sourceDiffSha256": "3aeff751ed8031bfcf6459e7fb8ea7635be0c8039e39dd216746aae01b1207d3",
+              "probeRecordSha256": "c0d147a1d504527e1a6dbe829130291f8d94656f29a1df64aedfda2164bd8df9",
+              "maximumSpinnerFrameMs": 149.56540900000073,
+              "maximumInputMs": 25.356284000000414,
+              "maximumSelectionMs": 14.416102999999566,
+              "maximumObservationGapMs": 16.761791000000812,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [],
+              "firstLaunchPhases": [
+                {
+                  "start": "request-enter",
+                  "end": "executor-loaded",
+                  "startedObserverMs": 10649.488528390624,
+                  "completedObserverMs": 10675.886057390626,
+                  "elapsedMs": 26.39752900000167,
+                  "mainThreadCpuMs": 24.220301,
+                  "mainThreadSchedulerWaitMs": 0.053557
+                },
+                {
+                  "start": "governor-start",
+                  "end": "governor-end",
+                  "startedObserverMs": 10676.353928390625,
+                  "completedObserverMs": 10684.628834390625,
+                  "elapsedMs": 8.274906000000556,
+                  "mainThreadCpuMs": 6.524493,
+                  "mainThreadSchedulerWaitMs": 0.00823
+                },
+                {
+                  "start": "engine-start",
+                  "end": "engine-end",
+                  "startedObserverMs": 10686.431395390626,
+                  "completedObserverMs": 10832.963044390624,
+                  "elapsedMs": 146.53164899999865,
+                  "mainThreadCpuMs": 135.331995,
+                  "mainThreadSchedulerWaitMs": 0.195031
+                }
+              ]
+            },
+            {
+              "sample": "pi-stuff-responsiveness-QWQIXm",
+              "evidenceSha256": "b92fee43514172214f662525ef1a916e566d1214e298cb6e2b86f15be082878e",
+              "sourceDiffSha256": "3aeff751ed8031bfcf6459e7fb8ea7635be0c8039e39dd216746aae01b1207d3",
+              "probeRecordSha256": "cb4f854eff9f2b4489784f7a335b1c0003fff94ed95cac46f2d98297be5a0e77",
+              "maximumSpinnerFrameMs": 118.90091100000063,
+              "maximumInputMs": 25.37941099999989,
+              "maximumSelectionMs": 62.65377900000021,
+              "maximumObservationGapMs": 16.99433699999986,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [
+                {
+                  "kind": "selection",
+                  "phase": "active",
+                  "startedMs": 10960.182407,
+                  "visibleMs": 62.65377900000021
+                }
+              ],
+              "firstLaunchPhases": [
+                {
+                  "start": "request-enter",
+                  "end": "executor-loaded",
+                  "startedObserverMs": 10805.050475671875,
+                  "completedObserverMs": 10832.427132671875,
+                  "elapsedMs": 27.376657000000705,
+                  "mainThreadCpuMs": 25.79906,
+                  "mainThreadSchedulerWaitMs": 0.054395
+                },
+                {
+                  "start": "governor-start",
+                  "end": "governor-end",
+                  "startedObserverMs": 10832.838897671874,
+                  "completedObserverMs": 10849.273630671874,
+                  "elapsedMs": 16.43473300000005,
+                  "mainThreadCpuMs": 13.02495,
+                  "mainThreadSchedulerWaitMs": 0.042697
+                },
+                {
+                  "start": "engine-start",
+                  "end": "engine-end",
+                  "startedObserverMs": 10852.477663671874,
+                  "completedObserverMs": 11008.369851671874,
+                  "elapsedMs": 155.8921879999998,
+                  "mainThreadCpuMs": 140.225424,
+                  "mainThreadSchedulerWaitMs": 0.411538
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "batch": "fine-",
+          "privateRecordSha256": "94e3ba7006eeb053ee95f85a75b1be36921ec68c6bca97f2d80eb9219d96a3e4",
+          "samples": [
+            {
+              "sample": "pi-stuff-responsiveness-l12Jjl",
+              "evidenceSha256": "8d12c474e0f20493d10edcaa1cd83478bdf73f946f29f658733af391985ad1a1",
+              "sourceDiffSha256": "82ccc898caa60498b53cb1b980d1e50c8e7dd5521f50dec5205298636afcec40",
+              "probeRecordSha256": "74f710aa095e9f9e5eae073cac32a56ee318dd0c20a87482dbb3cd2334f8bc13",
+              "maximumSpinnerFrameMs": 114.9143210000002,
+              "maximumInputMs": 25.771743000000242,
+              "maximumSelectionMs": 13.897076999999626,
+              "maximumObservationGapMs": 16.38198999999986,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [],
+              "firstLaunchPhases": [
+                {
+                  "start": "engine-start",
+                  "end": "preparation-loaded",
+                  "startedObserverMs": 10713.4711031875,
+                  "completedObserverMs": 10737.2587001875,
+                  "elapsedMs": 23.78759700000046,
+                  "mainThreadCpuMs": 22.258231,
+                  "mainThreadSchedulerWaitMs": 0.039822
+                },
+                {
+                  "start": "preparation-loaded",
+                  "end": "launch-prepared",
+                  "startedObserverMs": 10737.2587001875,
+                  "completedObserverMs": 10779.7893311875,
+                  "elapsedMs": 42.53063099999963,
+                  "mainThreadCpuMs": 36.671243,
+                  "mainThreadSchedulerWaitMs": 0.149036
+                },
+                {
+                  "start": "launch-prepared",
+                  "end": "builders-loaded",
+                  "startedObserverMs": 10779.7893311875,
+                  "completedObserverMs": 10807.5671331875,
+                  "elapsedMs": 27.77780200000052,
+                  "mainThreadCpuMs": 25.979803,
+                  "mainThreadSchedulerWaitMs": 0.068645
+                },
+                {
+                  "start": "builders-loaded",
+                  "end": "context-ready",
+                  "startedObserverMs": 10807.5671331875,
+                  "completedObserverMs": 10810.2681011875,
+                  "elapsedMs": 2.700967999999193,
+                  "mainThreadCpuMs": 2.401404,
+                  "mainThreadSchedulerWaitMs": 0.012371
+                },
+                {
+                  "start": "background-import-start",
+                  "end": "background-import-end",
+                  "startedObserverMs": 10810.7555881875,
+                  "completedObserverMs": 10859.2999201875,
+                  "elapsedMs": 48.544332000001305,
+                  "mainThreadCpuMs": 48.727701,
+                  "mainThreadSchedulerWaitMs": 0.078618
+                },
+                {
+                  "start": "background-import-end",
+                  "end": "engine-end",
+                  "startedObserverMs": 10859.2999201875,
+                  "completedObserverMs": 10866.3067301875,
+                  "elapsedMs": 7.00680999999895,
+                  "mainThreadCpuMs": 7.186425,
+                  "mainThreadSchedulerWaitMs": 0.010055
+                }
+              ]
+            },
+            {
+              "sample": "pi-stuff-responsiveness-tbqjUF",
+              "evidenceSha256": "1870ddf1a36ca795cc599c8ec0e9390189006d74c5e54336ccc71a5520152865",
+              "sourceDiffSha256": "82ccc898caa60498b53cb1b980d1e50c8e7dd5521f50dec5205298636afcec40",
+              "probeRecordSha256": "6cce91e8cd0a156a66b00f7b49ec2b0a6895ef0c86d9e4090598e8f220a9ad6d",
+              "maximumSpinnerFrameMs": 113.30469699999958,
+              "maximumInputMs": 37.849175999999716,
+              "maximumSelectionMs": 13.71100099999967,
+              "maximumObservationGapMs": 15.857073000000128,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [
+                {
+                  "kind": "selection-setup",
+                  "phase": "active",
+                  "startedMs": 10656.001963,
+                  "visibleMs": 37.849175999999716
+                }
+              ],
+              "firstLaunchPhases": [
+                {
+                  "start": "engine-start",
+                  "end": "preparation-loaded",
+                  "startedObserverMs": 10512.685120421875,
+                  "completedObserverMs": 10537.004937421874,
+                  "elapsedMs": 24.319816999999603,
+                  "mainThreadCpuMs": 22.43193,
+                  "mainThreadSchedulerWaitMs": 0.018098
+                },
+                {
+                  "start": "preparation-loaded",
+                  "end": "launch-prepared",
+                  "startedObserverMs": 10537.004937421874,
+                  "completedObserverMs": 10594.939703421875,
+                  "elapsedMs": 57.93476600000031,
+                  "mainThreadCpuMs": 51.07588,
+                  "mainThreadSchedulerWaitMs": 0.120939
+                },
+                {
+                  "start": "launch-prepared",
+                  "end": "builders-loaded",
+                  "startedObserverMs": 10594.939703421875,
+                  "completedObserverMs": 10618.837202421875,
+                  "elapsedMs": 23.897499000000607,
+                  "mainThreadCpuMs": 23.338859,
+                  "mainThreadSchedulerWaitMs": 0.075229
+                },
+                {
+                  "start": "builders-loaded",
+                  "end": "context-ready",
+                  "startedObserverMs": 10618.837202421875,
+                  "completedObserverMs": 10624.474022421875,
+                  "elapsedMs": 5.636819999999716,
+                  "mainThreadCpuMs": 5.094505,
+                  "mainThreadSchedulerWaitMs": 0.017016
+                },
+                {
+                  "start": "background-import-start",
+                  "end": "background-import-end",
+                  "startedObserverMs": 10625.061927421875,
+                  "completedObserverMs": 10673.536051421876,
+                  "elapsedMs": 48.4741240000003,
+                  "mainThreadCpuMs": 48.556397,
+                  "mainThreadSchedulerWaitMs": 0.281052
+                },
+                {
+                  "start": "background-import-end",
+                  "end": "engine-end",
+                  "startedObserverMs": 10673.536051421876,
+                  "completedObserverMs": 10680.799058421875,
+                  "elapsedMs": 7.263006999999561,
+                  "mainThreadCpuMs": 6.596266,
+                  "mainThreadSchedulerWaitMs": 0.017607
+                }
+              ]
+            },
+            {
+              "sample": "pi-stuff-responsiveness-HKOgzn",
+              "evidenceSha256": "5821e9006fc5ba259740cad9a94bb17566663d1a8d9bddd05da1a94862398eb6",
+              "sourceDiffSha256": "82ccc898caa60498b53cb1b980d1e50c8e7dd5521f50dec5205298636afcec40",
+              "probeRecordSha256": "1579deed55a73737bb2a67fa64cce72fbfbc58b4156a6b0fec9872d62627d67b",
+              "maximumSpinnerFrameMs": 149.9300089999997,
+              "maximumInputMs": 61.39202099999966,
+              "maximumSelectionMs": 13.774912999999287,
+              "maximumObservationGapMs": 16.566807000000153,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [
+                {
+                  "kind": "selection-setup",
+                  "phase": "active",
+                  "startedMs": 10904.078462,
+                  "visibleMs": 61.39202099999966
+                }
+              ],
+              "firstLaunchPhases": [
+                {
+                  "start": "engine-start",
+                  "end": "preparation-loaded",
+                  "startedObserverMs": 10791.75088321875,
+                  "completedObserverMs": 10818.73206521875,
+                  "elapsedMs": 26.981181999999535,
+                  "mainThreadCpuMs": 23.959338,
+                  "mainThreadSchedulerWaitMs": 0.027014
+                },
+                {
+                  "start": "preparation-loaded",
+                  "end": "launch-prepared",
+                  "startedObserverMs": 10818.73206521875,
+                  "completedObserverMs": 10867.26990721875,
+                  "elapsedMs": 48.53784199999973,
+                  "mainThreadCpuMs": 40.73619,
+                  "mainThreadSchedulerWaitMs": 0.189209
+                },
+                {
+                  "start": "launch-prepared",
+                  "end": "builders-loaded",
+                  "startedObserverMs": 10867.26990721875,
+                  "completedObserverMs": 10895.45235721875,
+                  "elapsedMs": 28.182450000000244,
+                  "mainThreadCpuMs": 25.839678,
+                  "mainThreadSchedulerWaitMs": 0.056768
+                },
+                {
+                  "start": "builders-loaded",
+                  "end": "context-ready",
+                  "startedObserverMs": 10895.45235721875,
+                  "completedObserverMs": 10897.63383221875,
+                  "elapsedMs": 2.181474999999409,
+                  "mainThreadCpuMs": 1.343619,
+                  "mainThreadSchedulerWaitMs": 0
+                },
+                {
+                  "start": "background-import-start",
+                  "end": "background-import-end",
+                  "startedObserverMs": 10898.15211421875,
+                  "completedObserverMs": 10944.86106021875,
+                  "elapsedMs": 46.70894599999883,
+                  "mainThreadCpuMs": 46.790363,
+                  "mainThreadSchedulerWaitMs": 0.048129
+                },
+                {
+                  "start": "background-import-end",
+                  "end": "engine-end",
+                  "startedObserverMs": 10944.86106021875,
+                  "completedObserverMs": 10951.92976121875,
+                  "elapsedMs": 7.0687010000001465,
+                  "mainThreadCpuMs": 6.991576,
+                  "mainThreadSchedulerWaitMs": 0.014299
+                }
+              ]
+            },
+            {
+              "sample": "pi-stuff-responsiveness-uNAZIM",
+              "evidenceSha256": "c025c12859e397ae9ff4c000f555d14e542a9ef3bbaebe1af05a52e27aad39f3",
+              "sourceDiffSha256": "82ccc898caa60498b53cb1b980d1e50c8e7dd5521f50dec5205298636afcec40",
+              "probeRecordSha256": "87ed4e93bf364f84df49fc042631f12d219297fe2462deecdda6189ca56d4fd3",
+              "maximumSpinnerFrameMs": 113.32088899999872,
+              "maximumInputMs": 25.28218999999808,
+              "maximumSelectionMs": 13.864926000000196,
+              "maximumObservationGapMs": 29.133203999999978,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [],
+              "firstLaunchPhases": [
+                {
+                  "start": "engine-start",
+                  "end": "preparation-loaded",
+                  "startedObserverMs": 10831.1328088125,
+                  "completedObserverMs": 10857.6123388125,
+                  "elapsedMs": 26.479530000000523,
+                  "mainThreadCpuMs": 23.876974,
+                  "mainThreadSchedulerWaitMs": 0.02532
+                },
+                {
+                  "start": "preparation-loaded",
+                  "end": "launch-prepared",
+                  "startedObserverMs": 10857.6123388125,
+                  "completedObserverMs": 10899.0271078125,
+                  "elapsedMs": 41.41476900000089,
+                  "mainThreadCpuMs": 35.193149,
+                  "mainThreadSchedulerWaitMs": 0.038152
+                },
+                {
+                  "start": "launch-prepared",
+                  "end": "builders-loaded",
+                  "startedObserverMs": 10899.0271078125,
+                  "completedObserverMs": 10925.1120678125,
+                  "elapsedMs": 26.084960000000137,
+                  "mainThreadCpuMs": 23.456024,
+                  "mainThreadSchedulerWaitMs": 0.049491
+                },
+                {
+                  "start": "builders-loaded",
+                  "end": "context-ready",
+                  "startedObserverMs": 10925.1120678125,
+                  "completedObserverMs": 10928.8037518125,
+                  "elapsedMs": 3.691683999999441,
+                  "mainThreadCpuMs": 2.933629,
+                  "mainThreadSchedulerWaitMs": 0.008538
+                },
+                {
+                  "start": "background-import-start",
+                  "end": "background-import-end",
+                  "startedObserverMs": 10929.5401408125,
+                  "completedObserverMs": 10984.9093898125,
+                  "elapsedMs": 55.3692489999994,
+                  "mainThreadCpuMs": 54.685603,
+                  "mainThreadSchedulerWaitMs": 0.107167
+                },
+                {
+                  "start": "background-import-end",
+                  "end": "engine-end",
+                  "startedObserverMs": 10984.9093898125,
+                  "completedObserverMs": 10992.1595138125,
+                  "elapsedMs": 7.250124000000142,
+                  "mainThreadCpuMs": 7.65573,
+                  "mainThreadSchedulerWaitMs": 0.010516
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "batch": "imports-",
+          "privateRecordSha256": "31b64b1ec76d2163fabe55f56b98dab079034bcdd135feb187f370df60d1820b",
+          "samples": [
+            {
+              "sample": "pi-stuff-responsiveness-LULAOy",
+              "evidenceSha256": "cf600ef732be5bdc0df350ea122f17a28680424a681073dafdd699c2bef01ba4",
+              "sourceDiffSha256": "4614d22449659ef46583a3f2e346aa9ee534a3964aa56f6083d4f73001731b5a",
+              "probeRecordSha256": "1d373def5c6bab816e47a0f5673c18f1874e2ff43b9c9c85037441ebf2574cd4",
+              "maximumSpinnerFrameMs": 149.45106000000123,
+              "maximumInputMs": 49.35725099999945,
+              "maximumSelectionMs": 13.917686000000685,
+              "maximumObservationGapMs": 15.981408999999985,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [
+                {
+                  "kind": "selection-setup",
+                  "phase": "active",
+                  "startedMs": 10831.489346,
+                  "visibleMs": 49.35725099999945
+                }
+              ],
+              "firstLaunchPhases": [
+                {
+                  "start": "recovery-start",
+                  "end": "recovery-end",
+                  "startedObserverMs": 10809.118410921876,
+                  "completedObserverMs": 10821.780877921876,
+                  "elapsedMs": 12.662467000000106,
+                  "mainThreadCpuMs": 12.934619,
+                  "mainThreadSchedulerWaitMs": 0.015357
+                },
+                {
+                  "start": "recovery-end",
+                  "end": "runner-end",
+                  "startedObserverMs": 10821.780877921876,
+                  "completedObserverMs": 10845.653224921874,
+                  "elapsedMs": 23.872346999998626,
+                  "mainThreadCpuMs": 22.870068,
+                  "mainThreadSchedulerWaitMs": 0.032972
+                },
+                {
+                  "start": "runner-end",
+                  "end": "background-end",
+                  "startedObserverMs": 10845.653224921874,
+                  "completedObserverMs": 10858.788868921874,
+                  "elapsedMs": 13.135643999999957,
+                  "mainThreadCpuMs": 13.939203,
+                  "mainThreadSchedulerWaitMs": 0.016585
+                }
+              ]
+            },
+            {
+              "sample": "pi-stuff-responsiveness-aGxOb2",
+              "evidenceSha256": "eb1e84c9d1d12d6bc264f9132f39ed73feffd042fe021605e07be8ae8f148ad3",
+              "sourceDiffSha256": "4614d22449659ef46583a3f2e346aa9ee534a3964aa56f6083d4f73001731b5a",
+              "probeRecordSha256": "67237577d262cb314e3ce385a024b92895aa281270a6faed58a5d2f0c2443eb2",
+              "maximumSpinnerFrameMs": 113.9606649999987,
+              "maximumInputMs": 14.517394999999851,
+              "maximumSelectionMs": 15.055225000000064,
+              "maximumObservationGapMs": 20.623830999999882,
+              "maximumSpinnerAbsenceMs": 0,
+              "actionsAbove35Ms": [],
+              "firstLaunchPhases": [
+                {
+                  "start": "recovery-start",
+                  "end": "recovery-end",
+                  "startedObserverMs": 10743.02244175,
+                  "completedObserverMs": 10755.43659375,
+                  "elapsedMs": 12.414152000001195,
+                  "mainThreadCpuMs": 12.936531,
+                  "mainThreadSchedulerWaitMs": 0.020476
+                },
+                {
+                  "start": "recovery-end",
+                  "end": "runner-end",
+                  "startedObserverMs": 10755.43659375,
+                  "completedObserverMs": 10776.73820575,
+                  "elapsedMs": 21.301611999999295,
+                  "mainThreadCpuMs": 20.90312,
+                  "mainThreadSchedulerWaitMs": 0.022505
+                },
+                {
+                  "start": "runner-end",
+                  "end": "background-end",
+                  "startedObserverMs": 10776.73820575,
+                  "completedObserverMs": 10789.59282475,
+                  "elapsedMs": 12.85461899999973,
+                  "mainThreadCpuMs": 12.934321,
+                  "mainThreadSchedulerWaitMs": 0.019696
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "paired": {
+      "privateRecordSha256": "a62f8d32b14c613082ea31a0289b7a4a13726a67a45498976c572321fb479fef",
+      "driverSha256": "a7dd4ab534375facc53b55b222439df6708a9e078680ea45d310c932ceee7cb9",
+      "order": "baseline/candidate/candidate/baseline",
+      "baselineCommit": "f6a3285ef4e94761ce2702db2c6c97ceec3b4797",
+      "candidate": "Same commit plus the retained complete diff, including the new recovery writer. No temporary probes.",
+      "conditions": "Exact Pi 0.85.0, fresh profiles, 120x40 terminal, two background Agents, cleared child environment and isolated user/network/PID namespaces; no concurrent task tests, agents or profilers. Original 60-second budget and frozen gates unchanged.",
+      "samples": [
+        {
+          "label": "0-baseline",
+          "variant": "baseline",
+          "sample": "pi-stuff-responsiveness-OfYiCQ",
+          "evidenceSha256": "39a28f0257a6fea856c6f1e10a2524ceb68e87a43b953f4e1889f3efdb88d2de",
+          "observerDiffSha256": "d6f828e263043aa67d99f6e172e3849b1508dc2cbb22b67dc4a3573ada9d9875",
+          "packageDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "exitCode": 1,
+          "breaches": [
+            {
+              "metric": "maximumSteadyInputMs",
+              "actual": 73.00198900000032,
+              "limit": 40.46531200000072
+            }
+          ],
+          "maximumSpinnerFrameMs": 147.9544310000001,
+          "maximumInputMs": 73.00198900000032,
+          "maximumSelectionMs": 14.036336000001029,
+          "maximumObservationGapMs": 16.547967999999855,
+          "maximumSpinnerAbsenceMs": 0,
+          "cpuUs": {
+            "total": 21464293,
+            "user": 18723763,
+            "system": 2740530
+          },
+          "finalRssBytes": 600281088,
+          "currentChargedBytes": 620236800,
+          "peakChargedBytes": 1922871296,
+          "durationMs": 29586.637658,
+          "completedChildTools": 2,
+          "reapedChildProcesses": 2,
+          "backgroundOutcomes": 2,
+          "automaticNamingPersisted": true,
+          "automaticUsageRefreshes": 1
+        },
+        {
+          "label": "1-candidate",
+          "variant": "candidate",
+          "sample": "pi-stuff-responsiveness-J6AQZd",
+          "evidenceSha256": "2f0d08f8e79131dac208942e03962b977b6621ac30e3e788b5f8f459f849ea03",
+          "observerDiffSha256": "d6f828e263043aa67d99f6e172e3849b1508dc2cbb22b67dc4a3573ada9d9875",
+          "packageDiffSha256": "d6f828e263043aa67d99f6e172e3849b1508dc2cbb22b67dc4a3573ada9d9875",
+          "exitCode": 0,
+          "breaches": [],
+          "maximumSpinnerFrameMs": 113.06422099999963,
+          "maximumInputMs": 13.821445999999924,
+          "maximumSelectionMs": 13.788195000000087,
+          "maximumObservationGapMs": 15.999995000000126,
+          "maximumSpinnerAbsenceMs": 0,
+          "cpuUs": {
+            "total": 21552206,
+            "user": 18976534,
+            "system": 2575671
+          },
+          "finalRssBytes": 582946816,
+          "currentChargedBytes": 601694208,
+          "peakChargedBytes": 1948020736,
+          "durationMs": 29247.240606,
+          "completedChildTools": 2,
+          "reapedChildProcesses": 2,
+          "backgroundOutcomes": 2,
+          "automaticNamingPersisted": true,
+          "automaticUsageRefreshes": 1
+        },
+        {
+          "label": "2-candidate",
+          "variant": "candidate",
+          "sample": "pi-stuff-responsiveness-EEuXyY",
+          "evidenceSha256": "6d52ed3f2363aa2560b70552c129168b3424da8815f345f4e4e8457aa98b49d3",
+          "observerDiffSha256": "d6f828e263043aa67d99f6e172e3849b1508dc2cbb22b67dc4a3573ada9d9875",
+          "packageDiffSha256": "d6f828e263043aa67d99f6e172e3849b1508dc2cbb22b67dc4a3573ada9d9875",
+          "exitCode": 0,
+          "breaches": [],
+          "maximumSpinnerFrameMs": 124.12517599999956,
+          "maximumInputMs": 13.962467000001197,
+          "maximumSelectionMs": 14.932945000000473,
+          "maximumObservationGapMs": 16.892108000000007,
+          "maximumSpinnerAbsenceMs": 0,
+          "cpuUs": {
+            "total": 21503261,
+            "user": 18854990,
+            "system": 2648271
+          },
+          "finalRssBytes": 588775424,
+          "currentChargedBytes": 608686080,
+          "peakChargedBytes": 1939832832,
+          "durationMs": 29387.532144999997,
+          "completedChildTools": 2,
+          "reapedChildProcesses": 2,
+          "backgroundOutcomes": 2,
+          "automaticNamingPersisted": true,
+          "automaticUsageRefreshes": 1
+        },
+        {
+          "label": "3-baseline",
+          "variant": "baseline",
+          "sample": "pi-stuff-responsiveness-FxSoQO",
+          "evidenceSha256": "cad39a6ce49fecf6b7fb2775888969b95ae67c5a9daa70dced256eee065ae322",
+          "observerDiffSha256": "d6f828e263043aa67d99f6e172e3849b1508dc2cbb22b67dc4a3573ada9d9875",
+          "packageDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "exitCode": 0,
+          "breaches": [],
+          "maximumSpinnerFrameMs": 136.86902400000145,
+          "maximumInputMs": 25.202015000000756,
+          "maximumSelectionMs": 13.697512000000643,
+          "maximumObservationGapMs": 16.318021000000044,
+          "maximumSpinnerAbsenceMs": 0,
+          "cpuUs": {
+            "total": 21372583,
+            "user": 18727513,
+            "system": 2645070
+          },
+          "finalRssBytes": 605356032,
+          "currentChargedBytes": 624152576,
+          "peakChargedBytes": 1930133504,
+          "durationMs": 29506.464116,
+          "completedChildTools": 2,
+          "reapedChildProcesses": 2,
+          "backgroundOutcomes": 2,
+          "automaticNamingPersisted": true,
+          "automaticUsageRefreshes": 1
+        }
+      ],
+      "medians": {
+        "baselineCpuUs": 21418438,
+        "candidateCpuUs": 21527733.5,
+        "baselineFinalRssBytes": 602818560,
+        "candidateFinalRssBytes": 585861120,
+        "baselinePeakChargedBytes": 1926502400,
+        "candidatePeakChargedBytes": 1943926784
+      },
+      "conclusion": "Both candidate samples pass all frozen gates; baseline 1 reproduces a 73.001989 ms input failure. CPU median rises about 0.5 percent and charged peak rises about 0.9 percent; no whole-workload resource-saving claim for this follow-up. Final RSS is not peak tree RSS or allocation."
+    },
+    "checks": {
+      "coldLoadingRegression": "Three new actual module-graph cases failed before the change and pass after it.",
+      "focused": {
+        "tests": 56,
+        "assertions": 242,
+        "failures": 0
+      },
+      "fast": "pass",
+      "nativeControlIsolationSetup": "Initial cleared-environment invocation omitted XDG_STATE_HOME and failed three governor setup cases with EACCES before their measured launch. Rerun used a fresh private state root and passed all four real-Host cases; no permission change.",
+      "physicalSourceLines": {
+        "before": 1761,
+        "after": 1758,
+        "note": "Five production files plus two tests; counts include the new 18-line recovery writer."
+      }
+    },
+    "wholeSuiteAcceptance": false
+  },
+  "ordinaryCiE51Failure": {
+    "runUrl": "https://github.com/jczhang02/pi-stuff/actions/runs/34052545498",
+    "commit": "e51caab53144f207f5193ae20115882f40cd913a",
+    "fast": "pass",
+    "schedulerWorkloads": "28 pass",
+    "isolatedTestFiles": {
+      "passed": 299,
+      "failed": [
+        "test/responsiveness-pty.test.ts"
+      ]
+    },
+    "laterCommands": "Goal tests, Tool benchmark and package verification did not run after the isolated-test failure.",
+    "evidenceSha256": "2ac425d3c6b71e04b870946389e9776faf230dc106d988d7c9ae6704a834ef06",
+    "sample": "pi-stuff-responsiveness-RRFa7j",
+    "maximumSpinnerFrameMs": 238.57376300000033,
+    "maximumInputMs": 31.37748300000021,
+    "maximumSelectionMs": 42.02487999999903,
+    "maximumObservationGapMs": 40.315536000000066,
+    "maximumSpinnerAbsenceMs": 0,
+    "observationGap": {
+      "beforeObserverMs": 15990.772366,
+      "afterObserverMs": 16031.087902,
+      "durationMs": 40.315536,
+      "limitMs": 40
+    },
+    "retainedSpinnerHold": {
+      "startedObserverMs": 15686.927499,
+      "endedObserverMs": 15925.501262,
+      "durationMs": 238.573763,
+      "conclusion": "The hold precedes the excessive observation gap; that gap cannot explain this separate held frame. The sample is inconclusive, not a pass, and this record does not assign the hold to a function."
+    }
   }
 }

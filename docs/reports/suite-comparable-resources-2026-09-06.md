@@ -164,4 +164,61 @@ on rare rendering or I/O delays.
 All four workloads completed and reaped two child Agents, recorded two background outcomes and retained automatic
 Naming/Usage. The render wrapper, FFI marks and strace command were temporary and are removed. The numeric record binds
 the probes, profiles and observations to their hashes. No render rewrite, eager loading or filesystem change was made
-from these non-reproducing probes; the 48.868/72.710 ms failures and historical late holds remain unresolved.
+from these non-reproducing probes. The next investigation measured the first-launch loading interval directly.
+
+## Background cold-loading follow-up
+
+Ten light-instrumentation runs at `f6a3285e` retained direct dispatch timing. Four initial runs measured roughly
+147–160 ms in the first background execution call; one had 62.654 ms selection feedback overlapping its end.
+Four finer runs measured 46.709–55.369 ms loading the background engine. In sample `HKOgzn`, autocomplete setup
+started at observer-relative 10,904.078 ms and appeared 61.392 ms later. The import occupied 10,898.152–10,944.861 ms,
+with 46.790 ms main-thread CPU and 0.048 ms scheduler wait. This identifies substantial Suite loading work during a
+reproduced delay; it does not retrospectively attribute every earlier uninstrumented failure.
+
+Two final probes explicitly loaded the already-required dependencies in sequence. Recovery-reader loading took
+12.414/12.662 ms, runner-process loading 21.302/23.872 ms, and the remaining background module 12.855/13.136 ms.
+These reordered imports are diagnostics, not acceptance samples. Main-thread CPU comes from `/proc` scheduler
+accounting; its update granularity can exceed a short elapsed interval by about one millisecond. Awaited intervals
+are not proof of one uninterrupted JavaScript task. All ten samples completed and reaped two children, retained two
+background outcomes and automatic Naming/Usage once, and are bound to probe and evidence hashes in the numeric record.
+
+The change separates publication of finalized recovery records from parsing retained recovery input. Both foreground
+and background launch now use the same small writer; resume keeps the unchanged reader and full validation.
+Necessary runner-process loading uses the existing first-use timer boundary after background launch preparation.
+Import failure before spawn cleans the owned, unstarted directory. Test-only runner-control re-exports no longer pull
+that stage into the launch module. No execution policy, refresh cadence, cache, dependency or permission was added.
+The five production files and two tests total 1,758 lines, down from 1,761, including the new 18-line recovery writer.
+
+Four uninstrumented runs compared clean `f6a3285e` with the complete retained change in ABBA order, under the same
+fixed Host, features, namespaces, resource scope, terminal and frozen gates. No concurrent task tests, agents or
+profilers ran. Both candidates passed every gate; baseline 1 reproduced a 73.002 ms autocomplete delay.
+
+| Sample | CPU, seconds | Final RSS, decimal MB | Charged-memory peak, decimal MB | Longest Spinner, ms | Slowest input/setup, ms | Slowest selection, ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline 1 | 21.464 | 600.3 | 1,922.9 | 147.954 | 73.002 | 14.036 |
+| Candidate 1 | 21.552 | 582.9 | 1,948.0 | 113.064 | 13.821 | 13.788 |
+| Candidate 2 | 21.503 | 588.8 | 1,939.8 | 124.125 | 13.962 | 14.933 |
+| Baseline 2 | 21.373 | 605.4 | 1,930.1 | 136.869 | 25.202 | 13.698 |
+
+CPU median rose 0.5% and charged-memory peak median rose 0.9%; final RSS median fell from 602.8 to 585.9 MB.
+These totals do not establish a whole-workload resource saving for this follow-up. The removed recovery-reader work
+is measured separately; two passing candidate observations do not prove that rare stalls cannot occur. Final RSS
+and charged peak are not allocation or peak process-tree RSS. All four runs completed both children and background
+outcomes, verified reaping and retained automatic Naming/Usage. Capture gaps stayed below 16.893 ms, with no missing
+active Spinner. The original 60-second budget and thresholds are unchanged.
+
+Three module-loading regressions failed before the change and passed after it. The focused loading, startup,
+recovery and real-Host control checks passed 56 tests and 242 assertions; `check:fast` passed. An initial isolated
+control-test invocation omitted its private state-root setting and failed three governor setup cases with `EACCES`.
+Setting a fresh private state root fixed the harness; all four real-Host control cases then passed without a
+permission change. That failed setup is not counted as an acceptance pass.
+
+## Ordinary CI failure retained separately
+
+The same `34052545498` run that completed the scheduler comparison later failed ordinary acceptance: 299 isolated
+test files passed and `test/responsiveness-pty.test.ts` failed. Goal tests, the Tool benchmark and Package verification
+did not run after that failure. Its one-Agent background sample `RRFa7j` had a 40.316 ms observer gap against the
+40 ms ceiling, so the sample is inconclusive. A separate 238.574 ms Spinner hold ended before that gap began;
+the observer gap cannot explain that held frame. Both remain recorded, without assigning the hold to a function.
+This older CI result and the current local comparison do not close whole-Suite acceptance or the remaining resource
+and recovery matrix.
