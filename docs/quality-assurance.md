@@ -20,9 +20,9 @@ repository safety, the Capability Contract Catalog, and static Package/resource/
 source or execute Benchmarks. `fix` explicitly applies formatting and safe lint fixes; generated composition and
 snapshots have separate explicit update operations.
 
-`test` currently discovers 334 files (333 offline and one explicit live file) under five levels: Component (`unit`),
+`test` currently discovers 335 files (334 offline and one explicit live file) under five levels: Component (`unit`),
 Component Integration (`component-integration`), System (`system`), System Integration (`system-integration`), and
-Acceptance (`acceptance`). The offline inventory is 132 / 159 / 2 / 10 / 30 files by those levels. Within each level,
+Acceptance (`acceptance`). The offline inventory is 133 / 159 / 2 / 10 / 30 files by those levels. Within each level,
 files are grouped by Capability directory and scenario. It runs one OS process per file. The Goal runtime smoke is a
 native Bun test; the other 21 `.node.ts` compatibility files are compiled once and then run through Node. Repeated
 selectors within one dimension are a union; different dimensions are an intersection. `--name` uses the native test
