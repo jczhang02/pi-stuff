@@ -1,21 +1,40 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { preflightTests, requirementsForTest, type TestProfile } from "./test-environment.ts";
 import { prepareGoalTests } from "./test-goal-upstream.ts";
+import { discoverTestFiles } from "./test-inventory.ts";
 
-const TEST_FILE_PATTERN = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/u;
 const LEVELS = new Set(["unit", "component-integration", "system", "system-integration", "acceptance"]);
-
-function discoverTestFiles(directory: string): string[] {
-	const files: string[] = [];
-	for (const entry of readdirSync(directory, { withFileTypes: true })) {
-		const path = join(directory, entry.name);
-		if (entry.isDirectory()) files.push(...discoverTestFiles(path));
-		else if (entry.isFile() && (TEST_FILE_PATTERN.test(entry.name) || entry.name.endsWith(".node.ts")))
-			files.push(path);
-	}
-	return files.sort();
+type VerificationPlan = {
+	version: number;
+	profile: "offline";
+	base: string | null;
+	head: string | null;
+	mode: "all" | "selected" | "none";
+	reason: string;
+	changedFiles: string[];
+	files: string[];
+};
+function readPlan(path: string, root: string): VerificationPlan {
+	const plan = JSON.parse(readFileSync(resolve(root, path), "utf8")) as Partial<VerificationPlan>;
+	if (plan.version !== 1 || plan.profile !== "offline" || !["all", "selected", "none"].includes(plan.mode ?? ""))
+		throw new Error("Invalid verification plan");
+	if (!Array.isArray(plan.files) || !Array.isArray(plan.changedFiles) || typeof plan.reason !== "string")
+		throw new Error("Invalid verification plan fields");
+	const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+	if (plan.head && plan.head !== head)
+		throw new Error(`Verification plan is stale: expected ${plan.head}, found ${head}`);
+	const known = new Set(discoverTestFiles(join(root, "test")).map((file) => relative(root, file)));
+	for (const file of plan.files)
+		if (typeof file !== "string" || !known.has(file) || file.endsWith("-live.test.ts"))
+			throw new Error(`Verification plan contains unknown or live test: ${file}`);
+	if (plan.mode === "none" && plan.files.length !== 0) throw new Error("A none verification plan must have no files");
+	if (plan.mode === "none" && !/metadata-only|no tests|explicit/iu.test(plan.reason))
+		throw new Error("A none verification plan requires an explicit no-tests reason");
+	if (plan.mode !== "none" && plan.files.length === 0) throw new Error("A selected/all plan must contain files");
+	return plan as VerificationPlan;
 }
 
 function runTestFiles(
@@ -103,6 +122,7 @@ function parseTestArguments(args: string[]) {
 			name: { type: "string", multiple: true },
 			output: { type: "string" },
 			profile: { type: "string" },
+			plan: { type: "string" },
 		},
 	});
 }
@@ -124,10 +144,13 @@ async function main(): Promise<void> {
 	const levels = values.level ?? [];
 	const capabilities = values.capability ?? [];
 	const names = values.name ?? [];
+	const plan = values.plan ? readPlan(values.plan, repositoryRoot) : undefined;
+	if (plan && ([...filters, ...levels, ...capabilities, ...names].length > 0 || values.profile))
+		throw new Error("--plan cannot be combined with test selectors or --profile");
 	for (const level of levels) if (!LEVELS.has(level)) throw new Error(`Unknown test level: ${level}`);
 	if ([...filters, ...capabilities, ...names].some((filter) => filter.length === 0))
 		throw new Error("Test selectors must not be empty");
-	const discovered = discoverTestFiles(testRoot)
+	const discovered = (plan ? plan.files.map((file) => resolve(repositoryRoot, file)) : discoverTestFiles(testRoot))
 		.map((path) => relative(repositoryRoot, path))
 		.filter((path) => (profile === "live" ? path.endsWith("-live.test.ts") : !path.endsWith("-live.test.ts")));
 	for (const filter of filters) {
@@ -153,6 +176,10 @@ async function main(): Promise<void> {
 		);
 	});
 	if (testFiles.length === 0) {
+		if (plan?.mode === "none") {
+			console.log(`Plan selected no tests: ${plan.reason}`);
+			return;
+		}
 		console.error("No test files were discovered under test/.");
 		process.exitCode = 1;
 		return;
