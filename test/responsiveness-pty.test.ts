@@ -9,11 +9,26 @@ import { parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
 const SAMPLE_SCHEMA = Type.Object({
 	directory: Type.String(),
 	maximumSpinnerFrameMs: Type.Number(),
+	purpose: Type.String(),
+	observationTimeoutMs: Type.Number(),
 });
 const EVIDENCE_SCHEMA = Type.Object({
 	actions: Type.Array(Type.Object({ phase: Type.String(), visibleMs: Type.Number() })),
 	providerLog: Type.String(),
 	sessions: Type.Array(Type.String(), { minItems: 1 }),
+});
+
+test.each(["--cpu-profile", "--diagnostic"])("rejects %s with acceptance gates before starting Pi", async (flag) => {
+	const child = Bun.spawn(
+		[process.execPath, resolve("scripts/benchmark-responsiveness.ts"), flag, "--gates", "unused"],
+		{
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	);
+	const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+	expect(exitCode).not.toBe(0);
+	expect(stderr).toContain("Diagnostic collection cannot use gates");
 });
 
 test.each(["startup", "pre-tool", "settlement"])(
@@ -29,6 +44,7 @@ test.each(["startup", "pre-tool", "settlement"])(
 				"350",
 				"--block-phase",
 				phase,
+				...(phase === "startup" ? ["--diagnostic"] : []),
 			],
 			{ stderr: "pipe", stdout: "pipe" },
 		);
@@ -42,6 +58,8 @@ test.each(["startup", "pre-tool", "settlement"])(
 			expect(exitCode, stdout).toBe(0);
 			const sample = parseJsonValue(stdout);
 			if (!Check(SAMPLE_SCHEMA, sample)) throw new Error("Missing native observation summary");
+			expect(sample.purpose).toBe(phase === "startup" ? "extended-diagnosis" : "observer-validation");
+			expect(sample.observationTimeoutMs).toBe(phase === "startup" ? 75_000 : 30_000);
 			const evidenceText = await readFile(join(sample.directory, "evidence.json"), "utf8");
 			const artifactDirectory = process.env["PI_STUFF_UI_PTY_ARTIFACT_DIR"];
 			if (artifactDirectory) {

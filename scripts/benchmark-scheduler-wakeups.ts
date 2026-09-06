@@ -112,6 +112,7 @@ async function measure(args: string[], pi: string, helper: string) {
 			"psyon-pid-init",
 			process.execPath,
 			join(repository, "scripts/benchmark-responsiveness.ts"),
+			"--diagnostic",
 			"--pi",
 			pi,
 			"--package",

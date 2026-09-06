@@ -38,6 +38,7 @@ const { values } = parseArgs({
 		"block-ms": { type: "string", default: "0" },
 		"block-phase": { type: "string", default: "pre-tool" },
 		"cpu-profile": { type: "boolean", default: false },
+		diagnostic: { type: "boolean", default: false },
 		"resource-scope": { type: "boolean", default: false },
 		gates: { type: "string" },
 	},
@@ -55,6 +56,8 @@ const profileCpu = values["cpu-profile"];
 const agentMode = values.agent;
 const contextWork = values.context;
 const goalWork = values.goal;
+const timeoutMs = values.diagnostic ? 75_000 : agentMode || goalWork ? 60_000 : 30_000;
+const purpose = profileCpu ? "cpu-diagnosis" : values.diagnostic ? "extended-diagnosis" : "observer-validation";
 const requestedToolCount = values["repeat-tool"] || contextWork ? 2 : 1;
 const expectedChildren = agentMode ? requestedToolCount : 0;
 assert(Number.isSafeInteger(columns) && columns >= 40 && columns <= 240, "Invalid terminal width");
@@ -75,7 +78,7 @@ assert(
 	!goalWork || (usage && !contextWork && !agentMode && !codeMode && !values.ledger && !values["repeat-tool"]),
 	"Goal requires --suite without Context, Agent, Code Mode, Ledger or repeat mode",
 );
-assert(!profileCpu || !values.gates, "A CPU profile is diagnostic, not a responsiveness acceptance sample");
+assert(!(profileCpu || values.diagnostic) || !values.gates, "Diagnostic collection cannot use gates");
 
 const LIMITS_SCHEMA = Type.Object({
 	hostBinarySha256: Type.Literal(CERTIFIED_PI_RELEASE_BINARY_SHA256),
@@ -433,7 +436,7 @@ try {
 		String(rows),
 		shellCommand,
 	);
-	while (performance.now() - start < (agentMode || goalWork ? 60_000 : 30_000)) {
+	while (performance.now() - start < timeoutMs) {
 		const captureStartedMs = performance.now();
 		const frame = tmux("capture-pane", "-p", "-N", "-t", "cadence:0.0");
 		const capturedMs = performance.now();
@@ -649,7 +652,8 @@ try {
 		"Required timing evidence missing",
 	);
 	summary = {
-		purpose: profileCpu ? "cpu-diagnosis" : "observer-validation",
+		purpose,
+		observationTimeoutMs: timeoutMs,
 		certification: false,
 		profile: CERTIFIED_PI_HOST_PROFILE,
 		seededSession: Boolean(seedSession),

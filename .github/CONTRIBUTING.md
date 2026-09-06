@@ -44,6 +44,9 @@ Package commit; fresh processes/configuration are used, but kernel page caches a
 option also supports local comparisons and retains separate observer and Package commit/diff provenance.
 These diagnostic runs do not certify liveness. Ordinary acceptance still runs without tracing; a dispatch requesting
 the extra measurements receives 25 additional job minutes for the serial comparison.
+The collector passes `--diagnostic`, which allows 75 seconds of observation and cannot be combined with `--gates`.
+Results record that budget and their diagnostic purpose. Ordinary observation retains its 30-second budget, or
+60 seconds for Agents and Goal; the collector's outer 90-second process limit and all responsiveness gates are unchanged.
 
 ## Package changes
 

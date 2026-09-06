@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 35d01b53282d3eeb0c85615fd1e2ae73ff91e525ed828d426c27f843c7c23aaf -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 9989b976cdd8b1bc800fc5f1e6ce2d9b3e20ea8ee40f75dfcdc6dba072d03473 -->
 
 # 贡献指南
 
@@ -43,6 +43,8 @@ Package 源码树。每批都用当前 observer 执行全部七种工作负载�
 Package 的 commit/diff 来源。
 这些诊断运行不证明活性通过。普通验收仍在关闭跟踪后运行；请求额外测量的手动运行增加 25 分钟 job 时限，
 供串行对照使用。
+采集器传入 `--diagnostic`，允许观测 75 秒，且不能与 `--gates` 同用。结果记录该时限及诊断用途。
+普通观测仍为 30 秒，Agent 和 Goal 为 60 秒；采集器外层 90 秒进程限制及全部响应性门槛保持不变。
 
 ## Package 变更
 
