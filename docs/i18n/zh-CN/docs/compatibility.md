@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 30d34984d8d7ef62b692055edbf58ffcff6d7514b58f913dddcb2dfe2c0fa1b4 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: bdccbf88852a09d65f805e1d175d11807f6c8224f36db70f110d3c092438ca11 -->
 
 # 兼容性
 
@@ -34,6 +34,10 @@ Host 和 RTK runtime，然后在网络隔离 namespace 中逐个以全新 Bun �
 benchmark 和 Package 验证。逐文件进程隔离可防止某个重进程或 PTY 测试污染后续测试使用的原生资源。只有
 Beads 元数据以及已记录的 PNG、GIF、HTML 或 ANSI 证据可以跳过 `Acceptance`；可执行文档仍须完整认证。每周
 另有上游观察任务报告 npm `latest` 是否超过当前 Host，但绝不会自动改变认证。
+
+打包后的 Goal Code Mode 场景与其他原生 Code Mode 验证器共用二进制路径解析规则，把已准备好的 helper
+路径传入隔离的子进程环境，不能依赖向该子进程的空私有缓存下载 Release。其他 Goal 场景不要求该 helper；
+生产代码的首次使用安装行为及现有验证超时均不变。
 
 认证执行配置包含两个职责分离的 Bun 版本。已审核 standalone Host 内嵌 Bun 1.3.14；provenance 会先在已审核
 字节偏移处检查精确 runtime banner，再对完整可执行文件计算哈希。仓库脚本、CI 测试及通过 PATH 解析 Bun 的

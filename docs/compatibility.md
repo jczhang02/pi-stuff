@@ -37,6 +37,12 @@ network-isolated namespace. Per-file process isolation prevents one process- or 
 native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip
 `Acceptance`; executable documentation remains fully certified. A separate weekly upstream watch reports when the npm
 `latest` tag moves beyond the certified Host, but never changes certification automatically.
+
+The packed Goal Code Mode scenario resolves the already-prepared helper through the same binary-path contract as
+other native Code Mode verifiers and passes that path into its isolated child environment. It must not rely on a
+download into the child's empty private cache. Other Goal scenarios do not require the helper; runtime first-use
+installation and the existing verification timeout remain unchanged.
+
 The certified execution profile has two Bun versions with separate scopes. The audited standalone Host embeds Bun 1.3.14;
 provenance checks its exact runtime banner at the reviewed byte offset before hashing the complete executable. Repository
 scripts, CI tests, and Suite subprocess helpers that resolve Bun from PATH use 1.4.0. A repository toolchain upgrade never
