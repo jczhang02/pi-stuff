@@ -6,6 +6,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      probe_kernel_events:
+        description: Verify scheduler-event access on a separate ephemeral runner
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -22,6 +27,64 @@ env:
   RTK_VERSION: 0.45.0
 
 jobs:
+  kernel-events:
+    name: Kernel event probe
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.probe_kernel_events }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify isolated scheduler-event capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          sudo env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin bash -euo pipefail -s -- "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" <<'PROBE'
+          [[ "$1" =~ ^[0-9]+-[0-9]+$ ]]
+          trace_root=/sys/kernel/tracing
+          instance=
+          mounted=false
+          cleanup() {
+            if [[ -n "$instance" ]]; then
+              printf '0\n' > "$instance/tracing_on"
+              rmdir -- "$instance"
+            fi
+            if "$mounted"; then umount "$trace_root"; fi
+          }
+          trap cleanup EXIT
+          if ! mountpoint -q "$trace_root"; then
+            mount -t tracefs tracefs "$trace_root"
+            mounted=true
+          fi
+          requested_instance="$trace_root/instances/pi-stuff-probe-$1"
+          mkdir -- "$requested_instance"
+          instance="$requested_instance"
+          printf '0\n' > "$instance/tracing_on"
+          printf '1024\n' > "$instance/buffer_size_kb"
+          for event in sched_wakeup sched_wakeup_new sched_process_fork sched_process_exit; do
+            test -r "$instance/events/sched/$event/format"
+            printf '1\n' > "$instance/events/sched/$event/enable"
+          done
+          printf '1\n' > "$instance/tracing_on"
+          sleep 0.1 &
+          probe_pid=$!
+          wait "$probe_pid"
+          printf '0\n' > "$instance/tracing_on"
+          awk 'FNR == 1 { if (NR > 1 && counters != 3) invalid = 1; counters = 0 }
+               /^(overrun|commit overrun|dropped events):/ { counters++; if ($NF != 0) invalid = 1 }
+               END { exit (invalid || counters != 3) }' "$instance"/per_cpu/cpu*/stats
+          uname -r
+          awk -v pid="$probe_pid" '
+            / sched_wakeup: / && $0 ~ " pid=" pid " " { wakeups++ }
+            / sched_wakeup_new: / && $0 ~ " pid=" pid " " { new_wakeups++ }
+            / sched_process_fork: / && $0 ~ " child_pid=" pid "($| )" { forks++ }
+            / sched_process_exit: / && $0 ~ " pid=" pid " " { exits++ }
+            END {
+              printf "{\"scope\":\"sleep-positive-control\",\"wakeups\":%d,\"newWakeups\":%d,\"forks\":%d,\"exits\":%d,\"lostEvents\":0}\n", wakeups, new_wakeups, forks, exits
+              exit !(wakeups > 0 && new_wakeups == 1 && forks == 1 && exits == 1)
+            }' "$instance/trace"
+          PROBE
+
   fast:
     name: Fast
     runs-on: ubuntu-24.04

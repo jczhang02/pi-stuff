@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 0d1baf930ec1408bcd7762923c2ccbcea49d4436f0ee7f797ddd401e649a6fd5 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 56c80286ef2d2afb1311f6b8bce2fb97bb67c2594d76b482146a509047280659 -->
 
 # 贡献指南
 
@@ -28,6 +28,11 @@ bun run check
 
 设置 `PI_STUFF_UI_PTY_ARTIFACT_DIR` 后，观察器还会在采集结束后把证据 JSON 复制到该目录。
 CI 通过现有失败附件保留合成场景的画面、交互时序和 Source 快照；不会复制 Host 可执行文件或私有夹具配置。
+
+手动触发 CI 时可设置 `probe_kernel_events=true`，在独立的 GitHub 托管虚拟机上执行短时调度事件正控。
+它使用独占的 tracefs 实例，拒绝丢失事件的样本，并在退出时删除该实例。日志只记录内核版本和正控计数，
+不上传原始进程跟踪。这用于诊断 runner 的采集能力，不是测量 Pi 资源开销；不会修改普通的
+`Fast`/`Acceptance` 检查，也不会跟踪它们的活性样本。
 
 ## Package 变更
 

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: 9d82fc772085d9d9961b755a15223fa614c132db1b3d7a4f4973813c42a5e5e1 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 92f3644caf2b63fda977575197b90d88ba60b802558a58710ec909b91756300b -->
 
 # 研究
 
@@ -16,6 +16,7 @@
 
 ## 架构与可行性
 
+- [ps-yon 性能测量权限核查](ps-yon-profiling-permissions-20260906.md)
 - [Code Mode 图像基准](code-mode-image-benchmark-20260827.md)
 - [Skill Discovery 启动有界真实模型确认](skill-discovery-startup-bounded-confirmation-20260830.md)
 - [Skill Discovery 隔离真实模型确认](skill-discovery-isolated-confirmation-20260830.md)

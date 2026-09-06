@@ -29,6 +29,11 @@ When `PI_STUFF_UI_PTY_ARTIFACT_DIR` is set, the observer also copies its evidenc
 these synthetic frames, interaction timings and Source snapshots in its existing failure attachment; Host binaries and
 private fixture configuration are not copied.
 
+Manual CI dispatch accepts `probe_kernel_events=true` for a short scheduler-event positive control on a separate
+GitHub-hosted VM. It uses an owned tracefs instance, rejects lost events, and removes that instance on exit. Only kernel
+version and control counts enter the log; no raw process trace is uploaded. This diagnoses runner capability, not Pi
+resource cost. It neither changes the ordinary `Fast`/`Acceptance` checks nor traces their liveness samples.
+
 ## Package changes
 
 Pi Stuff has one private local Package. Capability Modules are not independently versioned or published. Update the
