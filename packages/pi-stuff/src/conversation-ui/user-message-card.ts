@@ -53,7 +53,7 @@ function observeBlocks(markdown: Markdown, decorate: (type: string, rows: string
 	if (!isRuntimeFunction(method))
 		throw new Error("User Message presentation requires the certified Pi token renderer");
 	let depth = 0;
-	// SAFETY: this validated callable has Pi 0.85.0's token-render signature and receives native parser output unchanged.
+	// SAFETY: this validated callable has Pi 0.85.1's token-render signature and receives native parser output unchanged.
 	const renderToken = method as (
 		this: Markdown,
 		token: NativeMarkdownBlock,

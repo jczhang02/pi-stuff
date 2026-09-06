@@ -34,7 +34,7 @@ longer remain active.
 
 ## Compaction continuation
 
-Pi 0.85.0 emits `session_compact` before clearing its manual-compaction busy state, without a later `agent_settled`
+Pi 0.85.1 emits `session_compact` before clearing its manual-compaction busy state, without a later `agent_settled`
 event. Goal preserves its continuation or pending queue action and reuses its cancellable Session-owned recovery task
 to dispatch only after Pi is idle. The task yields once, then checks every 10 ms only while that handoff remains
 pending; dispatch, cancellation, queued user work, another compaction, or Session shutdown ends it. Ordinary startup,

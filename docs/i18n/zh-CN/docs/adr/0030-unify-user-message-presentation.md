@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: 1380ac3b87c00eaf13662e2ca536443da3cc1dc9ae90063e63ac1f5947294185 -->
+<!-- translation-source: docs/adr/0030-unify-user-message-presentation.md; translation-source-sha256: a24b57615740468eb91cb3ccc3fd263e8a22825e88380fbce36280e3cabdb231 -->
 
 ---
 status: accepted
@@ -48,7 +48,7 @@ Markdown 解析，不将文字中的 Skill 提及解释为调用，不引入平�
 Session 切换、关闭和 `/reload` 释放 patch。仅在适配器仍拥有被替换方法时恢复原方法。不声明与其他修改
 同一私有接入位置的 Extension 兼容。
 
-Pi 0.85.0 在发出 `session_start` 前回放替换后的 Session。释放时仅保留对原生 InteractiveMode 的弱引用，
+Pi 0.85.1 在发出 `session_start` 前回放替换后的 Session。释放时仅保留对原生 InteractiveMode 的弱引用，
 不保留 Session context 或诊断通道。下次 TUI 绑定时，通过同一 projection 补齐已经渲染的原生 User 和
 Skill 组件，先确认所记住 Host 的当前 SessionManager 与本次绑定的 SessionManager 是同一实例；
 仅执行一次，并跳过适配器已处理的卡片。这避免在释放后继续安装 patch，也无需重建其他
@@ -56,7 +56,7 @@ Transcript 状态。
 
 ### 可靠性与失败策略
 
-目标是在 `docs/compatibility.md` 认证的精确 Host 上可靠工作，当前为 Pi 0.85.0。现有可执行文件认证仍是
+目标是在 `docs/compatibility.md` 认证的精确 Host 上可靠工作，当前为 Pi 0.85.1。现有可执行文件认证仍是
 权威；仅版本字符串相同不构成支持依据。启用适配器前校验必需的 Host 方法和组件契约。初始化不兼容必须
 向上传播，不能留下部分加载的 Suite。
 
