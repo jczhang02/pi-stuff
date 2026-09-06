@@ -273,7 +273,7 @@ export function installUserMessageDisplay(
 	diagnostics: DiagnosticChannel,
 	sessionManager: ExtensionContext["sessionManager"],
 ): () => void {
-	// ponytail: Pi 0.85.0 has no public User Message renderer; replace this patch when the Host exposes one.
+	// ponytail: Pi 0.85.1 has no public User Message renderer; replace this patch when the Host exposes one.
 	const prototype = InteractiveMode.prototype;
 	const descriptor = Object.getOwnPropertyDescriptor(prototype, "addMessageToChat");
 	const method: unknown = descriptor?.value;
@@ -289,7 +289,7 @@ export function installUserMessageDisplay(
 		state = existing;
 	} else {
 		preflight();
-		// SAFETY: the certified Host method is callable and its insertion signature is fixed by Pi 0.85.0.
+		// SAFETY: the certified Host method is callable and its insertion signature is fixed by Pi 0.85.1.
 		state = createPatch(method as InsertMessage, descriptor, diagnostics);
 		Object.defineProperty(prototype, USER_MESSAGE_PATCH, { configurable: true, value: state });
 		Object.defineProperty(prototype, "addMessageToChat", { ...descriptor, value: state.patched });

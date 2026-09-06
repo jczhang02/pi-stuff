@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: 7129dd602facf61cd293a7ff6c51968e7bd2c0f072d0546042e915c8454b6193 -->
+<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: 578eba0d0219f4fc772195f8f9d1492b6ccdcd9619cafc211059587ff7616ed8 -->
 
 # Goal
 
@@ -35,7 +35,7 @@
 
 ## 压缩后的继续执行
 
-Pi 0.85.0 在清除手动压缩的忙碌状态之前触发 `session_compact`，之后不会触发 `agent_settled`。
+Pi 0.85.1 在清除手动压缩的忙碌状态之前触发 `session_compact`，之后不会触发 `agent_settled`。
 Goal 保留继续执行意图或待处理的队列动作，复用由当前 Session 管理、可以取消的恢复任务，只在 Pi 真正空闲后发送。
 该任务先让出一次执行机会；如果交接尚未结束，再每 10 ms 检查一次。发送、取消、用户排队输入、新一次压缩或 Session
 退出都会结束这项等待。普通启动、空闲运行和 Tool 调用不会新增周期检查。Pi 原生自动重试和 Suite 压缩预检仍由原有模块负责。

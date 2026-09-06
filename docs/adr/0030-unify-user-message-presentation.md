@@ -67,7 +67,7 @@ release pattern used by Thinking. Session switches, shutdown, and `/reload` rele
 method only while the adapter still owns the patched method. Do not claim compatibility with another extension that
 modifies the same private seam.
 
-Pi 0.85.0 replays replacement Sessions before emitting `session_start`. Retain only a weak reference to the native
+Pi 0.85.1 replays replacement Sessions before emitting `session_start`. Retain only a weak reference to the native
 InteractiveMode across release, with no retained Session context or diagnostic channel. At the next TUI binding,
 reconcile already-rendered native User and Skill components once through the same projection, only if the remembered
 Host's current SessionManager is identical to the binding's SessionManager. Skip cards already
@@ -76,7 +76,7 @@ the adapter, leaving subsequent native components untouched. This avoids keeping
 
 ### Reliability and failure policy
 
-The target is reliable operation on the exact Host certified in `docs/compatibility.md`, currently Pi 0.85.0.
+The target is reliable operation on the exact Host certified in `docs/compatibility.md`, currently Pi 0.85.1.
 Existing executable certification remains authoritative; a matching version string alone does not establish support.
 Validate required Host methods and component contracts before enabling the adapter. Initialization incompatibility
 must propagate rather than leave a partially loaded Suite.

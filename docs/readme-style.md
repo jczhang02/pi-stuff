@@ -41,7 +41,7 @@ internal maintenance disclaimers, and repeated rationale already owned by anothe
 Use two centered rows in this order:
 
 1. CI, MIT License, GitHub stars, GitHub forks, last commit.
-2. Pi `0.85.0`, Bun `1.4.0`, TypeScript `5.9.3`, Linux x64.
+2. Pi `0.85.1`, Bun `1.4.0`, TypeScript `5.9.3`, Linux x64.
 
 Badges link to the workflow, license, repository activity, compatibility reference, or relevant upstream project.
 Do not add npm, release, or issue-count badges.
@@ -68,7 +68,7 @@ Never mix standalone bold labels, tables, `<figure>`, or baked-in callouts with 
 
 ### Capture standard
 
-- Capture a real Pi `0.85.0` session in Ghostty `1.3.1`.
+- Capture a real Pi `0.85.1` session in Ghostty `1.3.1`.
 - Use Catppuccin Latte and JetBrainsMono Nerd Font Mono.
 - Use English UI and synthetic, disposable demo data.
 - Exclude credentials, user Sessions, private paths, and unrelated desktop content.
