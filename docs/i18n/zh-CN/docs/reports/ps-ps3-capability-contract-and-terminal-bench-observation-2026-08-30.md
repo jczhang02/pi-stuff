@@ -1,6 +1,6 @@
-<!-- translation-source: docs/reports/ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md; translation-source-sha256: db15dad8ec66f7f7a8e77c1b30c4e9d9cab673f323291d756b14d560d8c47e59 -->
+<!-- translation-source: docs/reports/ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md; translation-source-sha256: b88139444d1767ed5a22320e02d252604232ff34dc8fc2944864b34decdf7fd4 -->
 
-# Capability Contract 验收与有界 Terminal-Bench 观察 — 2026-08-30
+# Capability Contract 验收 — 2026-08-30
 
 [English](../../../../../docs/reports/ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)
 
@@ -13,37 +13,22 @@
 
 ## 摘要
 
-本文把 `ps-ps3` 实验中的两个独立问题整理为一份报告。RQ1 检验 Pi Stuff 声明的 Capability Contract
-在冻结的 Pi 0.84.3 环境中是否通过验收；RQ2 记录同一 Pi Stuff Package 在固定模型预算下运行
-Terminal-Bench 2.1 的有界观察。RQ1 覆盖 16 个 Capability Module、144 项合同和 603 个场景分面，其中
-141 项合同、600 个分面通过；另有 3 个真实 Service 配置分面因缺少可丢弃凭据而受阻，故汇总结果为
-`blocked`。RQ2 对 89 项公开任务各运行一次首次尝试，并保留 11 次重复结果。首次尝试得到 71/89 个
-reward 1（79.78%）；100 次含模型尝试合计得到 81 个 reward 1，记录成本为 $6.47079196。这些结果只描述
-历史环境，既不能认证当前 Pi 0.84.4，也不能识别加载 Pi Stuff 的因果效果。
+本文记录 `ps-ps3` 实验在冻结 Pi 0.84.3 环境中的 Capability Contract 验收。验收覆盖 16 个 Capability
+Module、144 项合同和 603 个场景分面，其中 141 项合同、600 个分面通过；另有 3 个真实 Service 配置分面因
+缺少可丢弃凭据而受阻，故汇总结果为 `blocked`。这些结果只描述历史环境，不能认证当前行为。
 
 ## 研究问题
 
 **RQ1 — Capability Contract Acceptance。** 目录中每项面向用户或 Host 的可观察合同，是否在相应
 Acceptance Evidence Profile 下满足其正常、失败、恢复、持久化和边界场景？
 
-**RQ2 — 有界 Terminal-Bench 观察。** 冻结的 Pi Stuff 适配器使用
-`openai-codex/gpt-5.6-luna`、`max` 推理强度，对公开
-[Terminal-Bench 2.1](https://github.com/harbor-framework/terminal-bench-2-1) 任务集运行一次，再执行有界诊断性重复
-样本时，观察到了什么结果？
-
-两个问题不互相替代。RQ1 属于合同验收；RQ2 是完整系统的任务观察，不能认证单项合同，也不能估计 Pi Stuff
-的处理效应。
-
 ## 冻结来源
 
 | 范围 | 组件 | 冻结标识 |
 | --- | --- | --- |
-| RQ1 与 RQ2 | Pi Host | Pi 0.84.3 Linux x64；来源 `4e58f324fae8`；SHA-256 `ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08` |
-| RQ1 与 RQ2 | 打包后的 Pi Stuff Package | SHA-256 `662dff97c3745f3b39f34130286f2a382e5a4cad5ae8c64f696e72ece2f60807` |
+| RQ1 | Pi Host | Pi 0.84.3 Linux x64；来源 `4e58f324fae8`；SHA-256 `ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08` |
+| RQ1 | 打包后的 Pi Stuff Package | SHA-256 `662dff97c3745f3b39f34130286f2a382e5a4cad5ae8c64f696e72ece2f60807` |
 | RQ1 | RTK | RTK 0.45.0 Linux x64；SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
-| RQ2 | 评估器 | Harbor 0.17.1 |
-| RQ2 | 数据集 | `terminal-bench/terminal-bench-2-1`；`sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a`；89 项任务 |
-| RQ2 | 模型 | `openai-codex/gpt-5.6-luna`；推理强度 `max` |
 
 证据来源提交标识研究采用的实现和冻结工件。本文后来依据保留的报告与 manifest 重新整理，不能据此把该快照
 解释为当前认证。
@@ -81,51 +66,8 @@ Contract 的已配置正常分面：
 RQ1 支持的结论很窄：冻结 Suite 满足了所有实际执行的合同分面，另有 3 个真实 Service 配置分面因明确的
 资源条件未被观察。它不能证明 Provider 永久可用，也不能证明当前 Host 兼容。附录 A 保留完整结果矩阵。
 
-## RQ2 — 有界 Terminal-Bench 观察
-
-### 协议
-
-本轮使用 Docker，并发数为 2，不自动重试，也不上传结果。在 100 次含模型尝试的上限内，89 项公开任务各
-运行一次首次尝试，并保留 11 次诊断性重复结果。一个 Oracle 任务在不调用模型时通过；随后两个含模型校准
-任务通过，再运行其余 87 项首次尝试。Oracle 不计入次数上限。
-
-[冻结 manifest](../../../../../benchmarks/terminal-bench-2.1/manifest.json)记录数据集、任务顺序 seed、重复
-样本 seed、模型和执行边界。其中 11 个重复任务名有 10 个与保留的结果表一致；manifest 写的是
-`mteb-retrieve`，历史结果表写的是 `mteb-leaderboard`。仓库没有保留可消解该差异的原始 job 或
-trajectory。因此，附录按原报告保留结果表，但不能把重复样本视作已完成审计的预注册。
-
-### 结果
-
-首次尝试得到 71/89 个 reward 1（79.78%），使用 129,637,153 个 input token、121,820,032 个 cache-read
-token、1,615,016 个 output token，成本 $5.93784404。11 次重复得到 10 个 reward 1（90.91%），使用
-11,489,608 个 input token、10,896,896 个 cache-read token、163,723 个 output token，成本
-$0.53294792。100 次含模型尝试合计使用 141,126,761 个 input token、132,716,928 个 cache-read token、
-1,778,739 个 output token，成本 $6.47079196。由于重复样本经过选择，合并后的 81/100 不是基准比率。
-
-三个含模型 job 的墙钟时间合计约 34,541 秒，即 9 小时 35 分 41 秒。任务报告的 Agent 时间累计
-60,094.93 秒，verifier 时间累计 6,564.14 秒；由于并发，累计时长会超过墙钟时间。
-
-89 项首次尝试中，76 项没有 harness 异常。11 项以 `AgentTimeoutError` 结束，1 项为
-`VerifierTimeoutError`，1 项为 `NonZeroAgentExitCodeError`。缺少 reward 按未通过处理。重复结果中，
-`cancel-async-tasks` 恢复为通过，另有 9 项再次通过，`filter-js-from-html` 第二次仍未通过。附录 B
-保留汇总表、首次尝试未通过表和重复结果表。
-
-### 解释
-
-RQ2 只能说明：冻结适配器在有界预算内完成了公开任务集的一轮观察，并暴露了超时与特定任务失败簇。历史
-报告引用的一个公开
-[GPT-5.6 Luna 结果行](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2-1/6/leaderboards/main/rows/e5f3feda-4629-46ba-963f-300dcf7c2a4c)
-包含 445 次完成尝试、16 个错误、约 0.77 的平均 reward，以及 $241.45 的记录成本。它只是背景，不是
-对照；Agent 实现、设置、任务修订版和重复策略都可能不同。
-
 ## 局限与不作出的主张
 
-- 本研究没有纯 Pi 对照组，无法分离 Pi Stuff 的因果效果。
-- 每项任务只运行一次首次尝试，不符合官方每项五次的提交流程；结果没有上传，本文不主张排行榜成绩。
-- 11 次重复用于诊断，不能估计全套任务的 pass@2。
-- 冻结 manifest 与历史结果表有一个重复任务名不一致。
-- 原始 Harbor job、trajectory、prompt、Provider payload 和 Session 对话未保留，因此无法只靠仓库工件
-  独立重算汇总结果。
 - 环境为 Pi 0.84.3。当前 [Capability Contract 目录](../capability-contract-catalog.md)依据当前
   `main` 重建，状态均为 `pending`；本文不是当前验收证据。
 
@@ -136,19 +78,14 @@ trajectory 或私有机器路径。不会仅为把真实的受阻结果改成名
 
 ## 复现工件
 
-仓库只保留[冻结的 Terminal-Bench manifest](../../../../../benchmarks/terminal-bench-2.1/manifest.json)和本
-报告的中英文版本。历史来源提交保留
-[Terminal-Bench runner](https://github.com/jczhang02/pi-stuff/blob/0aee8be48416485d0cf1d2139a2fddd381a35d9d/scripts/terminal-bench.ts)、
-[Pi 适配器](https://github.com/jczhang02/pi-stuff/blob/0aee8be48416485d0cf1d2139a2fddd381a35d9d/scripts/terminal_bench/pi_stuff_agent.py)、
+历史来源提交保留
 [真实 Provider verifier](https://github.com/jczhang02/pi-stuff/blob/0aee8be48416485d0cf1d2139a2fddd381a35d9d/scripts/verify-live-provider-capabilities.ts)
-以及原 Catalog checker。这些实验执行工件由 Git 历史归档，不作为当前仓库接口维护。manifest 可以重建
-声明的协议，不能重建未保留的原始结果。
+以及原 Catalog checker。这些实验执行工件由 Git 历史归档，不作为当前仓库接口维护。
 
 ## 结论
 
-`ps-ps3` 快照为已执行的 Capability Contract 提供了有力的历史证据，也形成了一次有用的有界
-Terminal-Bench 观察。可支持的结论只有：603 个合同分面中 600 个通过，3 个真实 Service 分面受阻；89 项
-任务的首次尝试得到 71 个 reward 1。本文不支持当前兼容性、排行榜成绩或 Suite 性能因果主张。
+`ps-ps3` 快照为已执行的 Capability Contract 提供历史证据：603 个合同分面中 600 个通过，3 个真实
+Service 分面受阻。本文不支持当前兼容性主张。
 
 ## 附录 A — Capability Contract 完整结果矩阵
 
@@ -306,52 +243,3 @@ Terminal-Bench 观察。可支持的结论只有：603 个合同分面中 600 �
 - `mcp.oauth`：可用 MCP 配置没有支持 OAuth 的可丢弃 Service。OAuth 失败、恢复和 redirect 边界由
   fixture 验证通过。
 - `mcp.credentials`：同一缺失条件阻止了正常的真实凭据交换；失败、恢复和持久化行为由 fixture 验证通过。
-
-## 附录 B — Terminal-Bench 完整结果表
-
-### 汇总观察
-
-| 切片 | 尝试次数 | Reward 1 | 观察比率 | Input tokens | Cache-read tokens | Output tokens | 成本 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 全部任务的首次尝试 | 89 | 71 | 79.78% | 129,637,153 | 121,820,032 | 1,615,016 | $5.93784404 |
-| 预先声明的重复 | 11 | 10 | 90.91% | 11,489,608 | 10,896,896 | 163,723 | $0.53294792 |
-| 全部含模型工作 | 100 | 81 | 不是基准比率 | 141,126,761 | 132,716,928 | 1,778,739 | $6.47079196 |
-
-### 首次尝试未通过项
-
-| 任务 | 首次 reward | Harness 异常 |
-| --- | ---: | --- |
-| `largest-eigenval` | 0 | `AgentTimeoutError` |
-| `path-tracing-reverse` | 0 | `AgentTimeoutError` |
-| `make-doom-for-mips` | 0 | `AgentTimeoutError` |
-| `schemelike-metacircular-eval` | 0 | `AgentTimeoutError` |
-| `pytorch-model-recovery` | 0 | `NonZeroAgentExitCodeError` |
-| `filter-js-from-html` | 0 | 无 |
-| `extract-moves-from-video` | 0 | `AgentTimeoutError` |
-| `query-optimize` | 0 | `AgentTimeoutError` |
-| `gcode-to-text` | 0 | `AgentTimeoutError` |
-| `torch-tensor-parallelism` | 缺失 | `VerifierTimeoutError` |
-| `train-fasttext` | 0 | `AgentTimeoutError` |
-| `configure-git-webserver` | 0 | 无 |
-| `protein-assembly` | 0 | 无 |
-| `video-processing` | 0 | 无 |
-| `regex-chess` | 0 | `AgentTimeoutError` |
-| `raman-fitting` | 0 | 无 |
-| `cancel-async-tasks` | 0 | 无 |
-| `portfolio-optimization` | 0 | 无 |
-
-### 保留的重复结果
-
-| 任务 | 首次 | 重复 |
-| --- | ---: | ---: |
-| `cancel-async-tasks` | 0 | 1 |
-| `llm-inference-batching-scheduler` | 1 | 1 |
-| `fix-ocaml-gc` | 1 | 1 |
-| `nginx-request-logging` | 1 | 1 |
-| `build-pmars` | 1 | 1 |
-| `sqlite-db-truncate` | 1 | 1 |
-| `filter-js-from-html` | 0 | 0 |
-| `large-scale-text-editing` | 1 | 1 |
-| `kv-store-grpc` | 1 | 1 |
-| `mteb-leaderboard` | 1 | 1 |
-| `write-compressor` | 1 | 1 |

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: fa65ca647d5235709f8e358829616938076720557c570b38850ea6dae5cad6eb -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: e9a3c77e9def97ae49a0ed5e0a9b117fa867943271c78d1968ce3853a7dc6779 -->
 
 # 报告
 
@@ -17,11 +17,10 @@
 
 ## 基准与验收
 
-- [Capability Contract 验收与有界 Terminal-Bench 观察](ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)
+- [Capability Contract 验收](ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)
 - [Effect 下的 Magic Context 优化与重新认证](magic-context-effect-optimization-2026-09-02.md)
 - [ps-qer Agent 完成验收](ps-qer-agent-completion-acceptance-20260902.md)
 - [Effect v4 与 main 的取舍结论](effect-v4-mainline-decision-2026-09-01.md)
-- [Terminal-Bench 2.1 延迟比较](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
 - [Skill Discovery 启动有界确认](../../../../../docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json)及其
   [预注册](../research/skill-discovery-startup-bounded-confirmation-20260830.md)
 - [Skill Discovery 隔离确认](../../../../../docs/reports/skill-discovery-isolated-confirmation-20260830.json)及其

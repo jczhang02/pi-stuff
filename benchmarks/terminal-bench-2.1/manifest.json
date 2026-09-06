@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"harborVersion": "0.17.1",
+	"harborVersion": "0.22.0",
 	"dataset": {
 		"name": "terminal-bench/terminal-bench-2-1",
 		"ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
@@ -98,36 +98,15 @@
 		]
 	},
 	"agent": {
-		"importPath": "scripts.terminal_bench.pi_stuff_agent:PiStuffAgent",
-		"piVersion": "0.84.3",
-		"piSha256": "ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08"
+		"importPath": "pi_stuff_agent:PiStuffAgent"
 	},
 	"model": {
 		"id": "openai-codex/gpt-5.6-luna",
 		"reasoningEffort": "max"
 	},
-	"taskOrderSeed": "ps-ps3-terminal-bench-task-order-v1",
-	"calibrationTaskCount": 2,
-	"repeatSample": {
-		"seed": "ps-ps3-terminal-bench-repeat-v1",
-		"taskNames": [
-			"mteb-retrieve",
-			"nginx-request-logging",
-			"llm-inference-batching-scheduler",
-			"fix-ocaml-gc",
-			"sqlite-db-truncate",
-			"write-compressor",
-			"filter-js-from-html",
-			"cancel-async-tasks",
-			"build-pmars",
-			"large-scale-text-editing",
-			"kv-store-grpc"
-		]
-	},
 	"execution": {
 		"environment": "docker",
 		"attemptsPerTask": 1,
-		"maxModelAttempts": 100,
 		"maxRetries": 0,
 		"nConcurrent": 2,
 		"timeoutMultiplier": 1

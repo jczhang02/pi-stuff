@@ -7,6 +7,7 @@ const commands = [
 	"benchmark-magic-context",
 	"benchmark-ponytail",
 	"benchmark-tool-activity",
+	"benchmark-terminal-bench",
 	"compare-magic-context",
 ] as const;
 

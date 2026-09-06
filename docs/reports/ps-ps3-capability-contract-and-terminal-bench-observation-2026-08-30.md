@@ -1,4 +1,4 @@
-# Capability Contract Acceptance and Bounded Terminal-Bench Observation — 2026-08-30
+# Capability Contract Acceptance — 2026-08-30
 
 Date of evidence: 2026-08-30
 Consolidated: 2026-09-02
@@ -9,38 +9,23 @@ Study status: complete historical snapshot
 
 ## Abstract
 
-This report consolidates two independent research questions from the `ps-ps3` experiment. RQ1 asks whether the
-declared Pi Stuff Capability Contracts passed acceptance in a frozen Pi 0.84.3 environment. RQ2 records a bounded
-Terminal-Bench 2.1 observation under the same Pi Stuff package and a fixed model budget. RQ1 covered 144 contracts and
-603 scenario facets across 16 Capability Modules. It passed 141 contracts and 600 facets; three configured
-live-Service facets were blocked by unavailable disposable credentials, so the aggregate result was `blocked`.
-RQ2 completed one first attempt for all 89 public tasks plus 11 retained repeat outcomes. The first-attempt result was
-71 rewards of 1 from 89 attempts (79.78%); all 100 model-bearing attempts produced 81 rewards of 1 at a recorded cost
-of $6.47079196. These findings describe one historical environment. They neither certify current Pi 0.84.4 behavior
-nor identify a causal effect of loading Pi Stuff.
+This report records the `ps-ps3` Capability Contract acceptance in a frozen Pi 0.84.3 environment. It covered 144
+contracts and 603 scenario facets across 16 Capability Modules. It passed 141 contracts and 600 facets; three
+configured live-Service facets were blocked by unavailable disposable credentials, so the aggregate result was
+`blocked`. These findings describe one historical environment and do not certify current behavior.
 
 ## Research questions
 
 **RQ1 — Capability Contract Acceptance.** Did each cataloged, user- or Host-observable Capability Contract satisfy its
 declared normal, failure, recovery, persistence, and boundary scenarios under its Acceptance Evidence Profile?
 
-**RQ2 — Bounded Terminal-Bench Observation.** What outcomes were observed when the frozen Pi Stuff adapter ran the
-public [Terminal-Bench 2.1](https://github.com/harbor-framework/terminal-bench-2-1) task set once, followed by a bounded
-diagnostic repeat sample, using `openai-codex/gpt-5.6-luna` at `max` reasoning effort?
-
-The two questions are intentionally separate. RQ1 is contract acceptance. RQ2 is a complete-system task observation;
-it cannot certify individual contracts or estimate a Pi Stuff treatment effect.
-
 ## Frozen provenance
 
 | Scope | Component | Frozen identity |
 | --- | --- | --- |
-| RQ1 and RQ2 | Pi Host | Pi 0.84.3 Linux x64; source `4e58f324fae8`; SHA-256 `ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08` |
-| RQ1 and RQ2 | Packed Pi Stuff Package | SHA-256 `662dff97c3745f3b39f34130286f2a382e5a4cad5ae8c64f696e72ece2f60807` |
+| RQ1 | Pi Host | Pi 0.84.3 Linux x64; source `4e58f324fae8`; SHA-256 `ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08` |
+| RQ1 | Packed Pi Stuff Package | SHA-256 `662dff97c3745f3b39f34130286f2a382e5a4cad5ae8c64f696e72ece2f60807` |
 | RQ1 | RTK | RTK 0.45.0 Linux x64; SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
-| RQ2 | Evaluator | Harbor 0.17.1 |
-| RQ2 | Dataset | `terminal-bench/terminal-bench-2-1`; `sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a`; 89 tasks |
-| RQ2 | Model | `openai-codex/gpt-5.6-luna`; reasoning effort `max` |
 
 The evidence source commit identifies the implementation and frozen artifacts used by the study. This consolidated
 report was written later from the retained reports and manifest; it does not reinterpret the snapshot as a current
@@ -84,57 +69,8 @@ RQ1 supports a narrow conclusion: the frozen Suite satisfied every exercised con
 live-Service facets remained unobserved for a stated resource reason. It does not establish perpetual Provider
 availability or current-host compatibility. Appendix A preserves the complete result matrix.
 
-## RQ2 — Bounded Terminal-Bench Observation
-
-### Protocol
-
-The run used Docker, concurrency 2, no automatic retries, and no upload. It executed one first attempt for each of the
-89 public tasks and retained 11 diagnostic repeat outcomes under a cap of 100 model-bearing attempts. One Oracle task
-passed without a model call; two model-bearing calibration tasks passed before the remaining 87 first attempts. The
-Oracle call did not count toward the cap.
-
-The [frozen manifest](../../benchmarks/terminal-bench-2.1/manifest.json) declares the dataset, task order seed, repeat
-sample seed, model, and execution bounds. Ten of its 11 repeat task names agree with the retained outcome table. The
-manifest names `mteb-retrieve`, whereas the historical outcome table names `mteb-leaderboard`. No retained raw job
-or trajectory resolves this discrepancy. The tables therefore preserve the historical report literally, but the
-repeat sample cannot be treated as a fully audited preregistration.
-
-### Results
-
-The first-attempt slice produced 71 rewards of 1 from 89 attempts (79.78%), using 129,637,153 input tokens,
-121,820,032 cache-read tokens, 1,615,016 output tokens, and $5.93784404. The 11 retained repeats produced 10 rewards of
-1 (90.91%), using 11,489,608 input tokens, 10,896,896 cache-read tokens, 163,723 output tokens, and $0.53294792. Across
-all 100 model-bearing attempts, the recorded totals were 141,126,761 input tokens, 132,716,928 cache-read tokens,
-1,778,739 output tokens, and $6.47079196. The combined 81/100 result is not a benchmark rate because the repeat sample
-was selected rather than task-complete.
-
-The three model-bearing jobs occupied approximately 34,541 seconds of wall time (9 hours 35 minutes 41 seconds).
-Cumulative task-reported Agent time was 60,094.93 seconds and verifier time was 6,564.14 seconds; concurrency makes
-those cumulative durations exceed wall time.
-
-Among the first 89 attempts, 76 had no harness exception. Eleven ended with `AgentTimeoutError`, one with
-`VerifierTimeoutError`, and one with `NonZeroAgentExitCodeError`. A missing reward was counted as not passing. The
-retained repeats recovered `cancel-async-tasks`, reproduced nine passes, and recorded a second failure for
-`filter-js-from-html`. Appendix B preserves the aggregate, first-attempt non-pass, and repeat tables.
-
-### Interpretation
-
-RQ2 establishes only that this frozen adapter completed a bounded, one-shot pass over the public task set and exposed
-timeout and task-specific failure clusters. A public
-[GPT-5.6 Luna result row](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2-1/6/leaderboards/main/rows/e5f3feda-4629-46ba-963f-300dcf7c2a4c)
-cited in the historical report contained 445 completed trials, 16 errors, approximately 0.77 average reward, and
-$241.45 recorded cost. It is context, not a control: the Agent implementation, settings, task revision, and replication
-policy may differ.
-
 ## Limitations and non-claims
 
-- There was no plain-Pi control arm. The study cannot isolate a causal Pi Stuff effect.
-- The run used one first attempt per task rather than the official five-trial submission protocol; no result was
-  uploaded and no leaderboard claim is made.
-- The 11 repeats were selected for diagnosis and do not estimate suite-wide pass@2.
-- One repeat task name differs between the frozen manifest and the historical outcome table.
-- Raw Harbor jobs, trajectories, prompts, Provider payloads, and Session transcripts are not retained, so the reported
-  aggregate cannot be independently recomputed from repository artifacts alone.
 - The environment is Pi 0.84.3. The current [Capability Contract Catalog](../capability-contract-catalog.md) is rebuilt
   from current `main` and remains `pending`; this report is not current acceptance evidence.
 
@@ -146,21 +82,15 @@ was consumed solely to convert a truthful blocked result into a nominal pass.
 
 ## Reproducibility artifacts
 
-The repository retains only the [frozen Terminal-Bench manifest](../../benchmarks/terminal-bench-2.1/manifest.json)
-and this report pair. The historical source commit retains the
-[Terminal-Bench runner](https://github.com/jczhang02/pi-stuff/blob/0aee8be48416485d0cf1d2139a2fddd381a35d9d/scripts/terminal-bench.ts),
-[Pi adapter](https://github.com/jczhang02/pi-stuff/blob/0aee8be48416485d0cf1d2139a2fddd381a35d9d/scripts/terminal_bench/pi_stuff_agent.py),
+The historical source commit retains the
 [live Provider verifier](https://github.com/jczhang02/pi-stuff/blob/0aee8be48416485d0cf1d2139a2fddd381a35d9d/scripts/verify-live-provider-capabilities.ts),
 and the original Catalog checker. Those executable experimental artifacts are archived in Git history rather than
-maintained as current repository interfaces. The manifest reconstructs the declared protocol, not the omitted raw
-outcomes.
+maintained as current repository interfaces.
 
 ## Conclusion
 
-The `ps-ps3` snapshot provides strong historical evidence for exercised Capability Contracts and a useful bounded
-Terminal-Bench observation. Its defensible result is specific: 600 of 603 contract facets passed, three live-Service
-facets were blocked, and the 89-task first-attempt slice produced 71 rewards of 1. The study does not support a current
-compatibility claim, a leaderboard claim, or a causal Suite-performance claim.
+The `ps-ps3` snapshot provides historical evidence for exercised Capability Contracts: 600 of 603 contract facets
+passed and three live-Service facets were blocked. It does not support a current compatibility claim.
 
 ## Appendix A — complete Capability Contract result matrix
 
@@ -319,52 +249,3 @@ compatibility claim, a leaderboard claim, or a causal Suite-performance claim.
   and redirect-boundary behavior passed with fixtures.
 - `mcp.credentials`: the same missing disposable MCP Service prevented normal live credential exchange. Failure,
   recovery, and persistence behavior passed with fixtures.
-
-## Appendix B — complete Terminal-Bench result tables
-
-### Aggregate observation
-
-| Slice | Attempts | Reward 1 | Observed rate | Input tokens | Cache-read tokens | Output tokens | Cost |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| First attempt over all tasks | 89 | 71 | 79.78% | 129,637,153 | 121,820,032 | 1,615,016 | $5.93784404 |
-| Predeclared repeats | 11 | 10 | 90.91% | 11,489,608 | 10,896,896 | 163,723 | $0.53294792 |
-| Total model-bearing work | 100 | 81 | not a benchmark rate | 141,126,761 | 132,716,928 | 1,778,739 | $6.47079196 |
-
-### First-attempt non-passes
-
-| Task | First reward | Harness exception |
-| --- | ---: | --- |
-| `largest-eigenval` | 0 | `AgentTimeoutError` |
-| `path-tracing-reverse` | 0 | `AgentTimeoutError` |
-| `make-doom-for-mips` | 0 | `AgentTimeoutError` |
-| `schemelike-metacircular-eval` | 0 | `AgentTimeoutError` |
-| `pytorch-model-recovery` | 0 | `NonZeroAgentExitCodeError` |
-| `filter-js-from-html` | 0 | none |
-| `extract-moves-from-video` | 0 | `AgentTimeoutError` |
-| `query-optimize` | 0 | `AgentTimeoutError` |
-| `gcode-to-text` | 0 | `AgentTimeoutError` |
-| `torch-tensor-parallelism` | missing | `VerifierTimeoutError` |
-| `train-fasttext` | 0 | `AgentTimeoutError` |
-| `configure-git-webserver` | 0 | none |
-| `protein-assembly` | 0 | none |
-| `video-processing` | 0 | none |
-| `regex-chess` | 0 | `AgentTimeoutError` |
-| `raman-fitting` | 0 | none |
-| `cancel-async-tasks` | 0 | none |
-| `portfolio-optimization` | 0 | none |
-
-### Retained repeat outcomes
-
-| Task | First | Repeat |
-| --- | ---: | ---: |
-| `cancel-async-tasks` | 0 | 1 |
-| `llm-inference-batching-scheduler` | 1 | 1 |
-| `fix-ocaml-gc` | 1 | 1 |
-| `nginx-request-logging` | 1 | 1 |
-| `build-pmars` | 1 | 1 |
-| `sqlite-db-truncate` | 1 | 1 |
-| `filter-js-from-html` | 0 | 0 |
-| `large-scale-text-editing` | 1 | 1 |
-| `kv-store-grpc` | 1 | 1 |
-| `mteb-leaderboard` | 1 | 1 |
-| `write-compressor` | 1 | 1 |

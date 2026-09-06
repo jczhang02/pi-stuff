@@ -1,4 +1,4 @@
-<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: 02a9cbb56e78a18f6f641e5f953917c6968b22adf81d98e5f6e41fbb3b8079ae -->
+<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: edb137e4bafb8afbf04e439236ebabb733b6b0fd3599d0452c99dbc6fd799e48 -->
 
 # 质量保障
 
@@ -15,11 +15,12 @@ bun run test --level component-integration --file goal/goal-runtime.test.mjs
 bun run test --level acceptance --capability code-mode --matrix representative
 bun run verify --keep-going
 bun run benchmark:capability:ponytail --help
+bun run benchmark:suite:terminal-bench --help
 ```
 
 `check` 执行格式、lint、TypeScript、依赖和未使用源码、生成组合、仓库安全、Capability Contract Catalog 以及 Package/resource/license 静态验证；不会改写源码或运行 Benchmark。`fix` 才会执行格式和安全 lint 修复。
 
-`test` 当前发现五个层级下的 335 个文件（334 个离线文件、1 个显式在线文件）：Component (`unit`)、Component Integration (`component-integration`)、System (`system`)、System Integration (`system-integration`) 与 Acceptance (`acceptance`)。离线清单按上述层级分别有 135、159、2、10、28 个文件。目录按 `level/capability/scenario` 组织，每个文件独立 OS process。Goal smoke 是原生 Bun test；其余 21 个 `.node.ts` 保留 Node 兼容边界，只编译一次后运行。同一维度的重复 selector 取并集，不同维度取交集。`--name` 使用原生 test runner 的 regex candidate filter，不扫描源码名称。`--help` 和 `--list` 不执行场景。报告默认写入 `.artifacts/tests/`，记录文件状态、process duration、setup duration 和 Acceptance 矩阵；失败或空选择返回非零。
+`test` 当前发现五个层级下的 339 个文件（334 个离线文件、1 个显式在线文件）：Component (`unit`)、Component Integration (`component-integration`)、System (`system`)、System Integration (`system-integration`) 与 Acceptance (`acceptance`)。离线清单按上述层级分别有 135、159、2、10、28 个文件。目录按 `level/capability/scenario` 组织，每个文件独立 OS process。Goal smoke 是原生 Bun test；其余 21 个 `.node.ts` 保留 Node 兼容边界，只编译一次后运行。同一维度的重复 selector 取并集，不同维度取交集。`--name` 使用原生 test runner 的 regex candidate filter，不扫描源码名称。`--help` 和 `--list` 不执行场景。报告默认写入 `.artifacts/tests/`，记录文件状态、process duration、setup duration 和 Acceptance 矩阵；失败或空选择返回非零。
 
 Tests 在首个失败后停止剩余文件；缺少原生执行证据同样算失败。`--keep-going` 收集全部选中文件的结果，但不会把失败变成成功；`verify --keep-going` 也会在 Checks 命令失败后继续运行 Tests。每个文件开始前和结束后都持久化报告，区分已完成、尚未开始，以及执行中断时最后记录为进行中的文件。缺失、取消或未完成的证据不能通过 CI 汇总。
 
@@ -36,6 +37,32 @@ Pi、RTK 优先使用显式 `PI_BIN` / `RTK_BIN`，再查找 `PATH`（Pi 会排�
 现有实验使用 `benchmark:capability:<name>` 命名，保留 Ponytail、Markdown、生命周期、Magic Context 和 Tool Activity。它们是 Capability 范围问题，不建立 complete-Suite public-task 结果。执行前使用 `--help` 或 `--list`；Ponytail 必须显式选择 `--profile live`。历史报告仍是 dated evidence，新报告默认写入本地 artifacts。已移除的 Effect/mainline、Code Mode 图片和 Skill Discovery 实验可从 Git 历史恢复；保留其带日期报告和锁定输入作为历史证据。
 
 完成的实验即使结果较差也可成功；setup failure 或 incomplete experiment 仍失败。Tool Activity 过去的 250 ms 和 relative 25 ms benchmark 值仅保留为诊断报告值。显式 PTY 要求仍为首个 Tool UI/input/selection 反馈 150 ms，以及不变 Vibe Line Spinner 帧不超过 200 ms；ADR 0025 的 500 ms severe-stall 是独立 backstop。Tools PTY 验证器报告每种终端尺寸的测量值，未满足必需目标时失败。`benchmark:suite` 尚未注册。
+
+Suite Outcome Evaluation 使用公开任务评测完整 Suite。具体入口是 `benchmark:suite:terminal-bench`；通用别名 `benchmark:suite` 仍未注册。
+
+### 本地 Terminal-Bench 评测
+
+```bash
+bun run benchmark:suite:terminal-bench --help
+bun run benchmark:suite:terminal-bench --list
+bun run benchmark:suite:terminal-bench
+bun run benchmark:suite:terminal-bench --worktree .worktrees/my-change --task regex-log
+bun run benchmark:suite:terminal-bench --resume .artifacts/terminal-bench/<evaluation>
+```
+
+执行命令会显式启动使用 Harbor 0.22.0 和本地 Docker 兼容容器的真实评测，不上传结果、不使用 Runta。默认采用锁定的 Terminal-Bench 2.1 数据集，完整 89 题，每题一次尝试，两个并发容器。`--task` 接受准确题名，可重复传入该选项选择不同题目；`--repetitions` 和 `--concurrency` 接受正整数。单次重复是本地观察，不是官方每题五次的排行榜协议。帮助和任务预览无需凭据，不启动环境准备、容器或模型调用。`check`、`test` 和 `verify` 均不执行 benchmark。
+
+评测源码默认来自本地 `main` 已提交版本，与执行命令所在 checkout 无关。`--worktree <path>` 选择同一仓库中已注册的 worktree，包含其未提交 Package 源码及依赖输入。执行前固定 `packages/pi-stuff`、根 package manifest、Bun lockfile 和 patches；排除无关工程文件，拒绝私密路径、越界或绝对符号链接。后续编辑不会影响剩余任务。`--output <directory>` 可指定新的本地 artifact 目录。
+
+复用已安装且已认证的 Pi Host、Bun、RTK 和 Code Mode 可执行文件。Harbor、Docker CLI、Compose 依次从显式 `HARBOR_BIN`、`DOCKER_BIN`、`DOCKER_COMPOSE_BIN`、PATH、已有 mise 安装中解析；runner 不安装 Host 工具。显式准备示例为 `mise install pipx:harbor@0.22.0 docker-cli docker-compose`，仍需可工作的 Docker 兼容 daemon。`DOCKER_HOST` 优先于本机可用的 rootless Podman socket；Compose 插件配置仅属于当前调用。引擎、网络、镜像和任务资源故障仍属于基础设施失败；runner 不修改宿主防火墙，也不覆盖任务网络。
+
+固定依赖通过 Bun frozen lockfile 安装，禁用生命周期脚本。每题先对挂载的 Package 执行真实 `pi install`，再启动 Pi。HOME、XDG 目录、Pi 设置和 Magic 存储相互隔离。固定配置提供一个通用委派 Agent，并启用 Suite 正常运行路径，包括 Goal、Agents、Magic historian/dreamer/sidekick 和 Session Naming。保留 Package Skills，不继承个人插件、Skills、模型覆盖或设置。所有可配置模型路径均为 GPT-5.6 Luna/max，没有 fallback model。观察器还将公共 simple-stream 请求固定为 max；Session Naming 等 Capability 配置不暴露推理设置的原生 API 调用保留 Provider 默认值，但仍计入用量。只把选定的 Pi 凭据复制到临时评测存储，调用结束后移除 staging 中的副本；每个容器使用其隔离副本。
+
+保留 `protocol.json`、固定 assets、Harbor 原生配置和结果、原始 Agent 输出，以及每个 trial 的 `agent/usage.jsonl`。公共 Provider 观察器记录每次调用开始/完成、模型与定价、已报告用量以及进程/Agent 身份，覆盖委派和辅助调用。每五秒从运行中容器保存用量。`summary.json` 与进度行汇总所有记录，包括已归档中断尝试。美元金额是依据记录中模型价格计算的 Pi SDK 估算，不是账单；没有报告用量的调用保持未解决状态，不视为免费。分母始终为固定题数乘以重复次数，不以成功完成的子集为分母。
+
+遵循上游任务时限，不额外设置全局美元上限，不自动重试。有效 reward-0 或 Agent timeout 属于已完成任务结果；setup/基础设施错误、缺失必需证据、未完成工作返回非零。Ctrl+C 请求 Harbor 停止并保留可获取证据。`--resume` 校验固定协议的摘要、assets 和配置，要求原始 Harbor job 状态存在，在 Harbor 可能删除未完成 attempt 目录之前将其归档，只在新容器中补做未完成 trials。不能与新的源码、任务或执行选项组合；不重跑已完成失败，也不暗中改变快照。中断请求未报告的用量可能在任务完成后仍未知，恢复不会补造缺失的费用证据。
+
+TypeScript 接缝由离线测试覆盖；`check:terminal-bench` 使用 Python 3 检查 Python Harbor adapter 语法，无需 Harbor 或凭据。实际 benchmark 是维护者显式执行的操作，不作为实现完成的必需条件。
 
 ## 验证与迁移状态
 

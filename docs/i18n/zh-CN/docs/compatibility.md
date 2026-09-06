@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 1c9a335ed0d7d4d994a8e0a9717ea7902c0cf0ae0c05c5f4446367d9ebf8bd50 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: e281772e1250a0ec73fcf910ec248b8389fba5b3c9ed9530e30afd6913f25bca -->
 
 # 兼容性
 
@@ -10,7 +10,7 @@
 | 仓库 Bun 工具链 | 1.4.0 |
 | Pi Stuff Package | 0.3.3 |
 | 仓库开发 Package | 0.0.0 |
-| 系统工具基线 | Ubuntu 24.04，包含 Bash、curl、tar、gzip 和标准 Unix 工具；不含 `pwsh` |
+| 系统工具基线 | Ubuntu 24.04，包含 Bash、Python 3（adapter 语法检查）、curl、tar、gzip 和标准 Unix 工具；不含 `pwsh` |
 | PTY 验证工具 | Ubuntu 24.04 的 Expect 与 tmux package |
 | TypeScript checker | 5.9.3 |
 | Code Mode Host | OpenAI Codex `rust-v0.145.0`，Linux x64 |

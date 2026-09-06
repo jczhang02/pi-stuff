@@ -8,7 +8,7 @@
 | Repository Bun toolchain | 1.4.0 |
 | Pi Stuff Package | 0.3.3 |
 | Repository development package | 0.0.0 |
-| System-utility baseline | Ubuntu 24.04 with Bash, curl, tar, gzip, and standard Unix utilities; no `pwsh` |
+| System-utility baseline | Ubuntu 24.04 with Bash, Python 3 (adapter syntax checks), curl, tar, gzip, and standard Unix utilities; no `pwsh` |
 | PTY verification tools | Ubuntu 24.04 packages for Expect and tmux |
 | TypeScript checker | 5.9.3 |
 | Code Mode host | OpenAI Codex `rust-v0.145.0`, Linux x64 |

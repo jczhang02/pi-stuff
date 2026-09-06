@@ -11,7 +11,7 @@ than passed or skipped, when its configured success scenario cannot run because 
 Provider, or Service is unavailable. `pass`, `fail`, and `blocked` require a linked dated acceptance report.
 
 The Evidence column declares the smallest current evidence set expected for acceptance; it does not itself claim that
-the evidence has been rerun. The retained [2026-08-30 study](reports/ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)
+the evidence has been rerun. The retained [2026-08-30 acceptance snapshot](reports/ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)
 is historical evidence for Pi 0.84.3 and does not certify these current `pending` entries.
 
 ## Conversation UI

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capability-contract-catalog.md; translation-source-sha256: 480ce1f6d6ee46087b2e60220e2bf66e4b2e991fcec4ecc7ce2675e40c8a69c9 -->
+<!-- translation-source: docs/capability-contract-catalog.md; translation-source-sha256: ce2eea1cbac08b5687eaa577045e1d5977335375049be6f4afb26189b6dc7598 -->
 
 # Capability Contract 目录
 
@@ -14,7 +14,7 @@ README 仍是局部合同权威。
 必须链接到有日期的验收报告。
 
 “证据”列声明当前验收所需的最小证据集，本身不表示这些证据已经重新执行。保留的
-[2026-08-30 研究](reports/ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)属于 Pi
+[2026-08-30 验收快照](reports/ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)属于 Pi
 0.84.3 的历史证据，不能认证当前这些 `pending` 条目。
 
 为使 144 项合同与英文权威可逐项审计，合同 ID、行为陈述、公开边界及证据链接保留英文；本镜像翻译导航、

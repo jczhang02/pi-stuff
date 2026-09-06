@@ -15,16 +15,17 @@ bun run test --level component-integration --file goal/goal-runtime.test.mjs
 bun run test --level acceptance --capability code-mode --matrix representative
 bun run verify --keep-going
 bun run benchmark:capability:ponytail --help
+bun run benchmark:suite:terminal-bench --help
 ```
 
 `check` runs formatting, lint, all TypeScript profiles, dependency/unused-source analysis, generated composition,
-repository safety, the Capability Contract Catalog, and static Package/resource/license validation. It does not rewrite
+repository safety, the Capability Contract Catalog, and static Package/resource/license validation, and Python adapter syntax. It does not rewrite
 source or execute Benchmarks. `fix` explicitly applies formatting and safe lint fixes; generated composition and
 snapshots have separate explicit update operations.
 
-`test` currently discovers 335 files (334 offline and one explicit live file) under five levels: Component (`unit`),
+`test` currently discovers 339 files (338 offline and one explicit live file) under five levels: Component (`unit`),
 Component Integration (`component-integration`), System (`system`), System Integration (`system-integration`), and
-Acceptance (`acceptance`). The offline inventory is 135 / 159 / 2 / 10 / 28 files by those levels. Within each level,
+Acceptance (`acceptance`). The offline inventory is 138 / 160 / 2 / 10 / 28 files by those levels. Within each level,
 files are grouped by Capability directory and scenario. It runs one OS process per file. The Goal runtime smoke is a
 native Bun test; the other 21 `.node.ts` compatibility files are compiled once and then run through Node. Repeated
 selectors within one dimension are a union; different dimensions are an intersection. `--name` uses the native test
@@ -84,8 +85,70 @@ UI/input/selection feedback and no unchanged Vibe Line Spinner frame beyond 200 
 assertion is a separate backstop. The Tools PTY verifier reports the measured values for each terminal geometry and
 fails when a required target is unmet.
 
-The Suite Outcome Evaluation branch is reserved for complete-Suite public-task evaluation. Historical Terminal-Bench
-manifests and reports do not constitute a runnable evaluation; `benchmark:suite` is not registered.
+The Suite Outcome Evaluation branch evaluates the complete Suite on public tasks. The concrete entry is
+`benchmark:suite:terminal-bench`; the generic `benchmark:suite` alias remains unregistered.
+
+### Local Terminal-Bench evaluation
+
+```bash
+bun run benchmark:suite:terminal-bench --help
+bun run benchmark:suite:terminal-bench --list
+bun run benchmark:suite:terminal-bench
+bun run benchmark:suite:terminal-bench --worktree .worktrees/my-change --task regex-log
+bun run benchmark:suite:terminal-bench --resume .artifacts/terminal-bench/<evaluation>
+```
+
+Execution explicitly starts a live evaluation using Harbor 0.22.0 and local Docker-compatible containers. It never
+uploads results or uses Runta. The default is the pinned Terminal-Bench 2.1 dataset, all 89 tasks, one attempt per task,
+and two concurrent containers. `--task` selects exact names and the flag may be repeated for different tasks; `--repetitions` and `--concurrency` accept
+positive integers. A single repetition is a local observation, not the official five-trial leaderboard protocol.
+Help and task previews require no credentials and start no setup, containers, or model calls. Benchmarks never run as
+part of `check`, `test`, or `verify`.
+
+The evaluated source defaults to committed local `main`, independently of the command's checkout. `--worktree <path>`
+selects a registered worktree from the same repository, including its uncommitted Package source and dependency inputs.
+The runner freezes `packages/pi-stuff`, the root package manifest, Bun lockfile, and patches before execution. It excludes
+unrelated engineering files and rejects private paths and escaping or absolute symlinks. Later edits cannot affect the
+remaining tasks. A fresh `--output <directory>` changes the default local artifact directory.
+
+The installed certified Pi Host, Bun, RTK, and Code Mode executables are reused. Harbor, Docker CLI, and Compose resolve
+from explicit `HARBOR_BIN`, `DOCKER_BIN`, and `DOCKER_COMPOSE_BIN` overrides, then PATH, then existing mise installations.
+The runner does not install Host tools. An explicit preparation example is
+`mise install pipx:harbor@0.22.0 docker-cli docker-compose`; a working Docker-compatible daemon remains required.
+`DOCKER_HOST` takes precedence over an available local rootless Podman socket. Compose plugin configuration is private
+to the invocation. Engine, network, image, and task-resource failures remain infrastructure failures; the runner does
+not change host firewall configuration or override task networking.
+
+Frozen dependencies are installed with Bun's frozen lockfile and lifecycle scripts disabled. Each task executes real
+`pi install` against the mounted Package before starting Pi. HOME, XDG directories, Pi settings, and Magic storage are
+isolated. The fixed profile has one generic delegated Agent and enables the Suite's normal runtime paths, including
+Goal, Agents, Magic historian/dreamer/sidekick, and Session Naming. Package Skills remain available; personal plugins,
+Skills, model overrides, and settings are not inherited. Every configurable model path uses GPT-5.6 Luna/max with no
+fallback models. The observer also fixes public simple-stream requests to max; native API calls such as Session Naming,
+whose capability configuration exposes no reasoning setting, retain their provider defaults and are still counted.
+The selected Pi credential is copied into temporary evaluation storage and removed from staging when the invocation
+ends; each container uses its isolated copy.
+
+The runner preserves `protocol.json`, the frozen assets, native Harbor configuration/results, raw agent output, and
+per-trial `agent/usage.jsonl`. A public Provider observer records every started/completed call, model/pricing metadata,
+reported usage, and process/Agent identity, including delegated and auxiliary calls. Usage is copied out of running
+containers every five seconds. `summary.json` and progress lines aggregate all recorded calls, including archived
+interrupted attempts. Dollar amounts are Pi SDK estimates from the recorded model pricing, not invoices. Calls without
+reported usage remain unresolved rather than being treated as free. The denominator always comes from the frozen
+selected task count multiplied by repetitions, never from the successfully completed subset.
+
+Upstream task timeouts remain unchanged, with no additional global dollar cap and no automatic retry. A valid reward-0
+outcome or Agent timeout remains a completed task outcome. Setup/infrastructure errors, missing required evidence, and
+unfinished work return nonzero. Ctrl+C asks Harbor to stop and preserves available evidence. `--resume` validates the
+frozen protocol digest, assets, and configuration, requires the original Harbor job state, archives incomplete attempt
+directories before Harbor can remove them, and runs only
+unfinished trials in fresh containers. It cannot be combined with new source, task, or execution options. It never
+re-runs completed failures or silently changes the snapshot. Unreported usage from an interrupted request may remain
+unknown after task completion; resuming does not manufacture missing cost evidence.
+
+The TypeScript boundaries have offline tests; `check:terminal-bench` syntax-checks the Python Harbor adapter with
+Python 3 without requiring Harbor or credentials. Running an actual benchmark is an explicit maintainer action and is
+not an implementation completion requirement.
 
 ## Verification and migration status
 

@@ -1,4 +1,4 @@
-<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: f6192e1745f0702cb8f54ba50a61f784756395f7839fd618420a26794f4449f5 -->
+<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: b04a96db8fda6d2eb2c78b14aa63696c271e0c287e42eb8776414195cc638366 -->
 
 # 非代码文件检查清单
 
@@ -16,7 +16,7 @@
 
 - 以最终 `git ls-files` 结果为准，包含本清单及其中文镜像。
 - 纳入文字材料、配置、结构化数据、终端文本、锁文件、补丁、校验和、元数据和许可证。
-- 排除 TypeScript、JavaScript、shell 脚本、原生可执行文件和 PNG 图片。
+- 排除 TypeScript、JavaScript、Python、shell 脚本、原生可执行文件和 PNG 图片。
 - 机器状态、缓存、被忽略文件和未跟踪文件不在本清单范围内。
 
 ## 汇总
@@ -146,10 +146,6 @@
 | `docs/reports/skill-discovery-direct-read-20260830.json` | 保存直接读取 Skill 内容的 Skill Discovery 实验的结构化评估结果和原始判定。 |
 | `docs/reports/skill-discovery-isolated-confirmation-20260830.json` | 保存隔离 Context worker 混淆因素后的 Skill Discovery 确认实验的结构化评估结果和原始判定。 |
 | `docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json` | 保存拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验的结构化评估结果和原始判定。 |
-| `docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md` | 解释 Terminal-Bench 2.1 延迟比较的实验设计、测量口径和结论。 |
-| `docs/reports/terminal-bench-2.1-pi-stuff-latency-protocol-2026-08-30.json` | 保存 Terminal-Bench 延迟研究的 schema、study ID 和冻结实验参数。 |
-| `docs/reports/terminal-bench-2.1-pi-stuff-latency-results-2026-08-30.json` | 保存 Terminal-Bench 延迟实验的环境哈希和原始测量结果。 |
-| `docs/reports/terminal-bench-2.1-pi-stuff-source-manifest-snapshot-2026-08-30.json` | 保存 Terminal-Bench 运行所用源码、依赖和 Harbor 版本快照。 |
 | `docs/research/README.md` | 作为研究索引，导航保留的产品参考、实验和设计调查。 |
 | `docs/research/agent-activity-ui-reference.md` | 比较 Claude Code 与 Pi Subagents 的 Agent 活动 UI、生命周期和可见表面。 |
 | `docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md` | 研究 Claude Code 的 Tool 分组与叙事边界，为 Pi Stuff 展示边界提供依据。 |
@@ -237,7 +233,6 @@
 | `docs/i18n/zh-CN/docs/reports/pi-stuff-lifecycle-performance.md` | 中文镜像：记录 schema 6 生命周期测量契约、历史结果摘要和当前预算。 |
 | `docs/i18n/zh-CN/docs/reports/ps-8z1-final-acceptance-2026-08-29.md` | 中文镜像：记录 Bead `ps-8z1` 的最终验收范围、直接证据和结论。 |
 | `docs/i18n/zh-CN/docs/reports/single-package-migration.md` | 中文镜像：保留旧 Package 到现行 Module 的映射和 Runtime Resource 去向。 |
-| `docs/i18n/zh-CN/docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md` | 中文镜像：解释 Terminal-Bench 2.1 延迟比较的实验设计、测量口径和结论。 |
 | `docs/i18n/zh-CN/docs/research/README.md` | 中文镜像：作为研究索引，导航保留的产品参考、实验和设计调查。 |
 | `docs/i18n/zh-CN/docs/research/agent-activity-ui-reference.md` | 中文镜像：比较 Claude Code 与 Pi Subagents 的 Agent 活动 UI、生命周期和可见表面。 |
 | `docs/i18n/zh-CN/docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md` | 中文镜像：研究 Claude Code 的 Tool 分组与叙事边界，为 Pi Stuff 展示边界提供依据。 |
