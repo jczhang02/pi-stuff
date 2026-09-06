@@ -2,21 +2,22 @@
 
 ## Before starting
 
-Read `AGENTS.md`, `CONTEXT.md`, `docs/compatibility.md`, and the relevant ADR or Module README. Use Beads for accepted
-shared work and claim a ready issue before implementation; external requests are adopted by a maintainer first.
-Keep changes within Pi's native Package and Extension contracts.
+Follow the task-specific reading and engineering boundaries in [AGENTS.md](../AGENTS.md). Use Beads for accepted
+shared work under the [issue-tracker contract](../docs/agents/issue-tracker.md); external requests are adopted by a
+maintainer first.
 
 ## Development
 
-Use the repository's pinned Bun version. Run focused checks and `bun run check:fast` while developing; run the required
-CI checks on the final revision before PR readiness. Tests should exercise agreed public seams, remain offline, and
-never call an LLM or require credentials. Unknown-impact changes need the full check.
+Use the repository's pinned Bun version and [verification policy](../docs/code-quality.md#risk-based-verification),
+including its documentation-only path and reuse of required CI evidence for the same revision. Ordinary automated
+tests stay offline and credential-free; live Provider or external-Service acceptance requires explicit selection.
 
 ## Package changes
 
 Pi Stuff has one private local Package. Capability Modules are not independently versioned or published. When behavior
-needs a durable user-facing record, update `docs/releases/`. Change `packages/pi-stuff/suite.json`, run
-`bun run suite:generate`, and verify with `bun run pack:verify`; do not edit generated output alone.
+needs a durable user-facing record, update `docs/releases/`. For Suite composition changes, edit
+`packages/pi-stuff/suite.json` and run `bun run suite:generate`. Package contract changes require `bun run pack:verify`
+evidence under the verification policy.
 
 ## Commits
 

@@ -5,8 +5,8 @@ material, never Pi Runtime Resources or files for a user's global Pi Agent direc
 
 ## Read by task
 
-- Code changes and engineering-rule changes: read `CONTEXT.md`, `docs/compatibility.md`, and the relevant accepted ADR
-  or Module README before editing. Read only enough for read-only location or status work.
+- Code changes and engineering-rule changes: read the relevant sections of `CONTEXT.md`, `docs/compatibility.md`, and
+  the owning accepted ADR or Module README before editing. Read only enough for read-only location or status work.
 - Code changes, reviews, or verification work: read the relevant sections of `docs/code-quality.md`.
 - Visible surfaces: read `DESIGN.md` and the owning Module README or ADR.
 - Beads, delivery, or closure: read `docs/agents/issue-tracker.md`.
@@ -32,8 +32,11 @@ material, never Pi Runtime Resources or files for a user's global Pi Agent direc
   scope, authority, or a material product decision depends on the user.
 - Follow the risk-based checks and completion review in `docs/code-quality.md`. Reuse results for the same revision;
   broaden or repeat verification only for changed code, a failure, or an unresolved risk.
-- Carry authorized work through verification and delivery. Keep progress and the final outcome concise, with decisive
-  evidence and remaining work. If a skill causes a pause, identify the exact rule and explain why it applies.
+- Carry authorized work through verification and delivery. Apply follow-up messages to the ongoing task unless the
+  user cancels or replaces it; answer side questions and continue. Reuse authorization already given in the Session.
+- Explicit user instructions take precedence over repository workflow and skill guidelines. If a skill causes a pause
+  or departure from the request, link its exact file, quote the rule, and distinguish the requirement from interpretation.
+- Keep progress and the final outcome concise, with decisive evidence and remaining work.
 - Keep direct dependencies exact and `trustedDependencies` empty. Put worktrees under `.worktrees/`. Use signed
   Conventional Commits for coherent completed changes.
 - Do not infer merge from ancestry. Before reporting merge or cleanup, inspect the patch, target branch, and every

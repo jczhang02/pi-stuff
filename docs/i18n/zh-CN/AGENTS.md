@@ -1,4 +1,4 @@
-<!-- translation-source: AGENTS.md; translation-source-sha256: 0b5eb581539db76af55cc32dbdb4d15e51f38587f55a36decec2b09e9393d107 -->
+<!-- translation-source: AGENTS.md; translation-source-sha256: 7b0f5189c4f95bae46a61e129303529171cfef1a41bc8e9f78ce5fa49c3f2e17 -->
 
 # Pi Stuff 仓库指令
 
@@ -6,7 +6,7 @@
 
 ## 按任务读取
 
-- 修改代码或工程规则前，读取 `CONTEXT.md`、`docs/compatibility.md`，以及相关的已接受 ADR 或 Module README。只读定位或状态查询只需读取必要内容。
+- 修改代码或工程规则前，读取 `CONTEXT.md`、`docs/compatibility.md` 及所属已接受 ADR 或 Module README 的相关章节。只读定位或状态查询只需读取必要内容。
 - 修改代码、审查或执行验证时，读取 `docs/code-quality.md` 的相关章节。
 - 修改可见界面时，读取 `DESIGN.md` 和所属 Module README 或 ADR。
 - 操作 Beads、交付或关闭工作时，读取 `docs/agents/issue-tracker.md`。
@@ -22,7 +22,9 @@
 
 - 在所属边界修复共享根因，检查完整受影响 Capability，复用 Pi 公共 API 和既有 Suite 组件。明显且可逆的产品、架构选择自主处理；只有范围、权限或重要产品决定依赖用户时才询问。
 - 遵循 `docs/code-quality.md` 的风险验证和完成审查要求。复用同一版本的结果；仅因代码变化、失败或未解决风险扩大或重复验证。
-- 将已授权工作推进到验证和交付。进度与最终结果保持简洁，给出决定性证据及剩余工作。若 Skill 导致暂停，指出具体规则并解释适用原因。
+- 将已授权工作推进到验证和交付。除非用户取消或替换任务，否则后续消息用于调整当前任务；回答旁支问题后继续工作。复用 Session 中已有的授权。
+- 用户的明确指令优先于仓库工作流及 Skill 指南。若 Skill 导致暂停或偏离请求，链接具体文件、引用规则，并区分明确要求与自行解释。
+- 进度与最终结果保持简洁，给出决定性证据及剩余工作。
 - 直接依赖使用精确版本，`trustedDependencies` 保持为空。Worktree 放在 `.worktrees/` 下；完整、连贯的变更使用签名 Conventional Commit。
 - 不凭祖先关系推断合并。报告合并或清理前，检查补丁、目标分支和所有相关 worktree 的已跟踪与未跟踪状态；仅移除已合并且干净的 worktree。
 - 已接受且需持久跟踪的实现工作遵循 Beads 和 `docs/agents/issue-tracker.md`；只读讨论、探索及当前轮清单不需要 Bead。

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/code-quality.md; translation-source-sha256: 4164103eac7ed7b4882e2455ea96b911ac75ab0b05fd01778b1cd16d11c8e294 -->
+<!-- translation-source: docs/code-quality.md; translation-source-sha256: 39f7479d92be7919bb3a54b143ccf4e8a5c534c649392050f66a180ec7f834f6 -->
 
 # Repository-owned Source 质量
 
@@ -17,8 +17,10 @@
 - 纯文档变更需要文档镜像/SHA 检查和相关聚焦检查，不需要完整代码检查。代码变更开发期间运行聚焦测试和 `bun run check:fast`。
 - PR 或发布准备以同一 revision 的必要 CI 检查为权威；复用其结果，不在本地重复完整套件。影响未知或 CI 无法覆盖受影响路径时运行完整检查。
 - 公共接口和发布需要有代表性的真实 Host 证据；mock 不能认证它们。验收证据须与 benchmark 和聚合 Suite 评估分开。
+- 检查失败时，复用已有诊断，排查最小失败场景。区分产品、测试和环境故障；原因不明的重试通过不能解决间歇性失败。保持验收受阻状态明确，同时完成范围内不依赖该验收的工作。
 
 ## Thermo-Nuclear 完成审查
 
 - 使用 `thermo-nuclear-code-quality-review` 审查固定 base 的完整 diff 和完整受影响 Capability。不可用时直接执行本标准。通过要求没有结构退化、明显可行的简化遗漏、临时分支或边界泄漏、不必要的 wrapper/cast/optionality/helper 或无法说明的规模增长；检查 ownership、状态、耦合、类型边界、规范归属和原子性。
 - 每次代码变更都需要一次完整相关范围审查。发现问题后修复，并复查变更及受影响范围；只有修复引入新风险时才扩大范围。无发现结果只适用于精确审查的源码，之后的变更必须重新审查。
+- 跨 Capability 和架构变更需要独立审查。指令及工作流变更须审查要求是否冲突、完成标准是否明确；静态检查不能证明它们对行为的影响。

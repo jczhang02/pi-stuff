@@ -29,6 +29,9 @@ quality exemptions. Machine state, caches, worktrees, build artifacts, binary as
   than repeating the full suite locally. Run the full check when impact is unknown or CI cannot cover the affected path.
 - Public interfaces and releases require representative real-Host evidence; mocks cannot certify them. Keep acceptance
   evidence separate from benchmarks and aggregate Suite evaluations.
+- For failed checks, reuse recorded diagnoses and investigate the smallest failing scenario. Distinguish product,
+  test, and environment faults; an unexplained passing retry does not resolve an intermittent failure. Keep blocked
+  acceptance explicit while completing independent work in scope.
 
 ## Thermo-Nuclear completion review
 
@@ -39,3 +42,5 @@ quality exemptions. Machine state, caches, worktrees, build artifacts, binary as
 - One complete relevant-scope review is required for every code change. If it finds an issue, fix it and review the
   change plus affected scope again. Expand the scope only when the fix introduces new risk. A clean result applies only
   to the exact source reviewed, so later changes require review again.
+- Cross-Capability and architecture changes require independent review. Review instruction and workflow changes for
+  conflicting requirements and completion criteria; static checks cannot establish their behavioral effect.

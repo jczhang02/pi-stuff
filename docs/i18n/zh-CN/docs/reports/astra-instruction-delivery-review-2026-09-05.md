@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: 5400f90bfe714d522ecfda808914a85c6344474cc5ffb9b485a31458e3a281a1 -->
+<!-- translation-source: docs/reports/astra-instruction-delivery-review-2026-09-05.md; translation-source-sha256: d20bc91bc659bb47afa00bcc41c84230be523e644ed386338d5e5d97683016c0 -->
 
 # Astra 指令与交付审查 — 2026-09-05
 
@@ -58,3 +58,13 @@ CI 证据不能证明审查质量、提交签名、分支保护、合并授权�
 首次[分支 Acceptance 运行](https://github.com/jczhang02/pi-stuff/actions/runs/33976280826)的 Fast 通过，但 `test/goal-pty.test.ts` 失败：Ubuntu 的 tmux 3.4 不支持 `extended-keys-format`。在匹配到的 PTY 初始化中，只有 Goal 验证器未先探测就设置了这个可选项。使用真实 tmux 3.4 在本地运行同一测试，不到一秒即复现错误。复用既有服务器选项探测后，完整 Goal PTY 测试在 tmux 3.4、3.6a 和 Pi 0.85.0 上均通过。修复仅涉及验证环境初始化，不改变 Goal 行为或断言。
 
 `1724b346` 上的[下一次运行](https://github.com/jczhang02/pi-stuff/actions/runs/34000105818)通过了 Fast 和 Goal PTY，但 Context 多步恢复场景失败：fixture 记录了三次 Provider 请求，预期为两次。随后两次本地针对性运行分别失败和通过，确认存在间歇性失败。计数对应实际请求，并非误匹配经过转义的请求文本。本次变更未修改该场景或 Context 运行时；额外请求的原因仍未查明。其他隔离测试文件通过，但失败阻止了后续验收阶段。PR 228 保持草稿、未合并；完整验收与经验证的交付仍未完成。
+
+## 指令跟进审查 — 2026-09-06
+
+第二次审查依据当前 [Astra 提示指导](https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices)，以 `cfee220c` 为基准检查完整分支。独立的标准和需求审查发现一处残留冲突：贡献指南仍不加区分地规定开发检查，遗漏纯文档例外。现在它直接引用负责验证政策的文档，包括证据复用。Suite 生成仅由组合变化触发，普通离线测试与显式选择的真实服务验收也有了明确区分。
+
+AGENTS 明确了用户指令优先级、已有授权，以及收到后续消息后继续原任务的要求。Skill 导致暂停时，须引用文件和具体规则，区分明确要求与自行解释。质量文档将已接受的失败诊断政策纳入当前工作流，并保留跨 Capability 或架构变化的独立审查要求，不规定 Agent 调度方式。
+
+本轮 AGENTS 从 54 增至 57 个物理行，贡献指南从 31 增至 32 行，质量文档从 41 增至 46 行。新增规则处理已发现的歧义和失败处置；验证命令只由一份政策文档负责。
+
+代码审查建议增加 PR SHA 格式校验，但源码证据排除了该问题：`readBead()` 验证每个交付 SHA，`deliveryLines()` 在查询 CI 前要求 PR head 属于这个已经验证的列表。因此无需修改可执行代码。指令审查和镜像/SHA 检查不能证明模型行为，也不能解决上述 Context 验收失败；本次不声称行为性能有所改善。

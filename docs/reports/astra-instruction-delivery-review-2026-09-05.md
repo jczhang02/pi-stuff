@@ -82,3 +82,24 @@ Two focused local runs then failed and passed respectively, confirming an interm
 actual requests, not matching escaped request text. This change does not modify that scenario or the Context runtime;
 the extra request's cause remains unresolved. Other isolated test files passed, but the failed test stopped the later
 acceptance stages. PR 228 remains a draft and unmerged; full acceptance and verified delivery remain incomplete.
+
+## Instruction follow-up review — 2026-09-06
+
+A second review used the current [Astra prompting guidance](https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices)
+and compared the full branch against `cfee220c`. Independent Standards and Spec reviews found a remaining instruction
+conflict: CONTRIBUTING still prescribed development checks without the documentation exception. It now points to the
+owning verification policy, including evidence reuse. Suite generation is conditional on composition changes, and
+ordinary offline tests are distinguished from explicitly selected live acceptance.
+
+AGENTS now makes user-instruction priority, existing authorization, and continuation after follow-up messages explicit.
+A skill-induced pause must cite the file and rule and distinguish a requirement from interpretation. The quality
+document brings the accepted failure-diagnosis policy into the active workflow and retains independent review for
+cross-Capability or architecture changes without prescribing Agent scheduling.
+
+For this follow-up, AGENTS grows from 54 to 57 physical lines, CONTRIBUTING from 31 to 32, and code quality from 41 to
+46. The added rules address identified ambiguity and failure handling; the verification commands have one owning policy.
+
+The code review's suggested extra PR SHA-format check was rejected with direct source evidence: `readBead()` validates
+every delivery SHA, and `deliveryLines()` requires the PR head to belong to that validated list before querying CI.
+No executable changes were needed. Instruction review and mirror/SHA checks cannot establish model behavior or resolve
+the Context acceptance failure above; no behavioral performance improvement is claimed.

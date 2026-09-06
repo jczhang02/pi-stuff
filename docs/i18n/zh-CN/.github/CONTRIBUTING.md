@@ -1,18 +1,18 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: de7794c373ca73d46d15937633202fb0f06af12f321db5156b76e020e9890e0d -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: fcc48f9464b380c1367fccfacaed32804f859a112351488a2a831740171dc5ff -->
 
 # 贡献指南
 
 ## 开始之前
 
-阅读 `AGENTS.md`、`CONTEXT.md`、`docs/compatibility.md` 及相关 ADR 或 Module README。已接受的共享工作使用 Beads，并在实现前认领 ready issue；外部请求先由维护者接纳。变更须处于 Pi 原生 Package 与 Extension 契约之内。
+遵循 [AGENTS.md](../AGENTS.md) 中按任务读取的要求和工程边界。已接受的共享工作按 [Issue 跟踪契约](../docs/agents/issue-tracker.md)使用 Beads；外部请求先由维护者接纳。
 
 ## 开发
 
-使用仓库固定的 Bun 版本。开发时运行聚焦检查和 `bun run check:fast`；PR 准备前在最终 revision 运行必要 CI 检查。测试应覆盖约定的公开 seam，保持离线，不调用 LLM 或要求凭据。影响未知的变更需要完整检查。
+使用仓库固定的 Bun 版本，遵循[验证政策](../docs/code-quality.md#按风险验证)，包括纯文档变更路径和复用同一版本的必要 CI 证据。普通自动化测试保持离线且无需凭据；真实 Provider 或外部 Service 验收需要显式选择。
 
 ## Package 变更
 
-Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版本或发布。行为需要持久用户记录时更新 `docs/releases/`。修改 `packages/pi-stuff/suite.json`，运行 `bun run suite:generate`，并用 `bun run pack:verify` 验证；不得只编辑生成输出。
+Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版本或发布。行为需要持久用户记录时更新 `docs/releases/`。Suite 组合变化时，修改 `packages/pi-stuff/suite.json` 并运行 `bun run suite:generate`。Package 契约变化需要按验证政策提供 `bun run pack:verify` 证据。
 
 ## 提交
 
