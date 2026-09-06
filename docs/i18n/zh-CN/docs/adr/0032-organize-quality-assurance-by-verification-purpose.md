@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: f1b6fb54dcfc5d24d13c2919453c6d0d1b74cdef1809867840a45a3d450f67ef -->
+<!-- translation-source: docs/adr/0032-organize-quality-assurance-by-verification-purpose.md; translation-source-sha256: dee5b58bbba066322b3d895f0e7cd82c41ad6ed0618b8e173d00c65374acb265 -->
 
 ---
 status: accepted
@@ -79,6 +79,16 @@ status: accepted
 - Checks 和 Tests 在要求不满足或必要环境缺失时返回非零，并给出可区分的诊断。Benchmarks 在有效实验完成时返回成功，即使结果不好；实验准备错误、执行器崩溃和必要数据不完整返回非零。按既定协议计分的任务失败或超时属于有效结果，不自动意味着实验未完成。Benchmark 的退出状态和测量结果都不具备 PR 阻断权。
 - 仓库工作流显式使用 `bun run <script>`；`bun test` 保留为原生聚焦测试工具，不表示执行了仓库编排。Bun 的脚本列表、筛选和 reporter 满足约定接口时直接复用。迁移时同步更新调用方与文档，删除冗余脚本别名。
 
+### 迁移批次与 CI 执行设计
+
+- 分三批独立验证：先整理命令和执行边界并消除重复调用；再完成测试归类、修复、合并和删除；最后实现范围选择、CI 编排和剩余目录迁移。每批同步文档，临时旧路径不是重复运行的理由。
+- CI 由 `Plan`、`Checks`、`Tests` 和最终 `Verify` 结果组成。Plan 决定所需测试范围；Checks 独立运行，Tests 仅等待计划，不等待静态检查完成。Checks 和 Tests 是两类实质验证，计划和汇总不重复执行它们。五个测试层级是分类边界，不要求建立五个 CI job。
+- PR 与 `main` push 共用保守风险选择规则。PR 对比目标分支，push 使用 before/after 修订范围；范围缺失或不可靠时选择全部适用测试。保留手动完整验证。仅覆盖已经认证的平台，不照搬无关 Node／操作系统矩阵。
+- 对支持的事件始终触发验证 workflow，在内部决定是否需要 Tests。即使依赖失败或跳过，Verify 也检查计划和每个必要 job；只有成功计划明确不需要 Tests 时才允许跳过。必要执行失败、取消、结果缺失或意外跳过都不能生成通过汇总。未来配置必需检查时使用这个稳定结果。
+- 在证明替代方式等效之前保留逐文件 OS 进程隔离。先测量文件及环境准备成本，再引入有限测试分片；PTY 和原生资源场景保持保守并发。不为每个测试建立 CI job，也不用重试掩盖资源争用。共享本地与 CI 执行定义。
+- 取消同一 PR 的过时运行。后一次 main push 的选择范围可能不同，因此不只因新 push 到来就取消前一次验证，应保留两个修订范围的证据。依赖下载缓存键包含工具链和锁文件，保留精确产物校验、离线测试及失败报告。
+- Benchmarks 不参与此 CI 门禁。未接受五分钟目标或新的超时限制；报告前后墙钟耗时与执行覆盖，再优化已证实瓶颈。分支保护与直接推送权限属于独立仓库设置，本架构决定不修改它们；main push 验证是在直接推送后发现问题，不是阻止推送。
+
 ### 公开实践参考
 
 上述具体名称是仓库约定，不是通用软件测试标准。于 2026-09-05 核对：
@@ -87,6 +97,11 @@ status: accepted
 - [Vite scripts](https://github.com/vitejs/vite/blob/main/package.json) 提供具名项目工作流；本项目采用一致命名空间，不照搬无关构建和发布命令。
 - [Biome CLI](https://biomejs.dev/reference/cli/) 通过 `--write` 显式启用修改；保留验证与修复的区分。
 - [Bun runtime](https://bun.com/docs/runtime) 区分原生命令和 package scripts，并转发脚本参数；[Bun reporters](https://bun.com/docs/test/reporters) 提供原生终端与 JUnit 报告。
+
+2026-09-06 补充核对的 CI 参考：
+
+- [Vite CI](https://github.com/vitejs/vite/blob/main/.github/workflows/ci.yml) 与 [Vitest CI](https://github.com/vitest-dev/vitest/blob/main/.github/workflows/ci.yml) 区分变更检测、静态工作和测试，并验证 PR 与主分支推送。矩阵服务于各自项目，不直接照搬。
+- [GitHub job conditions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions) 将跳过的 job 按成功处理，因此汇总必须显式核对计划所要求的执行。
 
 ## 后果
 
