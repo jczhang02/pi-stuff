@@ -90,7 +90,7 @@ jobs:
     needs: plan
     if: ${{ needs.plan.result == 'success' && needs.plan.outputs.tests_required == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       PI_BIN: ${{ github.workspace }}/.artifacts/pi-release/pi/pi
       PI_STUFF_CODE_MODE_HOST: ${{ github.workspace }}/.artifacts/code-mode-host/codex-code-mode-host
