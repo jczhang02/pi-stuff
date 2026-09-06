@@ -8,16 +8,47 @@ export type CiJobResult = "success" | "failure" | "cancelled" | "skipped" | "mis
 
 const TEST_REPORT = Type.Object({
 	profile: Type.Literal("offline"),
+	status: Type.Optional(Type.String()),
+	acceptanceMatrix: Type.Optional(Type.Union([Type.Literal("full"), Type.Literal("representative")])),
+	setupDurationMs: Type.Optional(Type.Number({ minimum: 0 })),
 	scope: Type.Object({ files: Type.Array(Type.String()) }),
+	notRun: Type.Optional(Type.Array(Type.String())),
+	cancelled: Type.Optional(Type.Array(Type.String())),
+	inProgress: Type.Optional(Type.Array(Type.String())),
 	results: Type.Array(
 		Type.Object({
 			file: Type.String(),
 			exitCode: Type.Integer(),
+			durationMs: Type.Optional(Type.Number({ minimum: 0 })),
 			executed: Type.Integer({ minimum: 0 }),
 			skipped: Type.Integer({ minimum: 0 }),
 		}),
 	),
 });
+export type TestReport = Static<typeof TEST_REPORT>;
+
+export function readTestReport(path: string): TestReport {
+	const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+	if (!Value.Check(TEST_REPORT, raw)) throw new Error(`Invalid Tests report: ${path}`);
+	return raw;
+}
+
+export function completeTestReport(report: TestReport, files: string[], matrix = "full"): boolean {
+	return (
+		(report.status === undefined || report.status === "passed") &&
+		(report.acceptanceMatrix ?? "full") === matrix &&
+		(report.notRun?.length ?? 0) === 0 &&
+		(report.cancelled?.length ?? 0) === 0 &&
+		(report.inProgress?.length ?? 0) === 0 &&
+		sameFiles(
+			report.results.map((result) => result.file),
+			files,
+		) &&
+		sameFiles(report.scope.files, files) &&
+		report.results.every((result) => result.exitCode === 0 && result.executed > 0)
+	);
+}
+
 export interface CiAggregateInput {
 	planResult: CiJobResult;
 	testsRequired: boolean | undefined;
@@ -41,11 +72,7 @@ export function aggregateCiResult(input: CiAggregateInput) {
 	if (input.testsResult !== "success") return { ok: false, reason: `Required Tests result is ${input.testsResult}` };
 	const report = input.testsReport;
 	if (!report) return { ok: false, reason: "Tests report artifact is missing" };
-	const files = report.results.map((result) => result.file);
-	const complete =
-		sameFiles(files, input.plan.files) &&
-		sameFiles(report.scope.files, input.plan.files) &&
-		report.results.every((result) => result.exitCode === 0 && result.executed > 0);
+	const complete = completeTestReport(report, input.plan.files, input.plan.acceptanceMatrix ?? "full");
 	return {
 		ok: complete,
 		reason: complete ? "Required Tests succeeded" : "Tests report is incomplete or contains failures",
@@ -81,8 +108,7 @@ function main(): void {
 	if (artifactPresent && planPath) plan = readVerificationPlan(planPath, process.cwd());
 	const reportPath = process.env["CI_TEST_REPORT_PATH"];
 	const reportPresent = reportPath ? existsSync(reportPath) : false;
-	const report =
-		reportPresent && reportPath ? Value.Parse(TEST_REPORT, JSON.parse(readFileSync(reportPath, "utf8"))) : null;
+	const report = reportPresent && reportPath ? readTestReport(reportPath) : null;
 	const outcome = aggregateCiResult({
 		planResult: parseResult(process.env["CI_PLAN_RESULT"], "Plan"),
 		testsRequired: required,

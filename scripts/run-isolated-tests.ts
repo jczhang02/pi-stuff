@@ -16,11 +16,21 @@ function runTestFiles(
 		nativeDirectory: string;
 		names: readonly string[];
 		profile: TestProfile;
+		acceptanceMatrix: "full" | "representative";
+		reportPath: string;
+		keepGoing: boolean;
 	},
 ) {
-	const { nodeRoot, repositoryRoot, nativeDirectory, names, profile } = options;
+	const { nodeRoot, repositoryRoot, nativeDirectory, names, profile, acceptanceMatrix, reportPath, keepGoing } =
+		options;
 	const results: { file: string; exitCode: number; durationMs: number; executed: number; skipped: number }[] = [];
+	const persist = (status: "running" | "failed", inProgress?: string) =>
+		writeFileSync(
+			reportPath,
+			`${JSON.stringify({ profile, status, acceptanceMatrix, scope: { files: testFiles }, results, inProgress: inProgress ? [inProgress] : [], notRun: testFiles.slice(results.length + (inProgress ? 1 : 0)), cancelled: [] }, null, 2)}\n`,
+		);
 	for (const [index, testFile] of testFiles.entries()) {
+		persist("running", testFile);
 		const title = `[${index + 1}/${testFiles.length}] ${testFile}`;
 		const githubGroup = process.env["GITHUB_ACTIONS"] === "true";
 		if (githubGroup) console.log(`::group::${title}`);
@@ -59,6 +69,7 @@ function runTestFiles(
 				...process.env,
 				PI_BIN: process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi",
 				PI_STUFF_TEST_PROFILE: profile,
+				PI_STUFF_ACCEPTANCE_MATRIX: acceptanceMatrix,
 			},
 			stdin: "ignore",
 			stdout: "inherit",
@@ -69,13 +80,16 @@ function runTestFiles(
 		const nativeOutput = existsSync(nativeReport) ? readFileSync(nativeReport, "utf8") : "";
 		const skipped = (nativeOutput.match(/<skipped\b/gu) ?? []).length;
 		const executed = Math.max(0, (nativeOutput.match(/<testcase\b/gu) ?? []).length - skipped);
+		const exitCode = result.exitCode || (!nativeOutput || (names.length === 0 && executed === 0) ? 1 : 0);
 		results.push({
 			file: testFile,
-			exitCode: result.exitCode || (!nativeOutput || (names.length === 0 && executed === 0) ? 1 : 0),
+			exitCode,
 			durationMs: performance.now() - started,
 			executed,
 			skipped,
 		});
+		persist(exitCode === 0 ? "running" : "failed");
+		if (exitCode !== 0 && !keepGoing) break;
 	}
 	return results;
 }
@@ -93,7 +107,9 @@ function parseTestArguments(args: string[]) {
 			name: { type: "string", multiple: true },
 			output: { type: "string" },
 			profile: { type: "string" },
+			matrix: { type: "string" },
 			plan: { type: "string" },
+			"keep-going": { type: "boolean" },
 		},
 	});
 }
@@ -109,8 +125,8 @@ function selectTestFiles({ values, positionals }: ReturnType<typeof parseTestArg
 	const capabilities = values.capability ?? [];
 	const names = values.name ?? [];
 	const plan = values.plan ? readVerificationPlan(values.plan, repositoryRoot) : undefined;
-	if (plan && ([...filters, ...levels, ...capabilities, ...names].length > 0 || values.profile))
-		throw new Error("--plan cannot be combined with test selectors or --profile");
+	if (plan && ([...filters, ...levels, ...capabilities, ...names].length > 0 || values.profile || values.matrix))
+		throw new Error("--plan cannot be combined with test selectors, --profile, or --matrix");
 	for (const level of levels) if (!LEVELS.has(level)) throw new Error(`Unknown test level: ${level}`);
 	if ([...filters, ...capabilities, ...names].some((filter) => filter.length === 0))
 		throw new Error("Test selectors must not be empty");
@@ -139,22 +155,52 @@ function selectTestFiles({ values, positionals }: ReturnType<typeof parseTestArg
 			(capabilities.length === 0 || capabilities.includes(parts[2] ?? ""))
 		);
 	});
-	return { profile, repositoryRoot, levels, capabilities, names, plan, testFiles } as const;
+	const acceptanceMatrix = plan?.acceptanceMatrix ?? values.matrix ?? "full";
+	if (acceptanceMatrix !== "full" && acceptanceMatrix !== "representative")
+		throw new Error(`Unknown acceptance matrix: ${acceptanceMatrix}`);
+	return { profile, repositoryRoot, levels, capabilities, names, plan, testFiles, acceptanceMatrix } as const;
+}
+
+async function prepareTestRun(selection: ReturnType<typeof selectTestFiles>, reportPath: string) {
+	const { testFiles, profile, repositoryRoot, acceptanceMatrix } = selection;
+	const started = performance.now();
+	const pending = {
+		profile,
+		acceptanceMatrix,
+		scope: { files: testFiles },
+		results: [],
+		notRun: testFiles,
+		cancelled: [],
+		inProgress: [],
+	};
+	writeFileSync(reportPath, `${JSON.stringify({ ...pending, status: "running" }, null, 2)}\n`);
+	try {
+		await preflightTests(testFiles, profile);
+		const nodeRoot = testFiles.some((path) => path.endsWith(".node.ts"))
+			? await prepareGoalTests(repositoryRoot)
+			: repositoryRoot;
+		return { nodeRoot, setupDurationMs: performance.now() - started };
+	} catch (error) {
+		writeFileSync(
+			reportPath,
+			`${JSON.stringify({ ...pending, status: "preflight-failed", error: String(error) }, null, 2)}\n`,
+		);
+		throw error;
+	}
 }
 
 async function main(): Promise<void> {
 	const { values, positionals } = parseTestArguments(process.argv.slice(2));
 	if (values.help) {
 		console.log(
-			"Usage: bun run test [--level <level>] [--capability <name>] [--name <pattern>] [--file <path-fragment>] [file ...] [--list] [--profile offline|live] [--plan <plan.json>] [--output <report.json>]",
+			"Usage: bun run test [--level <level>] [--capability <name>] [--name <pattern>] [--file <path-fragment>] [file ...] [--list] [--profile offline|live] [--matrix full|representative] [--keep-going] [--plan <plan.json>] [--output <report.json>]",
 		);
 		console.log("Offline tests, one OS process per file. --list previews without executing tests.");
 		return;
 	}
-	const { profile, repositoryRoot, levels, capabilities, names, plan, testFiles } = selectTestFiles({
-		values,
-		positionals,
-	});
+	const selection = selectTestFiles({ values, positionals });
+	const { profile, repositoryRoot, levels, capabilities, names, plan, testFiles, acceptanceMatrix } = selection;
+	const keepGoing = values["keep-going"] === true;
 	const reportPath = resolve(
 		values.output ?? `.artifacts/tests/${new Date().toISOString().replaceAll(":", "-")}-${process.pid}.json`,
 	);
@@ -178,7 +224,9 @@ async function main(): Promise<void> {
 	console.log(
 		`Profile: ${profile}; ${profile === "offline" ? "no live Providers" : "live Provider calls"}. Report: ${reportPath}`,
 	);
-	console.log(`Selected ${testFiles.length} test files, each in its own Bun or Node OS process.`);
+	console.log(
+		`Selected ${testFiles.length} test files, each in its own Bun or Node OS process. Acceptance matrix: ${acceptanceMatrix}; ${keepGoing ? "complete diagnostics" : "stop on failure"}.`,
+	);
 	if (values.list) {
 		console.log(testFiles.map((file) => `${file} [${requirementsForTest(file).join(", ")}]`).join("\n"));
 		if (names.length)
@@ -188,32 +236,37 @@ async function main(): Promise<void> {
 		return;
 	}
 	mkdirSync(dirname(reportPath), { recursive: true });
-	try {
-		await preflightTests(testFiles, profile);
-	} catch (error) {
-		writeFileSync(
-			reportPath,
-			`${JSON.stringify({ profile, status: "preflight-failed", files: testFiles, error: String(error), results: [] }, null, 2)}\n`,
-		);
-		throw error;
-	}
-	const setupStarted = performance.now();
+	const { nodeRoot, setupDurationMs } = await prepareTestRun(selection, reportPath);
 	const nativeDirectory = `${reportPath}.native`;
 	mkdirSync(nativeDirectory, { recursive: true });
-	const nodeRoot = testFiles.some((path) => path.endsWith(".node.ts"))
-		? await prepareGoalTests(repositoryRoot)
-		: repositoryRoot;
-
-	const setupDurationMs = performance.now() - setupStarted;
-	const results = runTestFiles(testFiles, { nodeRoot, repositoryRoot, nativeDirectory, names, profile });
+	const results = runTestFiles(testFiles, {
+		nodeRoot,
+		repositoryRoot,
+		nativeDirectory,
+		names,
+		profile,
+		acceptanceMatrix,
+		reportPath,
+		keepGoing,
+	});
+	const notRun = testFiles.slice(results.length);
+	const matched = names.length === 0 || results.some((result) => result.executed > 0);
+	const status =
+		!matched || results.some((result) => result.exitCode !== 0) ? "failed" : notRun.length ? "incomplete" : "passed";
 	writeFileSync(
 		reportPath,
 		`${JSON.stringify(
 			{
 				profile,
+				status,
+				acceptanceMatrix,
+				keepGoing,
 				setupDurationMs,
 				scope: { levels, capabilities, names, files: testFiles },
 				results,
+				notRun,
+				cancelled: [],
+				inProgress: [],
 				totals: {
 					nativeExecuted: results.reduce((sum, result) => sum + result.executed, 0),
 					skipped: results.reduce((sum, result) => sum + result.skipped, 0),
@@ -226,13 +279,14 @@ async function main(): Promise<void> {
 	);
 	const failures = results.filter((result) => result.exitCode !== 0).map((result) => result.file);
 
-	if (failures.length > 0) {
+	if (failures.length > 0 || notRun.length > 0) {
 		console.error(`\n${failures.length} isolated test file(s) failed:`);
-		for (const testFile of failures) console.error(`- ${testFile}`);
+		for (const testFile of failures) console.error(`- failed: ${testFile}`);
+		for (const testFile of notRun) console.error(`- not run: ${testFile}`);
 		process.exitCode = 1;
 		return;
 	}
-	if (names.length > 0 && results.every((result) => result.executed === 0)) {
+	if (!matched) {
 		console.error("No tests matched the requested name pattern(s).");
 		process.exitCode = 1;
 		return;

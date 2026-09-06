@@ -6,6 +6,7 @@ import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { CODE_MODE_NO_OUTPUT_MESSAGE } from "../packages/pi-stuff/src/code-mode/runtime.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { selectAcceptanceMatrix } from "./acceptance-matrix.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
@@ -626,10 +627,13 @@ if (import.meta.main) {
 		piBinary: PI_BIN,
 		packagePath: join(root, "packages/pi-stuff"),
 	});
-	for (const [columns, rows] of [
-		[100, 32],
-		[64, 28],
-	] as const) {
+	for (const [columns, rows] of selectAcceptanceMatrix(
+		[
+			[100, 32],
+			[64, 28],
+		] as const,
+		[[100, 32]] as const,
+	)) {
 		await verifyToolsPty({
 			piBinary: PI_BIN,
 			packagePath: join(root, "packages/pi-stuff"),
@@ -637,5 +641,5 @@ if (import.meta.main) {
 			rows,
 		});
 	}
-	console.log("Certified Tool UI in 100x32 and 64x28 PTYs");
+	console.log("Certified Tool UI in selected PTYs");
 }

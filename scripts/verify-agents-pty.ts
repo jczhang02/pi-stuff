@@ -5,6 +5,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { selectAcceptanceMatrix } from "./acceptance-matrix.js";
 import {
 	AGENTS_EXPECT_PROGRAM,
 	type FleetviewSelection,
@@ -730,10 +731,13 @@ Return the deterministic fixture result.
 
 if (import.meta.main) {
 	const { PI_BIN = "/opt/pi-coding-agent/pi", PI_STUFF_AGENTS_PTY_ARTIFACT_DIR } = process.env;
-	for (const [columns, rows] of [
-		[100, 32],
-		[64, 28],
-	] as const) {
+	for (const [columns, rows] of selectAcceptanceMatrix(
+		[
+			[100, 32],
+			[64, 28],
+		] as const,
+		[[100, 32]] as const,
+	)) {
 		const verificationOptions: AgentsPtyVerificationOptions = {
 			piBinary: PI_BIN,
 			packagePath: join(root, "packages/pi-stuff"),
@@ -745,5 +749,5 @@ if (import.meta.main) {
 		}
 		await verifyAgentsPty(verificationOptions);
 	}
-	console.log("Certified Agents in 100x32 and 64x28 PTYs");
+	console.log("Certified Agents in selected PTYs");
 }

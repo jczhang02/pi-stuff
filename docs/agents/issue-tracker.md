@@ -92,15 +92,17 @@ Open planning Beads may publish without a delivery record; their comment states 
 
 The publisher checks code delivery before synchronization and again before preparing the delivery comment. It reads
 this repository's `.github/workflows/ci.yml` runs for the target SHA, selects the latest eligible run by run number,
-and checks jobs from that run's exact attempt. Required jobs must each have one completed successful result. Missing,
-failed, cancelled, skipped, or pending required evidence rejects publication; a free-form validation statement cannot
+and checks jobs from that run's exact attempt. Plan, Checks, and Verify must each have one completed successful result. Tests must have one legacy result or every
+uniquely numbered successful shard declared by its job names; mixed, missing, or duplicated shards reject publication.
+Only the plain Tests job may be skipped under the successful Verify no-tests decision. Missing, failed, cancelled, or
+pending required evidence rejects publication; a free-form validation statement cannot
 override it. The managed comment links the verified Actions attempt and names the checks that passed.
 
 - PR delivery targets the current PR head. Pull-request and manual runs are eligible. The publisher verifies the current
-  workflow's `Plan`, `Checks`, `Tests`, and `Verify` jobs rather than reclassifying paths; `Tests` may be skipped only
+  workflow's `Plan`, `Checks`, complete `Tests` shard set, and `Verify` jobs rather than reclassifying paths; `Tests` may be skipped only
   when the successful Plan explicitly requires no tests. An incomplete or stale workflow run blocks publication.
-- Branch-only delivery targets the last recorded commit. Push and manual runs are eligible and require the same four
-  jobs, with the same valid no-tests exception. An untested feature branch needs a manual CI run.
+- Branch-only delivery targets the last recorded commit. Push and manual runs are eligible and require the same job roles
+  and complete Tests shard set, with the same valid no-tests exception. An untested feature branch needs a manual CI run.
 - No-code and open planning records need no CI evidence. Historical code deliveries need retrievable evidence when
   republished; missing history is not success.
 

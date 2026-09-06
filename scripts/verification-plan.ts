@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { discoverTestFiles, importsOf, resolveImport, suiteCapabilities, testCapability } from "./test-inventory.ts";
+import { discoverTestFiles, suiteCapabilities, testCapability } from "./test-inventory.ts";
+import { verificationDependencies } from "./verification-dependencies.ts";
 
 export type VerificationPlan = {
 	version: 1;
@@ -13,6 +14,8 @@ export type VerificationPlan = {
 	reason: string;
 	changedFiles: string[];
 	files: string[];
+	acceptanceMatrix?: "full" | "representative";
+	previousFullRun?: number;
 };
 
 const ZERO = "0".repeat(40);
@@ -100,30 +103,21 @@ function sourceCapability(path: string, capabilities: Set<string>): string | und
 	const capability = /^packages\/pi-stuff\/src\/([^/]+)\//u.exec(path)?.[1];
 	return capability && (capabilities.has(capability) ? capability : undefined);
 }
+function affectsAcceptanceDimensions(root: string, path: string, base: string | null): boolean {
+	if (!CODE.test(path)) return true;
+	const dimension =
+		/(?:conversation-ui|theme|geometry|viewport|pty|render|layout|terminal|screen|column|width|height)/iu;
+	if (dimension.test(path)) return true;
+	const changedText = base ? git(root, ["diff", "--unified=0", base, "--", path]) : "";
+	return dimension.test(changedText || content(root, path));
+}
 function sourceFiles(root: string): string[] {
-	return names(root, ["ls-files", "-coz", "--exclude-standard", "--", "packages/pi-stuff/src", "test"]).filter(
+	return names(root, ["ls-files", "-coz", "--exclude-standard", "--", "packages/pi-stuff", "scripts", "test"]).filter(
 		(path) => CODE.test(path),
 	);
 }
 function dependencyCapabilities(root: string, changed: string[], all: string[], capabilities: Set<string>) {
-	const files = new Set([...sourceFiles(root), ...all]);
-	const reverse = new Map<string, Set<string>>();
-	let uncertain = false;
-	for (const file of files) {
-		const imports = importsOf(root, file);
-		if (imports.opaque) uncertain = true;
-		for (const specifier of imports.specifiers) {
-			if (!specifier.startsWith(".")) continue;
-			const target = resolveImport(root, file, specifier);
-			if (!target || (CODE.test(target) && !files.has(target))) {
-				uncertain = true;
-				continue;
-			}
-			const dependents = reverse.get(target) ?? new Set<string>();
-			dependents.add(file);
-			reverse.set(target, dependents);
-		}
-	}
+	const { reverse, uncertain } = verificationDependencies(root, sourceFiles(root), all);
 	const seen = new Set(changed);
 	const caps = new Set<string>();
 	for (const path of changed) {
@@ -144,7 +138,9 @@ function dependencyCapabilities(root: string, changed: string[], all: string[], 
 	}
 	return { caps, uncertain };
 }
-function selectTests(root: string, changed: string[], all: string[], base: string | null) {
+type TestSelection = { files: string[]; reason: string; acceptanceMatrix?: "full" | "representative" };
+export function selectAffectedTests(root: string, changed: string[], base: string | null = null): TestSelection {
+	const all = allTests(root);
 	if (!changed.length) return { files: all, reason: "clean or empty change set; all applicable offline tests" };
 	const capabilities = suiteCapabilities(root);
 	const known = (path: string): boolean =>
@@ -174,18 +170,17 @@ function selectTests(root: string, changed: string[], all: string[], base: strin
 	}
 	if (!caps.size) return { files: all, reason: "unknown impact; all applicable offline tests" };
 	const files = all.filter((file) => {
-		const level = file.split("/")[1];
 		return (
 			caps.has(testCapability(file, capabilities) ?? "") ||
-			((productionChanged || caps.has("repository")) && testCapability(file, capabilities) === "repository") ||
-			level === "system" ||
-			level === "system-integration" ||
-			level === "acceptance"
+			((productionChanged || caps.has("repository")) && testCapability(file, capabilities) === "repository")
 		);
 	});
 	return {
 		files: files.length ? files : all,
 		reason: `selected changed Capability(s): ${[...caps].sort().join(", ")}`,
+		acceptanceMatrix: changed.some((path) => affectsAcceptanceDimensions(root, path, base))
+			? "full"
+			: "representative",
 	};
 }
 function plan(
@@ -196,7 +191,7 @@ function plan(
 	reason?: string,
 ): VerificationPlan {
 	const all = allTests(root);
-	const selected = reason ? { files: all, reason } : selectTests(root, changed, all, base);
+	const selected = reason ? { files: all, reason } : selectAffectedTests(root, changed, base);
 	return {
 		version: 1,
 		profile: "offline",
@@ -206,6 +201,7 @@ function plan(
 		reason: selected.reason,
 		changedFiles: changed,
 		files: selected.files,
+		acceptanceMatrix: selected.files.length === all.length ? "full" : (selected.acceptanceMatrix ?? "full"),
 	};
 }
 export function buildVerificationPlan(
@@ -215,6 +211,34 @@ export function buildVerificationPlan(
 	const head = ref(root, "HEAD");
 	const ci = environment["VERIFICATION_PLAN_CI"] === "1";
 	if (ci) {
+		if (environment["GITHUB_EVENT_NAME"] === "schedule") {
+			const previousFullRun = Number(environment["CI_PREVIOUS_FULL_RUN"]);
+			if (
+				head &&
+				environment["CI_PREVIOUS_FULL_SHA"] === head &&
+				Number.isSafeInteger(previousFullRun) &&
+				previousFullRun > 0
+			)
+				return {
+					version: 1,
+					profile: "offline",
+					base: head,
+					head,
+					mode: "none",
+					reason: `scheduled main already passed full verification in run ${previousFullRun}`,
+					changedFiles: [],
+					files: [],
+					acceptanceMatrix: "full",
+					previousFullRun,
+				};
+			return plan(
+				root,
+				null,
+				head,
+				[],
+				"nightly full verification; no reusable full evidence for this main revision",
+			);
+		}
 		if (environment["GITHUB_EVENT_NAME"] === "workflow_dispatch")
 			return plan(
 				root,

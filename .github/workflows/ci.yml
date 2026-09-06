@@ -5,6 +5,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '17 18 * * *' # 02:17 Asia/Shanghai
 
 permissions:
   contents: read
@@ -22,10 +24,14 @@ env:
 jobs:
   plan:
     name: Plan
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       tests_required: ${{ steps.plan.outputs.tests_required }}
+      shards: ${{ steps.shards.outputs.shards }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,6 +51,11 @@ jobs:
           test "$(bun --version)" = "$BUN_VERSION"
           bun install --frozen-lockfile --ignore-scripts
           bun pm untrusted
+      - name: Detect unchanged scheduled full run
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/verification-schedule.ts
       - name: Select verification plan
         id: plan
         env:
@@ -52,11 +63,19 @@ jobs:
           CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           CI_HEAD_SHA: ${{ github.sha }}
         run: bun scripts/verification-plan.ts --ci --output .artifacts/verification-plan.json
+      - name: Partition measured verification shards
+        id: shards
+        run: |
+          set -euo pipefail
+          matrix="$(bun scripts/verification-shards.ts --plan .artifacts/verification-plan.json --output .artifacts/shards)"
+          echo "shards=$matrix" >> "$GITHUB_OUTPUT"
       - name: Upload verification plan
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: verification-plan-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/verification-plan.json
+          path: |
+            .artifacts/verification-plan.json
+            .artifacts/shards
           if-no-files-found: error
 
   checks:
@@ -86,9 +105,13 @@ jobs:
         run: bun run check
 
   tests:
-    name: Tests
+    name: ${{ matrix.shard.total && format('Tests (shard {0}/{1})', matrix.shard.index, matrix.shard.total) || 'Tests' }}
     needs: plan
     if: ${{ needs.plan.result == 'success' && needs.plan.outputs.tests_required == 'true' }}
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards || '[]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -157,25 +180,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/pi-stuff-ci"
-          export PATH="$SYSTEM_TOOL_BIN:$(dirname "$RTK_BIN"):$PATH"
+          export PATH="$SYSTEM_TOOL_BIN:${RTK_BIN%/*}:$PATH"
           export PI_STUFF_AGENTS_PTY_ARTIFACT_DIR="$RUNNER_TEMP/pi-stuff-ci/agents"
           export PI_STUFF_UI_PTY_ARTIFACT_DIR="$RUNNER_TEMP/pi-stuff-ci/ui"
-          sudo --preserve-env=HOME,PATH,PI_BIN,PI_STUFF_AGENTS_PTY_ARTIFACT_DIR,PI_STUFF_CODE_MODE_HOST,PI_STUFF_UI_PTY_ARTIFACT_DIR,RTK_BIN,RUNNER_TEMP,CI,GITHUB_ACTIONS,GITHUB_WORKSPACE unshare --net -- bash -euo pipefail -c 'ip link set lo up; exec setpriv --reuid="$1" --regid="$2" --clear-groups bash -euo pipefail -c "$3"' _ "$(id -u)" "$(id -g)" 'if curl --silent --max-time 2 https://example.com >/dev/null 2>&1; then echo "network namespace is not isolated" >&2; exit 1; fi; bun run test --plan .artifacts/verification-plan.json --output .artifacts/tests/ci.json' 2>&1 | tee "$RUNNER_TEMP/pi-stuff-ci/tests.log"
-      - name: Upload structured test report
+          sudo --preserve-env=HOME,PATH,PI_BIN,PI_STUFF_AGENTS_PTY_ARTIFACT_DIR,PI_STUFF_CODE_MODE_HOST,PI_STUFF_UI_PTY_ARTIFACT_DIR,RTK_BIN,RUNNER_TEMP,CI,GITHUB_ACTIONS,GITHUB_WORKSPACE unshare --net -- bash -euo pipefail -c 'ip link set lo up; exec setpriv --reuid="$1" --regid="$2" --clear-groups bash -euo pipefail -c "$3"' _ "$(id -u)" "$(id -g)" 'if curl --silent --max-time 2 https://example.com >/dev/null 2>&1; then echo "network namespace is not isolated" >&2; exit 1; fi; bun run test --plan .artifacts/shards/plan-${{ matrix.shard.index }}.json --output .artifacts/tests/ci-${{ matrix.shard.index }}.json' 2>&1 | tee "$RUNNER_TEMP/pi-stuff-ci/tests.log"
+      - name: Publish structured test report
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: test-report-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/tests/ci.json
+          name: test-report-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard.index }}
+          path: .artifacts/tests/ci-${{ matrix.shard.index }}.json
           if-no-files-found: error
       - name: Upload test reports and failure evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ci-tests-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ci-tests-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard.index }}
           path: |
             .artifacts/verification-plan.json
-            .artifacts/tests/ci.json*
+            .artifacts/tests/ci-*.json*
             ${{ runner.temp }}/pi-stuff-ci
           if-no-files-found: warn
           retention-days: 7
@@ -214,14 +237,30 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with:
-          name: test-report-${{ github.run_id }}-${{ github.run_attempt }}
+          pattern: test-report-${{ github.run_id }}-${{ github.run_attempt }}-*
+          merge-multiple: true
           path: .artifacts/tests
+      - name: Aggregate shard reports
+        if: ${{ always() && needs.tests.result != 'skipped' }}
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/tests
+          mapfile -t reports < <(find .artifacts/tests -name 'ci-*.json' -type f -print)
+          bun scripts/aggregate-test-reports.ts --plan .artifacts/verification-plan.json --output .artifacts/tests/aggregate.json "${reports[@]}"
       - name: Aggregate required results
+        if: ${{ always() }}
         env:
           CI_PLAN_RESULT: ${{ needs.plan.result }}
           CI_TESTS_REQUIRED: ${{ needs.plan.outputs.tests_required }}
           CI_CHECKS_RESULT: ${{ needs.checks.result }}
           CI_TESTS_RESULT: ${{ needs.tests.result }}
           CI_PLAN_PATH: .artifacts/verification-plan.json
-          CI_TEST_REPORT_PATH: .artifacts/tests/ci.json
+          CI_TEST_REPORT_PATH: .artifacts/tests/aggregate.json
         run: bun scripts/verify-ci-result.ts
+      - name: Retain aggregate verification evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verification-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/tests/aggregate.json
+          if-no-files-found: ignore

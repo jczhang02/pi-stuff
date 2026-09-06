@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { buildVerificationPlan } from "../../../scripts/verification-plan.ts";
+import { buildVerificationPlan, selectAffectedTests } from "../../../scripts/verification-plan.ts";
 
 function git(root: string, args: string[]): string {
 	const result = Bun.spawnSync(["git", "-c", "commit.gpgsign=false", ...args], { cwd: root });
@@ -97,6 +98,11 @@ test("Capability selection follows side-effect imports and transitive test helpe
 		const selected = buildVerificationPlan(root, { VERIFY_BASE: "HEAD" });
 		expect(selected.mode).toBe("selected");
 		expect(selected.files).toEqual(["test/unit/alpha/alpha.test.ts", "test/unit/beta/beta.test.ts"]);
+		expect(selected.acceptanceMatrix).toBe("representative");
+		await put(root, "packages/pi-stuff/src/alpha/width.ts", "export const width = 1;");
+		const dimensionChange = buildVerificationPlan(root, { VERIFY_BASE: "HEAD" });
+		expect(dimensionChange.mode).toBe("selected");
+		expect(dimensionChange.acceptanceMatrix).toBe("full");
 		await put(root, "mystery.txt", "unknown");
 		expect(buildVerificationPlan(root, { VERIFY_BASE: base }).mode).toBe("all");
 		await rm(join(root, "mystery.txt"));
@@ -166,15 +172,101 @@ test("planner help and invalid arguments leave no artifact", async () => {
 	}
 });
 
-test("imports outside the analyzed graph force complete verification", async () => {
+test("script helpers participate in reverse selection without unrelated opaque imports widening it", async () => {
 	const { root } = await repo();
 	try {
-		await put(root, "scripts/bridge.ts", 'export * from "../packages/pi-stuff/src/alpha/value.js";');
-		await put(root, "test/unit/gamma/gamma.test.ts", 'import "../../../scripts/bridge.js";');
+		await put(root, "scripts/detached-process.ts", 'export * from "../packages/pi-stuff/src/alpha/value.js";');
+		await put(root, "test/unit/gamma/gamma.test.ts", 'import "../../../scripts/detached-process.js";');
+		await put(root, "test/unit/delta/delta.test.ts", "// unrelated");
+		await put(root, "scripts/unrelated.ts", "import(await process.env.UNRELATED_MODULE ?? './missing.js');");
 		git(root, ["add", "."]);
 		git(root, ["commit", "-qm", "shared helper"]);
 		await put(root, "packages/pi-stuff/src/alpha/value.ts", "export const value = 2;");
+		const selected = buildVerificationPlan(root, { VERIFY_BASE: "HEAD" });
+		expect(selected.mode).toBe("selected");
+		expect(selected.files).toEqual([
+			"test/unit/alpha/alpha.test.ts",
+			"test/unit/beta/beta.test.ts",
+			"test/unit/gamma/gamma.test.ts",
+		]);
+		expect(selected.acceptanceMatrix).toBe("representative");
+		await put(root, "scripts/unrelated.ts", "import(await process.env.UNRELATED_MODULE ?? './changed.js');\n");
 		expect(buildVerificationPlan(root, { VERIFY_BASE: "HEAD" }).mode).toBe("all");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("an unbounded dynamic consumer cannot hide impact on another Capability", async () => {
+	const { root } = await repo();
+	try {
+		await put(
+			root,
+			"packages/pi-stuff/src/gamma/consumer.ts",
+			'export const load = () => import(process.env.MODULE_PATH ?? "./module.ts");',
+		);
+		git(root, ["add", "."]);
+		git(root, ["commit", "-qm", "dynamic consumer"]);
+		await put(root, "packages/pi-stuff/src/alpha/value.ts", "export const value = 2;");
+		expect(buildVerificationPlan(root, { VERIFY_BASE: "HEAD" }).mode).toBe("all");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("declared dynamic dependencies expire when their importing source changes", async () => {
+	const { root } = await repo();
+	try {
+		const file = "packages/pi-stuff/src/gamma/consumer.ts";
+		const source = "export const load = () => import(process.env.MODULE_PATH);";
+		await put(root, file, source);
+		await put(
+			root,
+			"config/verification-dependencies.json",
+			JSON.stringify({
+				[file]: {
+					sha256: createHash("sha256").update(source).digest("hex"),
+					dependencies: [],
+					reason: "Fixture external dependency",
+				},
+			}),
+		);
+		git(root, ["add", "."]);
+		git(root, ["commit", "-qm", "declared external dependency"]);
+		await put(root, "packages/pi-stuff/src/alpha/value.ts", "export const value = 2;");
+		expect(buildVerificationPlan(root, { VERIFY_BASE: "HEAD" }).mode).toBe("selected");
+		await put(root, file, `${source}\n`);
+		expect(buildVerificationPlan(root, { VERIFY_BASE: "HEAD" }).mode).toBe("all");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("the real repository selects Todo contracts without unrelated Acceptance", () => {
+	const selection = selectAffectedTests(resolve(import.meta.dirname, "../../.."), [
+		"packages/pi-stuff/src/todo/todo.ts",
+	]);
+	expect(selection.reason).toBe("selected changed Capability(s): todo");
+	expect(selection.files).toContain("test/acceptance/todo/todo-host.test.ts");
+	expect(selection.files).toContain("test/system/repository/suite-host.test.ts");
+	expect(selection.files).not.toContain("test/acceptance/code-mode/tui-offline.test.ts");
+	expect(selectAffectedTests(process.cwd(), ["scripts/detached-process.ts"]).reason).toContain(
+		"shared infrastructure",
+	);
+});
+
+test("scheduled omission requires same-head full-run evidence, while manual verification stays full", async () => {
+	const { root, base } = await repo();
+	try {
+		const env = { VERIFICATION_PLAN_CI: "1", GITHUB_EVENT_NAME: "schedule", CI_SCHEDULE_SKIP: "1" };
+		expect(buildVerificationPlan(root, env).mode).toBe("all");
+		const proven = { ...env, CI_PREVIOUS_FULL_SHA: base, CI_PREVIOUS_FULL_RUN: "123" };
+		const plan = buildVerificationPlan(root, proven);
+		expect(plan.mode).toBe("none");
+		expect(plan.changedFiles).toEqual([]);
+		expect(plan.previousFullRun).toBe(123);
+		expect(buildVerificationPlan(root, { ...proven, GITHUB_EVENT_NAME: "workflow_dispatch" }).mode).toBe("all");
+		expect(buildVerificationPlan(root, { ...proven, CI_PREVIOUS_FULL_SHA: "a".repeat(40) }).mode).toBe("all");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

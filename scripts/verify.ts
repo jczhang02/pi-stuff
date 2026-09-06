@@ -5,12 +5,7 @@ import { parseArgs } from "node:util";
 import { requirementsForTest } from "./test-environment.ts";
 import { buildVerificationPlan } from "./verification-plan.ts";
 
-function parseVerificationArguments(args: string[]): {
-	base?: string;
-	output?: string;
-	list?: boolean;
-	help?: boolean;
-} {
+function parseVerificationArguments(args: string[]) {
 	const parsed = parseArgs({
 		args,
 		allowPositionals: false,
@@ -18,12 +13,13 @@ function parseVerificationArguments(args: string[]): {
 			base: { type: "string" },
 			output: { type: "string" },
 			list: { type: "boolean" },
+			"keep-going": { type: "boolean" },
 			help: { type: "boolean", short: "h" },
 		},
 	});
 	if (parsed.values.base === "" || parsed.values.output === "")
 		throw new Error("--base and --output require non-empty values");
-	return parsed.values;
+	return { ...parsed.values, keepGoing: parsed.values["keep-going"] === true };
 }
 
 function localEnvironment(base: string | undefined): NodeJS.ProcessEnv {
@@ -43,7 +39,7 @@ function reportPath(output: string | undefined): string {
 function main(): void {
 	const values = parseVerificationArguments(process.argv.slice(2));
 	if (values.help) {
-		console.log("Usage: bun run verify [--base <ref>] [--output <report.json>] [--list]");
+		console.log("Usage: bun run verify [--base <ref>] [--output <report.json>] [--list] [--keep-going]");
 		return;
 	}
 	const root = process.cwd();
@@ -52,7 +48,7 @@ function main(): void {
 	console.log(`Base: ${plan.base ?? "unresolved"}`);
 	console.log(`Head: ${plan.head ?? "unresolved"}`);
 	console.log(`Reason: ${plan.reason}`);
-	console.log(`Mode: ${plan.mode}`);
+	console.log(`Mode: ${plan.mode}; Acceptance matrix: ${plan.acceptanceMatrix ?? "full"}`);
 	if (values.list) {
 		for (const file of plan.files) console.log(`${file} [${requirementsForTest(file).join(", ")}]`);
 		return;
@@ -64,7 +60,8 @@ function main(): void {
 	writeFileSync(planFile, `${JSON.stringify(plan, null, 2)}\n`);
 	const started = performance.now();
 	const check = spawnSync(process.execPath, ["run", "check"], { stdio: "inherit", env: environment });
-	if (check.status !== 0) {
+	const checks = check.status === 0 ? "passed" : "failed";
+	if (checks === "failed" && !values.keepGoing) {
 		writeFileSync(
 			output,
 			`${JSON.stringify({ status: "failed", checks: "failed", tests: "not-run", plan, durationMs: performance.now() - started, evidence: { plan: planFile, summary: output } }, null, 2)}\n`,
@@ -75,20 +72,25 @@ function main(): void {
 	if (plan.mode === "none") {
 		writeFileSync(
 			output,
-			`${JSON.stringify({ status: "passed", checks: "passed", tests: "not-run", durationMs: performance.now() - started, plan, evidence: { plan: planFile, summary: output } }, null, 2)}\n`,
+			`${JSON.stringify({ status: checks, checks, tests: "not-run", durationMs: performance.now() - started, plan, evidence: { plan: planFile, summary: output } }, null, 2)}\n`,
 		);
+		if (checks === "failed") process.exitCode = check.status ?? 1;
 		return;
 	}
 	const testReport = resolve(dirname(output), "tests.json");
-	const tests = spawnSync(process.execPath, ["run", "test", "--plan", planFile, "--output", testReport], {
-		stdio: "inherit",
-		env: environment,
-	});
+	const tests = spawnSync(
+		process.execPath,
+		["run", "test", "--plan", planFile, "--output", testReport, ...(values.keepGoing ? ["--keep-going"] : [])],
+		{
+			stdio: "inherit",
+			env: environment,
+		},
+	);
 	writeFileSync(
 		output,
-		`${JSON.stringify({ status: tests.status === 0 ? "passed" : "failed", checks: "passed", tests: tests.status === 0 ? "passed" : "failed", plan, durationMs: performance.now() - started, evidence: { plan: planFile, tests: testReport, summary: output } }, null, 2)}\n`,
+		`${JSON.stringify({ status: checks === "passed" && tests.status === 0 ? "passed" : "failed", checks, tests: tests.status === 0 ? "passed" : "failed", plan, durationMs: performance.now() - started, evidence: { plan: planFile, tests: testReport, summary: output } }, null, 2)}\n`,
 	);
-	if (tests.status !== 0) process.exitCode = tests.status ?? 1;
+	if (tests.status !== 0 || checks === "failed") process.exitCode = tests.status || check.status || 1;
 }
 
 if (import.meta.main) main();

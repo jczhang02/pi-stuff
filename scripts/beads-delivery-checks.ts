@@ -1,4 +1,4 @@
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 
 const RUN = Type.Object({
@@ -16,6 +16,44 @@ const JOB = Type.Object({
 	status: Type.String(),
 	conclusion: Type.Union([Type.String(), Type.Null()]),
 });
+
+function verifiedTestJobs(records: Static<typeof JOB>[], sha: string): string {
+	const error = `CI verification failed for ${sha}: Tests is missing, incomplete, or unsuccessful`;
+	const legacy = records.filter((job) => job.name === "Tests");
+	const shards = records
+		.flatMap((job) => {
+			const match = /^Tests \(shard ([1-9]\d*)\/([1-9]\d*)\)$/u.exec(job.name);
+			if (!match && job.name.startsWith("Tests (shard")) throw new Error(error);
+			return match ? [{ ...job, index: Number(match[1]), total: Number(match[2]) }] : [];
+		})
+		.sort((left, right) => left.index - right.index);
+	const single = legacy[0];
+	if (single) {
+		if (
+			legacy.length !== 1 ||
+			shards.length ||
+			single.status !== "completed" ||
+			!["success", "skipped"].includes(single.conclusion ?? "")
+		)
+			throw new Error(error);
+		return single.conclusion === "skipped" ? "Tests not run (verified no-tests plan)" : "Tests passed";
+	}
+	const total = shards[0]?.total;
+	if (
+		!total ||
+		!Number.isSafeInteger(total) ||
+		shards.length !== total ||
+		shards.some(
+			(job, index) =>
+				job.index !== index + 1 ||
+				job.total !== total ||
+				job.status !== "completed" ||
+				job.conclusion !== "success",
+		)
+	)
+		throw new Error(error);
+	return `${total} Tests shard(s) passed`;
+}
 
 // The Plan job owns scope selection;
 // publication verifies the current Plan/Checks/Tests/Verify result rather than reclassifying paths.
@@ -59,17 +97,15 @@ export function verifyDeliveryChecks(
 	);
 	if (!Check(Type.Array(Type.Object({ jobs: Type.Array(JOB) })), jobs))
 		throw new Error(`Invalid CI jobs for run ${latest.id}`);
-	const required = ["Plan", "Checks", "Tests", "Verify"];
+	const required = ["Plan", "Checks", "Verify"];
 	const records = jobs.flatMap((page) => page.jobs);
 	for (const name of required) {
 		const matches = records.filter((job) => job.name === name);
 		const job = matches[0];
-		const testsMaySkip = name === "Tests" && job?.conclusion === "skipped";
-		if (matches.length !== 1 || job?.status !== "completed" || (!testsMaySkip && job?.conclusion !== "success"))
+		if (matches.length !== 1 || job?.status !== "completed" || job?.conclusion !== "success")
 			throw new Error(`CI verification failed for ${sha}: ${name} is missing, incomplete, or unsuccessful`);
 	}
-	const tests = records.find((job) => job.name === "Tests");
-	const testStatus = tests?.conclusion === "skipped" ? "Tests not run (verified no-tests plan)" : "Tests passed";
+	const testStatus = verifiedTestJobs(records, sha);
 	return [
 		`[Actions run](https://github.com/${repository}/actions/runs/${latest.id}/attempts/${latest.run_attempt}): Plan, Checks, and Verify passed; ${testStatus} for commit ${sha}.`,
 	];

@@ -62,7 +62,7 @@ test("runner consumes exact plans and records an explicit no-tests result", asyn
 	try {
 		await writeFile(
 			join(root, file),
-			'import { test, expect } from "bun:test"; import { writeFileSync } from "node:fs"; test("selected", () => { writeFileSync("selected.marker", "yes"); expect(1).toBe(1); });',
+			'import { test, expect } from "bun:test"; import { writeFileSync } from "node:fs"; test("selected", () => { writeFileSync("selected.marker", process.env["PI_STUFF_ACCEPTANCE_MATRIX"] ?? "missing"); expect(1).toBe(1); });',
 		);
 		await writeFile(join(root, "test/unit/example/other.test.ts"), 'throw new Error("unselected file executed");');
 		const plan = {
@@ -84,10 +84,14 @@ test("runner consumes exact plans and records an explicit no-tests result", asyn
 		expect(await Bun.file(join(root, "selected.marker")).exists()).toBe(false);
 		expect(run("--level", "unit").exitCode).toBe(1);
 		expect(run("--output", "executed.json").exitCode).toBe(0);
-		expect(await Bun.file(join(root, "selected.marker")).text()).toBe("yes");
+		expect(await Bun.file(join(root, "selected.marker")).text()).toBe("full");
 		const report = await Bun.file(join(root, "executed.json")).json();
 		expect(report.results.map((result: { file: string }) => result.file)).toEqual([file]);
 		expect(report.totals.nativeExecuted).toBe(1);
+		await writeFile(join(root, "plan.json"), JSON.stringify({ ...plan, acceptanceMatrix: "representative" }));
+		expect(run("--output", "representative.json").exitCode).toBe(0);
+		expect(await Bun.file(join(root, "selected.marker")).text()).toBe("representative");
+		expect(run("--matrix", "full").exitCode).toBe(1);
 		await writeFile(join(root, "plan.json"), JSON.stringify({ ...plan, mode: "none", files: [] }));
 		expect(run("--output", "none.json").exitCode).toBe(0);
 		expect((await Bun.file(join(root, "none.json")).json()).status).toBe("not-run");
@@ -111,6 +115,15 @@ test("verify previews without work and reports failed checks or explicit no-test
 		expect(run("--output", ".artifacts/failed/summary.json").exitCode).toBe(1);
 		const failed = await Bun.file(join(root, ".artifacts/failed/summary.json")).json();
 		expect([failed.status, failed.checks, failed.tests]).toEqual(["failed", "failed", "not-run"]);
+		await writeFile(
+			join(root, "package.json"),
+			JSON.stringify({
+				scripts: { check: 'bun -e "process.exit(1)"', test: `bun "${resolve("scripts/run-isolated-tests.ts")}"` },
+			}),
+		);
+		expect(run("--keep-going", "--output", ".artifacts/diagnostic/summary.json").exitCode).toBe(1);
+		const diagnostic = await Bun.file(join(root, ".artifacts/diagnostic/summary.json")).json();
+		expect([diagnostic.status, diagnostic.checks, diagnostic.tests]).toEqual(["failed", "failed", "passed"]);
 		await rm(join(root, ".artifacts"), { recursive: true });
 		await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { check: 'bun -e "process.exit(0)"' } }));
 		Bun.spawnSync(["git", "add", "."], { cwd: root });

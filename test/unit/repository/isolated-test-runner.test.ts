@@ -68,3 +68,31 @@ test("native name selection executes dynamic cases and reports skipped candidate
 		await rm(cwd, { recursive: true, force: true });
 	}
 });
+
+test("missing execution evidence stops remaining files unless complete diagnostics are requested", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-fail-fast-"));
+	try {
+		await mkdir(join(cwd, "test/unit/example"), { recursive: true });
+		await writeFile(join(cwd, "test/unit/example/a.test.ts"), "process.exit(0);");
+		await writeFile(
+			join(cwd, "test/unit/example/b.test.ts"),
+			'import {test} from "bun:test"; test("later", () => Bun.write("later.marker", "ran"));',
+		);
+		const output = join(cwd, "report.json");
+		const stopped = Bun.spawnSync([process.execPath, runner, "--output", output], { cwd });
+		expect(stopped.exitCode).toBe(1);
+		const report = JSON.parse(await readFile(output, "utf8"));
+		expect(report.status).toBe("failed");
+		expect(report.notRun).toEqual(["test/unit/example/b.test.ts"]);
+		expect(await Bun.file(join(cwd, "later.marker")).exists()).toBe(false);
+		const diagnostic = Bun.spawnSync([process.execPath, runner, "--keep-going", "--output", output], { cwd });
+		expect(diagnostic.exitCode).toBe(1);
+		const complete = JSON.parse(await readFile(output, "utf8"));
+		expect(complete.status).toBe("failed");
+		expect(complete.notRun).toEqual([]);
+		expect(complete.results).toHaveLength(2);
+		expect(await Bun.file(join(cwd, "later.marker")).text()).toBe("ran");
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});

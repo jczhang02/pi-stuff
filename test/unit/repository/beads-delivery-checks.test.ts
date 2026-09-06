@@ -89,3 +89,36 @@ test("all delivery modes require the current Plan, Checks, Tests, and Verify job
 	verify.conclusion = "failure";
 	expect(() => f.check()).toThrow("Verify");
 });
+
+test("delivery requires every unique shard advertised by the CI job names", () => {
+	for (const mode of ["complete", "missing", "duplicate", "inconsistent", "cancelled", "legacy-mixed"] as const) {
+		const f = fixture();
+		f.jobs.splice(
+			f.jobs.findIndex((job) => job.name === "Tests"),
+			1,
+		);
+		f.jobs.push({ name: "Tests (shard 1/2)", status: "completed", conclusion: "success" });
+		if (mode !== "missing")
+			f.jobs.push({
+				name:
+					mode === "duplicate"
+						? "Tests (shard 1/2)"
+						: mode === "inconsistent"
+							? "Tests (shard 2/3)"
+							: "Tests (shard 2/2)",
+				status: "completed",
+				conclusion: mode === "cancelled" ? "cancelled" : "success",
+			});
+		if (mode === "legacy-mixed") f.jobs.push({ name: "Tests", status: "completed", conclusion: "success" });
+		if (mode === "complete") expect(f.check().join(" ")).toContain("2 Tests shard(s) passed");
+		else expect(() => f.check()).toThrow("Tests is missing, incomplete, or unsuccessful");
+	}
+});
+
+test("malformed shard jobs cannot be ignored beside otherwise successful evidence", () => {
+	for (const name of ["Tests (shard 1/2 extra)", "Tests (shard 0/2)", "Tests (shard 1/0)"]) {
+		const f = fixture();
+		f.jobs.push({ name, status: "completed", conclusion: "success" });
+		expect(() => f.check()).toThrow("Tests is missing, incomplete, or unsuccessful");
+	}
+});

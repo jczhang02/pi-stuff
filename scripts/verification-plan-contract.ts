@@ -19,6 +19,8 @@ const VERIFICATION_PLAN_SCHEMA = Type.Object(
 		reason: Type.String(),
 		changedFiles: Type.Array(Type.String()),
 		files: Type.Array(Type.String()),
+		acceptanceMatrix: Type.Optional(Type.Union([Type.Literal("full"), Type.Literal("representative")])),
+		previousFullRun: Type.Optional(Type.Integer({ minimum: 1 })),
 	},
 	{ additionalProperties: false },
 );
@@ -61,12 +63,21 @@ function validatePlan(value: PlanDocument, root: string): VerificationPlan {
 	}
 	if (
 		value.mode === "all" &&
-		(value.files.length !== offline.length || value.files.some((file, i) => file !== offline[i]))
+		(value.files.length !== offline.length ||
+			value.files.some((file, i) => file !== offline[i]) ||
+			value.acceptanceMatrix === "representative")
 	)
 		throw new Error("An all verification plan must contain the complete offline test inventory");
 	if (value.mode === "selected" && value.files.length === 0)
 		throw new Error("A selected verification plan must contain files");
-	if (value.mode === "none" && (value.files.length !== 0 || value.changedFiles.length === 0 || value.base === null))
+	const reusedFullRun =
+		value.previousFullRun !== undefined && value.base === value.head && value.changedFiles.length === 0;
+	if (value.previousFullRun !== undefined && (value.mode !== "none" || !reusedFullRun))
+		throw new Error("Reused full-run evidence requires an unchanged none plan");
+	if (
+		value.mode === "none" &&
+		(value.files.length !== 0 || (value.changedFiles.length === 0 && !reusedFullRun) || value.base === null)
+	)
 		throw new Error("A none verification plan requires changed files, a resolved base, and no tests");
 	if (value.files.length === offline.length && value.mode === "selected")
 		throw new Error("A complete test inventory must use all mode");

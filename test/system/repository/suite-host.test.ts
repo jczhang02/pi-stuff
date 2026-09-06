@@ -27,5 +27,6 @@ test("Pi loads the ordered internal Modules through one Package", async () => {
 	]) {
 		expect(result.commandNames).toContain(command);
 	}
+	expect(result.commandNames).not.toContain("tool-settings");
 	expect(result.stderr).toBe("");
 }, 30_000);

@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
+import { selectAcceptanceMatrix } from "./acceptance-matrix.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 
 const execFileAsync = promisify(execFile);
@@ -258,11 +259,15 @@ try {
 		throw new Error(`Unknown Code Mode TUI scenario: ${SCENARIO_FILTER}`);
 	}
 	const selectedScenarios = selectedScenario ? [selectedScenario] : scenarios;
-	for (const scenario of selectedScenarios.filter((candidate) => candidate !== "cancel")) {
-		for (const [width, height] of [
+	const sizes = selectAcceptanceMatrix(
+		[
 			[100, 32],
 			[64, 28],
-		] as const) {
+		] as const,
+		[[100, 32]] as const,
+	);
+	for (const scenario of selectedScenarios.filter((candidate) => candidate !== "cancel")) {
+		for (const [width, height] of sizes) {
 			const code = await runArm(root, temporary, "code", scenario, width, height, "start");
 			const direct = await runArm(root, temporary, "direct", scenario, width, height, "start");
 			if (
@@ -287,10 +292,7 @@ try {
 		}
 	}
 	if (selectedScenarios.includes("cancel")) {
-		for (const [width, height] of [
-			[100, 32],
-			[64, 28],
-		] as const) {
+		for (const [width, height] of sizes) {
 			const code = await runArm(root, temporary, "code", "cancel", width, height, "start");
 			const direct = await runArm(root, temporary, "direct", "cancel", width, height, "start");
 			if (

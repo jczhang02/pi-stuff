@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { selectAcceptanceMatrix } from "../../../scripts/acceptance-matrix.ts";
 import { readFixtureRecords, waitForFixtureRecords, writePtyEvidence } from "../../../scripts/ui-pty-interactions.js";
 import { createCase, TmuxPiSession } from "../../../scripts/ui-pty-session.js";
 import { stageSupportedPiHost } from "../../../scripts/verify-pi-host-provenance.js";
@@ -65,6 +66,21 @@ async function verifySessionLifecycle(session: TmuxPiSession, sessionFile: strin
 	session.resize(100, 32);
 }
 
+const RESIZE_SIZES = selectAcceptanceMatrix(
+	[
+		[64, 28],
+		[48, 22],
+		[32, 18],
+		[24, 16],
+		[100, 32],
+	] as const,
+	[
+		[64, 28],
+		[24, 16],
+		[100, 32],
+	] as const,
+);
+
 for (const tuiMode of ["regular", "fullscreen"] as const) {
 	for (const theme of ["dark", "light"]) {
 		test(`real Pi preserves unified User Messages through expansion, resize, reload, and replay: ${tuiMode}/${theme}`, async () => {
@@ -118,13 +134,7 @@ for (const tuiMode of ["regular", "fullscreen"] as const) {
 				await writePtyEvidence(PI_STUFF_UI_PTY_ARTIFACT_DIR, `user-message-${tuiMode}-${theme}-expanded`, session);
 				session.sendKey("C-o");
 				await session.waitForAbsence("Skill instructions");
-				for (const [columns, rows] of [
-					[64, 28],
-					[48, 22],
-					[32, 18],
-					[24, 16],
-					[100, 32],
-				] as const) {
+				for (const [columns, rows] of RESIZE_SIZES) {
 					session.resize(columns, rows);
 					screen = await session.waitFor(
 						(value) =>

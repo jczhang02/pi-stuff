@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 39c6e17fa3d9cbec69e9a4db06d42dad14bfd1d79d9f7df168b1d9cbe58b8690 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 688ed7f16e6e3e9b12566b442477e1b4504b89edef6e38756c0e3b3983f61a00 -->
 
 # 兼容性
 
@@ -25,14 +25,7 @@
 以及保留空格的原生设置搜索。仅匹配版本还不够：Host 还必须通过适用的真实 Host 能力验收。Pi Stuff 不重建或
 分发 Pi Host。
 
-CI 使用四个 job：`Plan`、`Checks`、`Tests`、`Verify`。它们在 pull request、push 到 `main` 和手动触发时运行；
-`Plan` 对 PR 比较 target range，对 push 比较 before/after range，手动触发则选择完整离线清单，并把范围与
-`tests_required` 决策写入 artifact。`Checks` 独立于 `Tests` 验证冻结依赖图、仓库格式、anti-slop lint、类型接口、
-未使用代码分析、生成组合和公开 Release 安全。当 `Plan` 要求 Tests 时，该 job 获取受支持的 Pi Host、Code Mode
-Host 和 RTK runtime，在网络隔离 namespace 中逐个以全新 Bun 或 Node 进程运行选中的离线文件。`Tests` 只等待
-`Plan`，不等待 `Checks`；只有成功的 plan 明确选择零测试时才跳过。`Verify` 始终运行，并校验 plan、每个必需
-job 的结果、精确的选中文件覆盖和结构化 test report。Plan 与 test report 是分开的 artifacts。同一 pull request
-只有过时运行会被取消；不同 main-push range 保留。认证需要当前 revision 的适用检查和真实 Host 证据；workflow 配置本身不构成证据。
+CI 使用 `Plan`、`Checks`、独立的 `Tests (shard N/M)` 和 `Verify`。Plan 在 PR、`main` push、手动触发与夜间计划中运行：PR/push 选择受影响离线测试，手动触发选择完整清单与完整矩阵；夜间仅复用同一 main SHA 的成功全量证据，否则运行全量。Plan 把必要范围与矩阵写入 artifacts。Checks 独立验证冻结依赖、格式、anti-slop lint、类型、未使用代码、生成组合和公开 Release 安全。每个必要 Tests 分片获取认证 Pi、Code Mode、RTK，在网络隔离 namespace 中逐文件使用全新 Bun/Node 进程。分片只等待 Plan，失败后停止剩余工作。Verify 始终检查计划、必要 job 状态、完整且唯一的文件覆盖、矩阵身份和完整结构化报告；只有明确的 no-tests 计划才允许跳过 Tests。计划、逐分片及汇总报告分别保留。仅取消同一 PR 的过时运行，不同 main-push 范围继续保留。认证需要当前 revision 的适用检查及真实 Host 证据，workflow 配置本身不构成证据。
 
 仓库工具链使用 Bun 1.4.0。Host 自带的 runtime 和 Release 打包属于 Host 细节，不是 Pi Stuff 的兼容性准入标准。
 

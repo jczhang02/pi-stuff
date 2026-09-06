@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { selectAcceptanceMatrix } from "../../../scripts/acceptance-matrix.ts";
 import * as flow from "../../../scripts/ui-pty-interactions.ts";
 import * as pty from "../../../scripts/ui-pty-session.ts";
 import { verifyUiPty } from "../../../scripts/verify-ui-pty.ts";
@@ -13,7 +14,9 @@ const AGGREGATE_PACKAGE = resolve(import.meta.dir, "../../../packages/pi-stuff")
 test("real Pi renders and restores the integrated production UI at all accepted widths", async () => {
 	const evidence = await verifyUiPty({ piBinary: PI_BIN, packagePath: AGGREGATE_PACKAGE });
 
-	expect(evidence.sizes).toEqual(["100x32", "64x28", "48x22", "32x18", "24x16"]);
+	expect(evidence.sizes).toEqual(
+		selectAcceptanceMatrix(["100x32", "64x28", "48x22", "32x18", "24x16"], ["100x32", "64x28"]),
+	);
 	expect(evidence.markdownTransformer).toBeTypeOf("boolean");
 	expect(evidence.vibeLineMaximumFrameDurationMs).toBeGreaterThan(0);
 	expect(evidence.vibeLineMaximumFrameDurationMs).toBeLessThanOrEqual(500);

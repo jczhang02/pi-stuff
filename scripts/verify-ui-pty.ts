@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { THOUGHT_PHASES, TODO_PTY_READY } from "../test/fixtures/ui-pty-provider.js";
+import { selectAcceptanceMatrix } from "./acceptance-matrix.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import * as flow from "./ui-pty-interactions.js";
 import * as pty from "./ui-pty-session.js";
@@ -18,6 +19,7 @@ const TARGET_SIZES = [
 	{ columns: 32, rows: 18 },
 	{ columns: 24, rows: 16 },
 ] as const;
+const ACCEPTANCE_SIZES = selectAcceptanceMatrix(TARGET_SIZES, TARGET_SIZES.slice(0, 2));
 const NERD_PONYTAIL_MARKER = "\u{F15BF}";
 const NERD_PROMPT_MARKER = "\uF460";
 const LONG_PROMPT_PREFIX = "中文_LONG_CJK_PROMPT_开始";
@@ -468,7 +470,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 		};
 		pty.verifyHostVersion(options.piBinary);
 		pty.commandOutput("tmux", ["-V"]);
-		for (const { columns, rows } of TARGET_SIZES) {
+		for (const { columns, rows } of ACCEPTANCE_SIZES) {
 			const caseOptions: UiPtyVerificationOptions = {
 				...options,
 				sessionId: options.sessionId ?? `ui-pty-${String(columns)}x${String(rows)}`,
@@ -536,7 +538,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 		if (vibeLineMaximumFrameDurationMs === undefined) pty.fail("Vibe Line liveness was not measured");
 		return {
 			markdownTransformer: true,
-			sizes: TARGET_SIZES.map(({ columns, rows }) => `${String(columns)}x${String(rows)}`),
+			sizes: ACCEPTANCE_SIZES.map(({ columns, rows }) => `${String(columns)}x${String(rows)}`),
 			verified,
 			vibeLineMaximumFrameDurationMs,
 		};
@@ -552,11 +554,17 @@ function latestRecord(records: readonly flow.FixtureRecord[], type: string): flo
 export async function verifyThemeLifecyclePty(
 	options: Omit<UiPtyVerificationOptions, "sessionId" | "theme">,
 ): Promise<ThemeLifecycleEvidence> {
-	const themes = ["catppuccin-latte", "catppuccin-frappe", "catppuccin-macchiato", "catppuccin-mocha"] as const;
-	const sizes = [
-		{ columns: 64, rows: 28 },
-		{ columns: 100, rows: 32 },
-	] as const;
+	const themes = selectAcceptanceMatrix(
+		["catppuccin-latte", "catppuccin-frappe", "catppuccin-macchiato", "catppuccin-mocha"] as const,
+		["catppuccin-latte", "catppuccin-frappe"] as const,
+	);
+	const sizes = selectAcceptanceMatrix(
+		[
+			{ columns: 64, rows: 28 },
+			{ columns: 100, rows: 32 },
+		] as const,
+		[{ columns: 100, rows: 32 }] as const,
+	);
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-theme-pty-"));
 	try {
 		options = {
@@ -569,11 +577,12 @@ export async function verifyThemeLifecyclePty(
 		await rm(temporaryDirectory, { force: true, recursive: true });
 		throw error;
 	}
-	const paths = await pty.createCase(temporaryDirectory, "lifecycle", themes[0], options.packagePath);
+	const initialTheme = themes[0] ?? pty.fail("acceptance theme matrix is empty");
+	const paths = await pty.createCase(temporaryDirectory, "lifecycle", initialTheme, options.packagePath);
 	const lifecycleOptions: UiPtyVerificationOptions = {
 		...options,
 		sessionId: "catppuccin-theme-lifecycle",
-		theme: themes[0],
+		theme: initialTheme,
 	};
 	const colorMode = options.colorMode ?? "truecolor";
 	let session = new pty.TmuxPiSession(paths, lifecycleOptions, 100, 32);
@@ -591,8 +600,8 @@ export async function verifyThemeLifecyclePty(
 		await session.waitForText("Welcome back!");
 		await session.waitForStatusline();
 		let records = await flow.waitForFixtureRecords(paths.log, "inventory", 1);
-		verifyCatppuccinRecord(latestRecord(records, "inventory"), themes[0], colorMode);
-		await verifyThemeSizes(themes[0], "Welcome back!");
+		verifyCatppuccinRecord(latestRecord(records, "inventory"), initialTheme, colorMode);
+		await verifyThemeSizes(initialTheme, "Welcome back!");
 
 		const draft = "CATPPUCCIN_THEME_DRAFT_中文";
 		session.sendLiteral(draft);
@@ -627,7 +636,7 @@ export async function verifyThemeLifecyclePty(
 			sizes: sizes.map(({ columns, rows }) => `${String(columns)}x${String(rows)}`),
 			themes,
 			verified: [
-				`all four Package themes discovered and rendered at 100x32 and 64x28 with ${colorMode === "truecolor" ? "exact truecolor accents" : "native 256-color fallback"}`,
+				`all four Package themes discovered; ${themes.join(", ")} rendered at ${sizes.map(({ columns, rows }) => `${columns}x${rows}`).join(", ")} with ${colorMode === "truecolor" ? "exact truecolor accents" : "native 256-color fallback"}`,
 				"live switching preserved the editor draft",
 				"Extension reload retained the selected theme",
 				"resumed Session retained the selected theme",
