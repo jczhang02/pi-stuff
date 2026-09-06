@@ -25,6 +25,10 @@ observations outside the repository. The [observer report](../docs/reports/suite
 documents frozen gates, negative controls, and the cold Execution Ledger reproduction. These focused checks do not
 replace complete resource or Capability acceptance.
 
+When `PI_STUFF_UI_PTY_ARTIFACT_DIR` is set, the observer also copies its evidence JSON there after capture. CI retains
+these synthetic frames, interaction timings and Source snapshots in its existing failure attachment; Host binaries and
+private fixture configuration are not copied.
+
 ## Package changes
 
 Pi Stuff has one private local Package. Capability Modules are not independently versioned or published. Update the

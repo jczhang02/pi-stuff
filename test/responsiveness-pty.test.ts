@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readlinkSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
@@ -36,11 +36,18 @@ test.each(["startup", "pre-tool", "settlement"])(
 				new Response(child.stdout).text(),
 				new Response(child.stderr).text(),
 			]);
-			expect(stderr).toBe("");
-			expect(exitCode).toBe(0);
+			expect(stderr, stdout).toBe("");
+			expect(exitCode, stdout).toBe(0);
 			const sample = parseJsonValue(stdout);
 			if (!Check(SAMPLE_SCHEMA, sample)) throw new Error("Missing native observation summary");
-			const evidence = parseJsonValue(await readFile(join(sample.directory, "evidence.json"), "utf8"));
+			const evidenceText = await readFile(join(sample.directory, "evidence.json"), "utf8");
+			const artifactDirectory = process.env["PI_STUFF_UI_PTY_ARTIFACT_DIR"];
+			if (artifactDirectory) {
+				expect(await readFile(join(artifactDirectory, `${basename(sample.directory)}.json`), "utf8")).toBe(
+					evidenceText,
+				);
+			}
+			const evidence = parseJsonValue(evidenceText);
 			if (!Check(EVIDENCE_SCHEMA, evidence)) throw new Error("Missing continuous interaction evidence");
 			// Negative-control detection floors, not product acceptance limits.
 			const observedPhase = phase === "pre-tool" ? "active" : phase;
@@ -95,8 +102,8 @@ test.each(["foreground", "background", "context", "goal"])(
 				new Response(child.stdout).text(),
 				new Response(child.stderr).text(),
 			]);
-			expect(stderr).toBe("");
-			expect(exitCode).toBe(0);
+			expect(stderr, stdout).toBe("");
+			expect(exitCode, stdout).toBe(0);
 			const sample = parseJsonValue(stdout);
 			const schema = Type.Object({
 				completedChildTools: Type.Literal(agent ? 1 : 0),

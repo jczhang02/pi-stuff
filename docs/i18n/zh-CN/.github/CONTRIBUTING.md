@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 413f9e932bd7a6705a120172737461ffbbe51656ee36bc3398e370ff05781ca6 -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: 0d1baf930ec1408bcd7762923c2ccbcea49d4436f0ee7f797ddd401e649a6fd5 -->
 
 # 贡献指南
 
@@ -25,6 +25,9 @@ bun run check
 `bun scripts/benchmark-responsiveness.ts --pi "$PI_BIN"`。脚本使用隔离的合成 Session，并在仓库外保留原始
 观察记录。[观察器报告](../docs/reports/suite-responsiveness-observer-2026-09-05.md)说明了锁定门槛、故意卡顿
 对照与 Execution Ledger 首次加载复现。这些针对性检查不能替代完整资源或 Capability 验收。
+
+设置 `PI_STUFF_UI_PTY_ARTIFACT_DIR` 后，观察器还会在采集结束后把证据 JSON 复制到该目录。
+CI 通过现有失败附件保留合成场景的画面、交互时序和 Source 快照；不会复制 Host 可执行文件或私有夹具配置。
 
 ## Package 变更
 

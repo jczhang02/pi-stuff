@@ -704,8 +704,9 @@ try {
 	console.log(JSON.stringify(summary));
 } finally {
 	try {
+		const evidencePath = join(directory, "evidence.json");
 		await writeFile(
-			join(directory, "evidence.json"),
+			evidencePath,
 			JSON.stringify(
 				{
 					summary,
@@ -720,6 +721,11 @@ try {
 				2,
 			),
 		);
+		const artifactDirectory = process.env["PI_STUFF_UI_PTY_ARTIFACT_DIR"];
+		if (artifactDirectory) {
+			await mkdir(artifactDirectory, { recursive: true });
+			await copyFile(evidencePath, join(artifactDirectory, `${basename(directory)}.json`));
+		}
 		if (profileCpu) {
 			send("C-u");
 			send("C-d");
