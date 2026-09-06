@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/pi-stuff-reliability-repair-plan-20260906.md; translation-source-sha256: 5f3dea9837c3fb5a1d3419181606888d11e2a11f7b61943c569d80e105338ded -->
+<!-- translation-source: docs/research/pi-stuff-reliability-repair-plan-20260906.md; translation-source-sha256: 23e24af858e6279cea8f7d2363d349defdcc1f33e54577b019b42dd74a2e6b33 -->
 
 # Pi Stuff 可靠性修复方案
 
@@ -6,15 +6,15 @@
 
 **日期：** 2026-09-06
 
-**状态：** 完整方案及测试边界已确认，可交由指定 Session 实施。
+**状态：** 完整方案及测试边界已确认，可独立实施。
 
-**工作：** `ps-8ew`，在执行 `ps-yon` 的同一个指定 Session 中实施。
+**工作：** `ps-8ew`，作为独立修复工作安排实施与验收。
 
 **规格：** [ps-8ew / GitHub #239](https://github.com/jczhang02/pi-stuff/issues/239)。
 
 **本地证据基线：** `d620c43dba9f904e7c895c708a535ab5715fb4fc`，认证 Pi 0.85.1。
 
-这是方案记录，不代表修复已经实现或通过验收。资源效率分支仍在变化，联合验收前必须统一最终 revision 与 Host 版本。
+这是方案记录，不代表修复已经实现或通过验收。验收时须记录最终修复 revision 及所用的认证 Host 版本。
 
 ## 已确认方向
 
@@ -59,8 +59,8 @@
    保留继续有效工作的能力；payload 变短或出现终态都不等于成功。
 3. 将约定的完成策略落实到主 Agent 结果递送与 Goal 接续，同时检查模型实际可见的结果和 UI 状态。
    更新所属 Module 契约，并明确替换与新行为冲突的 ADR 决策。
-4. 在指定的 `ps-yon` Session 中集成并验证同一个候选版本。复用相同 revision 的有效检查，统一认证 Host 基线，
-   避免其他重负载任务干扰资源测量。
+4. 集成可靠性修复并验证同一个修复候选版本。复用相同 revision 的有效检查，明确认证 Host 基线，
+   如进行资源测量，避免其他重负载任务干扰。
 
 ## 验收目标
 

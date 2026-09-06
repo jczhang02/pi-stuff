@@ -4,16 +4,16 @@
 
 **Date:** 2026-09-06
 
-**Status:** Complete plan and testing boundaries confirmed; ready for the designated implementation Session.
+**Status:** Complete plan and testing boundaries confirmed; ready for independent implementation.
 
-**Work:** `ps-8ew`, to be implemented in the same designated Session as `ps-yon`.
+**Work:** `ps-8ew`, scheduled and verified as an independent repair workstream.
 
 **Specification:** [ps-8ew / GitHub #239](https://github.com/jczhang02/pi-stuff/issues/239).
 
 **Local evidence baseline:** `d620c43dba9f904e7c895c708a535ab5715fb4fc`, certified Pi 0.85.1.
 
-This is a planning record, not a claim that the repairs are implemented or accepted. The resource-efficiency branch
-is still moving; its final revision and Host version must be reconciled before combined acceptance.
+This is a planning record, not a claim that the repairs are implemented or accepted. Record the final repair revision
+and certified Host version used for acceptance.
 
 ## Confirmed direction
 
@@ -67,8 +67,8 @@ assertion that every reference harness implements them. The durable decision is 
    work; a short payload or a terminal status alone is not success.
 3. Apply the agreed completion policy across main-Agent delivery and Goal continuation. Check actual model-visible
    results as well as UI state. Update the owning Module contracts and replace conflicting ADR decisions explicitly.
-4. Integrate in the designated `ps-yon` Session and verify one combined candidate. Reuse valid checks for the same
-   revision, reconcile the certified Host baseline, and keep heavy competing jobs out of resource measurements.
+4. Integrate the reliability repairs and verify one repair candidate. Reuse valid checks for the same revision,
+   identify the certified Host baseline, and keep heavy competing jobs out of any resource measurements.
 
 ## Acceptance targets
 
