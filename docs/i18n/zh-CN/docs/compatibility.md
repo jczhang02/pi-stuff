@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 61667032c213fdd2d0c396f9f48a8e76d65f630266615030e63422e8d0d28a02 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: caec3224bf6c5c194683aae0f2c725d3c07b12747d580e18fa7a30e4fdbce5ab -->
 
 # 兼容性
 
@@ -15,6 +15,7 @@
 | TypeScript checker | 5.9.3 |
 | Code Mode Host | OpenAI Codex `rust-v0.145.0`，Linux x64 |
 | Code Mode Host Release archive | SHA-256 `ac23177956c30cc1f9f180c27bd80f5bb5b76780db55fb94dcc22644d490852e` |
+| Code Mode Host executable | SHA-256 `60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8` |
 | 可选 RTK runtime | 官方 `0.45.0`，源码 `b34be37caf3796b69a50952a28e60e32b5daad43`，Linux x64 |
 | RTK Release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
 | RTK Release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |

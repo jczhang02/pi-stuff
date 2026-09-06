@@ -19,7 +19,6 @@ const { AuthStorage } = await import(
 const extensionPath = process.env.PI_STUFF_GOAL_RUNTIME_EXTENSION
 	? resolve(process.env.PI_STUFF_GOAL_RUNTIME_EXTENSION)
 	: resolve(import.meta.dirname, "../../packages/pi-stuff/src/goal/src/goal.ts");
-export const runtimeMode = process.env.PI_STUFF_GOAL_RUNTIME_MODE ?? "source";
 
 async function createFauxRuntime(agentDir, responses, fauxOptions) {
 	const authStorage = AuthStorage.create(join(agentDir, "auth.json"));

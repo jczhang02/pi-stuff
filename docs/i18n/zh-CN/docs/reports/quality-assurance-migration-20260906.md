@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: 8aa9955a9434706c7c78399d8b693ef9de8f9c9ad7547db299771bd472ab4fcc -->
+<!-- translation-source: docs/reports/quality-assurance-migration-20260906.md; translation-source-sha256: 419c6950bdf68880213817c413c6a87d4e205b01c095e1f634175c3495b06d72 -->
 
 # 质量保障迁移——2026-09-06
 
@@ -32,6 +32,23 @@
 
 这些耗时的范围不同，不能相加当作完整测试耗时，也不代表迁移前后加速。基线与最终完整 CI 比较仍属于最终迁移证据。
 本地 JSON 报告在忽略的 `.artifacts/tests/` 下，benchmark 报告独立存放。
+
+## 第二批：测试分类与精简
+
+基线为第一批检查点 `f506b4f1`；这是经过审查的第二批检查点。当前测试清单共 332 个文件（331 个离线文件、1 个显式在线文件）：Component 130、Component Integration 159、System 2、System Integration 10、Acceptance 31。目录采用 `level/capability/scenario`；helpers 保留在中性的 `test/<legacy-capability>` 位置。Goal smoke 已改名为 `test/component-integration/goal/goal-runtime.test.mjs` 并使用原生 Bun scenarios；其余 21 个 `.node.ts` 保留 Node 兼容边界，执行前只编译一次。
+
+runner 支持 `--level`、`--capability`、`--file`、`--name`。同一维度的重复 selector 取并集，不同维度取交集；`--name` 是原生 regex candidate filter，不扫描源码名称。未知参数和空的显式选择失败。默认 profile 为 offline；live 必须显式使用 `--profile live`，唯一的 live Magic Context wrapper 是 `magic-context-live`。`--list` 只预览要求，不执行 setup。`.artifacts/tests/` 报告记录实际文件/process duration 与 setup duration；实际 tests 为零（包括 Node）时返回非零。
+
+Code Mode RPC/TUI offline Acceptance wrapper 使用真实 Host 与 fixture Provider。Agent 执行结果：RPC 8.33 秒；TUI group/failure/media/cancel 113.48 秒，resume 宽度 100 和 64；Goal native name selection 0.52 秒；Unit selector 三个测试 1.2 秒；Node no-match 正确以零测试失败。Code Mode executable SHA-256 为 `60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8`，已加入 compatibility。
+
+真实 RTK 场景要求经过认证的可执行文件，显式缺失会失败。共享 test-environment helper 已实现前置检查。150 ms 首个 UI/input/selection 目标与 200 ms 不变 spinner 目标仍是显式 PTY 要求，ADR 0025 的 500 ms severe-stall 是独立 backstop，稳定 focused certification 尚未完成。本批未运行 full test suite、final CI/affected selection 或 live Magic Context；Batch 3 负责 affected selection 与 CI orchestration。
+
+
+生成器测试删除了固定三个 wrapper 语句和 Goal 精确多行格式的断言。Capability 成员语义、Suite loader 行为与真实源码安装验收继续提供证据。
+
+同机单次聚焦对比（含 Bun 启动）：生成器迁移前 `0.185 s`、迁移后 `0.168 s`；Suite loader 迁移前 `0.573 s`、迁移后 `0.504 s`。干净基线与当前 worktree 均通过；微小差异不能证明整体加速。本批涉及 JavaScript/TypeScript 源码的物理行数为迁移前 79,366、迁移后 79,824（+458），大部分源码随文件移动而保留。
+
+Web 直接 Provider API 的重定向声明检查已归入 Static Checks，一个小型 Component 测试保护基于 AST 的声明计数；它保留旧有数量对应约束，不宣称证明请求数据流。Codex 原生工具检查不再因不支持或缺少可执行文件而跳过，真实本地二进制的三个场景已通过。缺少 Pi 的前置检查已验证：场景不执行，报告明确记录环境失败。静态检查、聚焦命令、原生工具、Node 兼容性和真实 Code Mode 验收检查已通过。针对完整 diff，两轮连续独立 Thermo-Nuclear 审查均无发现。
 
 ## 可复用诊断
 

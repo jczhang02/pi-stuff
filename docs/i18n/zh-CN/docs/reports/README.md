@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 6bcc1dacd21d2efa8f6f33fee856de8343c47658e1a7f20d0ff0d84014258856 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: a074ffc164cf65d4f7e05830207705cb1b9f4c4876d56f2f06ff96a24353c769 -->
 
 # 报告
 
@@ -45,3 +45,5 @@
 原始 JSON、ANSI、文本和图像证据与所属报告放在一起。历史版本、路径和哈希保持原样，便于确认当时的环境。
 
 - [ps-eck 恢复和 Host 边界（2026-09-05）](ps-eck-recovery-host-boundary-2026-09-05.md)
+
+- [质量保障迁移 — 2026-09-06](quality-assurance-migration-20260906.md)：命令、测试与 CI 分批迁移证据。

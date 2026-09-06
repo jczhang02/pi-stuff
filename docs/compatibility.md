@@ -13,6 +13,7 @@
 | TypeScript checker | 5.9.3 |
 | Code Mode host | OpenAI Codex `rust-v0.145.0`, Linux x64 |
 | Code Mode host release archive | SHA-256 `ac23177956c30cc1f9f180c27bd80f5bb5b76780db55fb94dcc22644d490852e` |
+| Code Mode host executable | SHA-256 `60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8` |
 | Optional RTK runtime | Official `0.45.0`, source `b34be37caf3796b69a50952a28e60e32b5daad43`, Linux x64 |
 | RTK release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
 | RTK release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
@@ -44,6 +45,11 @@ The supported Host profile identifies the released version, reviewed upstream so
 repository toolchain row separately identifies the Bun executable used for repository commands and CI. Pi upgrades review
 the supported version, public API seams, and real-Host capability evidence together; the repository does not claim to
 reproduce the upstream compilation process.
+
+The certified Code Mode executable is checked by its executable hash after installation; the release archive hash is
+recorded separately because archive and extracted executable identities differ. Ordinary verification uses the offline
+Code Mode RPC and TUI wrappers with a fixture Provider. The live Magic Context wrapper requires explicit selection and
+credentials.
 
 Pi core imports remain wildcard peer dependencies because the Host supplies them. Development dependencies stay pinned
 to the released `0.85.0` type surface. The published `pi-coding-agent` SDK imports `pi-server` through its main entrypoint

@@ -33,6 +33,39 @@ These timings have different scopes; they are not additive full-suite timing or 
 and final full CI comparisons remain part of the final migration evidence. Local JSON reports are under ignored
 `.artifacts/tests/`; benchmark reports are separate artifacts.
 
+## Batch 2: test classification and reduction
+
+Base: `f506b4f1` (Batch 1 checkpoint); this is the reviewed Batch 2 checkpoint. The current test
+inventory is 332 files (331 offline and one explicit live file): 130 Component, 159 Component Integration, 2 System, 10 System Integration, and 31 Acceptance.
+The directory map is `level/capability/scenario`; helpers remain in neutral `test/<legacy-capability>` locations. The
+Goal smoke was renamed to `test/component-integration/goal/goal-runtime.test.mjs` and uses native Bun scenarios. The
+21 remaining `.node.ts` files retain the Node compatibility boundary and compile once before execution.
+
+The runner now exposes `--level`, `--capability`, `--file`, and `--name` selection. Repeated selectors in one dimension
+union; different dimensions intersect. `--name` is a native regex candidate filter and does not scan source names.
+Unknown arguments and empty explicit selections fail. The default profile is offline; live execution requires explicit
+`--profile live`, with `magic-context-live` as the only live Magic Context wrapper. `--list` reports requirements
+without setup. Reports under `.artifacts/tests/` include actual file/process durations and setup duration; zero actual
+tests is nonzero, including Node compatibility runs.
+
+Code Mode RPC and TUI offline Acceptance wrappers use the real Host and fixture Provider. The Agent ran Code Mode RPC in 8.33 s and TUI group/failure/media/cancel behavior in 113.48 s, with resume widths 100 and 64.
+Goal native name selection (`normal continuation`) took 0.52 s; a native Unit selector ran three tests in 1.2 s. A
+Node no-match selection failed with zero tests as intended. Static checks and focused command, native-tool, Node compatibility, and real Code Mode acceptance checks passed. Two consecutive independent Thermo-Nuclear rounds reported no findings against the complete diff. The official Code Mode executable installed in local artifacts has SHA-256
+`60bf16414be5333f09ff082540082304c7352931ef64bdeb170d4c35a82e6ef8`; the compatibility row records this identity.
+
+Real RTK scenarios require the certified executable; explicit absence is a failure. Current preflight is
+implemented in the shared test-environment helper. The 150 ms first-UI/input/selection targets and
+200 ms unchanged-spinner target remain explicit PTY requirements; the 500 ms severe-stall assertion remains a separate
+backstop. Stable focused certification is still pending. No full test suite, final CI/affected selection, or live Magic Context call was run for Batch 2. Batch 3 remains responsible
+for affected selection and CI orchestration.
+
+
+The generator test no longer freezes three wrapper statements or Goal's exact multiline formatting. Semantic Capability membership, Suite loader behavior, and real source-install acceptance remain.
+
+Paired same-host focused runs (single samples, including Bun startup): generator `0.185 s` before / `0.168 s` after; Suite loader `0.573 s` before / `0.504 s` after. Both passed on the clean baseline and this worktree. These small differences do not establish an overall speedup. Changed JavaScript/TypeScript source totals 79,366 physical lines before and 79,824 after (+458); file moves preserve most of that source.
+
+The Web direct-Provider redirect-declaration guard now runs with Static Checks; a small Component test protects the AST-based declaration count. This retains the previous parity constraint without claiming request-data-flow proof. Codex native Tool checks no longer skip unsupported/missing executables and passed three cases through the real local binaries. Missing Pi preflight was verified to leave the scenario unexecuted and emit an explicit failure report.
+
 ## Reusable diagnoses
 
 **RTK setup identity:** the maintainer's default executable failed the certified SHA-256 check. This was an environment

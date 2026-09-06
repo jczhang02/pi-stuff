@@ -56,7 +56,7 @@ jobs:
           bun pm untrusted
 
       - name: Verify acceptance classifier
-        run: bun test test/ci-acceptance-scope.test.ts
+        run: bun test test/unit/repository/ci-acceptance-scope.test.ts
 
       - name: Run fast checks
         run: bun run check

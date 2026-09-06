@@ -1,9 +1,8 @@
-<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: 30eef1463838fef6f86f51774017be2b209fb48ffe128bac32bd00cc67d79dad -->
+<!-- translation-source: docs/quality-assurance.md; translation-source-sha256: f22c771c1577e84e95b4aebb853f6e7f6a7ee5b07522d6130b2c891839f6a035 -->
 
 # 质量保障
 
-Static Checks 不运行产品场景，而是验证源码。Tests 通过声明的接缝证明行为。Capability Benchmarks 独立于验证门禁，
-测量性能或效果。Reviews 评估需求、设计、安全、可维护性以及这些证据的价值。
+Static Checks 验证源码，不运行产品场景。Tests 通过声明的接缝证明行为；Capability Benchmarks 独立测量性能或效果；Reviews 评估需求、设计、安全、可维护性与证据质量。
 
 ## 当前命令
 
@@ -11,52 +10,27 @@ Static Checks 不运行产品场景，而是验证源码。Tests 通过声明的
 bun run check
 bun run fix
 bun run test --list
-bun run test --file source-install
-bun run test --file goal-upstream/command.node.ts
+bun run test --level acceptance --file repository/source-install.test.ts
+bun run test --level component-integration --file goal/goal-runtime.test.mjs
 bun run benchmark:capability:ponytail --help
 ```
 
-`check` 运行格式、lint、全部 TypeScript 配置、依赖与未使用源码分析、生成组合、仓库安全、Capability Contract Catalog，
-以及静态 Package／资源／许可证验证。它不改写源码，也不运行 Benchmarks。`fix` 显式应用格式和安全 lint 修复；
-生成组合和快照仍有各自的显式更新操作。
+`check` 执行格式、lint、TypeScript、依赖和未使用源码、生成组合、仓库安全、Capability Contract Catalog 以及 Package/resource/license 静态验证；不会改写源码或运行 Benchmark。`fix` 才会执行格式和安全 lint 修复。
 
-`test` 发现 Bun 测试以及 Goal Node 兼容性测试集，包括 Goal runtime smoke。每个文件使用独立 OS 进程。
-重复的 `--file` 参数和位置路径片段取并集，每个显式选择器都必须匹配。`--help` 和 `--list` 不执行场景。
-报告默认写到 `.artifacts/tests/` 下带时间戳的 JSON；`--output <path>` 修改目的地。报告记录实际执行的文件、退出状态
-和逐文件耗时。文件失败会让命令失败，但后续选中文件仍然运行。
+`test` 发现五个层级下的 332 个文件（331 个离线文件、1 个显式在线文件）：Component (`unit`)、Component Integration (`component-integration`)、System (`system`)、System Integration (`system-integration`) 与 Acceptance (`acceptance`)。目录按 `level/capability/scenario` 组织，每个文件独立 OS process。Goal smoke 是原生 Bun test；其余 21 个 `.node.ts` 保留 Node 兼容边界，只编译一次后运行。同一维度的重复 selector 取并集，不同维度取交集。`--name` 使用原生 test runner 的 regex candidate filter，不扫描源码名称。`--help` 和 `--list` 不执行场景。报告默认写入 `.artifacts/tests/`，记录文件状态、process duration 和 setup duration；失败或空选择返回非零。
 
-普通 Tests 使用确定性 fixture，不使用模型凭据。场景使用真实边界时，需要本地 Pi、Node、Code Mode、RTK、Expect、tmux
-和系统工具；缺少工具会让对应场景失败。配置后的真实 Provider 和 Service 证据独立于这些离线结果。
+默认 profile 是 `offline`：使用 deterministic fixture Provider，不需要凭据，也不调用 live model。需要真实边界的场景仍要求 Real Pi、Node、Code Mode、RTK、Expect、tmux 和本地工具；缺失要求会使 preflight 或场景失败。Live Provider/Service 证据必须显式使用 `--profile live`；唯一的 live Magic Context 场景是 `magic-context-live`。`--list` 只报告工具要求，不执行 setup。
 
-## 源码安装和保留证据
+## 源码安装与保留证据
 
-静态 Package 验证检查源码／资源、声明的外部依赖、原生 Tool 可执行权限及许可证／来源记录。分发归档不是交付要求。
-
-`test/source-install.test.ts` 在隔离 Settings 和 XDG 目录下调用认证 Pi 的 `install` 命令，再从 checkout 之外启动 Pi，
-观察通过已安装 Package 设置加载的命令。它不改变维护者的安装；安装后的进程和临时环境均会清理。
-
-旧 Package 验证聚合重复运行了测试文件已拥有的 Agents、BTW、Context、Goal、Tools、UI 和 Background Work
-Host／PTY 场景。这些重复调用已移除。独有的 Suite Tool inspector、Web fixture 集成、Goal lifecycle、MCP／RTK／Notification PTY
-和公开 Host 接缝场景迁入 `test/package-host.test.ts`。现有 RPC 和 PTY 测试观察不同契约，因此继续保留。
+`test/acceptance/repository/source-install.test.ts` 在隔离 Settings 和 XDG 目录中运行认证 Pi 的 `install`，再从 checkout 外启动 Pi，观察已安装 Package 加载的命令，并清理临时环境。Distribution archive 不是交付要求。原 package-verification aggregate 重复的 Host/PTY 场景已移除；源码安装、Suite inspection、Host seam 和依赖互操作各自在相应层级与 Capability 下拥有主归属。
 
 ## Benchmarks
 
-现有实验命名为 `benchmark:capability:<name>`。图像传递、Ponytail 行为效果、Skill Discovery、Markdown、Effect/mainline、
-lifecycle、Magic Context 和 Tool Activity 都是 Capability 范围的问题。使用完整 Host 不等于证明完整 Suite 的公开任务结果。
+现有实验使用 `benchmark:capability:<name>` 命名。它们是 Capability 范围问题，不建立 complete-Suite public-task 结果。执行前使用 `--help` 或 `--list`；需要 live 的实验必须显式选择 `--profile live`。历史报告仍是 dated evidence，新报告默认写入本地 artifacts。
 
-执行前使用各命令的 `--help` 或 `--list`。Ponytail、Code Mode image 和认证 Skill Discovery 实验要求 `--profile live`；
-帮助和预览不使用凭据。历史报告继续作为带日期的证据；除非显式选择输出位置，新报告写到本地 artifacts。
-
-完成的实验可以报告较差分数或性能回退而不让命令失败。准备失败和不完整实验仍失败。Tool Activity 原来的 250 ms 和
-相对 25 ms 限制保留为报告诊断值，不再作为验证门禁。它们测量比较结果，并非独立定义的性能要求。
-另一个 200 ms spinner 要求的审计尚待完成。
-
-Suite Outcome Evaluation 分支保留给完整 Suite 的公开任务评估。历史 Terminal-Bench manifest 和报告不是可运行评估；
-仓库没有注册 `benchmark:suite`。
+完成的实验即使结果较差也可成功；setup failure 或 incomplete experiment 仍失败。Tool Activity 过去的 250 ms 和 relative 25 ms benchmark 值仅保留为诊断报告值。显式 PTY 要求仍为首个 Tool UI/input/selection 反馈 150 ms，以及不变 Vibe Line Spinner 帧不超过 200 ms；ADR 0025 的 500 ms severe-stall 是独立 backstop，稳定的 focused certification 仍待完成。`benchmark:suite` 尚未注册。
 
 ## 迁移状态
 
-第一批分离命令执行边界，移除重复的归档／Host 调用。当前 CI 仍使用 Fast／Acceptance 编排，但调用新的静态和测试命令，
-没有 benchmark 门禁。五层目录分类、Capability 和测试名称筛选、保守 `verify` 选择、显式 live 验收路由，以及
-Plan／Checks／Tests／Verify CI 属于 [ADR 0032](adr/0032-organize-quality-assurance-by-verification-purpose.md)
-后续迁移批次，尚未作为已完成命令暴露。
+第二批完成测试分类与精简、五层 Capability 目录迁移、稳定层级 aliases、过时 acceptance aliases 清理，以及 `--level`、`--capability`、`--file`、`--name`、offline/live profile、严格空/未知选择失败、环境报告和 timing。Code Mode RPC/TUI 已有使用真实 Host 与 fixture Provider 的 offline Acceptance 归属；live Magic Context wrapper 仍单独存在且未运行。受影响测试选择、CI Plan/Checks/Tests/Verify 编排与最终验证属于第三批工作，见 [ADR 0032](../../../../docs/adr/0032-organize-quality-assurance-by-verification-purpose.md)。

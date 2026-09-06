@@ -45,3 +45,5 @@ Raw JSON, ANSI, text, and image evidence stays beside the report that owns it. H
 remain unchanged so the recorded environment stays identifiable.
 
 - [ps-eck recovery and Host boundary (2026-09-05)](ps-eck-recovery-host-boundary-2026-09-05.md)
+
+- [Quality-assurance migration — 2026-09-06](quality-assurance-migration-20260906.md): staged command, test, and CI migration evidence.
