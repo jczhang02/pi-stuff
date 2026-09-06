@@ -66,6 +66,7 @@ test("accepted input activation survives Agent-turn interruption", async () => {
 	const { promise: preparationEntered, resolve: markPreparationEntered } = Promise.withResolvers<void>();
 	const { promise: preparationGate, resolve: releasePreparation } = Promise.withResolvers<void>();
 	await piStuffContext(apiFor(handlers), {
+		readNativeCompactionSettings: () => ({ enabled: false, reserveTokens: 16_384 }),
 		loadMagicContext: async () => {
 			factoryLoads += 1;
 			return magicModule();
@@ -97,6 +98,7 @@ test("does not bootstrap Magic Context from an Extension-authored automatic turn
 	let factories = 0;
 	const preparations: boolean[] = [];
 	piStuffContext(apiFor(handlers), {
+		readNativeCompactionSettings: () => ({ enabled: false, reserveTokens: 16_384 }),
 		loadMagicContext: async () => ({
 			default: async (magicApi: ExtensionAPI) => {
 				factories++;
@@ -140,6 +142,7 @@ test("historical user attribution cannot authorize first-use Context mutation", 
 		delivered = message;
 	});
 	piStuffContext(api, {
+		readNativeCompactionSettings: () => ({ enabled: false, reserveTokens: 16_384 }),
 		loadMagicContext: async () => ({
 			default: async (magicApi: ExtensionAPI) => {
 				factories++;
@@ -223,6 +226,7 @@ test("retries a deferred automatic activation when direct input arrives concurre
 	const { promise: automaticEntered, resolve: markAutomaticEntered } = Promise.withResolvers<void>();
 	let mutationFreeAttempts = 0;
 	piStuffContext(apiFor(handlers), {
+		readNativeCompactionSettings: () => ({ enabled: false, reserveTokens: 16_384 }),
 		loadMagicContext: async () => ({
 			default: async (magicApi: ExtensionAPI) => {
 				factories++;

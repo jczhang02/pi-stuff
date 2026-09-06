@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: bdccbf88852a09d65f805e1d175d11807f6c8224f36db70f110d3c092438ca11 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: cecad7ed39d77d55afae80a1f8f86d11e77dd90ebab8d6aea8e0420ca53f678c -->
 
 # 兼容性
 
@@ -34,6 +34,11 @@ Host 和 RTK runtime，然后在网络隔离 namespace 中逐个以全新 Bun �
 benchmark 和 Package 验证。逐文件进程隔离可防止某个重进程或 PTY 测试污染后续测试使用的原生资源。只有
 Beads 元数据以及已记录的 PNG、GIF、HTML 或 ANSI 证据可以跳过 `Acceptance`；可执行文档仍须完整认证。每周
 另有上游观察任务报告 npm `latest` 是否超过当前 Host，但绝不会自动改变认证。
+
+PTY 验证器使用可选 tmux 服务器设置前先探测支持情况；Ubuntu 基线上的 Goal 验证必须在没有
+`extended-keys-format` 时正常运行。CI 在运行验收测试前检查 Suite 观察器的用户、网络和 PID 命名空间设置。
+设置失败会停止验收并输出相关内核审计信息，不会禁用隔离或跳过测试。Context 激活测试显式指定原生压缩策略，
+不继承 runner 的个人设置。
 
 打包后的 Goal Code Mode 场景与其他原生 Code Mode 验证器共用二进制路径解析规则，把已准备好的 helper
 路径传入隔离的子进程环境，不能依赖向该子进程的空私有缓存下载 Release。其他 Goal 场景不要求该 helper；

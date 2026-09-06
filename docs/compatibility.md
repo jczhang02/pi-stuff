@@ -38,6 +38,12 @@ native resources used by a later test. Only Beads metadata and recorded PNG, GIF
 `Acceptance`; executable documentation remains fully certified. A separate weekly upstream watch reports when the npm
 `latest` tag moves beyond the certified Host, but never changes certification automatically.
 
+PTY verifiers probe optional tmux server settings before using them; Goal verification must work without
+`extended-keys-format` on the Ubuntu baseline. CI checks the Suite observer's user/network/PID namespace setup before
+running the acceptance suite. A failed setup stops acceptance and prints relevant kernel audit messages; it never
+disables isolation or substitutes a skipped test. Context activation fixtures select their native-compaction policy
+explicitly instead of inheriting the runner's personal settings.
+
 The packed Goal Code Mode scenario resolves the already-prepared helper through the same binary-path contract as
 other native Code Mode verifiers and passes that path into its isolated child environment. It must not rely on a
 download into the child's empty private cache. Other Goal scenarios do not require the helper; runtime first-use
