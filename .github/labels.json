@@ -1,0 +1,11 @@
+[
+  {"name": "needs-triage", "color": "D4C5F9", "description": "Waiting for maintainer assessment"},
+  {"name": "needs-info", "color": "FBCA04", "description": "Waiting for information needed to proceed"},
+  {"name": "ready-for-agent", "color": "0E8A16", "description": "Ready for agent execution"},
+  {"name": "ready-for-human", "color": "1D76DB", "description": "Requires human action or a decision"},
+  {"name": "wontfix", "color": "FFFFFF", "description": "Will not be actioned"},
+  {"name": "bug", "color": "D73A4A", "description": "Behavior does not match expectations"},
+  {"name": "enhancement", "color": "A2EEEF", "description": "New feature or improvement"},
+  {"name": "documentation", "color": "0075CA", "description": "Documentation changes"},
+  {"name": "maintenance", "color": "CFD3D7", "description": "Maintenance work"}
+]
