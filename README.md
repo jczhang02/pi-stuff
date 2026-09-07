@@ -39,7 +39,7 @@ cd pi-stuff
 
 Read [Contributing](CONTRIBUTING.md) before starting work. Coding agents must also read [AGENTS.md](AGENTS.md).
 
-There is no package installation or test command for this repository yet.
+There is no package installation command yet. Repository documentation and configuration checks are available; see [verification instructions](CONTRIBUTING.md#verify-changes).
 
 ## Documentation
 
@@ -59,7 +59,7 @@ See [Contributing](CONTRIBUTING.md) for the workflow.
 
 ## Security
 
-Treat extension code as executable software and review its source before running it. Keep credentials and personal information out of issues, logs, and screenshots. Do not disclose exploitable vulnerabilities in public issues; a private reporting policy and channel still need to be established for this repository.
+Treat extension code as executable software and review its source before running it. Keep credentials and personal information out of issues, logs, and screenshots. Report vulnerabilities through the private channel in the [security policy](.github/SECURITY.md), not public issues.
 
 ## Acknowledgments
 

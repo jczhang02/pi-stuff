@@ -1,6 +1,6 @@
 # Repository governance recommendations
 
-Status: recommendations for review, not adopted policy. This investigation used primary sources directly; no background-agent tool was available. Existing agent instructions remain authoritative until changes are approved.
+Status: historical research, not operational policy. The maintainer subsequently chose a single-maintainer, multi-agent workflow. Follow `../../AGENTS.md` and `../../CONTRIBUTING.md` for the adopted rules; the baseline below predates implementation. No required reviewer, CODEOWNERS file, merge queue, or team governance process is needed.
 
 ## Current repository
 
@@ -88,11 +88,11 @@ Enable secret scanning and push protection, then verify their state. Enable priv
 
 Add Dependabot for Actions as workflows arrive and for package dependencies once manifests exist. Group routine updates where appropriate; test before merging and do not auto-merge arbitrary upgrades.
 
-### Sensitive ownership
+### Single-maintainer authorization
 
-Add `.github/CODEOWNERS` to route changes to agent instructions, workflows, security policy, and dependency/release configuration to `@jczhang02`. CODEOWNERS is a routing mechanism by itself, not an enforcement gate. Required owner approval is a separate setting and would block the sole owner's own PRs without another eligible reviewer. [S6]
+Do not add CODEOWNERS or require independent approvals for this single-maintainer repository. CODEOWNERS alone would only route review requests; required owner approval is a separate setting and would block the sole owner's own PRs without another eligible reviewer. [S6]
 
-If agents and the human share credentials, GitHub cannot distinguish them merely because an instruction says "human approval required." Use separate, limited credentials or an independent human-controlled release step when that boundary needs enforcement.
+If agents and the human share credentials, GitHub cannot distinguish them merely because an instruction says "human approval required." Agent instructions require explicit authorization before merging or releasing. Use separate, limited credentials or an independent human-controlled release step if that boundary needs technical enforcement.
 
 ## Defer until the project needs them
 
@@ -111,7 +111,7 @@ If agents and the human share credentials, GitHub cannot distinguish them merely
 5. Initialize Beads explicitly, preview sync, and test issue-field sync and the separate public-comment workflow.
 6. Select the implementation toolchain and add executable checks with the first code slice.
 
-No remote constraints, security settings, labels, or Beads configuration were changed by this investigation.
+The initial investigation did not change remote settings. The subsequent implementation applies repository safeguards separately; consult the live settings and `.github/rulesets/main.json`, not this historical snapshot. Beads initialization and the project-wide license remain separate decisions.
 
 ## README
 
