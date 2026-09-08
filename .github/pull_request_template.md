@@ -36,9 +36,9 @@
 
 #### 中文
 
-- **风险等级：**
-- **独立审查：**
-- **审查依据：**
+- **风险等级**：
+- **独立审查**：
+- **审查依据**：
 
 <!-- Translate the actual evidence and limitations; do not repeat the English machine keys here. / 翻译实际证据与限制，不要在此重复英文机器字段。 -->
 
@@ -51,5 +51,5 @@
 
 #### 中文
 
-- **关联 Issue：**
-- **Beads 记录：**
+- **关联 Issue**：
+- **Beads 记录**：

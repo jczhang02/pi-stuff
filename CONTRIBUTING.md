@@ -19,7 +19,7 @@ Do not bulk-retrofit historical discussions or machine-generated bot metadata. A
 Use Markdown to make evidence easy to find:
 
 - Lists for enumerable facts, steps, and acceptance criteria.
-- Selective **bold** for labels and verdicts.
+- Selective **bold** for labels and verdicts. With Chinese labels, keep punctuation outside the bold span (`**标签**：内容`) or put a space after it (`**标签：** 内容`), so GitHub renders the emphasis.
 - Links to evidence and related work.
 - Collapsible `<details>` blocks for long logs, with a short result in the body.
 

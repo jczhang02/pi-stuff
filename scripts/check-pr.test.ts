@@ -49,8 +49,8 @@ describe('PR evidence', () => {
   - Documentation-only clarification; no interface or workflow gate changes.
 
 #### 中文
-- **风险等级：**低。
-- **独立审查：**不需要；仅修改文档，没有改变接口或工作流门禁。
+- **风险等级**：低。
+- **独立审查**：不需要；仅修改文档，没有改变接口或工作流门禁。
 `,
     );
     expect(checkBody(body)).toEqual([]);
@@ -475,9 +475,9 @@ describe('PR checker CLI', () => {
   - Fixture reviewer checked the full diff in a separate context; no unresolved findings.
 
 #### 中文
-- **风险等级：**高。
-- **独立审查：**已完成。
-- **审查依据：**测试夹具中的审查者在独立上下文检查了完整差异，没有未解决的发现。
+- **风险等级**：高。
+- **独立审查**：已完成。
+- **审查依据**：测试夹具中的审查者在独立上下文检查了完整差异，没有未解决的发现。
 `,
     );
     const path = resolve(directory, 'bilingual.md');
