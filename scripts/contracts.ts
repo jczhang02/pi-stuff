@@ -50,7 +50,7 @@ const Trigger = Schema.Record(
 export const ActionInputs = Schema.Record(
   Schema.String,
   Schema.mutableKey(
-    invalidAsNull(Schema.Union([Schema.String, Schema.Boolean])),
+    invalidAsNull(Schema.Union([Schema.String, Schema.Boolean, Schema.Number])),
   ),
 );
 const Step = Schema.Struct({
@@ -68,9 +68,11 @@ const Job = Schema.Struct({
   if: present,
   'continue-on-error': present,
   permissions: field(Permissions),
+  env: present,
   steps: field(Schema.mutable(Schema.Array(invalidAsNull(Step)))),
 });
 const Workflow = Schema.Struct({
+  env: present,
   on: field(
     Schema.Record(Schema.String, Schema.mutableKey(invalidAsNull(Trigger))),
   ),
@@ -123,14 +125,23 @@ export const REQUIRED_SCRIPTS = {
   test: 'bun test',
   'check:repo': 'bun scripts/check-repo.ts',
   'check:pr': 'bun scripts/check-pr.ts',
+  'check:commit': 'bun scripts/check-commit.ts',
+  'hooks:install': 'bun scripts/install-hooks.ts',
   check:
     'bun run format:check && bun run lint && bun run typecheck && bun run test && bun run check:repo',
 };
 export const Package = Schema.Struct({
+  license: field(Schema.String),
   packageManager: field(Schema.String),
   engines: field(Schema.Struct({bun: field(Schema.String)})),
   scripts: field(
-    Schema.Struct(Record.map(REQUIRED_SCRIPTS, () => field(Schema.String))),
+    Schema.Struct({
+      ...Record.map(REQUIRED_SCRIPTS, () => field(Schema.String)),
+      preinstall: present,
+      install: present,
+      postinstall: present,
+      prepare: present,
+    }),
   ),
   dependencies: field(Schema.Struct({effect: field(Schema.String)})),
   devDependencies: field(

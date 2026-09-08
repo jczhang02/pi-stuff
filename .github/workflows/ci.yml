@@ -32,6 +32,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -48,5 +49,7 @@ jobs:
         run: bun run test
       - name: Check repository files
         run: bun run check:repo
+      - name: Check introduced commits and PR squash title
+        run: bun run check:commit
       - name: Check PR evidence
         run: bun run check:pr

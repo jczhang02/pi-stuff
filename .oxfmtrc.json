@@ -9,7 +9,7 @@
   "arrowParens": "avoid",
   "endOfLine": "lf",
   "ignorePatterns": [
-    ".pi/skills/thermo-nuclear-code-quality-review/SKILL.md",
+    ".agents/skills/thermo-nuclear-code-quality-review/SKILL.md",
     ".beads/**",
     ".worktrees/**",
     "node_modules/**",

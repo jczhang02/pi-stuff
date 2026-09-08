@@ -72,6 +72,23 @@ for (const [key, location, diagnostic] of [
     'unconditionally without overrides',
   ],
   ['env', '        run: bun run check:pr', 'unconditionally without overrides'],
+  [
+    'if',
+    '        run: bun run check:commit',
+    'unconditionally without overrides',
+  ],
+  [
+    'continue-on-error',
+    '        run: bun run check:commit',
+    'unconditionally without overrides',
+  ],
+  [
+    'env',
+    '        run: bun run check:commit',
+    'unconditionally without overrides',
+  ],
+  ['env', '    name: checks', 'must not override the event environment'],
+  ['env', 'name: CI', 'must not override the event environment'],
 ] as const) {
   test(`CI rejects ${key} presence at ${location.trim()}`, () => {
     for (const value of [
@@ -144,6 +161,65 @@ test('workflow decodes only consumed metadata, including action inputs', () => {
   expect(() =>
     checkWorkflow(Effect.runSync(decodeYaml(source, WorkflowInput))),
   ).not.toThrow();
+});
+
+test('checkout depth consumes numeric zero and rejects missing or malformed depth', () => {
+  for (const value of ['1', '-1', 'false', 'null', '[]', '{}', '"0"', '.inf']) {
+    const source = WORKFLOW.replace('fetch-depth: 0', `fetch-depth: ${value}`);
+    expect(() =>
+      checkWorkflow(Effect.runSync(decodeYaml(source, WorkflowInput))),
+    ).toThrow('full history');
+  }
+  expect(() =>
+    checkWorkflow(
+      Effect.runSync(
+        decodeYaml(
+          WORKFLOW.replace('          fetch-depth: 0\n', ''),
+          WorkflowInput,
+        ),
+      ),
+    ),
+  ).toThrow('full history');
+});
+
+test('package keeps MIT, explicit pinned hooks, and no install lifecycle scripts', () => {
+  const source = readFileSync(resolve(ROOT, 'package.json'), 'utf8');
+  for (const [changed, diagnostic] of [
+    [
+      source.replace('"license": "MIT"', '"license": "UNLICENSED"'),
+      'license must be MIT',
+    ],
+    [source.replace('"husky": "9.1.7"', '"husky": "9.1.6"'), 'Husky must pin'],
+    [
+      source.replace(
+        '"hooks:install": "bun scripts/install-hooks.ts"',
+        '"hooks:install": "husky"',
+      ),
+      'script hooks:install',
+    ],
+    [
+      source.replace(
+        '"check:commit": "bun scripts/check-commit.ts"',
+        '"check:commit": "echo passed"',
+      ),
+      'script check:commit',
+    ],
+  ]) {
+    expect(() =>
+      checkToolchain(Effect.runSync(decodeJson(changed!, PackageInput))),
+    ).toThrow(diagnostic!);
+  }
+  for (const name of ['preinstall', 'install', 'postinstall', 'prepare']) {
+    for (const value of ['null', 'false', '"husky"']) {
+      const changed = source.replace(
+        '"scripts": {',
+        `"scripts": {"${name}": ${value},`,
+      );
+      expect(() =>
+        checkToolchain(Effect.runSync(decodeJson(changed, PackageInput))),
+      ).toThrow('lifecycle scripts must remain disabled');
+    }
+  }
 });
 
 test('invalid consumed fields retain policy diagnostic order', () => {

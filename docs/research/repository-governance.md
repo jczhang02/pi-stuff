@@ -111,7 +111,7 @@ If agents and the human share credentials, GitHub cannot distinguish them merely
 5. Initialize Beads explicitly, preview sync, and test issue-field sync and the separate public-comment workflow.
 6. Select the implementation toolchain and add executable checks with the first code slice.
 
-The initial investigation did not change remote settings. The subsequent implementation applies repository safeguards separately; consult the live settings and `.github/rulesets/main.json`, not this historical snapshot. Beads was subsequently initialized as documented in `../agents/beads.md`. The project-wide license and a database backup destination remain undecided.
+The initial investigation did not change remote settings. The subsequent implementation applies repository safeguards separately; consult the live settings and `.github/rulesets/main.json`, not this historical snapshot. Beads was subsequently initialized as documented in `../agents/beads.md`. At that follow-up, the project-wide license and a database backup destination were undecided. Project-owned work is now covered by the root [MIT license](../../LICENSE); this remains a historical research record. A database backup destination is still unconfigured.
 
 ## README
 

@@ -75,4 +75,4 @@ When third-party code or assets are added, retain their upstream notices and rec
 
 ## License
 
-A project-wide license has not yet been added to this repository. The adapted GitHub CLI contribution templates retain their upstream MIT notice in [.github/TEMPLATE_LICENSE](.github/TEMPLATE_LICENSE); that notice does not license the rest of the project.
+Project-owned code and documentation are licensed under [MIT](LICENSE). Third-party materials retain their own notices, including [.github/TEMPLATE_LICENSE](.github/TEMPLATE_LICENSE), the [review skill license](.agents/skills/thermo-nuclear-code-quality-review/LICENSE), and notices under `tools/`.

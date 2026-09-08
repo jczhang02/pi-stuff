@@ -49,7 +49,7 @@ The baseline uses Oxfmt, Oxlint, TypeScript, Bun tests, repository checks, and P
 
 ## Structural quality and review
 
-The upstream standard in `.pi/skills/thermo-nuclear-code-quality-review/SKILL.md` is mandatory, not optional guidance. Apply it to substantive code changes, including the quality-baseline PR itself, in a separate read-only review of the full base-to-head diff. Reviewers report findings; the execution owner implements changes. Follow [PR evidence](pr-evidence.md#independent-review) for the review record and findings disposition.
+The upstream standard in `.agents/skills/thermo-nuclear-code-quality-review/SKILL.md` is mandatory, not optional guidance. Apply it to substantive code changes, including the quality-baseline PR itself, in a separate read-only review of the full base-to-head diff. Reviewers report findings; the execution owner implements changes. Follow [PR evidence](pr-evidence.md#independent-review) for the review record and findings disposition.
 
 Concrete structural findings are presumptive blockers until fixed or refuted with evidence and independently rechecked. Escalate unresolved disagreement to the maintainer. Passing tests does not rebut a structural finding. Documentation-only and mechanical changes do not automatically require this specific deep review, but the existing high-risk review policy still applies.
 
