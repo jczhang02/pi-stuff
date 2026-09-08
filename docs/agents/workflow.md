@@ -6,7 +6,7 @@ Read this before starting or resuming work, committing, pushing, handing off, or
 
 Use one task branch and one worktree per task, with a single execution owner. Create worktrees under `.worktrees/<branch-name>` at the repository root; keep that directory ignored. Check existing claims and worktrees before starting.
 
-Commit coherent, verified changes promptly and push the task branch after committing and before handoff. Submit changes through a PR, not a direct push to `main`. Push is not permission to merge or publish a release; obtain explicit user authorization for either.
+Commit coherent, verified changes promptly and push the task branch after committing and before handoff. Before committing or editing a PR title, follow [Conventional Commits](../../CONTRIBUTING.md#commit-conventions); use the validated PR title for the squash commit. Apply this to new commits without rewriting historical commits. Submit changes through a PR, not a direct push to `main`. Push is not permission to merge or publish a release; obtain explicit user authorization for either.
 
 Before committing, inspect the final diff and run the applicable checks in `CONTRIBUTING.md`. Stage only task-related files. Preserve other agents' changes. Ask before destructive operations or force-pushing. Report failed checks or pushes and distinguish implementation, publication, review, and merge status.
 

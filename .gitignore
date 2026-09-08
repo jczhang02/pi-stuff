@@ -1,4 +1,5 @@
 .worktrees/
+.husky/_/
 .beads/
 __pycache__/
 *.py[cod]

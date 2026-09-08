@@ -45,6 +45,29 @@ GitHub 上新增或实质性更新的面向人的内容须采用**英文在前�
 
 代理须遵守 [AGENTS.md](../../../AGENTS.md)，包括 Sepia 写作要求；Beads、同步和公开更新遵循 [Issue 跟踪流程](../../agents/issue-tracker.md)。其他贡献者无需安装 Beads。
 
+## 提交规范
+
+每个新增 Git 提交及 PR 标题都须符合 [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)。PR 标题用于 squash 提交，不重写历史提交。
+
+```text
+feat(context): add context selection / 添加上下文选择
+fix: preserve empty input / 保留空输入
+refactor(api)!: remove the obsolete entry point / 移除旧入口
+```
+
+type 由小写字母组成，可选的非空括号 scope、可选的 `!`，再加 `: ` 和非空描述。正文及 footer 与标题之间留空行。type 不限于上述示例；merge、revert、fixup 消息不自动豁免。检查器校验标题、空行分隔和控制字符。正文允许自由文本，不会把也可能是正文或示例的行自动识别为 footer；footer 语法、type 含义及破坏性变更声明仍由作者和审查者负责。
+
+完成下方禁用生命周期脚本的冻结安装后，显式设置 [Husky](https://typicode.github.io/husky/)：
+
+```bash
+git config --show-origin --get core.hooksPath
+bun run hooks:install
+```
+
+第一条命令退出状态为 `1`，表示尚未设置该值。若输出不是本仓库的 `.husky/_`，先停止安装，与维护者确认既有 hook 如何处理。还须检查 `git rev-parse --git-path hooks` 返回的目录；即使 `core.hooksPath` 未设置，存在有效自定义 hook 时也须先确认。安装会修改此克隆的 Git hook 路径。关联工作树共享该设置，但生成的 hook 文件各自独立；每个准备提交的当前工作树都须运行设置命令。生成的 `.husky/_` 不提交；设置命令会拒绝覆盖已有 helper 目录，重装时须先检查，再删除生成的 helper。不能假定尚无此设置的旧工作树已受保护。
+
+`commit-msg` hook 在 Git 清理消息前校验原文件。首行须直接写规范标题，不依赖 Git 删除前面的注释或空行；这一保守输入要求避免猜测每次提交的清理模式。可用 `bun run check:commit --message-file <path>` 直接检查文件。本地 hook 可以被绕过，因此 CI 还会校验新增提交和 PR 标题，草稿 PR 也不例外。PR 检查覆盖从 head 可达、但从 base 不可达的每个提交，支持分支落后于 base，也不会遗漏中间的违规提交。main 推送检查新增集合，`before` 全零的首次推送检查全部可达历史；手动触发只检查选定的 `GITHUB_SHA`。历史缺失或浅克隆会失败，不会跳过。保留必需的 CI 检查，squash 时使用已验证的标题；设置不依赖自动运行的依赖生命周期 hook。
+
 ## 验证变更
 
 Pi Stuff 使用 TypeScript 和 Bun，仓库检查也使用这套工具链，见[工具链决策](adr/0001-typescript-bun.md)和 [Effect/质量决策](adr/0002-effect-quality.md)。安装 `package.json` 的 `packageManager` 和 `engines.bun` 指定的确切 Bun 版本，目前仍为 `1.4.0`；CI 也读取该文件。直接工具依赖固定版本；`bun.lock` 记录解析后的依赖图和完整性哈希。
@@ -105,7 +128,7 @@ Not tested: this host cannot run the target terminal; the manual check remains p
 
 标题、声明字段名和枚举值属于机器约定。证据和审查结论必须反映当前变更，不能照抄示例当作事实。
 
-声明风险和独立审查状态。高风险变更需要独立审查上下文，或维护者明确豁免；报告审查范围、发现、修复和未解决的问题。实质性代码变更（包括质量基线 PR）还须使用 `.pi/skills/thermo-nuclear-code-quality-review/SKILL.md`，在独立上下文中审查完整差异。上游标准是强制要求。审查只读，实现仍由任务负责人负责。具体结构问题默认阻塞，直到修复或用证据反驳，并经独立复查；未解决的分歧交给维护者。文档或机械变更不会自动触发这一特定深度审查，但高风险审查要求仍然适用。
+声明风险和独立审查状态。高风险变更需要独立审查上下文，或维护者明确豁免；报告审查范围、发现、修复和未解决的问题。实质性代码变更（包括质量基线 PR）还须使用 `.agents/skills/thermo-nuclear-code-quality-review/SKILL.md`，在独立上下文中审查完整差异。上游标准是强制要求。审查只读，实现仍由任务负责人负责。具体结构问题默认阻塞，直到修复或用证据反驳，并经独立复查；未解决的分歧交给维护者。文档或机械变更不会自动触发这一特定深度审查，但高风险审查要求仍然适用。
 
 可见 UI 变更须附实际截图或录屏；适用时提供图示和设计决策。无法提供的证据应明确说明。简单变更保持简短。
 
@@ -129,7 +152,7 @@ PR 打开、编辑、更新、重新打开、标记为就绪或转为草稿时�
 
 主分支规则集记录在 `.github/rulesets/main.json`，标签清单记录在 `.github/labels.json`。这些文件只记录目标设置，不会自行应用。修改远程约束须先取得维护者授权，再核验线上设置。
 
-Actions 使用只读令牌、GitHub 托管 runner 和以 SHA 固定的外部 action。Dependabot 每周检查 GitHub Actions 和 Bun 依赖。依赖更新 PR 需要通过检查，并遵守相同的合并授权要求。项目许可证、支持的 Pi 宿主版本和发布政策仍未确定。
+Actions 使用只读令牌、GitHub 托管 runner 和以 SHA 固定的外部 action。Dependabot 每周检查 GitHub Actions 和 Bun 依赖。依赖更新 PR 需要通过检查，并遵守相同的合并授权要求。项目自有内容采用 [MIT 许可证](../../../LICENSE)，第三方声明均须保留；支持的 Pi 宿主版本和发布政策仍未确定。
 
 ## 模板来源
 
@@ -139,4 +162,4 @@ Bug、功能请求和 PR 模板改编自 [GitHub CLI](https://github.com/cli/cli
 - [Feature request](https://github.com/cli/cli/blob/trunk/.github/ISSUE_TEMPLATE/submit-a-request.md)
 - [Pull request](https://github.com/cli/cli/blob/trunk/.github/PULL_REQUEST_TEMPLATE.md)
 
-项目专属说明已替换为本仓库工作流。工程任务模板由本仓库编写。改编模板的上游 MIT 声明保留在 `.github/TEMPLATE_LICENSE`，不代表仓库其余部分采用该许可证。
+项目专属说明已替换为本仓库工作流。工程任务模板由本仓库编写。改编模板的上游 MIT 声明保留在 `.github/TEMPLATE_LICENSE`，项目自有内容另由根目录 [MIT 许可证](../../../LICENSE)覆盖。

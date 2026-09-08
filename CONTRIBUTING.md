@@ -45,6 +45,29 @@ Commit verified units promptly and push the task branch. Open a PR rather than p
 
 Agents must follow `AGENTS.md`, including its Sepia requirement, and `docs/agents/issue-tracker.md` for Beads, synchronization, and public updates. Other contributors do not need to install Beads.
 
+## Commit conventions
+
+Every new Git commit and PR title must follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/). The PR title becomes the squash commit title. Existing history is not rewritten.
+
+```text
+feat(context): add context selection / 添加上下文选择
+fix: preserve empty input / 保留空输入
+refactor(api)!: remove the obsolete entry point / 移除旧入口
+```
+
+Use a type made of lowercase letters, optional nonempty scope in parentheses, optional `!`, then `: ` and a nonblank description. Separate the body and footers from the header with a blank line. Types are not limited to the examples above; merge, revert and fixup messages receive no automatic exemption. The checker validates the header, blank separator and control characters. Body text is free-form: it does not infer footers from lines that could also be prose or examples. Footer syntax, type meaning and breaking-change claims remain author/reviewer obligations.
+
+After the frozen, lifecycle-disabled install below, set up [Husky](https://typicode.github.io/husky/) explicitly:
+
+```bash
+git config --show-origin --get core.hooksPath
+bun run hooks:install
+```
+
+Exit status `1` from the first command means the setting is absent. If it names anything other than this repository's `.husky/_`, stop before installation and resolve the existing-hook setup with the maintainer. Also inspect the directory reported by `git rev-parse --git-path hooks`; active custom hooks need the same discussion even when `core.hooksPath` is unset. Installation changes the clone's Git hook path. Linked worktrees share that setting, but generated hook files are local to each worktree; run setup in each current worktree where commits will be made. Generated `.husky/_` files are not committed. Setup refuses an existing helper directory; inspect it before removing generated helpers for a reinstall. Older worktrees without this setup must not be assumed protected.
+
+The `commit-msg` hook checks the supplied file before Git cleanup. Put the conventional header on its first line; do not rely on Git removing leading comments or blank lines. This conservative local input rule avoids guessing per-command cleanup modes. Check a file directly with `bun run check:commit --message-file <path>`. Hooks are local and bypassable; CI also checks introduced commits and the PR title, including draft PRs. PR checks inspect every commit reachable from head but not base, so a behind-base branch is supported and an invalid middle commit is not hidden. Main pushes inspect the introduced set; an initial push with an all-zero `before` inspects all reachable history. Manual dispatch checks only its selected `GITHUB_SHA`. Missing or shallow history fails rather than skipping validation. Keep the required CI check and use the validated title when squashing. No automatic dependency lifecycle hook is needed for setup.
+
 ## Verify changes
 
 Pi Stuff uses TypeScript and Bun, including for repository checks; see the [toolchain decision](docs/adr/0001-typescript-bun.md) and [Effect/quality decision](docs/adr/0002-effect-quality.md). Install the exact Bun version in `package.json` (`packageManager` and `engines.bun`), unchanged at `1.4.0`; CI reads that file too. Direct tooling dependencies are pinned; `bun.lock` records the resolved dependency graph and integrity hashes.
@@ -105,7 +128,7 @@ Not tested: this host cannot run the target terminal; the manual check remains p
 
 Headings, declaration keys, and enums are a machine contract. Evidence and review conclusions must describe the current change; examples are not reusable claims.
 
-Declare risk and independent-review status. High-risk changes require a separate review context or an explicit maintainer waiver; report scope, findings, fixes, and unresolved concerns. Substantive code changes, including the quality-baseline PR, also require a separate full-diff review using `.pi/skills/thermo-nuclear-code-quality-review/SKILL.md`. That upstream standard is mandatory. The review is read-only; implementation stays with the task owner. Concrete structural findings block by default until fixed or refuted with evidence and independently rechecked; unresolved disagreement goes to the maintainer. Documentation/mechanical changes do not automatically require this specific deep review, but high-risk requirements still apply.
+Declare risk and independent-review status. High-risk changes require a separate review context or an explicit maintainer waiver; report scope, findings, fixes, and unresolved concerns. Substantive code changes, including the quality-baseline PR, also require a separate full-diff review using `.agents/skills/thermo-nuclear-code-quality-review/SKILL.md`. That upstream standard is mandatory. The review is read-only; implementation stays with the task owner. Concrete structural findings block by default until fixed or refuted with evidence and independently rechecked; unresolved disagreement goes to the maintainer. Documentation/mechanical changes do not automatically require this specific deep review, but high-risk requirements still apply.
 
 Include actual screenshots/recordings for visible UI changes and diagrams/design decisions when relevant. Disclose unavailable evidence. Keep trivial changes brief.
 
@@ -129,7 +152,7 @@ Before handoff, report acceptance results, actual checks, relevant documentation
 
 The main ruleset is recorded in `.github/rulesets/main.json`; the label manifest is `.github/labels.json`. These files document desired settings and do not apply themselves. Change remote constraints only with the maintainer's authorization, then verify the live settings.
 
-Actions use read-only tokens, GitHub-hosted runners, and SHA-pinned external actions. Dependabot checks GitHub Actions and Bun dependencies weekly. Dependency update PRs require checks and the same merge authorization as other changes. The project license, supported Pi host versions, and release policy remain undecided.
+Actions use read-only tokens, GitHub-hosted runners, and SHA-pinned external actions. Dependabot checks GitHub Actions and Bun dependencies weekly. Dependency update PRs require checks and the same merge authorization as other changes. Project-owned work is licensed under [MIT](LICENSE); retain all third-party notices. Supported Pi host versions and release policy remain undecided.
 
 ## Template sources
 
@@ -139,4 +162,4 @@ The bug report, feature request, and PR templates are adapted from [GitHub CLI](
 - [Feature request](https://github.com/cli/cli/blob/trunk/.github/ISSUE_TEMPLATE/submit-a-request.md)
 - [Pull request](https://github.com/cli/cli/blob/trunk/.github/PULL_REQUEST_TEMPLATE.md)
 
-Project-specific instructions were replaced with this repository's workflow. The engineering task template is local to this repository. The upstream MIT notice is retained in `.github/TEMPLATE_LICENSE` for the adapted templates; it does not declare a license for the rest of this repository.
+Project-specific instructions were replaced with this repository's workflow. The engineering task template is local to this repository. The upstream MIT notice is retained in `.github/TEMPLATE_LICENSE` for the adapted templates; project-owned work is separately covered by the root [MIT license](LICENSE).

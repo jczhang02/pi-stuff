@@ -92,6 +92,7 @@ const REQUIRED_COMMANDS = [
   'bun run test',
   'bun run check:repo',
   'bun run check:pr',
+  'bun run check:commit',
 ];
 
 function pinnedBun(
@@ -141,6 +142,8 @@ export function checkWorkflow(value: typeof WorkflowInput.Type): void {
     throw new Error(
       'required checks job must have a stable name and run unconditionally',
     );
+  if ('env' in data || 'env' in required)
+    throw new Error('required CI must not override the event environment');
   for (const item of Object.values(jobs)) {
     const job = mapping(item);
     if (job['runs-on'] !== 'ubuntu-24.04')
@@ -168,6 +171,16 @@ export function checkWorkflow(value: typeof WorkflowInput.Type): void {
             `checks must run ${command} unconditionally without overrides`,
           );
       }
+      const checkout = steps.filter(step =>
+        step.uses?.startsWith('actions/checkout@'),
+      );
+      if (
+        checkout.length !== 1 ||
+        ['if', 'continue-on-error', 'env'].some(key => key in checkout[0]!)
+      )
+        throw new Error(
+          'checks must check out full history unconditionally without overrides',
+        );
       const setup = steps.filter(step =>
         step.uses?.startsWith('oven-sh/setup-bun@'),
       );
@@ -188,6 +201,11 @@ export function checkWorkflow(value: typeof WorkflowInput.Type): void {
         mapping(step.with)['persist-credentials'] !== false
       )
         throw new Error('checkout must not persist credentials');
+      if (
+        action?.startsWith('actions/checkout@') &&
+        mapping(step.with)['fetch-depth'] !== 0
+      )
+        throw new Error('checkout must fetch full history with fetch-depth: 0');
     }
   }
 }
@@ -204,6 +222,13 @@ export function checkToolchain(value: typeof PackageInput.Type): void {
     if (scripts[name] !== command)
       throw new Error(`script ${name} must run ${command}`);
   }
+  if (
+    ['preinstall', 'install', 'postinstall', 'prepare'].some(
+      name => name in scripts,
+    )
+  )
+    throw new Error('dependency lifecycle scripts must remain disabled');
+  if (data.license !== 'MIT') throw new Error('package license must be MIT');
   const dependencies = mapping(data.dependencies);
   const tooling = mapping(data.devDependencies);
   if (
@@ -217,6 +242,7 @@ export function checkToolchain(value: typeof PackageInput.Type): void {
   }
   if (tooling.oxlint !== tooling['@oxlint/plugins'])
     throw new Error('Oxlint and its plugin API must have matching versions');
+  if (tooling.husky !== '9.1.7') throw new Error('Husky must pin 9.1.7');
 }
 
 export function checkIssueConfig(value: typeof IssueConfig.Type): void {

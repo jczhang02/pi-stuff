@@ -229,6 +229,28 @@ describe('repository checks', () => {
     );
     expect(() => checkWorkflow(workflow)).toThrow(/PR CI must run/);
   });
+  test('commit check is required and cannot be overridden', () => {
+    for (const override of ['remove', 'if', 'continue-on-error', 'env']) {
+      const changed = structuredClone(workflow);
+      const step = changed.jobs.checks.steps.find(
+        item => item.run === 'bun run check:commit',
+      );
+      if (override === 'remove') {
+        changed.jobs.checks.steps = changed.jobs.checks.steps.filter(
+          item => item.run !== 'bun run check:commit',
+        );
+      } else if (step) {
+        if (override === 'if') step.if = true;
+        if (override === 'continue-on-error') step['continue-on-error'] = true;
+        if (override === 'env') step.env = true;
+      }
+      expect(() => checkWorkflow(changed)).toThrow(/bun run check:commit/);
+    }
+  });
+  test('checkout needs full history', () => {
+    workflow.jobs.checks.steps[0]!.with!['fetch-depth'] = '1';
+    expect(() => checkWorkflow(workflow)).toThrow(/full history/);
+  });
   test('evidence step cannot be skipped', () => {
     workflow.jobs.checks.steps.at(-1)!.if = true;
     expect(() => checkWorkflow(workflow)).toThrow(/unconditionally/);

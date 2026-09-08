@@ -74,4 +74,4 @@ cd pi-stuff
 
 ## 许可证
 
-仓库尚未添加项目级许可证。改编自 GitHub CLI 的贡献模板在 [.github/TEMPLATE_LICENSE](../../../.github/TEMPLATE_LICENSE) 中保留了上游 MIT 声明；该声明不适用于项目其余部分。
+项目自有代码和文档采用 [MIT 许可证](../../../LICENSE)。第三方材料保留各自的声明，包括 [.github/TEMPLATE_LICENSE](../../../.github/TEMPLATE_LICENSE)、[审查技能许可证](../../../.agents/skills/thermo-nuclear-code-quality-review/LICENSE)及 `tools/` 下的声明。

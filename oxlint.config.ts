@@ -3,7 +3,7 @@ import {defineConfig} from 'oxlint';
 export default defineConfig({
   categories: {correctness: 'error'},
   ignorePatterns: [
-    '.pi/skills/thermo-nuclear-code-quality-review/**',
+    '.agents/skills/thermo-nuclear-code-quality-review/**',
     '.beads/**',
     '.worktrees/**',
     'node_modules/**',
