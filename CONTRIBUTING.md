@@ -10,8 +10,9 @@ English is normative. Maintain human documents in English/Chinese pairs in the s
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
 - Root `AGENTS.md` / [Chinese reading reference](docs/i18n/zh-CN/agent-instructions.md).
+- `docs/agents/` / [Chinese reading references](docs/i18n/zh-CN/agents/).
 
-Keep Chinese documentation under `docs/i18n/zh-CN/`. Agent-facing instructions and skills stay English-only. The root `AGENTS.md` has a human-readable Chinese counterpart, updated in the same PR; it is not a separate agent instruction source. Use Chinese in conversation.
+Keep Chinese documentation under `docs/i18n/zh-CN/`. Agent-facing instructions and skills stay English-only. Root `AGENTS.md` and every document in `docs/agents/` have human-readable Chinese counterparts, updated in the same PR with reciprocal links; these are not separate agent instruction sources. Use Chinese in conversation.
 
 Use English-only Issue and PR titles. Write new or substantively updated descriptions, comments, review summaries, and future release notes in English first, Chinese second. For long posts, put the translation inside each section. Identifiers, commands, URLs and hashes need not be translated. Do not bulk-rewrite historical discussions or machine-generated metadata; historical research does not need mass translation.
 

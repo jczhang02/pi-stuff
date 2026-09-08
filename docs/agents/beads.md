@@ -1,5 +1,7 @@
 # Beads setup
 
+[Chinese reading reference](../i18n/zh-CN/agents/beads.md). English is authoritative; the translation is for human readers.
+
 ## Local workspace
 
 This clone uses Beads v1.2.1 with embedded Dolt. The workspace is `.beads/` in the main checkout; `bd where` reports the actual database path. No external SQL server is required.

@@ -1,5 +1,7 @@
 # PR evidence
 
+[Chinese reading reference](../i18n/zh-CN/agents/pr-evidence.md). English is authoritative; the translation is for human readers.
+
 A PR should let the maintainer judge impact, decisions and evidence before reading the full diff. This applies to code, documentation and configuration. Keep small changes brief; do not invent scenarios or documents to fill a template. Use Sepia and follow [language and presentation](../../CONTRIBUTING.md#language-and-presentation).
 
 ## Prepare the review

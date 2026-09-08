@@ -1,5 +1,7 @@
 # Instruction migration audit
 
+[Chinese reading reference](../i18n/zh-CN/agents/instruction-map.md). This English audit is the translation source; neither version is a separate rule source.
+
 This is an implementation audit of the quality-baseline change, not a second rule source. The “before” column quotes every obligation-bearing paragraph of the previous root `AGENTS.md` (base commit `212111c`). Follow the linked current rules, not these historical quotations. Each original paragraph has one row; grouped sentences stay together so their conditions and caveats remain visible.
 
 | ID  | Before                                                                                                                                                                                                                                                                                                                                                                                                     | After and disposition                                                                                                                                                                                                                                                                                                                                                                                                                                             |

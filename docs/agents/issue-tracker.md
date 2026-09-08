@@ -1,5 +1,7 @@
 # Issue tracker: GitHub + Beads
 
+[Chinese reading reference](../i18n/zh-CN/agents/issue-tracker.md). English is authoritative; the translation is for human readers.
+
 Repository: `jczhang02/pi-stuff`.
 
 GitHub Issues holds requirements, acceptance criteria, public progress, decisions, and PR links. Beads holds agent execution context: investigation notes, dependencies, blockers, and handoffs. Retain enough context in Beads for another agent to resume work.

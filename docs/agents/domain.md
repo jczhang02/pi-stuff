@@ -1,5 +1,7 @@
 # Domain docs
 
+[Chinese reading reference](../i18n/zh-CN/agents/domain.md). English is authoritative; the translation is for human readers.
+
 ## Read before exploring
 
 This repository uses a single context:
