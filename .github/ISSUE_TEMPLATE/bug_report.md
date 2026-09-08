@@ -6,9 +6,9 @@ labels: ['bug', 'needs-triage']
 assignees: ''
 ---
 
-Write the title and each section in English first, Chinese second. Use lists for steps, links for evidence, and collapsible details for long logs. Commands, identifiers, and raw output need not be duplicated. Follow [language and presentation](https://github.com/jczhang02/pi-stuff/blob/main/CONTRIBUTING.md#language-and-presentation).
+Use an English-only title. Write each body section in English first, Chinese second. Use lists for steps, links for evidence, and collapsible details for long logs. Commands, identifiers, and raw output need not be duplicated. Follow [language and presentation](https://github.com/jczhang02/pi-stuff/blob/main/CONTRIBUTING.md#language-and-presentation).
 
-标题及各节内容先写英文，再写中文。步骤用列表，证据用链接，长日志放入折叠块。命令、标识符和原始输出无需重复。请遵循[语言与呈现规则](https://github.com/jczhang02/pi-stuff/blob/main/docs/i18n/zh-CN/CONTRIBUTING.md#语言与呈现)。
+标题只用英文. 正文各节先写英文, 再写中文.步骤用列表，证据用链接，长日志放入折叠块。命令、标识符和原始输出无需重复。请遵循[语言与呈现规则](https://github.com/jczhang02/pi-stuff/blob/main/docs/i18n/zh-CN/CONTRIBUTING.md#语言与呈现)。
 
 ### Describe the bug
 

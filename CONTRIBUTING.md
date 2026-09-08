@@ -12,7 +12,7 @@ English is normative. Maintain human documents in English/Chinese pairs in the s
 
 Keep Chinese documentation under `docs/i18n/zh-CN/`. Agent instructions and skills stay English-only; do not create Chinese copies of agent rules. Use Chinese in conversation.
 
-Write new or substantively updated human-facing GitHub prose in **English first, Chinese second**. This covers issue and PR descriptions, human-readable titles, comments, review summaries, and future release notes. For long posts, prefer English followed by Chinese within each section. Identifiers, commands, canonical machine field names and status enums, URLs, and hashes need not be translated or duplicated.
+Use English-only Issue and PR titles. Write new or substantively updated descriptions, comments, review summaries, and future release notes in **English first, Chinese second**. For long posts, prefer English followed by Chinese within each section. Identifiers, commands, canonical machine field names and status enums, URLs, and hashes need not be translated or duplicated.
 
 Do not bulk-retrofit historical discussions or machine-generated bot metadata. Add translations when substantively editing human content. Historical research does not need mass translation.
 
@@ -50,9 +50,9 @@ Agents must follow `AGENTS.md`, including its Sepia requirement, and `docs/agent
 Every new Git commit and PR title must follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/). The PR title becomes the squash commit title. Existing history is not rewritten.
 
 ```text
-feat(context): add context selection / 添加上下文选择
-fix: preserve empty input / 保留空输入
-refactor(api)!: remove the obsolete entry point / 移除旧入口
+feat(context): add context selection
+fix: preserve empty input
+refactor(api)!: remove the obsolete entry point
 ```
 
 Use a type made of lowercase letters, optional nonempty scope in parentheses, optional `!`, then `: ` and a nonblank description. Separate the body and footers from the header with a blank line. Types are not limited to the examples above; merge, revert and fixup messages receive no automatic exemption. The checker validates the header, blank separator and control characters. Body text is free-form: it does not infer footers from lines that could also be prose or examples. Footer syntax, type meaning and breaking-change claims remain author/reviewer obligations.
