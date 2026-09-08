@@ -24,19 +24,19 @@ Agents must follow `AGENTS.md`, including its Sepia requirement, and `docs/agent
 
 ## Verify changes
 
-The repository checks use Python; this does not select the product's implementation language. The CI Python version is pinned in `.python-version`, and check dependencies are hash-locked in `scripts/requirements.txt`.
+Pi Stuff uses TypeScript and Bun, including for repository checks; see the [toolchain decision](docs/adr/0001-typescript-bun.md). Install the exact Bun version in `package.json` (`packageManager` and `engines.bun`). CI reads that file too. Direct tooling dependencies are pinned; `bun.lock` records the resolved dependency graph and integrity hashes.
 
-Create a virtual environment outside the repository, then run from the repository root:
+From the repository root, run:
 
 ```bash
-python3 -m venv /tmp/pi-stuff-checks
-/tmp/pi-stuff-checks/bin/python -m pip install --require-hashes -r scripts/requirements.txt
-/tmp/pi-stuff-checks/bin/python -m unittest discover -s scripts -p 'test_*.py'
-/tmp/pi-stuff-checks/bin/python scripts/check_repo.py
+bun install --frozen-lockfile --ignore-scripts
+bun run check
 git diff --check
 ```
 
-To check a PR description before publishing it, run `python scripts/check_pr.py --body-file /path/to/pr-body.md` with the same environment. The file is read as text, not executed.
+`bun run check` runs `typecheck`, `test`, and `check:repo`. Type checking is separate because Bun runs TypeScript without checking types. Installation disables dependency lifecycle scripts; no tooling dependency needs them.
+
+To check a PR description before publishing it, run `bun run check:pr --body-file /path/to/pr-body.md`. The file is read as text, not executed. CI runs this check separately against the pull-request event.
 
 The repository checker validates tracked text formatting, Markdown file links, YAML/frontmatter, labels, and the CI security baseline. It is not a full Markdown renderer, external-link checker, or GitHub Actions schema validator. Add new files to the index before running it so they are included. Its tests use temporary fixtures outside the repository.
 
@@ -70,7 +70,7 @@ Before handoff, report acceptance results, actual checks, relevant documentation
 
 The main ruleset is recorded in `.github/rulesets/main.json`; the label manifest is `.github/labels.json`. These files document desired settings and do not apply themselves. Change remote constraints only with the maintainer's authorization, then verify the live settings.
 
-Actions use read-only tokens, GitHub-hosted runners, and SHA-pinned external actions. Dependency update PRs require checks and the same merge authorization as other changes. Product runtime, package manager, license, and release policy remain undecided; do not infer them from the repository-check tooling.
+Actions use read-only tokens, GitHub-hosted runners, and SHA-pinned external actions. Dependabot checks GitHub Actions and Bun dependencies weekly. Dependency update PRs require checks and the same merge authorization as other changes. The project license, supported Pi host versions, and release policy remain undecided.
 
 ## Template sources
 
