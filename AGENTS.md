@@ -36,4 +36,4 @@ Use a single context: root `CONTEXT.md` and `docs/adr/`. Before exploring code o
 
 ### Contributions
 
-Before creating an issue or PR, read `CONTRIBUTING.md` and use the corresponding template. Write repository documents, issues, PRs, and public comments in English; use the user's preferred language in conversation.
+Before creating an issue or PR, read `CONTRIBUTING.md` and use the corresponding template. Before opening, updating, reviewing, or handing off a PR, read `docs/agents/pr-evidence.md` and assemble the required evidence; refresh it after material changes. Write repository documents, issues, PRs, and public comments in English; use the user's preferred language in conversation.

@@ -36,7 +36,9 @@ python3 -m venv /tmp/pi-stuff-checks
 git diff --check
 ```
 
-The checker validates tracked text formatting, Markdown file links, YAML/frontmatter, labels, and the CI security baseline. It is not a full Markdown renderer, external-link checker, or GitHub Actions schema validator. Add new files to the index before running it so they are included. Its tests use temporary fixtures outside the repository.
+To check a PR description before publishing it, run `python scripts/check_pr.py --body-file /path/to/pr-body.md` with the same environment. The file is read as text, not executed.
+
+The repository checker validates tracked text formatting, Markdown file links, YAML/frontmatter, labels, and the CI security baseline. It is not a full Markdown renderer, external-link checker, or GitHub Actions schema validator. Add new files to the index before running it so they are included. Its tests use temporary fixtures outside the repository.
 
 Use any additional checks available for the affected area. For bugs, reproduce the failure and add a regression test when feasible. Report the commands you ran and results you observed. If there is no automated check for the behavior, describe manual verification or state that it was not tested and explain why. Do not invent test commands or results.
 
@@ -44,11 +46,19 @@ Remove credentials and personal information before publishing logs or screenshot
 
 ## Open a pull request
 
-Use `.github/pull_request_template.md`. Link the issue and include a Beads ID when applicable. Explain the change, actual verification, relevant tradeoffs, and known limitations.
+Read [PR evidence](docs/agents/pr-evidence.md) and use `.github/pull_request_template.md`. Start with before/after behavior or workflow, then explain the approach and important decisions. Put reproduction steps, actual commands, observed results, and evidence together so the maintainer can repeat the verification.
+
+Declare risk and independent-review status. High-risk changes require a separate review context or an explicit maintainer waiver; report scope, findings, fixes, and unresolved concerns. Include actual screenshots/recordings for visible UI changes and diagrams/design decisions when relevant. Disclose unavailable evidence. Keep trivial changes brief.
+
+CI checks the description structure and risk/review declarations when the PR is opened, edited, updated, reopened, marked ready, or converted to draft. Drafts can retain incomplete evidence. The check never executes PR text, but it also cannot prove the truth of a test, screenshot, risk assessment, or waiver. Update the description and affected evidence after material changes.
 
 Use `Closes #number` only when merging will meet the issue's acceptance criteria. Otherwise use `Refs #number`. Opening a PR does not complete a task. For a trivial fix or an explicitly authorized bootstrap change without an issue, explain that in the PR.
 
 ## Merge and handoff
+
+Every change entering `main`, including documentation, templates, and CI configuration, must go through a PR. Task branches remain pushable. Local Beads data and remote GitHub settings are not Git commits; remote-setting changes still require authorization.
+
+The active main ruleset has no bypass actors. Do not disable it to push or merge. The repository owner can administratively change the rule, so protection is a current enforced setting, not an irreversible restriction.
 
 The main-branch ruleset requires a PR, resolved review conversations, and the `checks` CI job on a branch current with `main`. There is no required independent approval in this single-maintainer repository. Use squash merge; merged remote branches are deleted automatically.
 
