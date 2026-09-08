@@ -9,8 +9,9 @@
 - `README.md` / `docs/i18n/zh-CN/README.md`.
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
+- 根 `AGENTS.md` / [中文阅读对照](agent-instructions.md).
 
-中文文档放在 `docs/i18n/zh-CN/`, 代理指令和技能仅用英文, 对话使用中文.
+中文文档放在 `docs/i18n/zh-CN/`, 代理执行指令和技能仅用英文. 根 `AGENTS.md` 配有人类阅读的中文对照, 在同一 PR 中更新, 不作为另一套代理指令来源. 对话使用中文.
 
 Issue 和 PR 标题仅用英文. 新增或实质更新的描述、评论、审查摘要及未来发布说明先英文后中文, 长文在每节内附译文. 标识符、命令、URL 和哈希无需翻译. 不批量改写历史讨论或机器元数据, 历史研究无需补译.
 

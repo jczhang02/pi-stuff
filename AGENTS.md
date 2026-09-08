@@ -1,5 +1,7 @@
 # Agent instructions
 
+[Chinese reading reference](docs/i18n/zh-CN/agent-instructions.md). This English file is authoritative; the translation is for human readers, not a separate agent instruction source.
+
 - Use Sepia for all prose, including Beads entries; preserve facts and technical details.
 - Keep work proportional to risk. Avoid implementation-mirroring tests for reversible, low-impact changes. Complete required checks and reviews, then finish; expand or repeat verification only for new changes, failures, or unresolved concerns.
 - Keep one execution owner, task branch, and worktree per task. Preserve others' work; stage only task files. Ask before destructive operations or force-pushing.
