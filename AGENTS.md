@@ -1,6 +1,7 @@
 # Agent instructions
 
 - Use Sepia for all prose, including Beads entries; preserve facts and technical details.
+- Keep work proportional to risk. Avoid implementation-mirroring tests for reversible, low-impact changes. Complete required checks and reviews, then finish; expand or repeat verification only for new changes, failures, or unresolved concerns.
 - Keep one execution owner, task branch, and worktree per task. Preserve others' work; stage only task files. Ask before destructive operations or force-pushing.
 - Submit every change through a PR. Use Conventional Commits for every new commit and the PR squash title; follow [commit conventions](CONTRIBUTING.md#commit-conventions). Commit verified units promptly and push before handoff. Merge and release each require explicit user authorization.
 - Establish the issue, owner, and acceptance criteria before behavior changes or multi-step work. Ask before new dependencies, public-interface or persistent-format changes, infrastructure or permission changes, or scope expansion.
