@@ -8,7 +8,15 @@ Use one task branch and one worktree per task, with a single execution owner. Cr
 
 Commit coherent, verified changes promptly and push the task branch after committing and before handoff. Submit changes through a PR, not a direct push to `main`. Push is not permission to merge or publish a release; obtain explicit user authorization for either.
 
-Before committing, inspect the final diff and run the applicable checks in `CONTRIBUTING.md`. Stage only task-related files. Preserve other agents' changes; check for uncommitted or unpushed work before removing a worktree. Ask before destructive operations or force-pushing. Report failed checks or pushes and distinguish implementation, publication, review, and merge status.
+Before committing, inspect the final diff and run the applicable checks in `CONTRIBUTING.md`. Stage only task-related files. Preserve other agents' changes. Ask before destructive operations or force-pushing. Report failed checks or pushes and distinguish implementation, publication, review, and merge status.
+
+## Worktree cleanup
+
+After a task's PR is merged, post-merge verification passes, and the handoff is recorded, remove its worktree in the same work cycle. Run cleanup from a retained checkout; keep the main checkout and worktrees for unmerged tasks.
+
+Before removal, check task ownership and active processes, tracked changes, and untracked and ignored files. Preserve any unpublished work or non-reproducible local content first. Verify that the worktree's changes were merged or otherwise preserved. For squash merges, use the merged PR's recorded head and a content comparison; commit ancestry alone is insufficient.
+
+Use `git worktree remove` without force. If safety cannot be established or removal is refused, retain the worktree and record its path, reason, and next action in the task handoff and public update. Report removed and retained worktrees; branch deletion is a separate decision.
 
 ## Scope and verification
 

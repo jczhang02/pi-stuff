@@ -64,7 +64,7 @@ The main-branch ruleset requires a PR, resolved review conversations, and the `c
 
 Agents need explicit user authorization to merge or release, even if CI passes. Shared GitHub credentials cannot enforce a human-versus-agent distinction, so this is an agent rule rather than a separate GitHub permission boundary. Release automation is not configured.
 
-Before handoff, report acceptance results, actual checks, relevant documentation changes, pushed commit, PR link, and any pending tracker updates. A task may be implemented while awaiting review or merge. Remove local worktrees only after checking for remaining work and preserving anything not published.
+Before handoff, report acceptance results, actual checks, relevant documentation changes, pushed commit, PR link, and any pending tracker updates. A task may be implemented while awaiting review or merge. Follow the [worktree cleanup rules](AGENTS.md#worktree-cleanup) after merge verification and handoff; report any retained task worktree and the reason.
 
 ## Repository maintenance
 
