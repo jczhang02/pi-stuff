@@ -2,9 +2,11 @@ import {expect, test} from 'bun:test';
 import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {resolve} from 'node:path';
-import {Schema} from 'effect';
+import {Effect, Schema} from 'effect';
 import config from '../oxlint.config';
-import {checkWorkflow, loadYaml} from './check-repo';
+import {checkWorkflow} from './check-repo';
+import {WorkflowInput} from './contracts';
+import {decodeYaml} from './parse';
 
 const ROOT = resolve(import.meta.dir, '..');
 const PROBES = [
@@ -127,7 +129,11 @@ test('format and lint stages cannot be removed from CI', () => {
   );
   for (const command of ['bun run format:check', 'bun run lint']) {
     expect(() =>
-      checkWorkflow(loadYaml(source.replace(command, 'echo skipped'))),
+      checkWorkflow(
+        Effect.runSync(
+          decodeYaml(source.replace(command, 'echo skipped'), WorkflowInput),
+        ),
+      ),
     ).toThrow(command);
   }
 });

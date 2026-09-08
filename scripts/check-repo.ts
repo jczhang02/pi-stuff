@@ -1,8 +1,22 @@
 import {execFileSync} from 'node:child_process';
-import {existsSync, readFileSync, realpathSync} from 'node:fs';
+import {existsSync, realpathSync} from 'node:fs';
 import {dirname, extname, isAbsolute, relative, resolve, sep} from 'node:path';
-import {Effect, Schema} from 'effect';
-import {asRecord, loadJson, loadYaml, readText} from './parse';
+import {Effect} from 'effect';
+import {
+  IssueConfig,
+  LabelInput,
+  PackageInput,
+  Template,
+  WorkflowInput,
+} from './contracts';
+import {decodeJson, decodeYaml, loadJson, loadYaml, readText} from './parse';
+import {
+  checkIssueConfig,
+  checkLabels,
+  checkTemplateData,
+  checkToolchain,
+  checkWorkflow,
+} from './repo-policy';
 import {
   FENCE,
   splitLines,
@@ -12,6 +26,7 @@ import {
 } from './text';
 
 export {loadJson, loadYaml} from './parse';
+export {checkLabels, checkToolchain, checkWorkflow} from './repo-policy';
 
 export function checkText(text: string): string[] {
   const errors: string[] = [];
@@ -25,12 +40,10 @@ export function checkText(text: string): string[] {
   }
   return errors;
 }
-
 function inside(root: string, target: string): boolean {
   const path = relative(root, target);
   return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path);
 }
-
 export function checkMarkdown(
   root: string,
   path: string,
@@ -90,241 +103,14 @@ export function checkMarkdown(
   }
   return errors;
 }
-
-export function checkLabels(value: Schema.Json): Set<string> {
-  if (!Schema.is(Schema.Array(Schema.Json))(value))
-    throw new Error('label manifest must be a list');
-  const names = new Set<string>();
-  for (const item of value) {
-    const label = asRecord(item);
-    if (
-      !Schema.is(Schema.String)(label.name) ||
-      !label.name ||
-      names.has(label.name.toLowerCase())
-    ) {
-      throw new Error('invalid or duplicate label name');
-    }
-    // JavaScript lowercasing does not perform full Unicode case folding (for example, ß to ss).
-    names.add(label.name.toLowerCase());
-    if (
-      !Schema.is(Schema.String)(label.color) ||
-      !/^[0-9a-f]{6}$/i.test(label.color)
-    )
-      throw new Error(`invalid color for ${label.name}`);
-    if (
-      !Schema.is(Schema.String)(label.description) ||
-      [...label.description].length > 100
-    )
-      throw new Error(`invalid description for ${label.name}`);
-  }
-  for (const name of [
-    'needs-triage',
-    'needs-info',
-    'ready-for-agent',
-    'ready-for-human',
-    'wontfix',
-  ]) {
-    if (!names.has(name)) throw new Error('missing canonical triage labels');
-  }
-  return names;
-}
-
 export function checkTemplate(text: string, labelNames: Set<string>): void {
   const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
   if (!match) throw new Error('missing template frontmatter');
-  const data = asRecord(loadYaml(match[1]!));
-  for (const key of ['name', 'about']) {
-    if (!Schema.is(Schema.String)(data[key]) || !trimWhitespace(data[key]))
-      throw new Error(`missing template ${key}`);
-  }
-  if (
-    !Schema.is(Schema.Array(Schema.Json))(data.labels) ||
-    data.labels.some(
-      label => !Schema.is(Schema.String)(label) || !labelNames.has(label),
-    )
-  ) {
-    throw new Error('template labels must be a list of known labels');
-  }
-  if (!data.labels.includes('needs-triage'))
-    throw new Error('new issues must have needs-triage');
-}
-
-function sameKeys(value: Schema.JsonObject, keys: string[]): boolean {
-  return (
-    Object.keys(value).length === keys.length &&
-    keys.every(key => Object.hasOwn(value, key))
+  checkTemplateData(
+    Effect.runSync(decodeYaml(match[1]!, Template)),
+    labelNames,
   );
 }
-
-function readOnly(value: Schema.Json | undefined): boolean {
-  const permissions = asRecord(value, 'CI must use contents: read');
-  return sameKeys(permissions, ['contents']) && permissions.contents === 'read';
-}
-
-const PR_EVENTS = [
-  'opened',
-  'synchronize',
-  'reopened',
-  'edited',
-  'ready_for_review',
-  'converted_to_draft',
-];
-const REQUIRED_COMMANDS = [
-  'bun install --frozen-lockfile --ignore-scripts',
-  'bun run format:check',
-  'bun run lint',
-  'bun run typecheck',
-  'bun run test',
-  'bun run check:repo',
-  'bun run check:pr',
-];
-
-export function checkWorkflow(value: Schema.Json): void {
-  const data = asRecord(value, 'workflow must be a mapping');
-  const events = asRecord(data.on, 'CI must run on every pull request');
-  if (!Object.hasOwn(events, 'pull_request'))
-    throw new Error('CI must run on every pull request');
-  if (
-    Object.keys(events).some(
-      key => !['pull_request', 'push', 'workflow_dispatch'].includes(key),
-    )
-  ) {
-    throw new Error('CI has an unexpected or privileged trigger');
-  }
-  const prEvents = asRecord(events.pull_request);
-  if (!sameKeys(prEvents, ['types']))
-    throw new Error(
-      'required PR CI must declare evidence events without branch or path filters',
-    );
-  const eventTypes = prEvents.types;
-  if (
-    !Schema.is(Schema.Array(Schema.Json))(eventTypes) ||
-    eventTypes.length !== PR_EVENTS.length ||
-    !PR_EVENTS.every(event => eventTypes.includes(event))
-  ) {
-    throw new Error(
-      'PR CI must run for code/body updates and both draft/readiness transitions',
-    );
-  }
-  if (!readOnly(data.permissions))
-    throw new Error('CI must use contents: read');
-  const jobs = asRecord(data.jobs, 'CI must expose a checks job');
-  const required = asRecord(jobs.checks, 'CI must expose a checks job');
-  if (
-    required.name !== 'checks' ||
-    'if' in required ||
-    'continue-on-error' in required
-  ) {
-    throw new Error(
-      'required checks job must have a stable name and run unconditionally',
-    );
-  }
-  for (const [jobName, item] of Object.entries(jobs)) {
-    const job = asRecord(item);
-    if (job['runs-on'] !== 'ubuntu-24.04')
-      throw new Error('CI must use the approved GitHub-hosted runner');
-    const timeout = job['timeout-minutes'];
-    if (
-      !Schema.is(Schema.Number)(timeout) ||
-      !Number.isInteger(timeout) ||
-      timeout < 1 ||
-      timeout > 30
-    ) {
-      throw new Error('CI jobs need a timeout of 1-30 minutes');
-    }
-    if ('permissions' in job && !readOnly(job.permissions))
-      throw new Error('CI jobs must not expand token permissions');
-    if (!Schema.is(Schema.Array(Schema.Json))(job.steps) || !job.steps.length)
-      throw new Error('CI jobs need steps');
-    const steps = job.steps.map(step => asRecord(step));
-    if (jobName === 'checks') {
-      for (const command of REQUIRED_COMMANDS) {
-        const matching = steps.filter(step => step.run === command);
-        if (
-          matching.length !== 1 ||
-          ['if', 'continue-on-error', 'env'].some(key => key in matching[0]!)
-        ) {
-          throw new Error(
-            `checks must run ${command} unconditionally without overrides`,
-          );
-        }
-      }
-      const setup = steps.filter(
-        step =>
-          Schema.is(Schema.String)(step.uses) &&
-          step.uses.startsWith('oven-sh/setup-bun@'),
-      );
-      if (
-        setup.length !== 1 ||
-        !sameKeys(asRecord(setup[0]!.with), ['bun-version-file']) ||
-        asRecord(setup[0]!.with)['bun-version-file'] !== 'package.json'
-      ) {
-        throw new Error(
-          'CI must install the Bun version pinned in package.json',
-        );
-      }
-    }
-    for (const step of steps) {
-      const action = step.uses;
-      if (
-        action !== undefined &&
-        (!Schema.is(Schema.String)(action) ||
-          !/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/.test(action))
-      ) {
-        throw new Error('external actions must be pinned to a full commit SHA');
-      }
-      if (
-        Schema.is(Schema.String)(action) &&
-        action.startsWith('actions/checkout@')
-      ) {
-        if (asRecord(step.with)['persist-credentials'] !== false)
-          throw new Error('checkout must not persist credentials');
-      }
-    }
-  }
-}
-
-export function checkToolchain(value: Schema.Json): void {
-  const data = asRecord(value);
-  if (
-    !Schema.is(Schema.String)(data.packageManager) ||
-    !/^bun@\d+\.\d+\.\d+$/.test(data.packageManager)
-  ) {
-    throw new Error('packageManager must pin an exact Bun version');
-  }
-  if (asRecord(data.engines).bun !== data.packageManager.slice(4))
-    throw new Error('engines.bun must match packageManager');
-  const scripts = asRecord(data.scripts);
-  const requiredScripts = {
-    format: 'bun --bun oxfmt --write .',
-    'format:check': 'bun --bun oxfmt --check .',
-    lint: 'bun --bun oxlint --deny-warnings --disable-nested-config',
-    typecheck: 'bun --bun tsc --noEmit',
-    test: 'bun test',
-    'check:repo': 'bun scripts/check-repo.ts',
-    'check:pr': 'bun scripts/check-pr.ts',
-    check:
-      'bun run format:check && bun run lint && bun run typecheck && bun run test && bun run check:repo',
-  };
-  for (const [name, command] of Object.entries(requiredScripts)) {
-    if (scripts[name] !== command)
-      throw new Error(`script ${name} must run ${command}`);
-  }
-  const dependencies = asRecord(data.dependencies);
-  const tooling = asRecord(data.devDependencies);
-  if (tooling.oxlint !== tooling['@oxlint/plugins'])
-    throw new Error('Oxlint and its plugin API must have matching versions');
-  if (
-    !Schema.is(Schema.String)(dependencies.effect) ||
-    !/^4\.\d+\.\d+(?:-rc\.\d+)?$/.test(dependencies.effect)
-  )
-    throw new Error('Effect must pin v4; RC versions are explicitly supported');
-  for (const version of Object.values(tooling)) {
-    if (!Schema.is(Schema.String)(version) || !/^\d+\.\d+\.\d+$/.test(version))
-      throw new Error('direct tooling dependencies must use exact versions');
-  }
-}
-
 export function checkPath(path: string): string[] {
   const parts = path.split(/[\\/]/);
   const name = parts.at(-1)!;
@@ -341,9 +127,8 @@ export function checkPath(path: string): string[] {
     ) ||
     path.endsWith('.pyc') ||
     name === '.DS_Store'
-  ) {
+  )
     return ['generated or local-only path must not be tracked'];
-  }
   if (
     name.startsWith('.env') &&
     !['.env.example', '.env.sample'].includes(name)
@@ -351,11 +136,17 @@ export function checkPath(path: string): string[] {
     return ['environment credential files must not be tracked'];
   return [];
 }
-
 export function checkRepo(root: string, paths: string[]): string[] {
   const errors: string[] = [];
+  // Bootstrap labels as readFileSync(..., 'utf8') did. The collection pass
+  // below reports invalid encoding with the file prefix, alongside other errors.
   const labels = checkLabels(
-    loadJson(readFileSync(resolve(root, '.github/labels.json'), 'utf8')),
+    Effect.runSync(
+      Effect.flatMap(
+        readText(resolve(root, '.github/labels.json'), {ignoreBOM: true}),
+        text => decodeJson(text, LabelInput),
+      ),
+    ),
   );
   const textSuffixes = new Set([
     '.md',
@@ -390,17 +181,15 @@ export function checkRepo(root: string, paths: string[]): string[] {
           if (dirname(path) === '.github/ISSUE_TEMPLATE')
             checkTemplate(text, labels);
         } else if (path.endsWith('.json')) {
-          const data = loadJson(text);
-          if (path === 'package.json') checkToolchain(data);
+          if (path === 'package.json')
+            checkToolchain(Effect.runSync(decodeJson(text, PackageInput)));
+          else loadJson(text);
         } else if (/\.ya?ml$/.test(path)) {
-          const data = loadYaml(text);
-          if (path === '.github/workflows/ci.yml') checkWorkflow(data);
-          else if (
-            path === '.github/ISSUE_TEMPLATE/config.yml' &&
-            asRecord(data).blank_issues_enabled !== true
-          ) {
-            throw new Error('keep blank issues available');
-          }
+          if (path === '.github/workflows/ci.yml')
+            checkWorkflow(Effect.runSync(decodeYaml(text, WorkflowInput)));
+          else if (path === '.github/ISSUE_TEMPLATE/config.yml')
+            checkIssueConfig(Effect.runSync(decodeYaml(text, IssueConfig)));
+          else loadYaml(text);
         }
       }
     } catch (error) {
@@ -410,7 +199,6 @@ export function checkRepo(root: string, paths: string[]): string[] {
   }
   return errors;
 }
-
 export function main(): number {
   const root = resolve(import.meta.dir, '..');
   try {
@@ -434,5 +222,4 @@ export function main(): number {
     return 1;
   }
 }
-
 if (import.meta.main) process.exitCode = main();

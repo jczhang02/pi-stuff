@@ -1,5 +1,6 @@
-import {Effect, Schema} from 'effect';
-import {readText} from './parse';
+import {Effect} from 'effect';
+import {PREvent} from './contracts';
+import {decodeEventJson, readText} from './parse';
 import {FENCE, splitLines, trimWhitespace, WHITESPACE} from './text';
 
 // Validate declarations only. Never execute or fetch PR-supplied text.
@@ -46,8 +47,8 @@ function substantive(text: string): boolean {
   return false;
 }
 
-export function checkBody(input: Schema.Json | undefined): string[] {
-  if (!Schema.is(Schema.String)(input)) return ['PR body must be text'];
+export function checkBody(input: string | null | undefined): string[] {
+  if (input == null) return ['PR body must be text'];
   // Template comments are guidance, not submitted evidence.
   const body = input.replace(/<!--[\s\S]*?(?:-->|$)/g, '');
   const sections = new Map<string, string[]>();
@@ -119,15 +120,10 @@ export function checkBody(input: Schema.Json | undefined): string[] {
   return errors;
 }
 
-const PREvent = Schema.Struct({pull_request: Schema.JsonObject});
-const DraftDeclaration = Schema.Struct({draft: Schema.Boolean});
-
-export function checkEvent(event: Schema.Json): string[] {
-  if (!Schema.is(PREvent)(event))
-    return ['event must contain a pull_request object'];
+export function checkEvent(event: typeof PREvent.Type): string[] {
+  if (!event?.pull_request) return ['event must contain a pull_request object'];
   const pr = event.pull_request;
-  if (!Schema.is(DraftDeclaration)(pr))
-    return ['pull_request.draft must be a boolean'];
+  if (pr.draft == null) return ['pull_request.draft must be a boolean'];
   return pr.draft ? [] : checkBody(pr.body);
 }
 
@@ -148,8 +144,11 @@ export function main(args = process.argv.slice(2)): number {
       const eventPath = process.env.GITHUB_EVENT_PATH;
       if (!eventPath) throw new Error('missing event path');
       errors = Effect.runSync(
-        Effect.map(readText(eventPath), text =>
-          checkEvent(Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text))),
+        Effect.map(
+          Effect.flatMap(readText(eventPath), text =>
+            decodeEventJson(text, PREvent),
+          ),
+          checkEvent,
         ),
       );
     } else {

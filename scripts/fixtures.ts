@@ -1,55 +1,30 @@
-import {Schema} from 'effect';
+import {Effect} from 'effect';
+import {Labels, Workflow} from './contracts';
+import {decodeJson, decodeYaml} from './parse';
 
-// Mutable, schema-validated fixtures allow tests to introduce one invalid policy at a time.
-const mutable = Schema.mutableKey;
-const optional = Schema.optionalKey;
-const strings = Schema.mutable(Schema.Array(Schema.String));
-const inputs = Schema.Record(Schema.String, mutable(Schema.Json));
-export const LabelsFixture = Schema.mutable(
-  Schema.Array(
-    Schema.Struct({
-      name: mutable(Schema.String),
-      color: mutable(Schema.String),
-      description: mutable(Schema.String),
-    }),
-  ),
-);
-const Step = Schema.Struct({
-  uses: mutable(optional(Schema.String)),
-  run: mutable(optional(Schema.String)),
-  with: mutable(optional(inputs)),
-  if: mutable(optional(Schema.String)),
-  env: mutable(optional(Schema.Record(Schema.String, Schema.String))),
-});
-export const WorkflowFixture = Schema.Struct({
-  on: Schema.Struct({
-    pull_request: mutable(
-      Schema.Struct({
-        types: mutable(optional(strings)),
-        paths: mutable(optional(strings)),
-      }),
-    ),
-    pull_request_target: mutable(optional(Schema.Null)),
-  }),
-  permissions: Schema.Struct({contents: mutable(Schema.String)}),
-  jobs: Schema.Struct({
-    checks: Schema.Struct({
-      name: mutable(Schema.String),
-      'runs-on': mutable(Schema.String),
-      'timeout-minutes': mutable(optional(Schema.Number)),
-      if: mutable(optional(Schema.String)),
-      'continue-on-error': mutable(optional(Schema.Boolean)),
-      steps: mutable(Schema.mutable(Schema.Array(Step))),
-    }),
-  }),
-});
-export const PackageFixture = Schema.Struct({
-  name: Schema.String,
-  private: Schema.Boolean,
-  type: Schema.String,
-  packageManager: Schema.String,
-  engines: Schema.Struct({bun: Schema.String}),
-  scripts: Schema.Record(Schema.String, Schema.String),
-  dependencies: optional(Schema.Record(Schema.String, Schema.String)),
-  devDependencies: Schema.Record(Schema.String, Schema.String),
-});
+// Fixtures use the production codecs. These helpers require the portions each
+// mutation test edits, so a broken fixture fails during setup, not by accident.
+export function labelsFixture(text: string) {
+  const labels = Effect.runSync(decodeJson(text, Labels));
+  return labels.map(label => {
+    if (!label) throw new Error('Fixture needs a label mapping');
+    return label;
+  });
+}
+export function workflowFixture(text: string) {
+  const data = Effect.runSync(decodeYaml(text, Workflow));
+  const job = data.jobs?.checks;
+  const pr = data.on?.pull_request;
+  if (!data.on || !pr || !data.permissions || !data.jobs || !job?.steps)
+    throw new Error('Fixture needs triggers, permissions, jobs and steps');
+  const steps = job.steps.map(step => {
+    if (!step) throw new Error('Fixture needs a step mapping');
+    return step;
+  });
+  return {
+    ...data,
+    on: {...data.on, pull_request: pr},
+    permissions: data.permissions,
+    jobs: {...data.jobs, checks: {...job, steps}},
+  };
+}

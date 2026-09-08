@@ -9,7 +9,8 @@ import {
 import {tmpdir} from 'node:os';
 import {resolve} from 'node:path';
 import {checkBody, checkEvent} from './check-pr';
-import type {Schema} from 'effect';
+import {Schema} from 'effect';
+import {BodyInput, PREvent} from './contracts';
 
 const ROOT = resolve(import.meta.dir, '..');
 const BODY = `### Behavior and impact
@@ -47,7 +48,9 @@ describe('PR evidence', () => {
     ).not.toEqual([]));
   test('empty or nontext body fails', () => {
     for (const body of ['', null, {}, 42])
-      expect(checkBody(body)).not.toEqual([]);
+      expect(checkBody(Schema.decodeUnknownSync(BodyInput)(body))).not.toEqual(
+        [],
+      );
   });
   test('missing section fails', () =>
     expect(
@@ -202,7 +205,9 @@ describe('PR evidence', () => {
       {pull_request: []},
       {pull_request: {draft: 'false', body: BODY}},
     ])
-      expect(checkEvent(event)).not.toEqual([]);
+      expect(checkEvent(Schema.decodeUnknownSync(PREvent)(event))).not.toEqual(
+        [],
+      );
   });
   test('Unicode line separators cannot expose fenced evidence', () => {
     for (const separator of ['\u2028', '\u2029']) {
@@ -274,7 +279,7 @@ describe('PR checker CLI', () => {
       stderr: result.stderr.toString(),
     };
   }
-  function eventCli(event: Schema.Json, name = 'pull_request') {
+  function eventCli(event: typeof PREvent.Type, name = 'pull_request') {
     const path = resolve(directory, 'event.json');
     writeFileSync(path, JSON.stringify(event));
     return cli([], {GITHUB_EVENT_PATH: path, GITHUB_EVENT_NAME: name});

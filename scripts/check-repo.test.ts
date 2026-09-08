@@ -23,25 +23,25 @@ import {
   loadYaml,
 } from './check-repo';
 
-import {Schema} from 'effect';
-import {LabelsFixture, WorkflowFixture, PackageFixture} from './fixtures';
+import {Effect, Schema} from 'effect';
+import {decodeJson, decodeYaml} from './parse';
+import {Package} from './contracts';
+import {labelsFixture, workflowFixture} from './fixtures';
 
 const ROOT = resolve(import.meta.dir, '..');
 
 describe('repository checks', () => {
-  let labels: typeof LabelsFixture.Type;
+  let labels: ReturnType<typeof labelsFixture>;
   let names: Set<string>;
-  let workflow: typeof WorkflowFixture.Type;
+  let workflow: ReturnType<typeof workflowFixture>;
   let directory: string;
   beforeEach(() => {
-    labels = Schema.decodeUnknownSync(LabelsFixture)(
-      loadJson(readFileSync(resolve(ROOT, '.github/labels.json'), 'utf8')),
+    labels = labelsFixture(
+      readFileSync(resolve(ROOT, '.github/labels.json'), 'utf8'),
     );
     names = checkLabels(labels);
-    workflow = Schema.decodeUnknownSync(WorkflowFixture, {
-      onExcessProperty: 'preserve',
-    })(
-      loadYaml(readFileSync(resolve(ROOT, '.github/workflows/ci.yml'), 'utf8')),
+    workflow = workflowFixture(
+      readFileSync(resolve(ROOT, '.github/workflows/ci.yml'), 'utf8'),
     );
     directory = mkdtempSync(resolve(tmpdir(), 'pi-check-repo-'));
   });
@@ -50,7 +50,18 @@ describe('repository checks', () => {
   test('current workflow', () =>
     expect(() => checkWorkflow(workflow)).not.toThrow());
   test('YAML keeps on key and boolean values', () =>
-    expect(loadYaml('on: push\nenabled: true\ndisabled: false\n')).toEqual({
+    expect(
+      Effect.runSync(
+        decodeYaml(
+          'on: push\nenabled: true\ndisabled: false\n',
+          Schema.Struct({
+            on: Schema.String,
+            enabled: Schema.Boolean,
+            disabled: Schema.Boolean,
+          }),
+        ),
+      ),
+    ).toEqual({
       on: 'push',
       enabled: true,
       disabled: false,
@@ -219,7 +230,7 @@ describe('repository checks', () => {
     expect(() => checkWorkflow(workflow)).toThrow(/PR CI must run/);
   });
   test('evidence step cannot be skipped', () => {
-    workflow.jobs.checks.steps.at(-1)!.if = 'false';
+    workflow.jobs.checks.steps.at(-1)!.if = true;
     expect(() => checkWorkflow(workflow)).toThrow(/unconditionally/);
   });
   test('evidence step is required', () => {
@@ -227,8 +238,12 @@ describe('repository checks', () => {
     expect(() => checkWorkflow(workflow)).toThrow(/bun run check:pr/);
   });
   test('privileged trigger fails', () => {
-    workflow.on.pull_request_target = null;
-    expect(() => checkWorkflow(workflow)).toThrow(/privileged trigger/);
+    expect(() =>
+      checkWorkflow({
+        ...workflow,
+        on: {...workflow.on, pull_request_target: null},
+      }),
+    ).toThrow(/privileged trigger/);
   });
   test('write permissions fail', () => {
     workflow.permissions.contents = 'write';
@@ -243,7 +258,7 @@ describe('repository checks', () => {
     expect(() => checkWorkflow(workflow)).toThrow(/persist credentials/);
   });
   test('required job cannot be conditional', () => {
-    workflow.jobs.checks.if = 'false';
+    workflow.jobs.checks.if = true;
     expect(() => checkWorkflow(workflow)).toThrow(/unconditionally/);
   });
   test('self-hosted runner fails', () => {
@@ -334,7 +349,7 @@ describe('repository checks', () => {
     expect(() => checkWorkflow(workflow)).toThrow(/unconditionally/);
   });
   test('CI cannot override evidence environment at the step', () => {
-    workflow.jobs.checks.steps.at(-1)!.env = {GITHUB_EVENT_NAME: 'push'};
+    workflow.jobs.checks.steps.at(-1)!.env = true;
     expect(() => checkWorkflow(workflow)).toThrow(/without overrides/);
   });
   test('CI takes Bun version from package.json', () => {
@@ -344,8 +359,8 @@ describe('repository checks', () => {
     expect(() => checkWorkflow(workflow)).toThrow(/pinned in package.json/);
   });
   test('toolchain versions are pinned', () => {
-    const base = Schema.decodeUnknownSync(PackageFixture)(
-      loadJson(readFileSync(resolve(ROOT, 'package.json'), 'utf8')),
+    const base = Effect.runSync(
+      decodeJson(readFileSync(resolve(ROOT, 'package.json'), 'utf8'), Package),
     );
     expect(() => checkToolchain(base)).not.toThrow();
     expect(() =>
@@ -355,7 +370,12 @@ describe('repository checks', () => {
       /must match/,
     );
     expect(() =>
-      checkToolchain({...base, devDependencies: {typescript: '^7.0.2'}}),
+      checkToolchain({
+        ...base,
+        devDependencies: Schema.decodeUnknownSync(
+          Package.fields.devDependencies,
+        )({typescript: '^7.0.2'}),
+      }),
     ).toThrow(/exact versions/);
     expect(() =>
       checkToolchain({
