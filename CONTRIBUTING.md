@@ -38,7 +38,7 @@ fix: preserve empty input
 refactor(api)!: remove the obsolete entry point
 ```
 
-The standard types are `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style` and `test`. Scope is optional. The header limit is 100 characters; descriptions must not end in a period or use the prohibited capitalization styles. Body/footer line limits and blank-line warnings follow the upstream preset. Commitlint's standard ignore behavior is unchanged; tool acceptance does not exempt agents from the new-commit convention. English-only titles, semantic accuracy and truthful breaking-change claims remain author/reviewer responsibilities.
+The standard types are `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style` and `test`. Scope is optional. The header limit is 100 characters; descriptions must not end in a period or use the prohibited capitalization styles. Body/footer line limits and blank-line warnings follow the upstream preset. Default ignore exemptions are disabled so version-only or generated messages cannot skip these rules; the preset's rules themselves are unchanged. English-only titles, semantic accuracy and truthful breaking-change claims remain author/reviewer responsibilities.
 
 ### Local hooks
 

@@ -38,7 +38,7 @@ fix: preserve empty input
 refactor(api)!: remove the obsolete entry point
 ```
 
-标准 type 为 `build`、`chore`、`ci`、`docs`、`feat`、`fix`、`perf`、`refactor`、`revert`、`style`、`test`, scope 可省略. 标题上限为 100 字符, 描述不得以句点结尾或使用被禁止的大小写形式. 正文/footer 行长限制与空行警告遵循上游配置. 保留 commitlint 的标准忽略行为, 工具放行不豁免代理遵守新提交规范. 英文标题、语义准确性和真实破坏性变更声明仍由作者和审查者负责.
+标准 type 为 `build`、`chore`、`ci`、`docs`、`feat`、`fix`、`perf`、`refactor`、`revert`、`style`、`test`, scope 可省略. 标题上限为 100 字符, 描述不得以句点结尾或使用被禁止的大小写形式. 正文/footer 行长限制与空行警告遵循上游配置. 关闭默认忽略豁免, 避免纯版本号或生成消息跳过校验, 标准配置的规则本身不变. 英文标题、语义准确性和真实破坏性变更声明仍由作者和审查者负责.
 
 ### 本地 hooks
 
