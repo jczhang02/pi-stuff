@@ -1,6 +1,6 @@
 # 使用 TypeScript 和 Bun
 
-[English](../../adr/0001-typescript-bun.md) · 以英文版为准。
+[English](../../../adr/0001-typescript-bun.md) · 以英文版为准。
 
 维护者为 Pi Stuff 选择了 TypeScript 和 Bun。仓库自动化也使用同一套工具链，不再维护单独的 Python 环境：Bun 运行脚本和测试，按 `bun.lock` 安装依赖，并调用 TypeScript 进行静态检查。它替换了初始化阶段的 Python 检查器，但不改变 PR 证据或安全要求。
 

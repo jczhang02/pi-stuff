@@ -1,6 +1,6 @@
 # Use Effect v4 and a strict quality baseline
 
-[简体中文](../zh-CN/adr/0002-effect-quality.md) · English is normative.
+[简体中文](../i18n/zh-CN/adr/0002-effect-quality.md) · English is normative.
 
 The maintainer chose Effect `4.0.0-rc.112` for boundary decoding, typed errors, and necessary I/O orchestration, including existing repository scripts, while keeping pure algorithms as ordinary functions. This extends [ADR 0001](0001-typescript-bun.md), retaining TypeScript and Bun `1.4.0`; it accepts an RC dependency to use the chosen v4 framework rather than maintain ad hoc boundary/error handling or adopt v3.
 

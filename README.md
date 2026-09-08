@@ -7,7 +7,7 @@
 Focused interface, work, context, and integration capabilities for the native
 [Pi coding agent](https://github.com/earendil-works/pi).
 
-[简体中文](README.zh-CN.md) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/jczhang02/pi-stuff/issues)
+[简体中文](docs/i18n/zh-CN/README.md) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/jczhang02/pi-stuff/issues)
 
 </div>
 
@@ -55,7 +55,7 @@ There is no Pi Stuff extension to install yet. To install development dependenci
 | [Effect and quality decision](docs/adr/0002-effect-quality.md) | Framework, strict checks, and structural review             |
 | [Engineering rules](docs/agents/engineering.md)                | Types, boundaries, formatting, and review obligations       |
 
-English is normative. Human docs have linked English/Chinese counterparts updated in the same PR; agent instructions and skills remain English-only. Issues, PRs, and public comments are in English; conversation is in Chinese. Historical research is not being mass-translated.
+English is normative. Human docs have linked English/Chinese counterparts, with Chinese versions under `docs/i18n/zh-CN/`, updated in the same PR. New or substantively updated human-facing GitHub prose is English first, Chinese second; agent instructions and skills remain English-only, and conversation is in Chinese. See [language and presentation](CONTRIBUTING.md#language-and-presentation) for scope, exceptions, and Markdown guidance. Historical research is not being mass-translated.
 
 ## Contributing
 

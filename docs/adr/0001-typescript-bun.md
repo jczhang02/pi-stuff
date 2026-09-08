@@ -1,6 +1,6 @@
 # Use TypeScript and Bun
 
-[简体中文](../zh-CN/adr/0001-typescript-bun.md) · English is normative.
+[简体中文](../i18n/zh-CN/adr/0001-typescript-bun.md) · English is normative.
 
 The maintainer selected TypeScript and Bun for Pi Stuff. Use the same toolchain for repository automation instead of maintaining a separate Python environment: Bun runs scripts and tests, installs dependencies from `bun.lock`, and invokes TypeScript for static checking. This replaces the bootstrap Python checkers without changing their PR evidence or security requirements.
 

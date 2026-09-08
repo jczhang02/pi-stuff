@@ -11,8 +11,17 @@ export const HEADINGS = [
   'Risk and review',
   'Related work',
 ] as const;
+const REVIEW_FIELDS = [
+  'Risk level',
+  'Independent review',
+  'Review evidence',
+] as const;
+const FIELD_PATTERN = `(${REVIEW_FIELDS.join('|')})`;
+const BOLD_LABEL_WITH_COLON = new RegExp(`^\\*\\*${FIELD_PATTERN}:\\*\\*`);
+const BOLD_LABEL = new RegExp(`^\\*\\*${FIELD_PATTERN}\\*\\*:`);
+const DECLARATION = new RegExp(`^${FIELD_PATTERN}:[ \\t]*([^\\n]*)$`, 'gm');
 const LIST_PREFIX = new RegExp(
-  `^[${WHITESPACE}]*(?:[-*][${WHITESPACE}]+(?:\\[[ xX]\\][${WHITESPACE}]*)?)?`,
+  `^[${WHITESPACE}]*(?:[-*+][${WHITESPACE}]+(?:\\[[ xX]\\][${WHITESPACE}]*)?)?`,
 );
 
 function* linesWithFences(text: string): Generator<[string, boolean]> {
@@ -37,8 +46,28 @@ function substantive(text: string): boolean {
   for (let line of splitLines(text)) {
     if (FENCE.test(line) || /^#{1,6}[ \t]+/.test(line)) continue;
     line = trimWhitespace(line.replace(LIST_PREFIX, ''));
+    // Peel balanced markup and one terminal punctuation mark, even between wrappers.
+    let start = 0;
+    let end = line.length;
+    let punctuation = '';
+    while (start < end) {
+      const last = line[end - 1]!;
+      if (!punctuation && '.!:：'.includes(last)) {
+        punctuation = last;
+        end--;
+      }
+      if (
+        start + 1 >= end ||
+        !'*_`'.includes(line[start]!) ||
+        line[start] !== line[end - 1]
+      )
+        break;
+      start++;
+      end--;
+    }
+    if (start) line = trimWhitespace(line.slice(start, end)) + punctuation;
     if (!line || /^[^\p{L}\p{N}]+$/u.test(line)) continue;
-    if (/^[\p{L}\p{N}_ /-]+:$/u.test(line)) continue;
+    if (/^[\p{L}\p{N}_ /-]+[:：]$/u.test(line)) continue;
     // Python's ignore-case matching also treats dotted/dotless I as ASCII i.
     if (/^(?:N\/?A|none|TODO|TBD|not appl[iİı]cable)[.!]?$/i.test(line))
       continue;
@@ -73,15 +102,16 @@ export function checkBody(input: string | null | undefined): string[] {
     ...linesWithFences((sections.get('Risk and review') ?? []).join('\n')),
   ]
     .filter(([, fenced]) => !fenced)
-    .map(([line]) => line)
+    .map(([line]) =>
+      line
+        .replace(/^[-*+][ \t]+/, '')
+        .replace(BOLD_LABEL_WITH_COLON, '$1:')
+        .replace(BOLD_LABEL, '$1:'),
+    )
     .join('\n');
-  const declarations = [
-    ...review.matchAll(
-      /^(Risk level|Independent review|Review evidence):[ \t]*([^\n]*)$/gm,
-    ),
-  ];
+  const declarations = [...review.matchAll(DECLARATION)];
   const values = new Map<string, string>();
-  for (const field of ['Risk level', 'Independent review', 'Review evidence']) {
+  for (const field of REVIEW_FIELDS) {
     const matches = declarations
       .map((match, index) => ({match, index}))
       .filter(({match}) => match[1] === field);
