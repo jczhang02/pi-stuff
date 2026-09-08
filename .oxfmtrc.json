@@ -1,0 +1,19 @@
+{
+  "tabWidth": 2,
+  "useTabs": false,
+  "printWidth": 80,
+  "semi": true,
+  "singleQuote": true,
+  "bracketSpacing": false,
+  "trailingComma": "all",
+  "arrowParens": "avoid",
+  "endOfLine": "lf",
+  "ignorePatterns": [
+    ".pi/skills/thermo-nuclear-code-quality-review/SKILL.md",
+    ".beads/**",
+    ".worktrees/**",
+    "node_modules/**",
+    "tools/oxlint/anti-slop/**",
+    "bun.lock"
+  ]
+}

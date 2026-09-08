@@ -2,20 +2,29 @@
   "name": "pi-stuff",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.4.0",
-  "engines": {
-    "bun": "1.4.0"
-  },
   "scripts": {
+    "format": "bun --bun oxfmt --write .",
+    "format:check": "bun --bun oxfmt --check .",
+    "lint": "bun --bun oxlint --deny-warnings --disable-nested-config",
     "typecheck": "bun --bun tsc --noEmit",
     "test": "bun test",
     "check:repo": "bun scripts/check-repo.ts",
     "check:pr": "bun scripts/check-pr.ts",
-    "check": "bun run typecheck && bun run test && bun run check:repo"
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run check:repo"
+  },
+  "dependencies": {
+    "effect": "4.0.0-rc.112"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.82.0",
     "@types/bun": "1.4.0",
+    "oxfmt": "0.67.0",
+    "oxlint": "1.82.0",
     "typescript": "7.0.2",
     "yaml": "2.9.0"
-  }
+  },
+  "engines": {
+    "bun": "1.4.0"
+  },
+  "packageManager": "bun@1.4.0"
 }

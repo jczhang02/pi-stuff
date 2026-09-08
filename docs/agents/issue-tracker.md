@@ -57,12 +57,12 @@ gh issue comment <number> --repo jczhang02/pi-stuff --body-file <summary-file>
 
 Publish a concise comment at these points:
 
-| Event | Include |
-| --- | --- |
-| Work begins | Scope and next step |
-| Blocked or awaiting a decision | Cause, impact, and the specific action needed |
-| Significant milestone | Completed work, observed verification results, and remaining work |
-| Task completion | Outcome, actual verification, PR links, and known limitations |
+| Event                          | Include                                                           |
+| ------------------------------ | ----------------------------------------------------------------- |
+| Work begins                    | Scope and next step                                               |
+| Blocked or awaiting a decision | Cause, impact, and the specific action needed                     |
+| Significant milestone          | Completed work, observed verification results, and remaining work |
+| Task completion                | Outcome, actual verification, PR links, and known limitations     |
 
 Keep detailed investigation and execution notes in Beads. Publish useful summaries, not a mirror of every internal note. If nothing substantive changed, do not repeat an update.
 
