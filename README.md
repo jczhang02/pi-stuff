@@ -13,7 +13,7 @@ Focused interface, work, context, and integration capabilities for the native
 
 ## Project status
 
-This repository is at the project setup stage. It contains contribution templates and agent workflow conventions, but no installable Pi Stuff package yet.
+This repository is at the project setup stage. It contains contribution templates, agent workflow conventions, and repository checks, but no installable Pi Stuff package yet. TypeScript and Bun are the chosen toolchain.
 
 The capabilities below describe the product direction, not implemented features. Installation instructions, supported versions, and screenshots will be added as the corresponding code and checks become available.
 
@@ -39,7 +39,7 @@ cd pi-stuff
 
 Read [Contributing](CONTRIBUTING.md) before starting work. Coding agents must also read [AGENTS.md](AGENTS.md).
 
-There is no package installation command yet. Repository documentation and configuration checks are available; see [verification instructions](CONTRIBUTING.md#verify-changes).
+There is no Pi Stuff extension to install yet. To install development dependencies and run the repository checks with Bun, follow the [verification instructions](CONTRIBUTING.md#verify-changes).
 
 ## Documentation
 
@@ -51,6 +51,7 @@ There is no package installation command yet. Repository documentation and confi
 | [Beads setup](docs/agents/beads.md) | Local database, shared worktrees, skill, and authentication |
 | [Triage labels](docs/agents/triage-labels.md) | Routing tasks to information gathering, agents, or humans |
 | [Domain documentation rules](docs/agents/domain.md) | Reading domain terms and architecture decisions |
+| [TypeScript/Bun decision](docs/adr/0001-typescript-bun.md) | Shared product and repository-check toolchain |
 
 ## Contributing
 

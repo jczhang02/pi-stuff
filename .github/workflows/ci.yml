@@ -24,15 +24,17 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          python-version-file: .python-version
+          bun-version-file: package.json
       - name: Install repository-check dependencies
-        run: python -m pip install --disable-pip-version-check --require-hashes -r scripts/requirements.txt
-      - name: Test the repository checker
-        run: python -m unittest discover -s scripts -p 'test_*.py' -v
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Type check repository scripts
+        run: bun run typecheck
+      - name: Test repository and PR checks
+        run: bun run test
       - name: Check repository files
-        run: python scripts/check_repo.py
+        run: bun run check:repo
       - name: Check PR evidence
-        run: python scripts/check_pr.py
+        run: bun run check:pr
