@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { splitLines } from "./text";
+import { FENCE, splitLines, trimWhitespace, WHITESPACE } from "./text";
 
 // Validate declarations only. Never execute or fetch PR-supplied text.
 export const HEADINGS = [
@@ -9,7 +9,7 @@ export const HEADINGS = [
   "Risk and review",
   "Related work",
 ] as const;
-const FENCE = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
+const LIST_PREFIX = new RegExp(`^[${WHITESPACE}]*(?:[-*][${WHITESPACE}]+(?:\\[[ xX]\\][${WHITESPACE}]*)?)?`);
 
 function* linesWithFences(text: string): Generator<[string, boolean]> {
   let fence: string | undefined;
@@ -18,7 +18,7 @@ function* linesWithFences(text: string): Generator<[string, boolean]> {
     if (marker) {
       const run = marker[1]!;
       if (!fence) fence = run;
-      else if (run[0] === fence[0] && run.length >= fence.length && !marker[2]!.trim()) fence = undefined;
+      else if (run[0] === fence[0] && run.length >= fence.length && !trimWhitespace(marker[2]!)) fence = undefined;
       yield [line, true];
     } else yield [line, fence !== undefined];
   }
@@ -27,9 +27,9 @@ function* linesWithFences(text: string): Generator<[string, boolean]> {
 function substantive(text: string): boolean {
   for (let line of splitLines(text)) {
     if (FENCE.test(line) || /^#{1,6}[ \t]+/.test(line)) continue;
-    line = line.replace(/^\s*(?:[-*]\s+(?:\[[ xX]\]\s*)?)?/, "").trim();
+    line = trimWhitespace(line.replace(LIST_PREFIX, ""));
     if (!line || /^[^\p{L}\p{N}]+$/u.test(line)) continue;
-    if (/^[\p{L}\p{N}_ /-]+:\s*$/u.test(line)) continue;
+    if (/^[\p{L}\p{N}_ /-]+:$/u.test(line)) continue;
     if (/^(?:N\/?A|none|TODO|TBD|not applicable)[.!]?$/i.test(line)) continue;
     return true;
   }
@@ -69,7 +69,7 @@ export function checkBody(input: unknown): string[] {
       const { match, index } = matches[0]!;
       const end = declarations[index + 1]?.index ?? review.length;
       const start = match.index + match[0].length - match[2]!.length;
-      values.set(field, (field === "Review evidence" ? review.slice(start, end) : match[2]!).trim());
+      values.set(field, trimWhitespace(field === "Review evidence" ? review.slice(start, end) : match[2]!));
     }
   }
   const risk = values.get("Risk level") ?? "";
@@ -99,7 +99,7 @@ export function checkEvent(event: unknown): string[] {
 }
 
 function readUtf8(path: string): string {
-  return new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(path));
+  return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(readFileSync(path));
 }
 
 export function main(args = process.argv.slice(2)): number {

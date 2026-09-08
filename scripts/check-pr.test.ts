@@ -88,6 +88,12 @@ describe("PR evidence", () => {
       expect(checkBody("```markdown" + separator + "x\n" + BODY + "\n```")).not.toEqual([]);
     }
   });
+  test("legacy whitespace cannot expose fenced evidence", () => {
+    expect(checkBody("\u001f```markdown\n" + BODY + "\n```")).not.toEqual([]);
+    expect(checkBody("```markdown\nexample\n```\ufeff\n" + BODY)).not.toEqual([]);
+    expect(checkBody("```markdown\nexample\n```\u001f\n" + BODY)).toEqual([]);
+    expect(checkBody(BODY.replace("Risk level: low", "Risk level: low\ufeff"))).not.toEqual([]);
+  });
   test("legacy line boundaries preserve PR structure", () => {
     for (const separator of ["\r\n", "\r", "\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"]) {
       expect(checkBody(BODY.replaceAll("\n", separator))).toEqual([]);

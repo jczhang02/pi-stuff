@@ -75,6 +75,11 @@ describe("repository checks", () => {
       expect(checkMarkdown(ROOT, resolve(ROOT, "README.md"), text)).toEqual([]);
     }
   });
+  test("legacy whitespace retains Markdown fence boundaries", () => {
+    const link = "[example](not-a-real-file)\n";
+    expect(checkMarkdown(ROOT, resolve(ROOT, "README.md"), "\u001f```markdown\n" + link + "```\n")).toEqual([]);
+    expect(checkMarkdown(ROOT, resolve(ROOT, "README.md"), "```markdown\n```\ufeff\n" + link + "```\n")).toEqual([]);
+  });
   test("label description length counts Unicode characters", () => {
     labels[0]!.description = "😀".repeat(100);
     expect(() => checkLabels(labels)).not.toThrow();

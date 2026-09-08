@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { asRecord, loadJson, loadYaml } from "./parse";
-import { splitLines } from "./text";
+import { FENCE, splitLines, trimEndWhitespace, trimWhitespace, WHITESPACE } from "./text";
 
 export { loadJson, loadYaml } from "./parse";
 
@@ -11,7 +11,7 @@ export function checkText(text: string): string[] {
   if (text.includes("\r")) errors.push("use LF line endings");
   if (text && !text.endsWith("\n")) errors.push("missing final newline");
   for (const [index, line] of splitLines(text).entries()) {
-    if (line.trimEnd() !== line) errors.push(`line ${index + 1}: trailing whitespace`);
+    if (trimEndWhitespace(line) !== line) errors.push(`line ${index + 1}: trailing whitespace`);
     if (line.includes("\t")) errors.push(`line ${index + 1}: use spaces, not tabs`);
   }
   return errors;
@@ -27,15 +27,15 @@ export function checkMarkdown(root: string, path: string, text: string): string[
   const prose: string[] = [];
   let fence: string | undefined;
   for (const [index, line] of splitLines(text).entries()) {
-    const marker = /^\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    const marker = FENCE.exec(line);
     if (marker) {
       const run = marker[1]!;
       if (!fence) fence = run;
-      else if (run[0] === fence[0] && run.length >= fence.length && !marker[2]!.trim()) fence = undefined;
+      else if (run[0] === fence[0] && run.length >= fence.length && !trimWhitespace(marker[2]!)) fence = undefined;
       continue;
     }
     if (!fence) {
-      if (/^#{1,6}[^#\s]/.test(line)) errors.push(`line ${index + 1}: add a space after heading markers`);
+      if (new RegExp(`^#{1,6}[^#${WHITESPACE}]`).test(line)) errors.push(`line ${index + 1}: add a space after heading markers`);
       prose.push(line);
     }
   }
@@ -88,7 +88,7 @@ export function checkTemplate(text: string, labelNames: Set<string>): void {
   if (!match) throw new Error("missing template frontmatter");
   const data = asRecord(loadYaml(match[1]!));
   for (const key of ["name", "about"]) {
-    if (typeof data[key] !== "string" || !data[key].trim()) throw new Error(`missing template ${key}`);
+    if (typeof data[key] !== "string" || !trimWhitespace(data[key])) throw new Error(`missing template ${key}`);
   }
   if (!Array.isArray(data.labels) || data.labels.some(label => typeof label !== "string" || !labelNames.has(label))) {
     throw new Error("template labels must be a list of known labels");
@@ -208,7 +208,7 @@ export function checkRepo(root: string, paths: string[]): string[] {
     const problems = checkPath(path);
     try {
       if (textSuffixes.has(extname(path)) || textNames.has(path.split("/").at(-1)!)) {
-        const text = new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(fullPath));
+        const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(readFileSync(fullPath));
         problems.push(...checkText(text));
         if (path.endsWith(".md")) {
           problems.push(...checkMarkdown(root, fullPath, text));
