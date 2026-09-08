@@ -23,7 +23,7 @@ Use Effect `4.0.0-rc.112` for boundary decoding, typed errors, and necessary I/O
 
 RC status alone must **never** justify rejecting Effect v4, downgrading to v3, or selecting another framework. A specific incompatibility requires an actual reproduction, version/API evidence, and a maintainer decision before changing this choice. Consult v4 documentation and the pinned package's APIs; do not assume v3 examples still apply. This framework decision makes no Pi host compatibility claim.
 
-Preserve externally observable script behavior: accepted inputs and invocation modes, output and diagnostics, exit status, and safety properties. Keep existing regression scenarios when reorganizing tests; record where they moved. Test count is not a contract. Add failure cases and lint-enforcement probes where needed; neither green tests nor a formatter pass alone establish requirement coverage.
+Preserve behavior and useful regression coverage for retained owned code unless the maintainer approves a scope change. The maintainer explicitly retired the custom governance programs and their tests in #21. Do not recreate them as tests of agent instructions or third-party tools. Add tests when actual owned behavior warrants them; test count is not a contract. Neither green tests nor a formatter pass alone establishes requirement coverage.
 
 ## Formatting and verification
 
@@ -45,7 +45,7 @@ Oxfmt applies Google GTS formatting preferences without installing GTS, ESLint, 
 
 Run `bun run format` locally to write formatting changes; CI only checks formatting with `bun run format:check`. Use [Contributing](../../CONTRIBUTING.md#verify-changes) for the full command sequence. Bun remains pinned to `1.4.0`; install with `bun install --frozen-lockfile --ignore-scripts`.
 
-The baseline uses Oxfmt, Oxlint, TypeScript, Bun tests, repository checks, and PR evidence checks. It does not add Knip, a hard coverage percentage, a full mutation framework, or competing lint/format tools. Preserve existing regression coverage and report checks actually run rather than promising a fixed number of tests.
+The current baseline runs Oxfmt, Oxlint and TypeScript. Husky invokes those checks before commits without writes or staging, and commitlint's standard preset checks messages and PR titles. There are no owned automated tests after the approved governance removal, and no placeholder test command. Keep the quality rules at error severity; their probes are not retained as a separate suite. Do not add Knip, a coverage target, a mutation framework or competing lint/format tools as ceremony. Report actual verification and remaining tests.
 
 ## Structural quality and review
 

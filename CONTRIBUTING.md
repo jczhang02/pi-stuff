@@ -10,44 +10,27 @@ English is normative. Maintain human documents in English/Chinese pairs in the s
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
 
-Keep Chinese documentation under `docs/i18n/zh-CN/`. Agent instructions and skills stay English-only; do not create Chinese copies of agent rules. Use Chinese in conversation.
+Keep Chinese documentation under `docs/i18n/zh-CN/`. Agent instructions and skills stay English-only. Use Chinese in conversation.
 
-Use English-only Issue and PR titles. Write new or substantively updated descriptions, comments, review summaries, and future release notes in **English first, Chinese second**. For long posts, prefer English followed by Chinese within each section. Identifiers, commands, canonical machine field names and status enums, URLs, and hashes need not be translated or duplicated.
+Use English-only Issue and PR titles. Write new or substantively updated descriptions, comments, review summaries, and future release notes in English first, Chinese second. For long posts, put the translation inside each section. Identifiers, commands, URLs and hashes need not be translated. Do not bulk-rewrite historical discussions or machine-generated metadata; historical research does not need mass translation.
 
-Do not bulk-retrofit historical discussions or machine-generated bot metadata. Add translations when substantively editing human content. Historical research does not need mass translation.
-
-Use Markdown to make evidence easy to find:
-
-- Lists for enumerable facts, steps, and acceptance criteria.
-- Selective **bold** for labels and verdicts. With Chinese labels, keep punctuation outside the bold span (`**标签**：内容`) or put a space after it (`**标签：** 内容`), so GitHub renders the emphasis.
-- Links to evidence and related work.
-- Collapsible `<details>` blocks for long logs, with a short result in the body.
-
-Keep short explanations in ordinary prose. Not every sentence needs rich formatting.
+Use lists for enumerable facts, selective bold for important labels, and links for evidence. Put Chinese punctuation outside bold labels (`**标签**：内容`) or add a separating space. Collapse long logs in `<details>` and keep short explanations as ordinary prose.
 
 ## Open an issue
 
-This is a single-maintainer project with multiple coding agents. Behavior changes and multi-step work need an issue with acceptance criteria. Typo and formatting fixes may go directly to a PR without a separate issue.
+This is a single-maintainer project with multiple coding agents. Behavior changes and multi-step work need an issue with acceptance criteria. Typo and formatting fixes may go directly to a PR.
 
-Search existing issues before submitting. Choose the matching template:
-
-- **Bug report:** provide reproduction steps, expected and actual behavior, versions, and relevant output.
-- **Feature request:** explain the problem and proposed solution.
-- **Engineering task:** define scope and verifiable acceptance criteria.
-
-Blank issues remain available for requests that do not fit a template. CLI-created issues should include the same information as web submissions and an explicit triage label; see `docs/agents/triage-labels.md`.
+Search existing issues and choose the matching template: bug reports need reproduction, expected/actual behavior and versions; feature requests need a problem and proposal; engineering tasks need scope and verifiable acceptance criteria. Blank issues remain available. CLI-created issues need equivalent information and an explicit [triage label](docs/agents/triage-labels.md).
 
 ## Work on a task
 
-Read the issue body, comments, and linked execution records before starting. Check ownership and blockers before claiming work. One task has one execution owner, one short-lived branch, and one worktree under `.worktrees/`. For nontrivial changes, agree on the scope and acceptance criteria first. Keep each change focused.
+Read the issue, discussion and execution context before claiming it. One task has one execution owner, one branch and one worktree under `.worktrees/`. Agree on scope and acceptance criteria before nontrivial changes. Preserve other agents' work and unrelated local changes.
 
-Commit verified units promptly and push the task branch. Open a PR rather than pushing to `main`. Do not modify another agent's work or remove a worktree containing uncommitted or unpushed changes.
-
-Agents must follow `AGENTS.md`, including its Sepia requirement, and `docs/agents/issue-tracker.md` for Beads, synchronization, and public updates. Other contributors do not need to install Beads.
+Commit verified units promptly, push the task branch and open a PR rather than pushing to `main`. Agents follow `AGENTS.md`, including Sepia, and the [tracker workflow](docs/agents/issue-tracker.md). Other contributors need not install Beads.
 
 ## Commit conventions
 
-Every new Git commit and PR title must follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/). The PR title becomes the squash commit title. Existing history is not rewritten.
+Every new commit and PR title follows [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) with the standard [`@commitlint/config-conventional`](https://commitlint.js.org/reference/configuration.html) configuration. The validated PR title is used for squash merge. Do not rewrite existing history.
 
 ```text
 feat(context): add context selection
@@ -55,28 +38,29 @@ fix: preserve empty input
 refactor(api)!: remove the obsolete entry point
 ```
 
-Use a type made of lowercase letters, optional nonempty scope in parentheses, optional `!`, then `: ` and a nonblank description. Separate the body and footers from the header with a blank line. Types are not limited to the examples above; merge, revert and fixup messages receive no automatic exemption. The checker validates the header, blank separator and control characters. Body text is free-form: it does not infer footers from lines that could also be prose or examples. Footer syntax, type meaning and breaking-change claims remain author/reviewer obligations.
+The standard types are `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style` and `test`. Scope is optional. The header limit is 100 characters; descriptions must not end in a period or use the prohibited capitalization styles. Body/footer line limits and blank-line warnings follow the upstream preset. Commitlint's standard ignore behavior is unchanged; tool acceptance does not exempt agents from the new-commit convention. English-only titles, semantic accuracy and truthful breaking-change claims remain author/reviewer responsibilities.
 
-After the frozen, lifecycle-disabled install below, set up [Husky](https://typicode.github.io/husky/) explicitly:
+### Local hooks
+
+After the frozen, lifecycle-disabled install below, inspect the shared and effective Git hook configuration and existing hook files before setup. Stop and ask the maintainer if custom hooks, overrides or unexpected values are present. The official Husky command does not provide our former custom installer's configuration-preservation guarantees.
 
 ```bash
-git config --show-origin --get core.hooksPath
+git config --show-origin --show-scope --get-all core.hooksPath
+git config --local --get-all core.hooksPath
+git rev-parse --git-path hooks
 bun run hooks:install
 ```
 
-Exit status `1` from the first command means the setting is absent. If it names anything other than this repository's `.husky/_`, stop before installation and resolve the existing-hook setup with the maintainer. Also inspect the directory reported by `git rev-parse --git-path hooks`; active custom hooks need the same discussion even when `core.hooksPath` is unset. Setup checks both shared and effective configuration scopes, including overrides, empty values and repeated settings. Coordinate setup with the maintainer; do not change hook configuration concurrently. Installation changes the clone's Git hook path only after verified helpers are published. Linked worktrees share that setting, but generated hook files are local to each worktree; run setup in each current worktree where commits will be made. Generated `.husky/_` files are not committed. Setup refuses an existing helper directory; inspect it before removing generated helpers for a reinstall. Generation failures leave hook configuration unchanged. If the final configuration write fails, complete helpers remain for inspection; check both the configuration and helper directory before retrying. Older worktrees without this setup must not be assumed protected.
+An absent setting returns status 1. Our expected path is `.husky/_`. Inspect existing helpers before regenerating them; coordinate setup rather than modifying shared configuration concurrently. Linked worktrees share the Git setting but need their own generated helpers. Setup explicitly invokes Husky 9; no `prepare` or dependency lifecycle scripts are used. Generated `.husky/_` stays ignored.
 
-The `commit-msg` hook checks the supplied file before Git cleanup. Put the conventional header on its first line; do not rely on Git removing leading comments or blank lines. The hook also asks Git whether the header survives its active comment prefix; conflicting comment settings are rejected. It does not substitute a cleaned body for the original file. Check a file directly with `bun run check:commit --message-file <path>`. Hooks are local and bypassable; CI also checks introduced commits and the PR title, including draft PRs. PR checks inspect every commit reachable from head but not base, so a behind-base branch is supported and an invalid middle commit is not hidden. Main pushes inspect the introduced set; an initial push with an all-zero `before` inspects all reachable history. Manual dispatch checks only its selected `GITHUB_SHA`. Commit messages are read from raw objects with strict UTF-8 decoding and Git object-format validation, not lossy log presentation. Missing or shallow history fails rather than skipping validation. Keep the required CI check and use the validated title when squashing. No automatic dependency lifecycle hook is needed for setup.
+- `pre-commit` runs `bun run check`: formatting, lint and types, without modifying or staging files. Fix failures explicitly and inspect the diff before retrying.
+- `commit-msg` runs the installed commitlint CLI on the message file. No custom message parser, history reader or installer remains.
+
+Hooks are local and bypassable. CI checks the PR title separately, including drafts, rather than rechecking every branch commit. Agents still follow the convention for every new commit.
 
 ## Verify changes
 
-Pi Stuff uses TypeScript and Bun, including for repository checks; see the [toolchain decision](docs/adr/0001-typescript-bun.md) and [Effect/quality decision](docs/adr/0002-effect-quality.md). Install the exact Bun version in `package.json` (`packageManager` and `engines.bun`), unchanged at `1.4.0`; CI reads that file too. Direct tooling dependencies are pinned; `bun.lock` records the resolved dependency graph and integrity hashes.
-
-Read the [engineering rules](docs/agents/engineering.md) before changing source, tests, dependencies, or checks. All owned source and tests require the 15 generic anti-slop rules plus the Effect rule and Oxlint correctness rules at error severity, without suppressions, weaker settings, inferred type laundering, or invented safety assertions. Use strict TypeScript and unused-code checking. Reproduce real rule conflicts and raise them rather than bypassing enforcement.
-
-Effect `4.0.0-rc.112` is the chosen framework for boundary decoding, typed errors, and necessary I/O orchestration, including repository scripts; pure algorithms remain ordinary functions. RC status alone must never justify rejecting v4, downgrading to v3, or choosing another framework. Specific incompatibilities need an actual reproduction, evidence, and a maintainer decision. Use v4 documentation rather than assumed v3 APIs.
-
-From the repository root, run:
+Use the exact Bun version in `package.json`, currently `1.4.0`. Direct tooling dependencies are pinned and `bun.lock` records the dependency graph. Read the [engineering rules](docs/agents/engineering.md) before changing source, tests, dependencies or checks.
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
@@ -84,82 +68,40 @@ bun run check
 git diff --check
 ```
 
-`bun run check` runs `format:check`, `lint`, `typecheck`, `test`, and `check:repo`. Type checking is separate because Bun runs TypeScript without checking types. Installation disables dependency lifecycle scripts; no tooling dependency needs them.
+`check` runs `format:check`, `lint` and `typecheck`. `bun run format` writes formatting explicitly; hook and CI checks do not. Bun execution does not replace type checking.
 
-| Command                                            | Purpose                                            |
-| -------------------------------------------------- | -------------------------------------------------- |
-| `bun run format`                                   | Write formatting locally with Oxfmt                |
-| `bun run format:check`                             | Check formatting without writes; used by CI        |
-| `bun run lint`                                     | Run Oxlint correctness and strict anti-slop checks |
-| `bun run typecheck`                                | Run strict TypeScript and unused-code checks       |
-| `bun run test`                                     | Run regression tests and enforcement probes        |
-| `bun run check:repo`                               | Check repository conventions and safety baseline   |
-| `bun run check:pr --body-file /path/to/pr-body.md` | Check PR evidence structure                        |
+The 15 generic anti-slop rules, Effect rule and Oxlint correctness rules remain errors on owned source and tests. Keep strict TypeScript and unused-code checks; no suppressions, weakened settings, type laundering or invented assertions. Oxfmt retains [Google GTS preferences](docs/agents/engineering.md#formatting-and-verification), without GTS, ESLint or Prettier. Do not add Knip, coverage targets, mutation frameworks or competing tooling as ceremony.
 
-Oxfmt uses Google GTS preferences with [explicit settings and a pinned upstream source](docs/agents/engineering.md#formatting-and-verification), not a GTS/ESLint/Prettier installation. CI checks formatting only; run the writing command locally. Do not add Knip, a hard coverage target, a full mutation framework, or competing lint/format tools to this baseline. Keep existing regression scenarios and observable script behavior; do not freeze the test count.
+Effect `4.0.0-rc.112` remains the selected framework for boundary decoding, typed errors and necessary I/O; pure algorithms remain ordinary functions. RC status alone never justifies rejecting v4, downgrading to v3 or choosing another framework. Specific incompatibilities need reproduction, evidence and a maintainer decision; consult v4 APIs. See [ADR 0001](docs/adr/0001-typescript-bun.md) and [ADR 0002](docs/adr/0002-effect-quality.md).
 
-To check a PR description before publishing it, run `bun run check:pr --body-file /path/to/pr-body.md`. The file is read as text, not executed. CI runs this check separately against the pull-request event.
+There are currently no repository-owned automated tests or `test` script. The removed governance programs' six suites are not retained as placeholder tests. Add tests when owned behavior warrants them, including useful bug regressions; report actual commands and limitations. Standard hook wiring gets focused integration verification, not a new suite that retests Husky or commitlint.
 
-The repository checker validates tracked text formatting, Markdown file links, YAML/frontmatter, labels, and the CI security baseline. It is not a full Markdown renderer, external-link checker, or GitHub Actions schema validator. Add new files to the index before running it so they are included. Its tests use temporary fixtures outside the repository.
-
-Use any additional checks available for the affected area. For bugs, reproduce the failure and add a regression test when feasible. Report the commands you ran and results you observed. If there is no automated check for the behavior, describe manual verification or state that it was not tested and explain why. Do not invent test commands or results.
-
-Remove credentials and personal information before publishing logs or screenshots.
+Authors and reviewers check affected Markdown links, templates, labels, dependency changes and CI security settings directly. There is no custom repository-policy or PR-body validator. Remove secrets and personal information before publishing evidence.
 
 ## Open a pull request
 
-Read [PR evidence](docs/agents/pr-evidence.md) and use `.github/pull_request_template.md`. Start with before/after behavior or workflow, then explain the approach and important decisions. Put reproduction steps, actual commands, observed results, and evidence together so the maintainer can repeat the verification.
+Use `.github/pull_request_template.md` and follow [PR evidence](docs/agents/pr-evidence.md). Explain behavior/impact, approach, actual verification, risk/review and related work, with English then Chinese. These are human review requirements, not a Markdown parsing contract. Keep trivial changes brief and report untested behavior rather than inventing results.
 
-Keep the five exact English H3 headings from [PR evidence](docs/agents/pr-evidence.md#required-sections). For section-by-section translations, put English prose first; a `#### 中文` block can hold the translation inside each section. Do not translate or duplicate the machine headings. Keep declaration keys in English, once each in `Risk and review`; explain them in Chinese without repeating those keys.
+High-risk changes require independent review or an explicitly authorized waiver. Substantive code changes require the mandatory upstream `.agents/skills/thermo-nuclear-code-quality-review/SKILL.md` full-diff review in a separate read-only context. The owner implements fixes; concrete findings block until fixed or rebutted with evidence and independently rechecked. Unresolved disagreement goes to the maintainer. Documentation/mechanical changes do not automatically trigger this specific review, but high-risk requirements still apply.
 
-Declarations may be plain lines or use optional unordered bullets and bold field labels, such as `- **Risk level:** high`. Status values remain plain canonical enums: `low` or `high`; `completed`, `not-required`, `pending`, or `waived`. This is a limited syntax contract, not arbitrary Markdown parsing: bolded statuses and table declarations are unsupported. Duplicate fields, placeholders, fenced declarations, and incomplete review evidence remain invalid.
+Include actual UI evidence or useful design diagrams when relevant. Refresh affected evidence after material changes. Use `Closes #number` only when merging satisfies acceptance criteria, otherwise `Refs #number`; opening a PR is not task completion.
 
-For example, the section layout can be:
-
-```markdown
-### Verification and reproduction
-
-Not tested: this host cannot run the target terminal; the manual check remains pending.
-
-#### 中文
-
-未测试：此环境无法运行目标终端，手工检查仍待完成。
-```
-
-Headings, declaration keys, and enums are a machine contract. Evidence and review conclusions must describe the current change; examples are not reusable claims.
-
-Declare risk and independent-review status. High-risk changes require a separate review context or an explicit maintainer waiver; report scope, findings, fixes, and unresolved concerns. Substantive code changes, including the quality-baseline PR, also require a separate full-diff review using `.agents/skills/thermo-nuclear-code-quality-review/SKILL.md`. That upstream standard is mandatory. The review is read-only; implementation stays with the task owner. Concrete structural findings block by default until fixed or refuted with evidence and independently rechecked; unresolved disagreement goes to the maintainer. Documentation/mechanical changes do not automatically require this specific deep review, but high-risk requirements still apply.
-
-Include actual screenshots/recordings for visible UI changes and diagrams/design decisions when relevant. Disclose unavailable evidence. Keep trivial changes brief.
-
-CI checks the description structure and risk/review declarations when the PR is opened, edited, updated, reopened, marked ready, or converted to draft. Drafts can retain incomplete evidence. The check never executes PR text, but it also cannot prove the truth of a test, screenshot, risk assessment, or waiver. Update the description and affected evidence after material changes.
-
-Use `Closes #number` only when merging will meet the issue's acceptance criteria. Otherwise use `Refs #number`. Opening a PR does not complete a task. For a trivial fix or an explicitly authorized bootstrap change without an issue, explain that in the PR.
+The separate `title` workflow checks PR titles with the same commitlint configuration as the local hook. Metadata edits rerun that lightweight check, not the code-check workflow. The code workflow runs on PR opens, synchronization, reopening and readiness, main pushes and manual dispatch. After changing a PR's base, synchronize the branch and rerun code CI before merge. PR evidence and review authenticity remain human/agent responsibilities.
 
 ## Merge and handoff
 
-Every change entering `main`, including documentation, templates, and CI configuration, must go through a PR. Task branches remain pushable. Local Beads data and remote GitHub settings are not Git commits; remote-setting changes still require authorization.
+Every repository change enters `main` through a PR. The active ruleset has no bypass actors and requires resolved review conversations, linear history and the `checks` job on a branch current with `main`. Do not disable protection to land a change. Adding `title` as a required status needs a separately authorized remote ruleset update; a passing workflow alone is not a merge requirement. The repository owner can change settings, so these are enforced settings rather than irreversible guarantees.
 
-The active main ruleset has no bypass actors. Do not disable it to push or merge. The repository owner can administratively change the rule, so protection is a current enforced setting, not an irreversible restriction.
+Use squash merge with the validated PR title; merged remote branches are deleted automatically. Agents need explicit authorization to merge or release even if CI passes. Shared credentials do not distinguish human from agent authorization. Release automation is not configured.
 
-The main-branch ruleset requires a PR, resolved review conversations, and the `checks` CI job on a branch current with `main`. There is no required independent approval in this single-maintainer repository. Use squash merge; merged remote branches are deleted automatically.
-
-Agents need explicit user authorization to merge or release, even if CI passes. Shared GitHub credentials cannot enforce a human-versus-agent distinction, so this is an agent rule rather than a separate GitHub permission boundary. Release automation is not configured.
-
-Before handoff, report acceptance results, actual checks, relevant documentation changes, pushed commit, PR link, and any pending tracker updates. A task may be implemented while awaiting review or merge. Follow the [worktree cleanup rules](docs/agents/workflow.md#worktree-cleanup) after merge verification and handoff; report any retained task worktree and the reason.
+Report acceptance results, actual verification, remaining tests, pushed commit, PR link and pending tracker or remote-setting work. Keep an unmerged task worktree. After authorized merge, verification and handoff, follow [safe cleanup](docs/agents/workflow.md#worktree-cleanup); report retained worktrees and reasons.
 
 ## Repository maintenance
 
-The main ruleset is recorded in `.github/rulesets/main.json`; the label manifest is `.github/labels.json`. These files document desired settings and do not apply themselves. Change remote constraints only with the maintainer's authorization, then verify the live settings.
+`.github/rulesets/main.json` and `.github/labels.json` record settings but do not apply themselves. Remote changes need authorization and live verification. Actions keep read-only tokens, GitHub-hosted runners and SHA-pinned actions; no privileged triggers are introduced. Dependabot checks Actions and Bun dependencies weekly. Updates still need checks and merge authorization.
 
-Actions use read-only tokens, GitHub-hosted runners, and SHA-pinned external actions. Dependabot checks GitHub Actions and Bun dependencies weekly. Dependency update PRs require checks and the same merge authorization as other changes. Project-owned work is licensed under [MIT](LICENSE); retain all third-party notices. Supported Pi host versions and release policy remain undecided.
+Project-owned work uses [MIT](LICENSE); retain all third-party notices. Supported Pi host versions and release policy remain undecided.
 
 ## Template sources
 
-The bug report, feature request, and PR templates are adapted from [GitHub CLI](https://github.com/cli/cli):
-
-- [Bug report](https://github.com/cli/cli/blob/trunk/.github/ISSUE_TEMPLATE/bug_report.md)
-- [Feature request](https://github.com/cli/cli/blob/trunk/.github/ISSUE_TEMPLATE/submit-a-request.md)
-- [Pull request](https://github.com/cli/cli/blob/trunk/.github/PULL_REQUEST_TEMPLATE.md)
-
-Project-specific instructions were replaced with this repository's workflow. The engineering task template is local to this repository. The upstream MIT notice is retained in `.github/TEMPLATE_LICENSE` for the adapted templates; project-owned work is separately covered by the root [MIT license](LICENSE).
+Bug, feature and PR templates are adapted from [GitHub CLI](https://github.com/cli/cli): [bug](https://github.com/cli/cli/blob/trunk/.github/ISSUE_TEMPLATE/bug_report.md), [feature](https://github.com/cli/cli/blob/trunk/.github/ISSUE_TEMPLATE/submit-a-request.md), [PR](https://github.com/cli/cli/blob/trunk/.github/PULL_REQUEST_TEMPLATE.md). Project-specific instructions use this repository's workflow; the task template is local. Retain the upstream MIT notice in `.github/TEMPLATE_LICENSE`, separately from the project's root license.
