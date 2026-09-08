@@ -37,7 +37,7 @@ def lines_with_fences(text):
 
 def substantive(text):
     for line in text.splitlines():
-        if FENCE.match(line):
+        if FENCE.match(line) or re.match(r"^#{1,6}[ \t]+", line):
             continue
         line = re.sub(r"^\s*(?:[-*]\s+(?:\[[ xX]\]\s*)?)?", "", line).strip()
         if not line or re.fullmatch(r"[\W_]+", line):
@@ -59,12 +59,13 @@ def check_body(body):
     current = None
     errors = []
     for line, fenced in lines_with_fences(body):
-        heading = re.fullmatch(r"###\s+(.+?)\s*", line) if not fenced else None
-        if heading:
-            current = heading.group(1)
-            if current in sections:
-                errors.append("duplicate PR section")
-            sections[current] = []
+        heading = re.fullmatch(r"(#{1,6})[ \t]+(.+?)[ \t]*", line) if not fenced else None
+        if heading and len(heading.group(1)) <= 3:
+            current = heading.group(2) if len(heading.group(1)) == 3 else None
+            if current is not None:
+                if current in sections:
+                    errors.append("duplicate PR section")
+                sections[current] = []
         elif current is not None:
             sections[current].append(line)
     for name in HEADINGS:
@@ -74,12 +75,18 @@ def check_body(body):
     review_text = "\n".join(sections.get("Risk and review", []))
     review = "\n".join(line for line, fenced in lines_with_fences(review_text) if not fenced)
     values = {}
+    declarations = list(re.finditer(
+        r"^(Risk level|Independent review|Review evidence):[ \t]*([^\n]*)$", review, flags=re.M
+    ))
     for field in ("Risk level", "Independent review", "Review evidence"):
-        matches = re.findall(rf"^{re.escape(field)}:[ \t]*([^\n]*)$", review, flags=re.M)
+        matches = [(index, match) for index, match in enumerate(declarations) if match.group(1) == field]
         if len(matches) != 1:
             errors.append(f"include exactly one {field} field")
         else:
-            values[field] = matches[0].strip()
+            index, match = matches[0]
+            end = declarations[index + 1].start() if index + 1 < len(declarations) else len(review)
+            value = review[match.start(2):end] if field == "Review evidence" else match.group(2)
+            values[field] = value.strip()
     risk = values.get("Risk level")
     status = values.get("Independent review")
     if risk not in {"low", "high"}:

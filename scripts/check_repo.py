@@ -147,12 +147,12 @@ def check_workflow(data):
     if set(events) - {"pull_request", "push", "workflow_dispatch"}:
         raise ValueError("CI has an unexpected or privileged trigger")
     pr_events = events["pull_request"]
-    required_events = {"opened", "synchronize", "reopened", "edited", "ready_for_review"}
+    required_events = {"opened", "synchronize", "reopened", "edited", "ready_for_review", "converted_to_draft"}
     if not isinstance(pr_events, dict) or set(pr_events) != {"types"}:
         raise ValueError("required PR CI must declare evidence events without branch or path filters")
     event_types = pr_events["types"]
     if not isinstance(event_types, list) or set(event_types) != required_events:
-        raise ValueError("PR CI must run for opened, synchronize, reopened, edited, and ready_for_review")
+        raise ValueError("PR CI must run for code/body updates and both draft/readiness transitions")
     if data.get("permissions") != {"contents": "read"}:
         raise ValueError("CI must use contents: read")
     jobs = data.get("jobs", {})

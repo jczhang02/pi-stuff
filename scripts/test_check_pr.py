@@ -80,6 +80,25 @@ class PREvidenceTest(unittest.TestCase):
         body = body.replace("Documentation-only clarification; no interface or workflow gate changes.", "Separate reviewer inspected base abc123 to head def456; one blocking issue fixed and follow-up reviewed. See linked review report.")
         self.assertEqual(check_body(body), [])
 
+    def test_multiline_review_evidence_passes(self):
+        body = BODY.replace("Review evidence: Documentation-only clarification; no interface or workflow gate changes.", "Review evidence:\nDocumentation-only clarification.\nNo interface or workflow gate changes.")
+        self.assertEqual(check_body(body), [])
+
+    def test_multiline_evidence_can_precede_other_declarations(self):
+        body = BODY.replace("Risk level: low\nIndependent review: not-required\nReview evidence: Documentation-only clarification; no interface or workflow gate changes.", "Review evidence:\nDocumentation-only clarification.\nRisk level: low\nIndependent review: not-required")
+        self.assertEqual(check_body(body), [])
+
+    def test_higher_level_heading_ends_section(self):
+        prefix = BODY[:BODY.index("### Related work")]
+        for heading in ("# Appendix", "## Appendix"):
+            with self.subTest(heading=heading):
+                self.assertTrue(check_body(prefix + "### Related work\n\n" + heading + "\nUnrelated text.\n"))
+
+    def test_subheading_alone_is_not_evidence(self):
+        prefix = BODY[:BODY.index("### Related work")]
+        self.assertTrue(check_body(prefix + "### Related work\n\n#### Task links\n"))
+        self.assertEqual(check_body(prefix + "### Related work\n\n#### Task links\nRefs #2.\n"), [])
+
     def test_declared_waiver_passes_but_authorization_is_not_proven(self):
         body = BODY.replace("Risk level: low", "Risk level: high").replace("Independent review: not-required", "Independent review: waived")
         body = body.replace("Documentation-only clarification; no interface or workflow gate changes.", "Maintainer explicitly waived review in the linked task comment; this validator cannot authenticate that claim.")

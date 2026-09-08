@@ -50,7 +50,7 @@ Read [PR evidence](docs/agents/pr-evidence.md) and use `.github/pull_request_tem
 
 Declare risk and independent-review status. High-risk changes require a separate review context or an explicit maintainer waiver; report scope, findings, fixes, and unresolved concerns. Include actual screenshots/recordings for visible UI changes and diagrams/design decisions when relevant. Disclose unavailable evidence. Keep trivial changes brief.
 
-CI checks the description structure and risk/review declarations when the PR is opened, edited, updated, reopened, or marked ready. Drafts can retain incomplete evidence. The check never executes PR text, but it also cannot prove the truth of a test, screenshot, risk assessment, or waiver. Update the description and affected evidence after material changes.
+CI checks the description structure and risk/review declarations when the PR is opened, edited, updated, reopened, marked ready, or converted to draft. Drafts can retain incomplete evidence. The check never executes PR text, but it also cannot prove the truth of a test, screenshot, risk assessment, or waiver. Update the description and affected evidence after material changes.
 
 Use `Closes #number` only when merging will meet the issue's acceptance criteria. Otherwise use `Refs #number`. Opening a PR does not complete a task. For a trivial fix or an explicitly authorized bootstrap change without an issue, explain that in the PR.
 
