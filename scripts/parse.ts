@@ -1,24 +1,49 @@
-import { parseDocument } from "yaml";
+import {readFileSync} from 'node:fs';
+import {Data, Effect, Result, Schema} from 'effect';
+import {parseDocument} from 'yaml';
 
-export function asRecord(value: unknown, message = "expected a mapping"): Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(message);
-  }
-  return value as Record<string, unknown>;
+export class InputError extends Data.TaggedError('InputError')<{
+  message: string;
+}> {}
+
+export function readText(path: string) {
+  return Effect.try({
+    try: () =>
+      new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(
+        readFileSync(path),
+      ),
+    catch: () => new InputError({message: 'Cannot read UTF-8 input.'}),
+  });
 }
 
-export function loadYaml(text: string): unknown {
-  // YAML 1.2 keeps `on` a string. Reject duplicates rather than silently keeping the last value.
-  const document = parseDocument(text, { version: "1.2", uniqueKeys: true });
+export function asRecord(
+  value: Schema.Json | undefined,
+  message = 'expected a mapping',
+) {
+  const result = Schema.decodeUnknownResult(Schema.JsonObject)(value);
+  if (Result.isFailure(result)) throw new InputError({message});
+  return result.success;
+}
+
+export function loadYaml(text: string): Schema.Json {
+  const document = parseDocument(text, {version: '1.2', uniqueKeys: true});
   const problems = [...document.errors, ...document.warnings];
-  if (problems.length) throw new Error(problems.map(error => error.message).join("; "));
-  return document.toJS({ maxAliasCount: 100 });
+  if (problems.length)
+    throw new InputError({
+      message: problems.map(error => error.message).join('; '),
+    });
+  return Schema.decodeUnknownSync(Schema.Json)(
+    document.toJS({maxAliasCount: 100}),
+  );
 }
 
-export function loadJson(text: string): unknown {
-  // JSON.parse validates JSON syntax but accepts duplicate keys. YAML's JSON schema detects them.
-  const value: unknown = JSON.parse(text);
-  const document = parseDocument(text, { schema: "json", uniqueKeys: true });
-  if (document.errors.length) throw new Error(document.errors.map(error => error.message).join("; "));
+export function loadJson(text: string): Schema.Json {
+  // Validate JSON syntax, then reject duplicate decoded keys using YAML's JSON schema.
+  const value = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text));
+  const document = parseDocument(text, {schema: 'json', uniqueKeys: true});
+  if (document.errors.length)
+    throw new InputError({
+      message: document.errors.map(error => error.message).join('; '),
+    });
   return value;
 }

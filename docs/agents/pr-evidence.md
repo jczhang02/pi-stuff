@@ -16,13 +16,13 @@ Use Sepia for the prose, including Beads notes. Preserve commands, error output,
 
 Every non-draft PR description must use these exact level-three headings. CI checks structure, not the truth of the claims.
 
-| Heading | Required content |
-| --- | --- |
-| `Behavior and impact` | Before/after behavior or workflow, affected users/interfaces, and unchanged scope |
-| `Approach and decisions` | Solution, relevant tradeoffs, and links to decisions when needed |
+| Heading                         | Required content                                                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Behavior and impact`           | Before/after behavior or workflow, affected users/interfaces, and unchanged scope                                 |
+| `Approach and decisions`        | Solution, relevant tradeoffs, and links to decisions when needed                                                  |
 | `Verification and reproduction` | Actual commands or steps, prerequisites, observed and expected results, and evidence; explain anything not tested |
-| `Risk and review` | Risk level, known limitations, applicable supporting material, and review status/results |
-| `Related work` | GitHub issue and Beads ID, or a reason the trivial/bootstrap change has no task |
+| `Risk and review`               | Risk level, known limitations, applicable supporting material, and review status/results                          |
+| `Related work`                  | GitHub issue and Beads ID, or a reason the trivial/bootstrap change has no task                                   |
 
 Template comments and bare `N/A`, `TODO`, or `TBD` do not count as content. A justified limitation does: for example, `Not tested: this host cannot run the target terminal; the manual check remains pending.` Missing verification is visible, not silently converted into success.
 
@@ -36,14 +36,14 @@ High-risk PRs require a completed independent review or an explicitly authorized
 
 ## Evidence by change type
 
-| Change | Evidence to include |
-| --- | --- |
-| Bug fix | Reproduction with versions/input, observed failure, regression-test command and result; disclose inability to reproduce |
-| Visible UI or terminal behavior | Actual before/after screenshots or recording, reproduction steps, and environment; mockups are design evidence, not proof of execution |
-| Architecture, state, dependency, or concurrency changes | A focused Mermaid diagram when it clarifies the change; link a design document or ADR for consequential decisions |
-| Cross-module diff that is difficult to navigate | A short review map or `/show-me` artifact where available; always retain links to the real diff |
-| Security, permissions, persistence/recovery, concurrency/cancellation, public API, dependency, CI/merge-policy, or broad refactor changes | High risk: independent review with a pinned base/head scope and a findings disposition |
-| Trivial documentation or formatting | Brief impact and actual checks; diagrams, recordings, and independent review are normally unnecessary |
+| Change                                                                                                                                    | Evidence to include                                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Bug fix                                                                                                                                   | Reproduction with versions/input, observed failure, regression-test command and result; disclose inability to reproduce                |
+| Visible UI or terminal behavior                                                                                                           | Actual before/after screenshots or recording, reproduction steps, and environment; mockups are design evidence, not proof of execution |
+| Architecture, state, dependency, or concurrency changes                                                                                   | A focused Mermaid diagram when it clarifies the change; link a design document or ADR for consequential decisions                      |
+| Cross-module diff that is difficult to navigate                                                                                           | A short review map or `/show-me` artifact where available; always retain links to the real diff                                        |
+| Security, permissions, persistence/recovery, concurrency/cancellation, public API, dependency, CI/merge-policy, or broad refactor changes | High risk: independent review with a pinned base/head scope and a findings disposition                                                 |
+| Trivial documentation or formatting                                                                                                       | Brief impact and actual checks; diagrams, recordings, and independent review are normally unnecessary                                  |
 
 When applicable evidence cannot be produced, explain why and what remains unverified in the relevant section. For consequential uncertainty, ask the maintainer before proceeding. Keep logs concise in the body; link stable CI runs/artifacts or use collapsed details for full output. Local `/tmp/` paths are not publicly accessible evidence.
 
@@ -55,7 +55,11 @@ If tests were written after implementation, say so. A green test suite demonstra
 
 ## Independent review
 
-Use a separate review context with the pinned comparison range and the issue/spec. Review both repository standards and requirement coverage. The `code-review` skill or a harness's review mode may provide this; using every available model is not required.
+Use a separate review context with the pinned comparison range and the issue/spec. Review both repository standards and requirement coverage across the complete base-to-head diff, not only the latest commit. The `code-review` skill or a harness's review mode may provide the context; using every available model is not required.
+
+For substantive code changes, including the quality-baseline PR, the reviewer must load `.pi/skills/thermo-nuclear-code-quality-review/SKILL.md` and apply its full upstream standard. It is mandatory, not optional guidance or a substitute for requirement coverage. The review is read-only: the reviewer reports findings and the task owner implements fixes. Documentation-only and mechanical changes do not automatically trigger this specific deep review; high-risk review requirements still apply.
+
+Concrete structural findings are presumptive blockers until fixed or refuted with evidence and independently rechecked. Record the evidence and recheck outcome for each such finding; passing tests alone is not a refutation. Escalate unresolved disagreement to the maintainer rather than silently downgrading a finding. If the required skill or reviewer is unavailable, report the blocker and keep review pending.
 
 Record reviewer/tool identity, base/head references, findings, changes made in response, and outstanding concerns. Resolve blocking findings before handoff, or mark them pending and request a decision. If fixes materially change the reviewed behavior, obtain a follow-up review of those fixes. An independent agent review is not a GitHub approving review or permission to merge.
 

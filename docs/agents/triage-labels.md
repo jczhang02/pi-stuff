@@ -1,12 +1,12 @@
 # Triage labels
 
-| Skill role | Repository label | Meaning |
-| --- | --- | --- |
-| `needs-triage` | `needs-triage` | Waiting for maintainer assessment |
-| `needs-info` | `needs-info` | Waiting for information needed to proceed |
+| Skill role        | Repository label  | Meaning                                                            |
+| ----------------- | ----------------- | ------------------------------------------------------------------ |
+| `needs-triage`    | `needs-triage`    | Waiting for maintainer assessment                                  |
+| `needs-info`      | `needs-info`      | Waiting for information needed to proceed                          |
 | `ready-for-agent` | `ready-for-agent` | Scope and acceptance criteria are clear; ready for agent execution |
-| `ready-for-human` | `ready-for-human` | The next step requires human implementation or a decision |
-| `wontfix` | `wontfix` | Will not be actioned |
+| `ready-for-human` | `ready-for-human` | The next step requires human implementation or a decision          |
+| `wontfix`         | `wontfix`         | Will not be actioned                                               |
 
 Use this mapping whenever a skill names a triage role. When changing the triage outcome, remove obsolete triage labels and keep the one that applies. Type labels such as `bug` may coexist with it.
 
