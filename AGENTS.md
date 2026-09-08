@@ -22,6 +22,10 @@ Ask before adding dependencies, changing public interfaces or persistent formats
 
 GitHub Issues is the collaboration surface; Beads holds execution context. Before creating, reading, updating, commenting on, or closing tasks, read `docs/agents/issue-tracker.md`.
 
+### Beads
+
+Load the `beads` skill and run `bd prime` when starting or resuming tracked work and after context compaction. Before setup, authentication, or storage changes, read `docs/agents/beads.md`. Treat `bd prime` as CLI context; this repository's Git, publication, Sepia, and acceptance rules take precedence over its generic policy.
+
 ### Triage labels
 
 Use the five default triage labels. Before triaging or changing labels, read `docs/agents/triage-labels.md`.

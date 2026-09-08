@@ -176,7 +176,7 @@ def check_workflow(data):
 
 
 def check_path(path):
-    forbidden = {".worktrees", ".venv", "venv", "__pycache__", "node_modules"}
+    forbidden = {".beads", ".worktrees", ".venv", "venv", "__pycache__", "node_modules"}
     if forbidden.intersection(path.parts) or path.suffix == ".pyc" or path.name == ".DS_Store":
         return ["generated or local-only path must not be tracked"]
     if path.name.startswith(".env") and path.name not in {".env.example", ".env.sample"}:

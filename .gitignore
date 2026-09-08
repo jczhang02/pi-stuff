@@ -1,4 +1,5 @@
 .worktrees/
+.beads/
 __pycache__/
 *.py[cod]
 .venv/

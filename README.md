@@ -48,6 +48,7 @@ There is no package installation command yet. Repository documentation and confi
 | [Contributing](CONTRIBUTING.md) | Issues, focused changes, verification, and pull requests |
 | [Agent instructions](AGENTS.md) | Agent writing and Git workflow requirements |
 | [Issue tracker workflow](docs/agents/issue-tracker.md) | GitHub and Beads responsibilities, sync, and public updates |
+| [Beads setup](docs/agents/beads.md) | Local database, shared worktrees, skill, and authentication |
 | [Triage labels](docs/agents/triage-labels.md) | Routing tasks to information gathering, agents, or humans |
 | [Domain documentation rules](docs/agents/domain.md) | Reading domain terms and architecture decisions |
 

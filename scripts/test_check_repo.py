@@ -80,7 +80,7 @@ class RepositoryChecksTest(unittest.TestCase):
             check_template("# Bug\n", self.names)
 
     def test_tracked_local_files_fail(self):
-        for name in (".worktrees/topic/file.md", "scripts/__pycache__/file.pyc", ".env", "a/.env.local", "node_modules/x.js"):
+        for name in (".beads/metadata.json", ".worktrees/topic/file.md", "scripts/__pycache__/file.pyc", ".env", "a/.env.local", "node_modules/x.js"):
             with self.subTest(name=name):
                 self.assertTrue(check_path(Path(name)))
         self.assertEqual(check_path(Path(".env.example")), [])
