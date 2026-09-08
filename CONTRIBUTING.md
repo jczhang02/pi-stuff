@@ -90,7 +90,7 @@ The separate `title` workflow checks PR titles with the same commitlint configur
 
 ## Merge and handoff
 
-Every repository change enters `main` through a PR. The active ruleset has no bypass actors and requires resolved review conversations, linear history and the `checks` job on a branch current with `main`. Do not disable protection to land a change. Adding `title` as a required status needs a separately authorized remote ruleset update; a passing workflow alone is not a merge requirement. The repository owner can change settings, so these are enforced settings rather than irreversible guarantees.
+Every repository change enters `main` through a PR. The active ruleset has no bypass actors and requires resolved review conversations, linear history and both `checks` and `title` jobs on a branch current with `main`. Both required statuses are bound to GitHub Actions. Do not disable protection to land a change. The maintainer authorized adding the title gate in #21; a passing workflow alone is not a merge requirement without the corresponding ruleset setting. The repository owner can change settings, so these are enforced settings rather than irreversible guarantees.
 
 Use squash merge with the validated PR title; merged remote branches are deleted automatically. Agents need explicit authorization to merge or release even if CI passes. Shared credentials do not distinguish human from agent authorization. Release automation is not configured.
 
