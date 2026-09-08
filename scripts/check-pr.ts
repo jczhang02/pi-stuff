@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { splitLines } from "./text";
 
 // Validate declarations only. Never execute or fetch PR-supplied text.
 export const HEADINGS = [
@@ -12,7 +13,7 @@ const FENCE = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
 
 function* linesWithFences(text: string): Generator<[string, boolean]> {
   let fence: string | undefined;
-  for (const line of text.split(/\r\n|\r|\n/)) {
+  for (const line of splitLines(text)) {
     const marker = FENCE.exec(line);
     if (marker) {
       const run = marker[1]!;
@@ -24,7 +25,7 @@ function* linesWithFences(text: string): Generator<[string, boolean]> {
 }
 
 function substantive(text: string): boolean {
-  for (let line of text.split(/\r\n|\r|\n/)) {
+  for (let line of splitLines(text)) {
     if (FENCE.test(line) || /^#{1,6}[ \t]+/.test(line)) continue;
     line = line.replace(/^\s*(?:[-*]\s+(?:\[[ xX]\]\s*)?)?/, "").trim();
     if (!line || /^[^\p{L}\p{N}]+$/u.test(line)) continue;

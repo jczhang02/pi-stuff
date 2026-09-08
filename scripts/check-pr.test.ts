@@ -83,6 +83,16 @@ describe("PR evidence", () => {
   test("malformed events fail", () => {
     for (const event of [[], {}, { pull_request: [] }, { pull_request: { draft: "false", body: BODY } }]) expect(checkEvent(event)).not.toEqual([]);
   });
+  test("Unicode line separators cannot expose fenced evidence", () => {
+    for (const separator of ["\u2028", "\u2029"]) {
+      expect(checkBody("```markdown" + separator + "x\n" + BODY + "\n```")).not.toEqual([]);
+    }
+  });
+  test("legacy line boundaries preserve PR structure", () => {
+    for (const separator of ["\r\n", "\r", "\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"]) {
+      expect(checkBody(BODY.replaceAll("\n", separator))).toEqual([]);
+    }
+  });
   test("CRLF evidence and Unicode text retain their meaning", () => {
     expect(checkBody(BODY.replaceAll("\n", "\r\n"))).toEqual([]);
     expect(checkBody(`${RELATED_PREFIX}### Related work\n相关任务已完成。\n`)).toEqual([]);

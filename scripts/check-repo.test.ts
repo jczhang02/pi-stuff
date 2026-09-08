@@ -69,6 +69,18 @@ describe("repository checks", () => {
     expect(checkMarkdown(ROOT, resolve(ROOT, "README.md"), "```typescript\nvoid 0;\n")).not.toEqual([]);
     expect(checkMarkdown(ROOT, resolve(ROOT, "README.md"), "````markdown\n```typescript\nvoid 0;\n```\n````\n")).toEqual([]);
   });
+  test("Unicode line separators retain Markdown fence boundaries", () => {
+    for (const separator of ["\u2028", "\u2029"]) {
+      const text = "```markdown" + separator + "x\n[example](not-a-real-file)\n```\n";
+      expect(checkMarkdown(ROOT, resolve(ROOT, "README.md"), text)).toEqual([]);
+    }
+  });
+  test("label description length counts Unicode characters", () => {
+    labels[0]!.description = "😀".repeat(100);
+    expect(() => checkLabels(labels)).not.toThrow();
+    labels[0]!.description += "x";
+    expect(() => checkLabels(labels)).toThrow(/invalid description/);
+  });
   test("heading spacing", () => expect(checkMarkdown(ROOT, resolve(ROOT, "README.md"), "##Bad heading\n")).not.toEqual([]));
   test("PR filters fail", () => {
     workflow.on.pull_request = { paths: ["scripts/**"] };

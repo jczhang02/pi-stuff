@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { asRecord, loadJson, loadYaml } from "./parse";
+import { splitLines } from "./text";
 
 export { loadJson, loadYaml } from "./parse";
 
@@ -9,7 +10,7 @@ export function checkText(text: string): string[] {
   const errors: string[] = [];
   if (text.includes("\r")) errors.push("use LF line endings");
   if (text && !text.endsWith("\n")) errors.push("missing final newline");
-  for (const [index, line] of text.split(/\r\n|\r|\n/).entries()) {
+  for (const [index, line] of splitLines(text).entries()) {
     if (line.trimEnd() !== line) errors.push(`line ${index + 1}: trailing whitespace`);
     if (line.includes("\t")) errors.push(`line ${index + 1}: use spaces, not tabs`);
   }
@@ -25,7 +26,7 @@ export function checkMarkdown(root: string, path: string, text: string): string[
   const errors: string[] = [];
   const prose: string[] = [];
   let fence: string | undefined;
-  for (const [index, line] of text.split(/\r\n|\r|\n/).entries()) {
+  for (const [index, line] of splitLines(text).entries()) {
     const marker = /^\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (marker) {
       const run = marker[1]!;
@@ -71,9 +72,10 @@ export function checkLabels(value: unknown): Set<string> {
     if (typeof label.name !== "string" || !label.name || names.has(label.name.toLowerCase())) {
       throw new Error("invalid or duplicate label name");
     }
+    // JavaScript lowercasing does not perform full Unicode case folding (for example, ß to ss).
     names.add(label.name.toLowerCase());
     if (typeof label.color !== "string" || !/^[0-9a-f]{6}$/i.test(label.color)) throw new Error(`invalid color for ${label.name}`);
-    if (typeof label.description !== "string" || label.description.length > 100) throw new Error(`invalid description for ${label.name}`);
+    if (typeof label.description !== "string" || [...label.description].length > 100) throw new Error(`invalid description for ${label.name}`);
   }
   for (const name of ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human", "wontfix"]) {
     if (!names.has(name)) throw new Error("missing canonical triage labels");
