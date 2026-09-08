@@ -4,17 +4,18 @@
 
 ## Language and presentation
 
-English is normative. Maintain human documents in English/Chinese pairs in the same PR, with links both ways and the same meaning. Current pairs are:
+English is normative. Maintain documents under `docs/` and the existing root document pairs in English/Chinese in the same PR, with links both ways and the same meaning. Current pairs are:
 
 - `README.md` / `docs/i18n/zh-CN/README.md`.
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
+- `docs/research/` / [Chinese research references](docs/i18n/zh-CN/research/).
 - Root `AGENTS.md` / [Chinese reading reference](docs/i18n/zh-CN/agent-instructions.md).
 - `docs/agents/` / [Chinese reading references](docs/i18n/zh-CN/agents/).
 
 Keep Chinese documentation under `docs/i18n/zh-CN/`. Agent-facing instructions and skills stay English-only. Root `AGENTS.md` and every document in `docs/agents/` have human-readable Chinese counterparts, updated in the same PR with reciprocal links; these are not separate agent instruction sources. Use Chinese in conversation.
 
-Use English-only Issue and PR titles. Write new or substantively updated descriptions, comments, review summaries, and future release notes in English first, Chinese second. For long posts, put the translation inside each section. Identifiers, commands, URLs and hashes need not be translated. Do not bulk-rewrite historical discussions or machine-generated metadata; historical research does not need mass translation.
+Use English-only Issue and PR titles. Write new or substantively updated descriptions, comments, review summaries, and future release notes in English first, Chinese second. For long posts, put the translation inside each section. Identifiers, commands, URLs and hashes need not be translated. Do not bulk-rewrite historical discussions or machine-generated metadata. All documents under `docs/` need Chinese counterparts, including research records clearly marked as historical. This translation scope does not extend to `.github/`, `tools/` or `.agents/skills/`; retain their existing bilingual content or upstream originals.
 
 Use lists for enumerable facts, selective bold for important labels, and links for evidence. Put Chinese punctuation outside bold labels (`**标签**：内容`) or add a separating space. Collapse long logs in `<details>` and keep short explanations as ordinary prose.
 
