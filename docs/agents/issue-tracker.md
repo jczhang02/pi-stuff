@@ -49,6 +49,8 @@ The CLI defaults to preferring the newer version on conflicts; this is not a sub
 
 ## Comments and public updates
 
+Before writing or substantively updating GitHub titles, descriptions, comments, or summaries, follow [Contributing: Language and presentation](../../CONTRIBUTING.md#language-and-presentation), including English-first/Chinese-second prose and proportionate Markdown. Preserve identifiers and canonical fields when syncing; machine-generated bot metadata and historical discussions do not need bulk translation.
+
 In the checked `bd 1.2.1` integration, `bd github sync` does not synchronize comments. Read GitHub comments explicitly and post public summaries with:
 
 ```bash

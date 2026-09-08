@@ -40,6 +40,101 @@ const RELATED_PREFIX = BODY.slice(0, BODY.indexOf('### Related work'));
 
 describe('PR evidence', () => {
   test('complete body passes', () => expect(checkBody(BODY)).toEqual([]));
+  test('bulleted bold declarations support bilingual list evidence', () => {
+    const body = BODY.replace(
+      DECLARATIONS,
+      `- **Risk level:** low
+- **Independent review:** not-required
+- **Review evidence:**
+  - Documentation-only clarification; no interface or workflow gate changes.
+
+#### 中文
+- **风险等级：**低。
+- **独立审查：**不需要；仅修改文档，没有改变接口或工作流门禁。
+`,
+    );
+    expect(checkBody(body)).toEqual([]);
+  });
+  test('plain and supported rich declaration labels can be mixed', () => {
+    for (const prefix of ['', '- ', '* ', '+ ']) {
+      for (const [open, close] of [
+        ['', ':'],
+        ['**', ':**'],
+        ['**', '**:'],
+      ] as const) {
+        const declarations = `${prefix}${open}Risk level${close} low\n${prefix}${open}Independent review${close} not-required\n${prefix}${open}Review evidence${close}\n  - Documentation-only clarification; no gate changes.`;
+        expect(checkBody(BODY.replace(DECLARATIONS, declarations))).toEqual([]);
+      }
+    }
+    expect(
+      checkBody(
+        BODY.replace(
+          EVIDENCE,
+          '- **Review evidence**:\n  - Documentation-only clarification.',
+        ),
+      ),
+    ).toEqual([]);
+  });
+  test('styled fields still enforce duplicates, exact values and review status', () => {
+    for (const replacement of [
+      '- **Risk level:** low\nRisk level: high',
+      'Risk level: low\n+ **Risk level**: high',
+      '- **Risk level:** high',
+      '- **Risk level:** **low**',
+      '- **Risk level:**',
+      '- **Risk level: low',
+      '| Risk level | low |',
+      '> **Risk level:** low',
+      '  - **Risk level:** low',
+    ])
+      expect(
+        checkBody(BODY.replace('Risk level: low', replacement)),
+      ).not.toEqual([]);
+    expect(
+      checkBody(
+        BODY.replace(
+          'Independent review: not-required',
+          '- **Independent review:** pending',
+        ),
+      ),
+    ).not.toEqual([]);
+    expect(
+      checkBody(
+        BODY.replace(
+          EVIDENCE,
+          `${EVIDENCE}\n- **Review evidence:** Another report.`,
+        ),
+      ),
+    ).not.toEqual([]);
+  });
+  test('formatted examples inside fences or comments cannot supply declarations', () => {
+    const fields =
+      '- **Risk level:** low\n- **Independent review:** not-required\n- **Review evidence:** Documentation-only clarification.';
+    for (const hidden of [
+      '```markdown\n' + fields + '\n```',
+      '<!--\n' + fields + '\n-->',
+    ]) {
+      expect(checkBody(BODY.replace(DECLARATIONS, hidden))).not.toEqual([]);
+    }
+  });
+  test('formatted multiline evidence can precede other declarations', () => {
+    expect(
+      checkBody(
+        BODY.replace(
+          DECLARATIONS,
+          '- **Review evidence:**\n  - Documentation-only clarification.\n- **Risk level:** low\n- **Independent review:** not-required',
+        ),
+      ),
+    ).toEqual([]);
+    expect(
+      checkBody(
+        BODY.replace(
+          DECLARATIONS,
+          '- **Review evidence:**\n  - **TODO**\n- **Risk level:** low\n- **Independent review:** not-required',
+        ),
+      ),
+    ).not.toEqual([]);
+  });
   test('template alone fails', () =>
     expect(
       checkBody(
@@ -83,6 +178,31 @@ describe('PR evidence', () => {
         checkBody(`${RELATED_PREFIX}### Related work\n${placeholder}`),
       ).not.toEqual([]);
     }
+  });
+  test('formatting and translated empty labels do not supply evidence', () => {
+    for (const placeholder of [
+      '**TODO**',
+      '__N/A__',
+      '`TBD`',
+      '***TODO***',
+      '**审查依据：**',
+      '**GitHub issue:**',
+    ]) {
+      expect(
+        checkBody(BODY.replace(EVIDENCE, `Review evidence:\n- ${placeholder}`)),
+      ).not.toEqual([]);
+      expect(
+        checkBody(`${RELATED_PREFIX}### Related work\n- ${placeholder}`),
+      ).not.toEqual([]);
+    }
+  });
+  test('plus-list placeholders cannot become evidence', () => {
+    expect(
+      checkBody(BODY.replace(EVIDENCE, '- **Review evidence:**\n  + **TODO**')),
+    ).not.toEqual([]);
+    expect(
+      checkBody(`${RELATED_PREFIX}### Related work\n+ **TODO**`),
+    ).not.toEqual([]);
   });
   test('explained limitation passes', () =>
     expect(
@@ -311,6 +431,25 @@ describe('PR checker CLI', () => {
     const path = resolve(directory, 'body.md');
     writeFileSync(path, BODY);
     expect(cli(['--body-file', path]).code).toBe(0);
+  });
+  test('accepts rich bilingual evidence through both CLI input modes', () => {
+    const body = BODY.replace(
+      DECLARATIONS,
+      `- **Risk level:** high
+- **Independent review:** completed
+- **Review evidence:**
+  - Fixture reviewer checked the full diff in a separate context; no unresolved findings.
+
+#### 中文
+- **风险等级：**高。
+- **独立审查：**已完成。
+- **审查依据：**测试夹具中的审查者在独立上下文检查了完整差异，没有未解决的发现。
+`,
+    );
+    const path = resolve(directory, 'bilingual.md');
+    writeFileSync(path, body);
+    expect(cli(['--body-file', path]).code).toBe(0);
+    expect(eventCli({pull_request: {draft: false, body}}).code).toBe(0);
   });
   test('missing event path fails without disclosing input', () => {
     const result = cli([], {GITHUB_EVENT_NAME: 'pull_request'});

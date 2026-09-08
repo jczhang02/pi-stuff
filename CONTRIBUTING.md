@@ -1,8 +1,29 @@
 # Contributing
 
-[简体中文](docs/zh-CN/CONTRIBUTING.md)
+[简体中文](docs/i18n/zh-CN/CONTRIBUTING.md)
 
-English is normative. Maintain paired human documents in the same PR: `README.md` / `README.zh-CN.md`, this guide / `docs/zh-CN/CONTRIBUTING.md`, and `docs/adr/` / `docs/zh-CN/adr/`. Cross-link counterparts and preserve their meaning. Agent instructions and skills stay English-only; do not create Chinese copies of agent rules. Historical research does not need mass translation. Write issues, PRs, and public comments in English; use Chinese in conversation.
+## Language and presentation
+
+English is normative. Maintain human documents in English/Chinese pairs in the same PR, with links both ways and the same meaning. Current pairs are:
+
+- `README.md` / `docs/i18n/zh-CN/README.md`.
+- `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
+- `docs/adr/` / `docs/i18n/zh-CN/adr/`.
+
+Keep Chinese documentation under `docs/i18n/zh-CN/`. Agent instructions and skills stay English-only; do not create Chinese copies of agent rules. Use Chinese in conversation.
+
+Write new or substantively updated human-facing GitHub prose in **English first, Chinese second**. This covers issue and PR descriptions, human-readable titles, comments, review summaries, and future release notes. For long posts, prefer English followed by Chinese within each section. Identifiers, commands, canonical machine field names and status enums, URLs, and hashes need not be translated or duplicated.
+
+Do not bulk-retrofit historical discussions or machine-generated bot metadata. Add translations when substantively editing human content. Historical research does not need mass translation.
+
+Use Markdown to make evidence easy to find:
+
+- Lists for enumerable facts, steps, and acceptance criteria.
+- Selective **bold** for labels and verdicts.
+- Links to evidence and related work.
+- Collapsible `<details>` blocks for long logs, with a short result in the body.
+
+Keep short explanations in ordinary prose. Not every sentence needs rich formatting.
 
 ## Open an issue
 
@@ -65,6 +86,24 @@ Remove credentials and personal information before publishing logs or screenshot
 ## Open a pull request
 
 Read [PR evidence](docs/agents/pr-evidence.md) and use `.github/pull_request_template.md`. Start with before/after behavior or workflow, then explain the approach and important decisions. Put reproduction steps, actual commands, observed results, and evidence together so the maintainer can repeat the verification.
+
+Keep the five exact English H3 headings from [PR evidence](docs/agents/pr-evidence.md#required-sections). For section-by-section translations, put English prose first; a `#### 中文` block can hold the translation inside each section. Do not translate or duplicate the machine headings. Keep declaration keys in English, once each in `Risk and review`; explain them in Chinese without repeating those keys.
+
+Declarations may be plain lines or use optional unordered bullets and bold field labels, such as `- **Risk level:** high`. Status values remain plain canonical enums: `low` or `high`; `completed`, `not-required`, `pending`, or `waived`. This is a limited syntax contract, not arbitrary Markdown parsing: bolded statuses and table declarations are unsupported. Duplicate fields, placeholders, fenced declarations, and incomplete review evidence remain invalid.
+
+For example, the section layout can be:
+
+```markdown
+### Verification and reproduction
+
+Not tested: this host cannot run the target terminal; the manual check remains pending.
+
+#### 中文
+
+未测试：此环境无法运行目标终端，手工检查仍待完成。
+```
+
+Headings, declaration keys, and enums are a machine contract. Evidence and review conclusions must describe the current change; examples are not reusable claims.
 
 Declare risk and independent-review status. High-risk changes require a separate review context or an explicit maintainer waiver; report scope, findings, fixes, and unresolved concerns. Substantive code changes, including the quality-baseline PR, also require a separate full-diff review using `.pi/skills/thermo-nuclear-code-quality-review/SKILL.md`. That upstream standard is mandatory. The review is read-only; implementation stays with the task owner. Concrete structural findings block by default until fixed or refuted with evidence and independently rechecked; unresolved disagreement goes to the maintainer. Documentation/mechanical changes do not automatically require this specific deep review, but high-risk requirements still apply.
 

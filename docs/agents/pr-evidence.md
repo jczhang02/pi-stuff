@@ -32,6 +32,23 @@ In `Risk and review`, include these fields:
 - `Independent review: completed`, `not-required`, `pending`, or `waived`.
 - `Review evidence:` followed by scope, reviewer/tool identity, findings and resolution, or the reason no independent review is required. A waiver must reference explicit maintainer authorization.
 
+### Formatting and language
+
+The five section headings, three English declaration keys, and enum spellings are the machine contract. The values and prose are not fixed boilerplate: choose the actual risk and review status, and report the current reviewers, commit range, findings, links and limits. Never copy another PR's `completed` claim. Include unresolved licensing or out-of-scope work only when relevant to this PR.
+
+Declarations must start in column one, either as plain lines or top-level unordered list items (`-`, `*`, or `+`). Their labels can be bold, with the colon inside or outside the bold span: `- **Risk level:** high` and `- **Risk level**: high` both work. Keep status values plain (`high`, not `**high**` or `high / 高`). Tables, quoted declarations, nested declaration items and translated machine keys are not supported. Mixed styles still count toward the same exactly-one-field requirement; fenced examples and HTML comments do not count. Basic emphasis or backticks do not make a bare placeholder substantive.
+
+For long bilingual PRs, put English first and a `#### 中文` block after it inside each required section. Keep the English H3 headings unchanged and do not repeat the English declaration keys in the Chinese block. The Chinese text must preserve the same facts, qualifications and limitations. Language order and translation fidelity remain author/reviewer obligations, not claims proved by this structural checker. Follow [Contributing](../../CONTRIBUTING.md#language-and-presentation) for proportionate Markdown presentation.
+
+A draft can explain its pending review with a list; this is not ready-state evidence:
+
+```markdown
+- **Risk level:** high
+- **Independent review:** pending
+- **Review evidence:**
+  - Independent review has not completed; keep the PR draft.
+```
+
 High-risk PRs require a completed independent review or an explicitly authorized waiver before becoming ready for merge. If no reviewer is available, keep the PR draft, use `pending`, and report the blocker. Do not invent a reviewer or report this session's self-check as independent review.
 
 ## Evidence by change type

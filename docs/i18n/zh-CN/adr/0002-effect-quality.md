@@ -1,11 +1,11 @@
 # 使用 Effect v4 和严格质量基线
 
-[English](../../adr/0002-effect-quality.md) · 以英文版为准。
+[English](../../../adr/0002-effect-quality.md) · 以英文版为准。
 
 维护者选择 Effect `4.0.0-rc.112` 处理边界解码、类型化错误和必要的 I/O 编排，包括现有仓库脚本；纯算法保留为普通函数。此决策扩展 [ADR 0001](0001-typescript-bun.md)，保留 TypeScript 和 Bun `1.4.0`。为使用选定的 v4 框架，项目接受 RC 依赖，不继续维护临时拼凑的边界和错误处理，也不改用 v3。
 
 **绝不能**仅因 RC 状态拒绝 v4、降级到 v3 或选择其他框架。具体不兼容问题需要实际复现、版本/API 证据和维护者决定；查阅 v4 文档，不假定 v3 API 仍然适用。这不意味着已有产品扩展，也不代表已经验证 Pi 宿主兼容性。
 
-质量基线要求所有自有源码和测试将 15 条通用 anti-slop 规则、1 条 Effect 规则以及 Oxlint correctness 规则设为错误，启用严格 TypeScript/未使用代码检查，并使用 Oxfmt 执行来自固定上游版本的 Google GTS 格式偏好，不额外安装 GTS、ESLint 或 Prettier。[工程规则](../../agents/engineering.md)定义具体设置和禁止绕过的要求。现有脚本的外部可观察行为和回归场景必须保留，不固定测试数量，不引入硬性覆盖率目标、Knip 或完整变异测试框架。
+质量基线要求所有自有源码和测试将 15 条通用 anti-slop 规则、1 条 Effect 规则以及 Oxlint correctness 规则设为错误，启用严格 TypeScript/未使用代码检查，并使用 Oxfmt 执行来自固定上游版本的 Google GTS 格式偏好，不额外安装 GTS、ESLint 或 Prettier。[工程规则](../../../agents/engineering.md)定义具体设置和禁止绕过的要求。现有脚本的外部可观察行为和回归场景必须保留，不固定测试数量，不引入硬性覆盖率目标、Knip 或完整变异测试框架。
 
 实质性代码变更（包括质量基线 PR）须按 `.pi/skills/thermo-nuclear-code-quality-review/SKILL.md` 的强制上游标准，在独立上下文中只读审查完整差异。任务负责人实施修复；具体结构问题默认阻塞，直到修复或用证据反驳，并经独立复查。未解决的分歧交给维护者。文档或机械变更不会自动触发这一特定审查，但原有高风险审查规则仍然适用。项目接受额外的审查和重构成本，以获得明确的类型边界和更简单的结构；仅凭测试通过无法证明这两点。
