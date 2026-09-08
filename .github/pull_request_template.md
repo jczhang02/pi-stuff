@@ -30,7 +30,7 @@
 - **Independent review:**
 - **Review evidence:**
 
-<!-- Keep English keys and plain status values. Risk: low/high. Review: completed/not-required/pending (draft only)/waived (explicit maintainer authorization). Add evidence bullets for actual reviewer/tool, base/head scope, findings and resolution; or a justified exemption/linked waiver. Do not copy another PR's review claims. See docs/agents/pr-evidence.md. / 保留英文字段名，状态值使用未加格式的英文枚举。风险：low/high；审查：completed/not-required/pending（仅草稿）/waived（须维护者明确授权）。用证据列表说明实际审查者或工具、基线与提交范围、发现及处理，或合理的豁免理由和授权链接。不要照抄其他 PR 的审查结论。 -->
+<!-- State actual risk and review status, reviewer/tool, base/head scope, findings and resolution, or a justified exemption/explicit waiver. Keep pending reviews in draft. This is human evidence, not a parsed field contract. See docs/agents/pr-evidence.md. / 如实说明风险、审查状态、审查者或工具、基线和提交范围、发现及处理, 或合理的无需审查理由和明确豁免. 审查未完成时保持草稿, 这些是人工证据, 不是解析字段契约. -->
 
 <!-- Add only relevant risks and limitations; these are not fixed boilerplate. / 仅说明相关风险与限制，不要套用固定免责声明。 -->
 
@@ -40,7 +40,7 @@
 - **独立审查**：
 - **审查依据**：
 
-<!-- Translate the actual evidence and limitations; do not repeat the English machine keys here. / 翻译实际证据与限制，不要在此重复英文机器字段。 -->
+<!-- Translate the actual evidence and limitations. / 翻译实际证据与限制. -->
 
 ### Related work
 

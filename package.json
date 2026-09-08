@@ -8,24 +8,21 @@
     "format:check": "bun --bun oxfmt --check .",
     "lint": "bun --bun oxlint --deny-warnings --disable-nested-config",
     "typecheck": "bun --bun tsc --noEmit",
-    "test": "bun test",
-    "check:repo": "bun scripts/check-repo.ts",
-    "check:pr": "bun scripts/check-pr.ts",
-    "check:commit": "bun scripts/check-commit.ts",
-    "hooks:install": "bun scripts/install-hooks.ts",
-    "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run check:repo"
+    "hooks:install": "bun --bun husky",
+    "check": "bun run format:check && bun run lint && bun run typecheck"
   },
   "dependencies": {
     "effect": "4.0.0-rc.112"
   },
   "devDependencies": {
+    "@commitlint/cli": "21.2.2",
+    "@commitlint/config-conventional": "21.2.2",
     "@oxlint/plugins": "1.82.0",
     "@types/bun": "1.4.0",
     "husky": "9.1.7",
     "oxfmt": "0.67.0",
     "oxlint": "1.82.0",
-    "typescript": "7.0.2",
-    "yaml": "2.9.0"
+    "typescript": "7.0.2"
   },
   "engines": {
     "bun": "1.4.0"

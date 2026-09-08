@@ -6,6 +6,6 @@
 
 **绝不能**仅因 RC 状态拒绝 v4、降级到 v3 或选择其他框架。具体不兼容问题需要实际复现、版本/API 证据和维护者决定；查阅 v4 文档，不假定 v3 API 仍然适用。这不意味着已有产品扩展，也不代表已经验证 Pi 宿主兼容性。
 
-质量基线要求所有自有源码和测试将 15 条通用 anti-slop 规则、1 条 Effect 规则以及 Oxlint correctness 规则设为错误，启用严格 TypeScript/未使用代码检查，并使用 Oxfmt 执行来自固定上游版本的 Google GTS 格式偏好，不额外安装 GTS、ESLint 或 Prettier。[工程规则](../../../agents/engineering.md)定义具体设置和禁止绕过的要求。现有脚本的外部可观察行为和回归场景必须保留，不固定测试数量，不引入硬性覆盖率目标、Knip 或完整变异测试框架。
+质量基线要求所有自有源码和测试将 15 条通用 anti-slop 规则、1 条 Effect 规则以及 Oxlint correctness 规则设为错误，启用严格 TypeScript/未使用代码检查，并使用 Oxfmt 执行来自固定上游版本的 Google GTS 格式偏好，不额外安装 GTS、ESLint 或 Prettier。[工程规则](../../../agents/engineering.md)定义具体设置和禁止绕过的要求。保留仍在维护的代码行为和有用回归覆盖, 不固定测试数量, 不引入硬性覆盖率目标、Knip 或完整变异测试框架. 维护者随后批准 [#21](https://github.com/jczhang02/pi-stuff/issues/21), 删除自研治理程序及其测试, 改用标准 Husky/commitlint 接线和人工审查. 这取消了旧程序的行为契约, 不改变 Effect v4 决策或错误级质量规则.
 
 实质性代码变更（包括质量基线 PR）须按 `.agents/skills/thermo-nuclear-code-quality-review/SKILL.md` 的强制上游标准，在独立上下文中只读审查完整差异。任务负责人实施修复；具体结构问题默认阻塞，直到修复或用证据反驳，并经独立复查。未解决的分歧交给维护者。文档或机械变更不会自动触发这一特定审查，但原有高风险审查规则仍然适用。项目接受额外的审查和重构成本，以获得明确的类型边界和更简单的结构；仅凭测试通过无法证明这两点。

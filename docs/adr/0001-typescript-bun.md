@@ -4,6 +4,6 @@
 
 The maintainer selected TypeScript and Bun for Pi Stuff. Use the same toolchain for repository automation instead of maintaining a separate Python environment: Bun runs scripts and tests, installs dependencies from `bun.lock`, and invokes TypeScript for static checking. This replaces the bootstrap Python checkers without changing their PR evidence or security requirements.
 
-Bun's ability to execute TypeScript does not replace type checking. CI runs both the compiler and tests. This choice does not certify compatibility with a particular Pi host version; verify that separately when executable extensions are introduced.
+Bun's ability to execute TypeScript does not replace type checking. CI runs the compiler and applicable tests when present. In [#21](https://github.com/jczhang02/pi-stuff/issues/21), the maintainer retired the custom governance checkers and their test suites; no placeholder tests remain. PR evidence remains a human review responsibility, while the toolchain and security requirements stay in place. This choice does not certify compatibility with a particular Pi host version; verify that separately when executable extensions are introduced.
 
 [ADR 0002](0002-effect-quality.md) adds Effect v4 and the quality baseline; it retains the TypeScript/Bun toolchain.

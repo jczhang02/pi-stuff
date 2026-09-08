@@ -1,89 +1,58 @@
 # PR evidence
 
-A PR should let the maintainer judge impact, decisions, and evidence before reading the full diff. This policy applies to code, documentation, and configuration changes. Keep typo and formatting PRs short; they do not need invented user scenarios or design documents.
+A PR should let the maintainer judge impact, decisions and evidence before reading the full diff. This applies to code, documentation and configuration. Keep small changes brief; do not invent scenarios or documents to fill a template. Use Sepia and follow [language and presentation](../../CONTRIBUTING.md#language-and-presentation).
 
 ## Prepare the review
 
-1. Read the task's acceptance criteria and compare the complete PR diff against its base, not only the last commit.
-2. Describe the affected user path before and after the change. For internal or documentation changes, describe the interface or workflow effect instead. State what remains unchanged.
-3. Explain the approach and important tradeoffs. Link durable architectural decisions rather than duplicating them. Record material rejected alternatives and their consequences, not every implementation detail.
-4. Put each reproduction or failure next to its verification command, observed result, and evidence. Provide prerequisites and expected results so the maintainer can repeat the check.
-5. Assess risk, obtain independent review when required below, and publish the evidence using the PR template. Recheck the final diff and refresh affected evidence after material edits.
-
-Use Sepia for the prose, including Beads notes. Preserve commands, error output, and measured results exactly. Remove credentials and personal information from logs and images.
+Compare the complete base-to-head diff against the task's acceptance criteria. Explain what changes and what stays unchanged, relevant tradeoffs, actual verification, risks and unresolved concerns. Link durable decisions rather than duplicating them. Remove sensitive information from evidence and refresh affected claims after material changes.
 
 ## Required sections
 
-Every non-draft PR description must use these exact level-three headings. CI checks structure, not the truth of the claims.
+Use the five sections in `.github/pull_request_template.md` as a human review outline, not a machine-parsed contract:
 
-| Heading                         | Required content                                                                                                  |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `Behavior and impact`           | Before/after behavior or workflow, affected users/interfaces, and unchanged scope                                 |
-| `Approach and decisions`        | Solution, relevant tradeoffs, and links to decisions when needed                                                  |
-| `Verification and reproduction` | Actual commands or steps, prerequisites, observed and expected results, and evidence; explain anything not tested |
-| `Risk and review`               | Risk level, known limitations, applicable supporting material, and review status/results                          |
-| `Related work`                  | GitHub issue and Beads ID, or a reason the trivial/bootstrap change has no task                                   |
+| Section                       | Content                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| Behavior and impact           | Before/after behavior or workflow, affected users and unchanged scope    |
+| Approach and decisions        | Solution, relevant tradeoffs and useful decision links                   |
+| Verification and reproduction | Actual commands, prerequisites, observed results and verification limits |
+| Risk and review               | Risk, independent-review status, findings and disposition                |
+| Related work                  | Issue and Beads links, or a justified trivial/bootstrap exception        |
 
-Template comments and bare `N/A`, `TODO`, or `TBD` do not count as content. A justified limitation does: for example, `Not tested: this host cannot run the target terminal; the manual check remains pending.` Missing verification is visible, not silently converted into success.
+Write English first, then Chinese inside each section. Use ordinary Markdown that makes the evidence readable; there is no supported-markup subset or placeholder parser. An empty template is not evidence. Explain missing verification plainly rather than converting it into a success claim.
 
-In `Risk and review`, include these fields:
+Declare low/high risk and whether independent review is completed, not required, pending or explicitly waived. Give the reviewer/tool identity, base/head scope, findings and resolution, or the applicable exemption. A waiver needs a link to explicit maintainer authorization. Never copy another PR's completed-review claim.
 
-- `Risk level: low` or `Risk level: high`.
-- `Independent review: completed`, `not-required`, `pending`, or `waived`.
-- `Review evidence:` followed by scope, reviewer/tool identity, findings and resolution, or the reason no independent review is required. A waiver must reference explicit maintainer authorization.
-
-### Formatting and language
-
-The five section headings, three English declaration keys, and enum spellings are the machine contract. The values and prose are not fixed boilerplate: choose the actual risk and review status, and report the current reviewers, commit range, findings, links and limits. Never copy another PR's `completed` claim. Include unresolved licensing or out-of-scope work only when relevant to this PR.
-
-Declarations must start in column one, either as plain lines or top-level unordered list items (`-`, `*`, or `+`). Their labels can be bold, with the colon inside or outside the bold span: `- **Risk level:** high` and `- **Risk level**: high` both work. Keep status values plain (`high`, not `**high**` or `high / 高`). Tables, quoted declarations, nested declaration items and translated machine keys are not supported. Mixed styles still count toward the same exactly-one-field requirement; fenced examples and HTML comments do not count. Basic emphasis or backticks do not make a bare placeholder substantive.
-
-For long bilingual PRs, put English first and a `#### 中文` block after it inside each required section. Keep the English H3 headings unchanged and do not repeat the English declaration keys in the Chinese block. The Chinese text must preserve the same facts, qualifications and limitations. Language order and translation fidelity remain author/reviewer obligations, not claims proved by this structural checker. Follow [Contributing](../../CONTRIBUTING.md#language-and-presentation) for proportionate Markdown presentation.
-
-A draft can explain its pending review with a list; this is not ready-state evidence:
-
-```markdown
-- **Risk level:** high
-- **Independent review:** pending
-- **Review evidence:**
-  - Independent review has not completed; keep the PR draft.
-```
-
-High-risk PRs require a completed independent review or an explicitly authorized waiver before becoming ready for merge. If no reviewer is available, keep the PR draft, use `pending`, and report the blocker. Do not invent a reviewer or report this session's self-check as independent review.
+High-risk PRs need completed independent review or explicit waiver before becoming ready. Keep a PR draft while review is pending; report a missing reviewer as a blocker.
 
 ## Evidence by change type
 
-| Change                                                                                                                                    | Evidence to include                                                                                                                    |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Bug fix                                                                                                                                   | Reproduction with versions/input, observed failure, regression-test command and result; disclose inability to reproduce                |
-| Visible UI or terminal behavior                                                                                                           | Actual before/after screenshots or recording, reproduction steps, and environment; mockups are design evidence, not proof of execution |
-| Architecture, state, dependency, or concurrency changes                                                                                   | A focused Mermaid diagram when it clarifies the change; link a design document or ADR for consequential decisions                      |
-| Cross-module diff that is difficult to navigate                                                                                           | A short review map or `/show-me` artifact where available; always retain links to the real diff                                        |
-| Security, permissions, persistence/recovery, concurrency/cancellation, public API, dependency, CI/merge-policy, or broad refactor changes | High risk: independent review with a pinned base/head scope and a findings disposition                                                 |
-| Trivial documentation or formatting                                                                                                       | Brief impact and actual checks; diagrams, recordings, and independent review are normally unnecessary                                  |
+- For bugs, report reproduction, versions/input, observed failure and relevant verification. Add useful regression coverage when feasible; disclose limits.
+- For visible UI or terminal changes, provide actual screenshots or recordings. Mockups are design evidence, not proof of execution.
+- For consequential architecture/state/dependency/concurrency changes, link decisions and use a diagram when it helps explain the change.
+- For hard-to-navigate cross-module changes, provide a short review map or visual artifact with links to actual code.
+- Security, permissions, persistence/recovery, concurrency/cancellation, public API, dependencies, CI/merge policy and broad refactors are high risk and need independent review.
+- Trivial documentation/formatting changes normally need only a brief impact statement and actual checks.
 
-When applicable evidence cannot be produced, explain why and what remains unverified in the relevant section. For consequential uncertainty, ask the maintainer before proceeding. Keep logs concise in the body; link stable CI runs/artifacts or use collapsed details for full output. Local `/tmp/` paths are not publicly accessible evidence.
+If evidence is unavailable, state what remains unverified. Escalate consequential uncertainty. Link stable CI/artifacts or collapse long logs; local `/tmp/` paths are not public evidence.
 
 ## TDD claims
 
-Claim TDD only if a relevant test was observed failing before the implementation and then passing after it. Include the same test command, base/fix references where available, and red/green results together. An import error or broken test harness alone is not evidence that the intended behavior failed.
-
-If tests were written after implementation, say so. A green test suite demonstrates its observed result, not the order in which code was written. Never fabricate red logs to satisfy the template.
+Claim TDD only when the relevant test was observed failing before implementation and passing afterward. Report the same command and base/fix context. Harness/import failures alone are not a behavior reproduction. Tests written after implementation are not TDD. Do not add placeholder tests or fabricate red logs to satisfy prose.
 
 ## Independent review
 
-Use a separate review context with the pinned comparison range and the issue/spec. Review both repository standards and requirement coverage across the complete base-to-head diff, not only the latest commit. The `code-review` skill or a harness's review mode may provide the context; using every available model is not required.
+Use a separate read-only context with the pinned comparison range and originating issue/spec. Review both repository standards and requirement coverage across the full diff. One suitable context is sufficient; every available model is not required. The execution owner implements fixes.
 
-For substantive code changes, including the quality-baseline PR, the reviewer must load `.agents/skills/thermo-nuclear-code-quality-review/SKILL.md` and apply its full upstream standard. It is mandatory, not optional guidance or a substitute for requirement coverage. The review is read-only: the reviewer reports findings and the task owner implements fixes. Documentation-only and mechanical changes do not automatically trigger this specific deep review; high-risk review requirements still apply.
+For substantive code changes, the reviewer must load `.agents/skills/thermo-nuclear-code-quality-review/SKILL.md` and apply its full mandatory upstream standard. Documentation/mechanical changes do not automatically trigger that specific deep review; high-risk review still applies. If the required skill or reviewer is unavailable, report the blocker and keep review pending.
 
-Concrete structural findings are presumptive blockers until fixed or refuted with evidence and independently rechecked. Record the evidence and recheck outcome for each such finding; passing tests alone is not a refutation. Escalate unresolved disagreement to the maintainer rather than silently downgrading a finding. If the required skill or reviewer is unavailable, report the blocker and keep review pending.
+Concrete structural findings block until fixed or rebutted with evidence and independently rechecked. Record the disposition; passing tests alone is not a rebuttal. Escalate unresolved disagreements to the maintainer. Obtain a focused follow-up when fixes materially change reviewed behavior, not merely to repeat unchanged verification.
 
-Record reviewer/tool identity, base/head references, findings, changes made in response, and outstanding concerns. Resolve blocking findings before handoff, or mark them pending and request a decision. If fixes materially change the reviewed behavior, obtain a follow-up review of those fixes. An independent agent review is not a GitHub approving review or permission to merge.
+Publish reviewer/tool identity, base/head references, findings, fixes and outstanding concerns. An agent review is neither GitHub approval nor merge authorization.
 
 ## Publication and enforcement
 
-Beads retains execution detail and the handoff; the PR contains the selected evidence; ADRs retain long-lived decisions. Post meaningful progress and completion summaries using the tracker workflow.
+GitHub holds requirements and selected evidence; Beads holds execution context and links; ADRs hold lasting decisions. Follow the [tracker workflow](issue-tracker.md), publishing meaningful milestones rather than mirroring every internal note.
 
-CI reads the PR event JSON as data and validates the five sections plus risk/review declarations. Body edits and readiness changes rerun CI. Drafts may contain incomplete evidence; they cannot merge. CI validates the triggering event's snapshot; it is not an atomic guarantee about the body at merge time. The workflow and checker are also editable in a PR, so they are not an independent security boundary. CI cannot prove a screenshot is authentic, a test was run first, a waiver was authorized, or the risk classification is correct. These remain agent obligations and maintainer judgments.
+PR-body structure, risk classification, review authenticity and authorization are author/reviewer obligations, not programmatically validated. Independent title CI uses commitlint; metadata edits do not rerun the code-check workflow. A workflow's presence does not make it a required merge check; remote ruleset changes require explicit authorization. After a base change, synchronize and rerun code CI before merging.
 
-All changes entering `main`, including documentation and CI configuration, go through a PR. Task branches can be pushed normally. Local Beads state and GitHub settings are outside the Git merge workflow; changing remote settings still requires explicit authorization. Never weaken the main ruleset to land a change.
+Every change entering main goes through a PR. Task branches remain pushable. Never weaken the main ruleset to land a change. Merge and release each require explicit user authorization. Local Beads and remote settings are outside Git commits, but their changes still follow the authorization boundary.
