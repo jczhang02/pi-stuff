@@ -146,8 +146,13 @@ def check_workflow(data):
         raise ValueError("CI must run on every pull request")
     if set(events) - {"pull_request", "push", "workflow_dispatch"}:
         raise ValueError("CI has an unexpected or privileged trigger")
-    if events["pull_request"] not in (None, {}):
-        raise ValueError("required PR CI must not have event or path filters")
+    pr_events = events["pull_request"]
+    required_events = {"opened", "synchronize", "reopened", "edited", "ready_for_review"}
+    if not isinstance(pr_events, dict) or set(pr_events) != {"types"}:
+        raise ValueError("required PR CI must declare evidence events without branch or path filters")
+    event_types = pr_events["types"]
+    if not isinstance(event_types, list) or set(event_types) != required_events:
+        raise ValueError("PR CI must run for opened, synchronize, reopened, edited, and ready_for_review")
     if data.get("permissions") != {"contents": "read"}:
         raise ValueError("CI must use contents: read")
     jobs = data.get("jobs", {})
@@ -166,6 +171,10 @@ def check_workflow(data):
         steps = job.get("steps", [])
         if not isinstance(steps, list) or not steps:
             raise ValueError("CI jobs need steps")
+        if job is jobs["checks"]:
+            evidence = [step for step in steps if step.get("run") == "python scripts/check_pr.py"]
+            if len(evidence) != 1 or any(key in evidence[0] for key in ("if", "continue-on-error", "env")):
+                raise ValueError("checks must run PR evidence validation unconditionally without overrides")
         for step in steps:
             action = step.get("uses")
             if action and not re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", action):

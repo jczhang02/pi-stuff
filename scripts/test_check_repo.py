@@ -123,6 +123,21 @@ class RepositoryChecksTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "filters"):
             check_workflow(self.workflow)
 
+    def test_body_edits_must_trigger_ci(self):
+        self.workflow["on"]["pull_request"]["types"].remove("edited")
+        with self.assertRaisesRegex(ValueError, "PR CI must run"):
+            check_workflow(self.workflow)
+
+    def test_evidence_step_cannot_be_skipped(self):
+        self.workflow["jobs"]["checks"]["steps"][-1]["if"] = "false"
+        with self.assertRaisesRegex(ValueError, "unconditionally"):
+            check_workflow(self.workflow)
+
+    def test_evidence_step_is_required(self):
+        self.workflow["jobs"]["checks"]["steps"].pop()
+        with self.assertRaisesRegex(ValueError, "evidence validation"):
+            check_workflow(self.workflow)
+
     def test_privileged_trigger_fails(self):
         self.workflow["on"]["pull_request_target"] = None
         with self.assertRaisesRegex(ValueError, "privileged trigger"):
