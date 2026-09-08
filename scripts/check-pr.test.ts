@@ -41,7 +41,7 @@ describe("PR evidence", () => {
   test("fenced headings do not supply sections", () => expect(checkBody("```markdown\n" + BODY + "\n```")).not.toEqual([]));
   test("nested fences do not supply sections", () => expect(checkBody("````markdown\n```text\n" + BODY + "\n```\n````")).not.toEqual([]));
   test("bare placeholders fail", () => {
-    for (const placeholder of ["N/A", "TODO", "TBD", "- [ ]", "```text\n```", "GitHub issue:\nBeads ID:"]) {
+    for (const placeholder of ["N/A", "TODO", "TBD", "- [ ]", "```text\n```", "GitHub issue:\nBeads ID:", "not applİcable", "not applıcable"]) {
       expect(checkBody(`${RELATED_PREFIX}### Related work\n${placeholder}`)).not.toEqual([]);
     }
   });

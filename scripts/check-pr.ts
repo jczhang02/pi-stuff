@@ -30,7 +30,8 @@ function substantive(text: string): boolean {
     line = trimWhitespace(line.replace(LIST_PREFIX, ""));
     if (!line || /^[^\p{L}\p{N}]+$/u.test(line)) continue;
     if (/^[\p{L}\p{N}_ /-]+:$/u.test(line)) continue;
-    if (/^(?:N\/?A|none|TODO|TBD|not applicable)[.!]?$/i.test(line)) continue;
+    // Python's ignore-case matching also treats dotted/dotless I as ASCII i.
+    if (/^(?:N\/?A|none|TODO|TBD|not appl[iİı]cable)[.!]?$/i.test(line)) continue;
     return true;
   }
   return false;
