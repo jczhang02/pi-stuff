@@ -196,6 +196,40 @@ describe('PR evidence', () => {
       ).not.toEqual([]);
     }
   });
+  test('punctuation outside markup cannot turn placeholders into evidence', () => {
+    for (const placeholder of [
+      '**TODO**.',
+      '`TBD`!',
+      '**GitHub issue**:',
+      '**审查依据**：',
+      '**_TODO_**.',
+      '**`TBD`!**',
+      '__**审查依据**：__',
+    ]) {
+      expect(
+        checkBody(BODY.replace(EVIDENCE, `Review evidence:\n- ${placeholder}`)),
+      ).not.toEqual([]);
+      expect(
+        checkBody(`${RELATED_PREFIX}### Related work\n- ${placeholder}`),
+      ).not.toEqual([]);
+    }
+  });
+  test('unformatted identifiers and explained limitations remain substantive', () => {
+    for (const content of [
+      'none_',
+      '_none',
+      'N_A',
+      '`N_A`',
+      '**N/A:** no runtime changes to verify.',
+    ]) {
+      expect(
+        checkBody(BODY.replace(EVIDENCE, `Review evidence: ${content}`)),
+      ).toEqual([]);
+      expect(
+        checkBody(`${RELATED_PREFIX}### Related work\n${content}`),
+      ).toEqual([]);
+    }
+  });
   test('plus-list placeholders cannot become evidence', () => {
     expect(
       checkBody(BODY.replace(EVIDENCE, '- **Review evidence:**\n  + **TODO**')),

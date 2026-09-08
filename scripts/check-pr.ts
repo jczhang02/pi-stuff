@@ -46,8 +46,26 @@ function substantive(text: string): boolean {
   for (let line of splitLines(text)) {
     if (FENCE.test(line) || /^#{1,6}[ \t]+/.test(line)) continue;
     line = trimWhitespace(line.replace(LIST_PREFIX, ''));
-    // Edge markup cannot turn a placeholder into evidence; interior identifiers stay intact.
-    line = trimWhitespace(line.replace(/^[*_`]+|[*_`]+$/g, ''));
+    // Peel balanced markup and one terminal punctuation mark, even between wrappers.
+    let start = 0;
+    let end = line.length;
+    let punctuation = '';
+    while (start < end) {
+      const last = line[end - 1]!;
+      if (!punctuation && '.!:：'.includes(last)) {
+        punctuation = last;
+        end--;
+      }
+      if (
+        start + 1 >= end ||
+        !'*_`'.includes(line[start]!) ||
+        line[start] !== line[end - 1]
+      )
+        break;
+      start++;
+      end--;
+    }
+    if (start) line = trimWhitespace(line.slice(start, end)) + punctuation;
     if (!line || /^[^\p{L}\p{N}]+$/u.test(line)) continue;
     if (/^[\p{L}\p{N}_ /-]+[:：]$/u.test(line)) continue;
     // Python's ignore-case matching also treats dotted/dotless I as ASCII i.
