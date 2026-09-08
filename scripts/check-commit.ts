@@ -133,15 +133,26 @@ function checkCI(directory: string) {
     for (const oid of commits) {
       if (!OID.test(oid))
         return yield* fail('Git returned an invalid commit list.');
-      const message = yield* git(directory, [
-        'show',
-        '--no-patch',
-        '--format=%B',
-        oid,
-        '--',
-      ]);
+      // cat-file preserves bytes that pretty formats can truncate at NUL.
+      // The Git seam decodes the entire object as fatal UTF-8, before slicing.
+      const object = yield* git(directory, ['cat-file', 'commit', oid]);
+      // Let Git validate commit metadata rather than inventing an object
+      // parser here. Without -w this checks/hashes bytes but writes no object.
+      if (
+        (yield* git(
+          directory,
+          ['hash-object', '-t', 'commit', '--stdin'],
+          object,
+        )).trim() !== oid
+      )
+        return yield* fail('Commit object failed validation.');
+      const separator = object.indexOf('\n\n');
+      if (separator < 0)
+        return yield* fail('Commit object has no header/message separator.');
       errors.push(
-        ...checkMessage(message).map(error => `Commit ${oid}: ${error}`),
+        ...checkMessage(object.slice(separator + 2)).map(
+          error => `Commit ${oid}: ${error}`,
+        ),
       );
     }
     return errors;
@@ -165,7 +176,17 @@ export function main(args = process.argv.slice(2)): number {
         // Check the supplied file, not a guessed Git cleanup mode: commit-msg
         // cannot know every per-invocation cleanup override. Require header-first
         // input; comments below the blank separator are ordinary body text.
-        return checkMessage(text);
+        const errors = checkMessage(text);
+        if (errors.length) return errors;
+        // Ask this Git version about active comment prefixes (including config
+        // aliases). Only test whether the header survives; never validate a
+        // cleaned substitute for the raw message or parse body/footer prose.
+        const header = text.split('\n', 1)[0]!;
+        if (
+          !(yield* git(directory, ['stripspace', '--strip-comments'], header))
+        )
+          errors.push('The header conflicts with Git’s active comment prefix.');
+        return errors;
       })
     : checkCI(directory);
   try {

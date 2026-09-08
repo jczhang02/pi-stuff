@@ -1,10 +1,12 @@
 import {afterEach, beforeEach, describe, expect, test} from 'bun:test';
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -163,6 +165,98 @@ describe('commit checker Git and CLI seam', () => {
       resolve(directory, '.husky/commit-msg'),
     );
   }
+
+  for (const payload of [
+    Buffer.from('fix: valid\0private-invalid'),
+    Buffer.concat([
+      Buffer.from('fix: valid\0private-invalid '),
+      Buffer.from([0xff]),
+    ]),
+    Buffer.concat([
+      Buffer.from('fix: valid\n\nprivate-invalid '),
+      Buffer.from([0xff]),
+    ]),
+  ]) {
+    for (const name of ['pull_request', 'push', 'workflow_dispatch']) {
+      test(`raw commit bytes reject ${payload.toString('hex')} through ${name}`, () => {
+        const base = commit('feat: root');
+        const tree = git('rev-parse', 'HEAD^{tree}');
+        const object = resolve(directory, 'raw-commit');
+        writeFileSync(
+          object,
+          Buffer.concat([
+            Buffer.from(
+              `tree ${tree}\nparent ${base}\nauthor Fixture <fixture@example.invalid> 1 +0000\ncommitter Fixture <fixture@example.invalid> 1 +0000\n\n`,
+            ),
+            payload,
+          ]),
+        );
+        const head = git(
+          'hash-object',
+          '--literally',
+          '-t',
+          'commit',
+          '-w',
+          object,
+        );
+        writeFileSync(resolve(directory, 'event.json'), '{"ref":"main"}');
+        const result =
+          name === 'pull_request'
+            ? pullRequest(base, head)
+            : name === 'push'
+              ? push(base, head)
+              : event(name, head, 'refs/heads/main');
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr.toString()).not.toContain('private-invalid');
+      });
+    }
+  }
+  for (const name of ['pull_request', 'push', 'workflow_dispatch']) {
+    test(`raw malformed commit metadata fails ${name}`, () => {
+      const base = commit('feat: root');
+      const object = resolve(directory, 'raw-commit');
+      writeFileSync(
+        object,
+        `tree ${git('rev-parse', 'HEAD^{tree}')}\nparent ${base}\nauthor malformed\ncommitter Fixture <fixture@example.invalid> 1 +0000\n\nfix: valid message`,
+      );
+      const head = git(
+        'hash-object',
+        '--literally',
+        '-t',
+        'commit',
+        '-w',
+        object,
+      );
+      writeFileSync(resolve(directory, 'event.json'), '{"ref":"main"}');
+      const result =
+        name === 'pull_request'
+          ? pullRequest(base, head)
+          : name === 'push'
+            ? push(base, head)
+            : event(name, head, 'refs/heads/main');
+      expect(result.exitCode).toBe(1);
+    });
+  }
+  test('raw commit without a header/message separator fails dispatch', () => {
+    commit('feat: root');
+    const object = resolve(directory, 'raw-commit');
+    writeFileSync(
+      object,
+      `tree ${git('rev-parse', 'HEAD^{tree}')}\nauthor Fixture <fixture@example.invalid> 1 +0000\ncommitter Fixture <fixture@example.invalid> 1 +0000\nfix: not a message`,
+    );
+    const head = git(
+      'hash-object',
+      '--literally',
+      '-t',
+      'commit',
+      '-w',
+      object,
+    );
+    writeFileSync(resolve(directory, 'event.json'), '{"ref":"main"}');
+    expect(event('workflow_dispatch', head, 'refs/heads/main').exitCode).toBe(
+      1,
+    );
+  });
 
   test('PR introduced set checks invalid middle commits, not historical base or counts', () => {
     const base = commit('Historical message');
@@ -331,8 +425,7 @@ describe('commit checker Git and CLI seam', () => {
       event('workflow_dispatch', head, 'refs/heads/main', shallow).exitCode,
     ).toBe(1);
   });
-  test('malformed event fields and unknown/privileged events fail without payload disclosure', () => {
-    commit('feat: root');
+  describe('malformed event fields and unknown/privileged events fail without payload disclosure', () => {
     for (const text of [
       'private-invalid',
       'null',
@@ -343,7 +436,6 @@ describe('commit checker Git and CLI seam', () => {
       '{"pull_request":{"title":"feat: title","head":{"sha":"--all"},"base":{"sha":"HEAD"}}}',
       '{"ref":"refs/heads/main","before":false,"after":42}',
     ]) {
-      writeFileSync(resolve(directory, 'event.json'), text);
       for (const name of [
         'pull_request',
         'push',
@@ -352,11 +444,15 @@ describe('commit checker Git and CLI seam', () => {
         'merge_group',
         '',
       ]) {
-        const result = event(name);
-        expect(result.exitCode).toBe(1);
-        expect(result.stderr.toString()).toBe(
-          'Cannot check commit input or history (InputError).\n',
-        );
+        test(`${JSON.stringify(text)} / ${JSON.stringify(name)}`, () => {
+          commit('feat: root');
+          writeFileSync(resolve(directory, 'event.json'), text);
+          const result = event(name);
+          expect(result.exitCode).toBe(1);
+          expect(result.stderr.toString()).toBe(
+            'Cannot check commit input or history (InputError).\n',
+          );
+        });
       }
     }
   });
@@ -421,6 +517,7 @@ describe('commit checker Git and CLI seam', () => {
       },
       stdout: 'pipe',
       stderr: 'pipe',
+      timeout: 30_000,
     });
     expect(result.exitCode).toBe(1);
   });
@@ -441,6 +538,56 @@ describe('commit checker Git and CLI seam', () => {
     }
     expect(command(['git', 'rev-parse', '--verify', 'HEAD']).exitCode).not.toBe(
       0,
+    );
+  });
+  for (const setting of ['core.commentChar=f', 'core.commentString=fix:']) {
+    test(`real hook rejects cleanup deleting the header with ${setting}`, () => {
+      setupFiles();
+      expect(command([process.execPath, INSTALL]).exitCode).toBe(0);
+      const result = command([
+        'git',
+        '-c',
+        setting,
+        'commit',
+        '--allow-empty',
+        '--cleanup=strip',
+        '-m',
+        'fix: removed\n\nnot conventional',
+      ]);
+      expect(result.exitCode).not.toBe(0);
+      expect(
+        command(['git', 'rev-parse', '--verify', 'HEAD']).exitCode,
+      ).not.toBe(0);
+    });
+  }
+  test('real hook respects commentString precedence and auto without parsing body prose', () => {
+    setupFiles();
+    expect(command([process.execPath, INSTALL]).exitCode).toBe(0);
+    git(
+      '-c',
+      'core.commentChar=f',
+      '-c',
+      'core.commentString=//',
+      'commit',
+      '--allow-empty',
+      '--cleanup=strip',
+      '-m',
+      'fix: retained\n\n// removed\nBody.\nBREAKING CHANGE: ',
+    );
+    expect(git('show', '--format=%B', '--no-patch', 'HEAD')).toBe(
+      'fix: retained\n\nBody.\nBREAKING CHANGE:',
+    );
+    git(
+      '-c',
+      'core.commentChar=auto',
+      'commit',
+      '--allow-empty',
+      '--cleanup=strip',
+      '-m',
+      'feat: auto retained\n\n# ordinary body\nText.',
+    );
+    expect(git('show', '--format=%B', '--no-patch', 'HEAD')).toBe(
+      'feat: auto retained\n\n# ordinary body\nText.',
     );
   });
   test('setup preserves hook paths with meaningful surrounding whitespace', () => {
@@ -500,13 +647,120 @@ describe('commit checker Git and CLI seam', () => {
       env: {...environment(), HUSKY: '0'},
       stdout: 'pipe',
       stderr: 'pipe',
+      timeout: 30_000,
     });
     expect(disabled.exitCode).toBe(1);
+    expect(readdirSync(resolve(directory, '.husky'))).toEqual(['commit-msg']);
     expect(command(['git', 'config', '--get', 'core.hooksPath']).exitCode).toBe(
       1,
     );
     expect(existsSync(resolve(directory, '.husky/_'))).toBe(false);
   });
+  test('failed helper generation in read-only .husky preserves exact real config', () => {
+    setupFiles();
+    const config = resolve(directory, '.git/config');
+    const prior = readFileSync(config);
+    const hooks = resolve(directory, '.husky');
+    chmodSync(hooks, 0o555);
+    try {
+      expect(command([process.execPath, INSTALL]).exitCode).toBe(1);
+      expect(readFileSync(config)).toEqual(prior);
+      expect(readdirSync(hooks)).toEqual(['commit-msg']);
+    } finally {
+      chmodSync(hooks, 0o755);
+    }
+  });
+  test('config publication failure preserves prior bytes and retains complete helpers', () => {
+    setupFiles();
+    const config = resolve(directory, '.git/config');
+    const prior = readFileSync(config);
+    writeFileSync(`${config}.lock`, 'another owner\n');
+    expect(command([process.execPath, INSTALL]).exitCode).toBe(1);
+    expect(readFileSync(config)).toEqual(prior);
+    expect(readFileSync(`${config}.lock`, 'utf8')).toBe('another owner\n');
+    expect(readdirSync(resolve(directory, '.husky')).sort()).toEqual([
+      '_',
+      'commit-msg',
+    ]);
+    const path = resolve(directory, 'message');
+    writeFileSync(path, 'fix: complete helpers\n');
+    expect(command(['sh', '.husky/_/commit-msg', path]).exitCode).toBe(0);
+    writeFileSync(path, 'not conventional\n');
+    expect(command(['sh', '.husky/_/commit-msg', path]).exitCode).toBe(1);
+  });
+  test('existing read-only helpers and disabled Husky preserve shared setup exactly', () => {
+    setupFiles();
+    git('config', 'core.hooksPath', '.husky/_');
+    const config = resolve(directory, '.git/config');
+    const prior = readFileSync(config);
+    const disabled = Bun.spawnSync([process.execPath, INSTALL], {
+      cwd: directory,
+      env: {...environment(), HUSKY: '0'},
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 30_000,
+    });
+    expect(disabled.exitCode).toBe(1);
+    expect(readFileSync(config)).toEqual(prior);
+    expect(readdirSync(resolve(directory, '.husky'))).toEqual(['commit-msg']);
+    const helpers = resolve(directory, '.husky/_');
+    mkdirSync(helpers);
+    writeFileSync(resolve(helpers, 'custom'), 'preserve me\n');
+    chmodSync(helpers, 0o555);
+    try {
+      expect(command([process.execPath, INSTALL]).exitCode).toBe(1);
+      expect(readFileSync(config)).toEqual(prior);
+      expect(readdirSync(helpers)).toEqual(['custom']);
+      expect(readFileSync(resolve(helpers, 'custom'), 'utf8')).toBe(
+        'preserve me\n',
+      );
+    } finally {
+      chmodSync(helpers, 0o755);
+    }
+  });
+  test('setup preserves shared custom hooks masked by a worktree override', () => {
+    setupFiles();
+    commit('feat: root');
+    git('config', 'extensions.worktreeConfig', 'true');
+    git('config', '--local', 'core.hooksPath', 'custom-hooks');
+    const hooks = resolve(directory, 'custom-hooks');
+    mkdirSync(hooks);
+    writeFileSync(resolve(hooks, 'commit-msg'), '#!/bin/sh\nexit 1\n', {
+      mode: 0o755,
+    });
+    const linked = resolve(directory, 'linked');
+    git('worktree', 'add', '-b', 'topic', linked);
+    git('config', '--worktree', 'core.hooksPath', '.husky/_');
+    const shared = readFileSync(resolve(directory, '.git/config'));
+    const override = readFileSync(resolve(directory, '.git/config.worktree'));
+    expect(command([process.execPath, INSTALL]).exitCode).toBe(1);
+    expect(readFileSync(resolve(directory, '.git/config'))).toEqual(shared);
+    expect(readFileSync(resolve(directory, '.git/config.worktree'))).toEqual(
+      override,
+    );
+    // The second worktree still uses the shared custom hook directory.
+    symlinkSync(hooks, resolve(linked, 'custom-hooks'));
+    expect(
+      command(['git', 'commit', '--allow-empty', '-m', 'fix: rejected'], linked)
+        .exitCode,
+    ).not.toBe(0);
+    expect(existsSync(resolve(directory, '.husky/_'))).toBe(false);
+  });
+  for (const paths of [
+    [''],
+    [' '],
+    ['.husky/_', '.husky/_'],
+    ['custom-hooks', '.husky/_'],
+  ]) {
+    test(`setup preserves exact shared hooks configuration ${JSON.stringify(paths)}`, () => {
+      setupFiles();
+      for (const path of paths) git('config', '--add', 'core.hooksPath', path);
+      const prior = readFileSync(resolve(directory, '.git/config'));
+      expect(command([process.execPath, INSTALL]).exitCode).toBe(1);
+      expect(readFileSync(resolve(directory, '.git/config'))).toEqual(prior);
+      expect(existsSync(resolve(directory, '.husky/_'))).toBe(false);
+    });
+  }
   test('setup refuses existing hook paths and default hooks without overwriting', () => {
     setupFiles();
     git('config', 'core.hooksPath', 'custom-hooks');
