@@ -6,6 +6,8 @@ GitHub Issues holds requirements, acceptance criteria, public progress, decision
 
 ## Linked tasks
 
+Behavior changes and multi-step work need a tracked task. Typo and formatting fixes may go directly to a PR without a separate issue or Beads record. Explicitly authorized repository bootstrap work may also proceed without Beads while initialization is pending; disclose this in the PR.
+
 Before creating a task, search both trackers for an existing record. Use one linked GitHub issue and Beads record for the same task; do not independently create duplicates with `gh issue create` and `bd create`.
 
 For an existing GitHub issue, pull it into Beads. For a new Beads task intended for publication, push it to GitHub and verify its external reference. Record the association in Beads and include the Beads ID in the initial GitHub progress comment when available.
@@ -13,6 +15,8 @@ For an existing GitHub issue, pull it into Beads. For a new Beads task intended 
 When a skill says "publish to the issue tracker," publish a GitHub issue and establish its Beads association. When it says "fetch the relevant ticket," read the GitHub body, labels, comments, and associated Beads context.
 
 ## Before using sync
+
+Read `docs/agents/beads.md` for the local workspace, shared-worktree behavior, and transient GitHub authentication. Load the official `beads` skill and run `bd prime` when starting or recovering task context.
 
 Check `bd version`, `bd github --help`, and `bd github status`. If Beads is not initialized or authentication is unavailable, report the blocker; do not claim synchronization succeeded or initialize infrastructure implicitly.
 
