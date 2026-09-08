@@ -1,4 +1,4 @@
-<!-- Write English first, then Chinese inside each section. Keep these five English H3 headings unchanged. / 各节先写英文，再写中文；保留这五个英文三级标题。 -->
+<!-- Use an English-only PR title. Write English first, then Chinese inside each body section. Keep these five English H3 headings unchanged. / PR 标题只用英文. 正文各节先写英文, 再写中文；保留这五个英文三级标题. -->
 
 ### Behavior and impact
 

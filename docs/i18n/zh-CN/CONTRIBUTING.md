@@ -12,7 +12,7 @@
 
 中文文档统一放在 `docs/i18n/zh-CN/`。代理指令和技能仅保留英文，不另建中文代理规则。对话使用中文。
 
-GitHub 上新增或实质性更新的面向人的内容须采用**英文在前、中文在后**的双语形式，包括 Issue 和 PR 描述、面向人的标题、评论、审查摘要及未来的发布说明。长文优先在每节内先写英文，再写中文。标识符、命令、规范的机器字段名和状态枚举、URL 及哈希无需翻译或重复。
+Issue 和 PR 标题仅用英文. 新增或实质性更新的描述、评论、审查摘要及未来发布说明仍采用**英文在前、中文在后**的双语形式.长文优先在每节内先写英文，再写中文。标识符、命令、规范的机器字段名和状态枚举、URL 及哈希无需翻译或重复。
 
 不批量补译历史讨论或机器生成的机器人元数据；实质性编辑面向人的内容时再补充翻译。历史研究资料无需批量翻译。
 
@@ -50,9 +50,9 @@ GitHub 上新增或实质性更新的面向人的内容须采用**英文在前�
 每个新增 Git 提交及 PR 标题都须符合 [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)。PR 标题用于 squash 提交，不重写历史提交。
 
 ```text
-feat(context): add context selection / 添加上下文选择
-fix: preserve empty input / 保留空输入
-refactor(api)!: remove the obsolete entry point / 移除旧入口
+feat(context): add context selection
+fix: preserve empty input
+refactor(api)!: remove the obsolete entry point
 ```
 
 type 由小写字母组成，可选的非空括号 scope、可选的 `!`，再加 `: ` 和非空描述。正文及 footer 与标题之间留空行。type 不限于上述示例；merge、revert、fixup 消息不自动豁免。检查器校验标题、空行分隔和控制字符。正文允许自由文本，不会把也可能是正文或示例的行自动识别为 footer；footer 语法、type 含义及破坏性变更声明仍由作者和审查者负责。

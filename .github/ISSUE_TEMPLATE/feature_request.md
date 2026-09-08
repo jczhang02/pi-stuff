@@ -6,9 +6,9 @@ labels: ['enhancement', 'needs-triage']
 assignees: ''
 ---
 
-Write the title and each section in English first, Chinese second. Use lists for enumerable facts and links for evidence; keep short explanations in ordinary prose. Commands and identifiers need not be duplicated. Follow [language and presentation](https://github.com/jczhang02/pi-stuff/blob/main/CONTRIBUTING.md#language-and-presentation).
+Use an English-only title. Write each body section in English first, Chinese second. Use lists for enumerable facts and links for evidence; keep short explanations in ordinary prose. Commands and identifiers need not be duplicated. Follow [language and presentation](https://github.com/jczhang02/pi-stuff/blob/main/CONTRIBUTING.md#language-and-presentation).
 
-标题及各节内容先写英文，再写中文。可枚举的事实用列表，证据用链接；简短解释保留为普通段落。命令和标识符无需重复。请遵循[语言与呈现规则](https://github.com/jczhang02/pi-stuff/blob/main/docs/i18n/zh-CN/CONTRIBUTING.md#语言与呈现)。
+标题只用英文. 正文各节先写英文, 再写中文.可枚举的事实用列表，证据用链接；简短解释保留为普通段落。命令和标识符无需重复。请遵循[语言与呈现规则](https://github.com/jczhang02/pi-stuff/blob/main/docs/i18n/zh-CN/CONTRIBUTING.md#语言与呈现)。
 
 ### Describe the feature or problem you would like to solve
 
