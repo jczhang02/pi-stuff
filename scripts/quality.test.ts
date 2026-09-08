@@ -2,7 +2,7 @@ import {expect, test} from 'bun:test';
 import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {resolve} from 'node:path';
-import {Effect, Schema} from 'effect';
+import {Effect} from 'effect';
 import config from '../oxlint.config';
 import {checkWorkflow} from './check-repo';
 import {WorkflowInput} from './contracts';
@@ -110,15 +110,12 @@ test('lint accepts ordinary typed code', () => {
 });
 
 test('mandatory anti-slop rules remain errors', () => {
-  const rules = Schema.decodeUnknownSync(
-    Schema.Record(Schema.String, Schema.String),
-  )(config.rules);
   for (const [rule] of PROBES) {
-    const plugin =
+    const severity =
       rule === 'no-service-constructor-imports'
-        ? 'anti-slop-effect'
-        : 'anti-slop';
-    expect(rules[`${plugin}/${rule}`]).toBe('error');
+        ? config.rules['anti-slop-effect/no-service-constructor-imports']
+        : config.rules[`anti-slop/${rule}`];
+    expect(severity).toBe('error');
   }
 });
 

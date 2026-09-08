@@ -17,12 +17,46 @@ import {
   checkWorkflow,
 } from './check-repo';
 import {decodeEventJson, decodeJson, decodeYaml, InputError} from './parse';
+import {workflowFixture} from './fixtures';
 
 const ROOT = resolve(import.meta.dir, '..');
 const WORKFLOW = readFileSync(
   resolve(ROOT, '.github/workflows/ci.yml'),
   'utf8',
 );
+
+test('aliased and independent jobs retain their distinct diagnostic order', () => {
+  const malformed = WORKFLOW.replace(
+    'run: bun run check:pr',
+    'run: echo omitted',
+  ).replace(/actions\/checkout@[0-9a-f]{40}/, 'actions/checkout@v4');
+  const aliased =
+    malformed.replace('  checks:\n', '  earlier: &shared\n') +
+    '  checks: *shared\n';
+  const jobs = malformed.split('jobs:\n')[1];
+  expect(jobs).toBeDefined();
+  const independent = malformed.replace('  checks:\n', '  earlier:\n') + jobs;
+  for (const [source, diagnostic] of [
+    [aliased, 'checks must run bun run check:pr'],
+    [independent, 'external actions must be pinned'],
+  ] as const) {
+    expect(() =>
+      checkWorkflow(Effect.runSync(decodeYaml(source, WorkflowInput))),
+    ).toThrow(diagnostic);
+    expect(() => checkWorkflow(workflowFixture(source))).toThrow(diagnostic);
+  }
+});
+
+test('decoding the same mutable workflow does not reuse stale jobs', () => {
+  const input = workflowFixture(WORKFLOW);
+  expect(() =>
+    checkWorkflow(Schema.decodeUnknownSync(WorkflowInput)(input)),
+  ).not.toThrow();
+  input.jobs.checks.steps[0]!.uses = 'actions/checkout@v4';
+  expect(() =>
+    checkWorkflow(Schema.decodeUnknownSync(WorkflowInput)(input)),
+  ).toThrow('full commit SHA');
+});
 
 for (const [key, location, diagnostic] of [
   ['if', '    name: checks', 'stable name and run unconditionally'],

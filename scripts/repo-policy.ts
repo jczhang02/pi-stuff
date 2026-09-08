@@ -141,7 +141,7 @@ export function checkWorkflow(value: typeof WorkflowInput.Type): void {
     throw new Error(
       'required checks job must have a stable name and run unconditionally',
     );
-  for (const [jobName, item] of Object.entries(jobs)) {
+  for (const item of Object.values(jobs)) {
     const job = mapping(item);
     if (job['runs-on'] !== 'ubuntu-24.04')
       throw new Error('CI must use the approved GitHub-hosted runner');
@@ -157,7 +157,7 @@ export function checkWorkflow(value: typeof WorkflowInput.Type): void {
       throw new Error('CI jobs must not expand token permissions');
     if (!job.steps?.length) throw new Error('CI jobs need steps');
     const steps = job.steps.map(step => mapping(step));
-    if (jobName === 'checks') {
+    if (job === required) {
       for (const command of REQUIRED_COMMANDS) {
         const matching = steps.filter(step => step.run === command);
         if (

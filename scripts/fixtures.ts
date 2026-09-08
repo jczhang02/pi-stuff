@@ -1,5 +1,5 @@
-import {Effect} from 'effect';
-import {Labels, Workflow} from './contracts';
+import {Effect, Record} from 'effect';
+import {Labels, WorkflowInput} from './contracts';
 import {decodeJson, decodeYaml} from './parse';
 
 // Fixtures use the production codecs. These helpers require the portions each
@@ -12,7 +12,8 @@ export function labelsFixture(text: string) {
   });
 }
 export function workflowFixture(text: string) {
-  const data = Effect.runSync(decodeYaml(text, Workflow));
+  const data = Effect.runSync(decodeYaml(text, WorkflowInput));
+  if (!data) throw new Error('Fixture needs a workflow mapping');
   const job = data.jobs?.checks;
   const pr = data.on?.pull_request;
   if (!data.on || !pr || !data.permissions || !data.jobs || !job?.steps)
@@ -21,10 +22,12 @@ export function workflowFixture(text: string) {
     if (!step) throw new Error('Fixture needs a step mapping');
     return step;
   });
+  const checks = {...job, steps};
+  const jobs = Record.map(data.jobs, item => (item === job ? checks : item));
   return {
     ...data,
     on: {...data.on, pull_request: pr},
     permissions: data.permissions,
-    jobs: {...data.jobs, checks: {...job, steps}},
+    jobs: {...jobs, checks},
   };
 }

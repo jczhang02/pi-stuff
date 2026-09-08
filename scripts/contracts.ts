@@ -70,7 +70,7 @@ const Job = Schema.Struct({
   permissions: field(Permissions),
   steps: field(Schema.mutable(Schema.Array(invalidAsNull(Step)))),
 });
-export const Workflow = Schema.Struct({
+const Workflow = Schema.Struct({
   on: field(
     Schema.Record(Schema.String, Schema.mutableKey(invalidAsNull(Trigger))),
   ),
@@ -79,7 +79,41 @@ export const Workflow = Schema.Struct({
     Schema.Record(Schema.String, Schema.mutableKey(invalidAsNull(Job))),
   ),
 });
-export const WorkflowInput = invalidAsNull(Workflow);
+const WorkflowModel = invalidAsNull(Workflow);
+const JobModel = invalidAsNull(Job);
+// An earlier YAML alias of checks is also the required job. Preserve that
+// sharing so required-command diagnostics retain their original priority.
+// Each decoding gets its own cache; a later decode may see mutated input.
+export const WorkflowInput = invalidAsNull(Schema.instanceOf(Object)).pipe(
+  Schema.decodeTo(Schema.declare(Schema.is(WorkflowModel)), {
+    decode: SchemaGetter.transform(source => {
+      const jobs = new WeakMap<object, typeof JobModel.Type>();
+      const sharedJob = invalidAsNull(Schema.instanceOf(Object)).pipe(
+        Schema.decodeTo(Schema.declare(Schema.is(JobModel)), {
+          decode: SchemaGetter.transform(reference => {
+            if (reference === null) return null;
+            const previous = jobs.get(reference);
+            if (previous !== undefined) return previous;
+            const job = Schema.decodeUnknownSync(JobModel)(reference);
+            jobs.set(reference, job);
+            return job;
+          }),
+          encode: SchemaGetter.forbidden(() => 'Job sharing is decode-only'),
+        }),
+      );
+      const schema = invalidAsNull(
+        Schema.Struct({
+          ...Workflow.fields,
+          jobs: field(
+            Schema.Record(Schema.String, Schema.mutableKey(sharedJob)),
+          ),
+        }),
+      );
+      return Schema.decodeUnknownSync(schema)(source);
+    }),
+    encode: SchemaGetter.forbidden(() => 'Workflow sharing is decode-only'),
+  }),
+);
 
 export const REQUIRED_SCRIPTS = {
   format: 'bun --bun oxfmt --write .',
