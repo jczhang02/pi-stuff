@@ -7,6 +7,7 @@
 English is normative. Maintain documents under `docs/` and the existing root document pairs in English/Chinese in the same PR, with matching filenames, links both ways and the same meaning. Current pairs are:
 
 - `README.md` / `docs/i18n/zh-CN/README.md`.
+- `design.md` / `docs/i18n/zh-CN/design.md`.
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
 - `docs/research/` / [Chinese research references](docs/i18n/zh-CN/research/).
