@@ -64,6 +64,7 @@
 
 - 开始/恢复任务、提交、推送、交接或清理: [任务流程](agents/workflow.md).
 - 源码、测试、依赖或检查变更/审查: [工程规则](agents/engineering.md).
+- 终端 E2E 或交互式 TUI 自动化: [tuistory skill](../../../.agents/skills/tuistory/SKILL.md) 和 [终端 E2E](quality-assurance.md#终端-e2e).
 - 测试组织、环境选择或验证/CI 政策: [质量保证](quality-assurance.md).
 - 创建、读取、更新、评论或关闭任务: [任务跟踪](agents/issue-tracker.md). 设置/认证/存储变更还需[Beads 设置](agents/beads.md).
 - 分流/标签变更: [分流标签](agents/triage-labels.md).

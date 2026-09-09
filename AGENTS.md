@@ -64,6 +64,7 @@ The requirements above apply without opening these references. A file path or hy
 
 - Task start/resumption, commit, push, handoff or cleanup: `docs/agents/workflow.md`.
 - Source/tests/dependencies/check changes or review: `docs/agents/engineering.md`.
+- Terminal E2E or interactive TUI automation: `.agents/skills/tuistory/SKILL.md` and `docs/quality-assurance.md#terminal-e2e`.
 - Test organization, environment selection or verification/CI policy: `docs/quality-assurance.md`.
 - Task creation/read/update/comment/closure: `docs/agents/issue-tracker.md`; setup/authentication/storage changes also require `docs/agents/beads.md`.
 - Triage/label changes: `docs/agents/triage-labels.md`.
