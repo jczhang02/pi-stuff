@@ -1,5 +1,7 @@
 # Triage labels
 
+[Chinese reading reference](../i18n/zh-CN/agents/triage-labels.md). English is authoritative; the translation is for human readers.
+
 | Skill role        | Repository label  | Meaning                                                            |
 | ----------------- | ----------------- | ------------------------------------------------------------------ |
 | `needs-triage`    | `needs-triage`    | Waiting for maintainer assessment                                  |

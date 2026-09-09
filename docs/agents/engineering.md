@@ -1,5 +1,7 @@
 # Engineering rules
 
+[Chinese reading reference](../i18n/zh-CN/agents/engineering.md). English is authoritative; the translation is for human readers.
+
 These rules cover owned source and tests, including repository automation. The [Effect and quality decision](../adr/0002-effect-quality.md) extends the TypeScript/Bun decision. This is the shared engineering reference; agent rules and skills remain English-only.
 
 ## Types and boundaries

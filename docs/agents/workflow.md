@@ -1,5 +1,7 @@
 # Task workflow
 
+[Chinese reading reference](../i18n/zh-CN/agents/workflow.md). English is authoritative; the translation is for human readers.
+
 Read this before starting or resuming work, committing, pushing, handing off, or cleaning up a worktree.
 
 ## Git workflow

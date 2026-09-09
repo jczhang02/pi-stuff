@@ -1,5 +1,7 @@
 # Repository governance recommendations
 
+[Chinese reading reference](../i18n/zh-CN/research/repository-governance.md). This English record is the translation source; both versions are historical research, not operational policy.
+
 Status: historical research, not operational policy. The maintainer subsequently chose a single-maintainer, multi-agent workflow. Follow `../../AGENTS.md` and `../../CONTRIBUTING.md` for the adopted rules; the baseline below predates implementation. No required reviewer, CODEOWNERS file, merge queue, or team governance process is needed.
 
 ## Current repository
