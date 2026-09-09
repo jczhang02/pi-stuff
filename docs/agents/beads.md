@@ -8,7 +8,7 @@ This clone uses Beads v1.2.1 with embedded Dolt. The workspace is `.beads/` in t
 
 Worktrees discover the same workspace through Git's common directory. Run `bd where` from each worktree to confirm this before writing tasks. Do not initialize a separate database in each worktree or copy live database files between them.
 
-Concurrent agents should use distinct `bd --actor <actor-id>` identities when claiming and updating work. Record the actor in the handoff; a shared Git author name is not a distinct agent identity. Handle claim failures rather than overwriting another agent's assignment.
+Use the actual session identity for `bd --actor` when claiming and updating work, following [session ownership](issue-tracker.md#session-ownership). The assignee records the current execution-owner session; the actor records who performed an operation. Handle claim failures rather than overwriting another session's assignment. In `bd 1.2.1`, `bd update --session` is a Claude Code closure field, not a general owner-session field.
 
 Database files and local configuration stay out of Git. The current settings are:
 
@@ -17,11 +17,11 @@ Database files and local configuration stay out of Git. The current settings are
 | Issue prefix        | `pi-stuff`           | Stable task identifiers                         |
 | `github.repository` | `jczhang02/pi-stuff` | Public collaboration target                     |
 | `dolt.local-only`   | `true`               | No full-database remote publication             |
-| `backup.enabled`    | `false`              | A backup destination has not been approved      |
+| `backup.enabled`    | `false`              | The maintainer declined backup setup            |
 | `export.auto`       | `false`              | No automatic JSONL export                       |
 | `no-git-ops`        | `true`               | Beads does not own the source-code Git workflow |
 
-There is no Dolt remote or configured backup. GitHub issue synchronization is not a database backup: it does not preserve internal comments, the dependency graph, or complete history. Configure and test a Dolt-native backup before relying on this database as the only durable copy of important work.
+There is no Dolt remote or configured backup. GitHub issue synchronization does not preserve internal comments, the dependency graph, or complete database history. The maintainer declined backup setup; it is not a prerequisite to repository work.
 
 The `no-git-ops` setting affects generated Beads guidance. It does not cancel the commit/push requirements in `AGENTS.md`. Do not run broad `bd doctor --fix`, destructive reinitialization, or automatic editor setup to remove intentional differences from upstream defaults.
 

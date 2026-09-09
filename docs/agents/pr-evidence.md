@@ -8,6 +8,8 @@ A PR should let the maintainer judge impact, decisions and evidence before readi
 
 Compare the complete base-to-head diff against the task's acceptance criteria. Explain what changes and what stays unchanged, relevant tradeoffs, actual verification, risks and unresolved concerns. Link durable decisions rather than duplicating them. Remove sensitive information from evidence and refresh affected claims after material changes.
 
+Apply the [PR scope, dependencies and rollback rules](workflow.md#pr-scope-dependencies-and-rollback): related work identifies prerequisite PRs and merge order; the risk section explains the applicable revert or data-recovery path. Link the task's current owner-session record and identify reviewer sessions in review evidence.
+
 ## Required sections
 
 Use the five sections in `.github/pull_request_template.md` as a human review outline, not a machine-parsed contract:
