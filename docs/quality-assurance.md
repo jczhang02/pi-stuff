@@ -36,7 +36,7 @@ Use `tuistory` as the terminal driver and Bun test as the runner for terminal E2
 Keep tests focused on owned user-visible behavior:
 
 - Launch each test with isolated working, settings and session directories. For Pi, set `PI_CODING_AGENT_DIR` and disable unrelated extensions, skills and other auto-loaded resources. Control the test runner's environment too: child-process options can inherit or merge parent variables.
-- Wait for a distinctive current-screen condition with a bounded timeout. Check the full relevant text, including Chinese and emoji when present. A substring left in prior output does not prove that a dialog opened. Resize while the affected UI is open when layout is part of the requirement.
+- Wait for a distinctive state with a bounded timeout. In tuistory 0.11.0, `text()` and `waitForText()` include scrollback, so a match can come from prior output. For visible-screen assertions, use a `text({waitFor, timeout})` predicate that reads `getTerminalData()`, takes the last `rows` entries of `lines`, and joins each row's span text. Check the full relevant text, including Chinese and emoji when present, and a distinct result for each action. Resize while the affected UI is open when layout is part of the requirement.
 - Stop the process owned by the test, wait for exit with a timeout, and always close its terminal in teardown, including on assertion or exit-wait failure. Preserve useful screen output on failure and let unexpected failures reach the test runner. Do not close another session's shared CLI terminal.
 - Add only the setup and lifecycle helpers needed by real cases. Reuse the framework's input, screen and waiting APIs instead of building another terminal-testing layer.
 
