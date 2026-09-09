@@ -47,6 +47,7 @@ There is no Pi Stuff extension to install yet. To install development dependenci
 | -------------------------------------------------------------- | ----------------------------------------------------------- |
 | [Contributing](CONTRIBUTING.md)                                | Issues, focused changes, verification, and pull requests    |
 | [Agent instructions](AGENTS.md)                                | Agent writing and Git workflow requirements                 |
+| [TUI design](design.md)                                        | Pi themes, controls, narrow terminals and feedback          |
 | [Task workflow](docs/agents/workflow.md)                       | PR scope, prerequisites, rollback, Git and worktrees        |
 | [Issue tracker workflow](docs/agents/issue-tracker.md)         | GitHub and Beads responsibilities, sync, and public updates |
 | [Beads setup](docs/agents/beads.md)                            | Local database, shared worktrees, skill, and authentication |

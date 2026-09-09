@@ -7,6 +7,7 @@
 以英文版为准. docs 下的文档及已有根文档对照在同一 PR 中维护中英版本, 文件名相同、双向链接且含义一致. 当前文档对为:
 
 - `README.md` / `docs/i18n/zh-CN/README.md`.
+- `design.md` / `docs/i18n/zh-CN/design.md`.
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
 - `docs/research/` / [中文研究对照](research/).
