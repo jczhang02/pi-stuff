@@ -9,6 +9,7 @@
     "lint": "bun --bun oxlint --deny-warnings --disable-nested-config",
     "typecheck": "bun --bun tsc --noEmit",
     "hooks:install": "bun --bun husky",
+    "tui": "bun --bun tuistory",
     "check": "bun run format:check && bun run lint && bun run typecheck"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "husky": "9.1.7",
     "oxfmt": "0.67.0",
     "oxlint": "1.82.0",
+    "tuistory": "0.11.0",
     "typescript": "7.0.2"
   },
   "engines": {

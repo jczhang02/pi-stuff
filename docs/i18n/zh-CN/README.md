@@ -45,7 +45,7 @@ cd pi-stuff
 | 文档                                              | 用途                                    |
 | ------------------------------------------------- | --------------------------------------- |
 | [贡献指南](CONTRIBUTING.md)                       | Issue、聚焦的变更、验证与 PR            |
-| [代理指令](agent-instructions.md)                 | 代理写作与 Git 工作流要求的中文阅读参考 |
+| [代理指令](AGENTS.md)                             | 代理写作与 Git 工作流要求的中文阅读参考 |
 | [任务工作流](agents/workflow.md)                  | PR 范围、前置依赖、回退、Git 与工作树   |
 | [Issue 跟踪流程](agents/issue-tracker.md)         | GitHub 与 Beads 的分工、同步和公开更新  |
 | [Beads 设置](agents/beads.md)                     | 本地数据库、共享工作树、技能与认证      |

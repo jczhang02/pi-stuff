@@ -4,13 +4,13 @@
 
 ## Language and presentation
 
-English is normative. Maintain documents under `docs/` and the existing root document pairs in English/Chinese in the same PR, with links both ways and the same meaning. Current pairs are:
+English is normative. Maintain documents under `docs/` and the existing root document pairs in English/Chinese in the same PR, with matching filenames, links both ways and the same meaning. Current pairs are:
 
 - `README.md` / `docs/i18n/zh-CN/README.md`.
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
 - `docs/research/` / [Chinese research references](docs/i18n/zh-CN/research/).
-- Root `AGENTS.md` / [Chinese reading reference](docs/i18n/zh-CN/agent-instructions.md).
+- Root `AGENTS.md` / [Chinese reading reference](docs/i18n/zh-CN/AGENTS.md).
 - `docs/agents/` / [Chinese reading references](docs/i18n/zh-CN/agents/).
 
 Keep Chinese documentation under `docs/i18n/zh-CN/`. Agent-facing instructions and skills stay English-only. Root `AGENTS.md` and every document in `docs/agents/` have human-readable Chinese counterparts, updated in the same PR with reciprocal links; these are not separate agent instruction sources. Use Chinese in conversation.

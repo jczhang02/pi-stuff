@@ -29,6 +29,21 @@ Classify a test by the boundary and purpose it verifies, not by process count, t
 
 Offline and isolated temporary settings, directories, and sessions are the default. Use deterministic providers and local external fixtures when they answer the question. Select live accounts or models separately and name that choice. A missing required environment is unverified or a failure; it does not pass by omission. Offline real-Pi runs through RPC or PTY can provide end-to-end or acceptance evidence with a fixture provider; the tool does not decide the test level, and a live model is not a universal requirement.
 
+## Terminal E2E
+
+Use `tuistory` as the terminal driver and Bun test as the runner for terminal E2E. The development dependency is pinned in `package.json`. Use its `launchTerminal` API for programmatic tests; the CLI is available through `bun run tui` for interactive inspection. Read the [upstream skill](../.agents/skills/tuistory/SKILL.md) before using either. Run `bun run tui --help` for the full CLI reference, and check the skill's current upstream README against the installed version. Use the repository dependency rather than a globally installed or freshly fetched version.
+
+Keep tests focused on owned user-visible behavior:
+
+- Launch each test with isolated working, settings and session directories. For Pi, set `PI_CODING_AGENT_DIR` and disable unrelated extensions, skills and other auto-loaded resources. Control the test runner's environment too: child-process options can inherit or merge parent variables.
+- Wait for a distinctive state with a bounded timeout. In tuistory 0.11.0, `text()` and `waitForText()` include scrollback, so a match can come from prior output. For visible-screen assertions, use a `text({waitFor, timeout})` predicate that reads `getTerminalData()`, takes the last `rows` entries of `lines`, and joins each row's span text. Check the full relevant text, including Chinese and emoji when present, and a distinct result for each action. Resize while the affected UI is open when layout is part of the requirement.
+- Stop the process owned by the test, wait for exit with a timeout, and always close its terminal in teardown, including on assertion or exit-wait failure. Preserve useful screen output on failure and let unexpected failures reach the test runner. Do not close another session's shared CLI terminal.
+- Add only the setup and lifecycle helpers needed by real cases. Reuse the framework's input, screen and waiting APIs instead of building another terminal-testing layer.
+
+The first executable feature should introduce its applicable tests and CI entry under the execution policy below. There is no product suite or development server to wrap yet; the skill's dev-server setup applies when a real long-running development command exists.
+
+The [selection experiment](https://github.com/jczhang02/pi-stuff/issues/29) used a temporary dialog extension in real Pi 0.85.1 on Linux with Bun 1.4.0. Tuistory 0.11.0 passed full Chinese/emoji text checks, selection, Escape cancellation, resizing with the dialog open, and an expected missing-text timeout. The competing `@microsoft/tui-test@0.1.0-beta.3` locator timed out on text visible in its screen dump; the cause was not diagnosed. This supports the tool choice. Product acceptance, hosted CI, other operating systems and live-model workflows remain unverified.
+
 ## Execution policy
 
 Keep PR evidence small and relevant. A small suite may run in full. Selective execution or sharding needs measured cost or scope evidence; do not introduce it speculatively. Provide a manual full entry backed by the real suite when a suite exists. Add scheduled or nightly execution only when real cost or selective PR runs justify it; no automatic scheduler is introduced by this baseline.

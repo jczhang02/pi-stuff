@@ -2,7 +2,7 @@
 
 [English](../../../research/repository-governance.md) · 英文记录为翻译来源, 两种版本均是历史研究, 不是执行政策.
 
-状态: 历史研究, 非操作规则. 维护者随后选择了单维护者、多代理工作流. 现行要求以根 `AGENTS.md` 和 `CONTRIBUTING.md` 为准, 可阅读[代理指令中文对照](../agent-instructions.md)和[贡献指南](../CONTRIBUTING.md). 下述基线早于实施, 不需要强制第二审查者、CODEOWNERS、合并队列或团队治理流程.
+状态: 历史研究, 非操作规则. 维护者随后选择了单维护者、多代理工作流. 现行要求以根 `AGENTS.md` 和 `CONTRIBUTING.md` 为准, 可阅读[代理指令中文对照](../AGENTS.md)和[贡献指南](../CONTRIBUTING.md). 下述基线早于实施, 不需要强制第二审查者、CODEOWNERS、合并队列或团队治理流程.
 
 ## 当时的仓库
 
