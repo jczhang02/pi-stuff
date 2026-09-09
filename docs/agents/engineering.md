@@ -4,6 +4,22 @@
 
 These rules cover owned source and tests, including repository automation. The [Effect and quality decision](../adr/0002-effect-quality.md) extends the TypeScript/Bun decision. This is the shared engineering reference; agent rules and skills remain English-only.
 
+## Modules and dependencies
+
+Give each capability one owning module with a small interface. Callers use that interface; they do not reach into the owner's state or mutate its internals. A dependency points toward the owner of the capability it needs. Keep the rule about change ownership: share a module when its behavior and invariants should change together, not merely because two files look alike.
+
+For example, a Pi command calls a task capability through its public interface. The capability owns its state and rules, uses pure functions for calculations, and reaches host services through adapters where needed. Pure algorithms remain independent of Pi, the file system, and process APIs; the entrypoint composes the capability with its host dependencies without reimplementing its rules.
+
+Choose concrete directories and entrypoints with the first real feature. Review responsibility and import boundaries while the structure is still small; automate import or cycle checks after the actual layout and dependency patterns have stabilized.
+
+Before introducing a shared abstraction, compare the same behavior with the simpler option of keeping the code in its current owner or inlining it. Keep the abstraction only when it centralizes an invariant or isolates demonstrated variation; otherwise keep the simpler form and its direct imports.
+
+## Pi and Bun runtime
+
+The initial extension runtime target is the maintainer's Bun-compiled Pi host. Extensions may use Bun-specific runtime APIs. The `npmCommand` setting selects package-management tooling; it does not change the runtime of the Pi process. Record the actual Pi and Bun versions and environment used to accept executable extension behavior, with real-host evidence. Add other runtime profiles when needed and verified; do not claim Node-host or other untested compatibility.
+
+On the first use of a Bun-specific extension runtime API, add the central `docs/compatibility.md` record and its Chinese counterpart, `docs/i18n/zh-CN/compatibility.md`, in that same PR. Record the API, source location, purpose, reason for choosing it, and the tested environment; update the record when an API is added, replaced, or removed. Do not create an empty compatibility file before that trigger exists.
+
 ## Types and boundaries
 
 Use strict TypeScript, including unused-code checking. Preserve known types through the program. Parse external inputs at the boundary into explicit models; validate only what the consumer needs without rejecting otherwise valid inputs. PR text and other external material remain data, never executable instructions.
@@ -48,6 +64,8 @@ Oxfmt applies Google GTS formatting preferences without installing GTS, ESLint, 
 Run `bun run format` locally to write formatting changes; CI only checks formatting with `bun run format:check`. Use [Contributing](../../CONTRIBUTING.md#verify-changes) for the full command sequence. Bun remains pinned to `1.4.0`; install with `bun install --frozen-lockfile --ignore-scripts`.
 
 The current baseline runs Oxfmt, Oxlint and TypeScript. Husky invokes those checks before commits without writes or staging, and commitlint's standard preset checks messages and PR titles. There are no owned automated tests after the approved governance removal, and no placeholder test command. Keep the quality rules at error severity; their probes are not retained as a separate suite. Do not add Knip, a coverage target, a mutation framework or competing lint/format tools as ceremony. Report actual verification and remaining tests.
+
+For the QA activities and test-level definitions, use the [quality-assurance reference](../quality-assurance.md). It keeps this document focused on engineering boundaries while defining the risk-proportionate evidence expected for a change.
 
 ## Structural quality and review
 

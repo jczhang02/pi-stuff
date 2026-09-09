@@ -16,6 +16,16 @@ GitHub Issues 保存需求、验收条件、公开进展、决策和 PR 链接. 
 
 技能要求发布到 Issue 跟踪器时, 发布 GitHub Issue 并建立 Beads 关联. 技能要求读取相关任务时, 阅读 GitHub 正文、标签、评论及对应 Beads 上下文.
 
+## 会话归属
+
+由代理执行的任务只有一个当前主责 session, 整个任务可以涉及多个会话. 用平台和稳定 session ID 标识会话, 如 `pi:<session-id>`, 并附可用的会话链接或定位信息. 仅有模型名或展示昵称不能定位执行上下文.
+
+Beads assignee 字段保存当前负责人身份. 在任务元数据或笔记中保留平台、session ID 和定位信息；其他会话按实际角色关联, 如调查、实现或独立审查. 子代理保留父 session 和工具提供的子代理标识. 无法取得稳定 session ID 时, 记录这一限制及可用定位信息, 不编造 ID. 会话引用用于定位对话；Beads 中仍需保留可用于继续工作的发现和剩余事项.
+
+执行更新的会话使用 `bd --actor <platform:session-id>`. actor 是该次操作的记录者, assignee 是交付负责人. 审查者记录自己的身份, 不替换执行负责人. 在 GitHub Issue 正文或进展评论中体现当前负责人和相关交接；GitHub 账号 assignee 不代表 agent session. 发布有用的会话引用, 不暴露私有完整对话或个人文件系统路径.
+
+其他会话接手时, 检查既有认领、更新当前 assignee, 并保留前后 session 身份、交接原因、已完成工作和下一步. 工具支持时使用带前置条件的重新分配, 先处理仍有效的认领, 不覆盖他人归属. 恢复同一个 session 时沿用原身份. 例如, 一个任务可以由 session B 当前负责、session A 为前任负责人、session C 负责独立审查.
+
 ## 同步前
 
 阅读 [Beads 设置](beads.md), 了解本地工作区、共享工作树和临时 GitHub 认证. 开始或恢复上下文时加载官方 beads 技能并运行 `bd prime`.
@@ -43,7 +53,7 @@ bd github sync --dry-run
 1. 开始或恢复任务时同步已批准范围. 工作区全部内容均获准发布时, 运行 `bd github sync`.
 2. 用 `gh issue view <number> --repo jczhang02/pi-stuff --comments` 单独阅读 GitHub 讨论, 同时检查当前标签.
 3. 将新需求、反馈和决策概括进 Beads, 保留来源链接, 不在每次会话重复抄写相同反馈.
-4. 认领前检查阻塞和归属. 在 Beads 记录认领、执行状态、发现和下一步. 分流标签不替代执行状态.
+4. 认领前检查阻塞和归属. 使用实际 session 身份认领, 在 Beads 记录执行状态、发现和下一步. 分流标签不替代执行状态.
 5. 修改任务字段后运行 `bd github push <bead-id>` 并核验结果. 里程碑评论按下方规则另行发布.
 6. 结束会话前再次同步已批准范围, 记录剩余工作和待发布事项的 Beads 交接.
 

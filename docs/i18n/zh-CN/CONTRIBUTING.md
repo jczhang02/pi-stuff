@@ -29,6 +29,8 @@ Issue 和 PR 标题仅用英文. 新增或实质更新的描述、评论、审�
 
 认领前阅读 Issue、讨论和执行上下文. 每个任务只有一位执行负责人、一个分支及一个 `.worktrees/` 下的工作树. 非简单变更先确认范围和验收条件, 保留其他代理的工作及无关本地修改.
 
+代理执行的任务按[会话归属](agents/issue-tracker.md#会话归属)记录实际主责 session、协作者和交接. 每个 PR 聚焦一个完整目标, 包含必要测试和文档. 前置 PR、合并顺序及与风险相称的恢复证据遵循 [PR 范围、依赖与回退](agents/workflow.md#pr-范围依赖与回退).
+
 及时提交已验证的完整变更单元, 推送任务分支并开 PR, 不直接推送 main. 代理遵守 [AGENTS.md](../../../AGENTS.md)、Sepia 及[跟踪流程](../../agents/issue-tracker.md), 其他贡献者无需安装 Beads.
 
 ## 提交规范
@@ -81,6 +83,8 @@ Effect `4.0.0-rc.112` 仍用于边界解码、类型化错误和必要 I/O, 纯�
 
 作者和审查者直接核查受影响的 Markdown 链接、模板、标签、依赖和 CI 安全设置, 不再使用自研仓库政策或 PR 正文验证器. 发布证据前移除秘密和个人信息.
 
+按[质量保证政策](quality-assurance.md)选择测试层级、隔离环境和必要验证. 分类和未来 CI 步骤不代表产品测试已经存在.
+
 ## 创建 PR
 
 使用 `.github/pull_request_template.md`, 遵循 [PR 证据要求](../../agents/pr-evidence.md). 说明行为/影响、方案、实际验证、风险/审查和关联任务, 先英文后中文. 这些是人工审查要求, 不是 Markdown 解析契约. 简单变更保持简短, 如实说明未验证行为.
@@ -103,7 +107,7 @@ squash 使用已验证 PR 标题, 合并后远端分支自动删除. CI 通过�
 
 `.github/rulesets/main.json` 和 `.github/labels.json` 记录设置, 不自动应用. 远端变更须授权并实际核验. Actions 保持只读令牌、GitHub 托管 runner、固定 SHA, 不引入特权触发器. Dependabot 每周检查 Actions 和 Bun 依赖, 更新仍需要检查及合并授权.
 
-自有内容使用 [MIT](../../../LICENSE), 保留第三方声明. 支持的 Pi 宿主版本和发布政策仍未确定.
+自有内容使用 [MIT](../../../LICENSE), 保留第三方声明. 初始扩展目标为维护者使用的 Bun 编译版 Pi, 遵循[运行时兼容政策](agents/engineering.md#pi-与-bun-运行时). 支持版本须有实际宿主验收证据后再公布. 发布政策仍未确定.
 
 ## 模板来源
 

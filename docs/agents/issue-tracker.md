@@ -16,6 +16,16 @@ For an existing GitHub issue, pull it into Beads. For a new Beads task intended 
 
 When a skill says "publish to the issue tracker," publish a GitHub issue and establish its Beads association. When it says "fetch the relevant ticket," read the GitHub body, labels, comments, and associated Beads context.
 
+## Session ownership
+
+An agent-owned task has one current execution-owner session and may involve several sessions over its lifetime. Identify a session with its platform and stable session ID, such as `pi:<session-id>`, plus an available conversation link or locator. A model name or display nickname alone cannot identify the execution context.
+
+Store the current owner identity in the Beads assignee field. Keep its platform, session ID and locator in task metadata or notes; associate other sessions with their actual roles, such as investigation, implementation or independent review. For a child agent, retain the parent session and the tool-provided child identifier. If a stable session ID is unavailable, record that limitation and the available locator instead of inventing an ID. Session references identify the conversation; retain the actionable findings and remaining work in Beads as well.
+
+Use `bd --actor <platform:session-id>` for the session performing an update. The actor is the writer of that operation; the assignee owns delivery. A reviewer records their own identity without replacing the execution owner. Reflect the current owner and relevant handoffs in the GitHub issue body or progress comments; GitHub account assignees do not represent agent sessions. Publish useful session references without exposing private transcripts or personal filesystem paths.
+
+When another session takes over, check the existing claim, update the current assignee, and retain the previous and new session identities, reason, completed work and next steps. Use guarded reassignment when supported and resolve live claims rather than overwriting them. Resuming the same session keeps the same identity. For example, a task can have session B as its current owner, session A as its previous owner, and session C as its independent reviewer.
+
 ## Before using sync
 
 Read `docs/agents/beads.md` for the local workspace, shared-worktree behavior, and transient GitHub authentication. Load the official `beads` skill and run `bd prime` when starting or recovering task context.
@@ -43,7 +53,7 @@ Inspect the proposed changes before proceeding. Full bidirectional sync can publ
 1. At task start or resumption, synchronize the approved scope. For a workspace whose full contents are approved for publication, run `bd github sync`.
 2. Read GitHub discussion separately with `gh issue view <number> --repo jczhang02/pi-stuff --comments`. Check the current labels as well.
 3. Summarize new requirements, feedback, and decisions in Beads, preserving source links. Avoid copying the same feedback again on each session.
-4. Before claiming work, check Beads blockers and ownership. Record the claim, execution state, findings, and next steps in Beads. Triage labels do not replace execution state.
+4. Before claiming work, check Beads blockers and ownership. Claim using the actual session identity and record execution state, findings, and next steps in Beads. Triage labels do not replace execution state.
 5. After task-field changes, run `bd github push <bead-id>` and verify the result. Publish milestone comments separately as described below.
 6. Before ending the session, synchronize the approved scope again and record a Beads handoff with remaining work and pending publication.
 

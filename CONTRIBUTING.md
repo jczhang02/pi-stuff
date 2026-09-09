@@ -27,7 +27,9 @@ Search existing issues and choose the matching template: bug reports need reprod
 
 ## Work on a task
 
-Read the issue, discussion and execution context before claiming it. One task has one execution owner, one branch and one worktree under `.worktrees/`. Agree on scope and acceptance criteria before nontrivial changes. Preserve other agents' work and unrelated local changes.
+Read the issue, discussion and execution context before claiming it. One task has one execution owner, one branch and one worktree under `.worktrees/`. For agent-owned work, identify the actual owner session and retain collaborators and handoffs under [session ownership](docs/agents/issue-tracker.md#session-ownership). Agree on scope and acceptance criteria before nontrivial changes. Preserve other agents' work and unrelated local changes.
+
+Keep each PR focused on one complete outcome with its necessary tests and documentation. Follow [PR scope, dependencies and rollback](docs/agents/workflow.md#pr-scope-dependencies-and-rollback) for prerequisite PRs, merge order and proportionate recovery evidence.
 
 Commit verified units promptly, push the task branch and open a PR rather than pushing to `main`. Agents follow `AGENTS.md`, including Sepia, and the [tracker workflow](docs/agents/issue-tracker.md). Other contributors need not install Beads.
 
@@ -81,6 +83,8 @@ There are currently no repository-owned automated tests or `test` script. The re
 
 Authors and reviewers check affected Markdown links, templates, labels, dependency changes and CI security settings directly. There is no custom repository-policy or PR-body validator. Remove secrets and personal information before publishing evidence.
 
+Use the [quality assurance policy](docs/quality-assurance.md) to select test levels, isolated environments and necessary verification. Its classification and future CI steps are not claims that product tests already exist.
+
 ## Open a pull request
 
 Use `.github/pull_request_template.md` and follow [PR evidence](docs/agents/pr-evidence.md). Explain behavior/impact, approach, actual verification, risk/review and related work, with English then Chinese. These are human review requirements, not a Markdown parsing contract. Keep trivial changes brief and report untested behavior rather than inventing results.
@@ -103,7 +107,7 @@ Report acceptance results, actual verification, remaining tests, pushed commit, 
 
 `.github/rulesets/main.json` and `.github/labels.json` record settings but do not apply themselves. Remote changes need authorization and live verification. Actions keep read-only tokens, GitHub-hosted runners and SHA-pinned actions; no privileged triggers are introduced. Dependabot checks Actions and Bun dependencies weekly. Updates still need checks and merge authorization.
 
-Project-owned work uses [MIT](LICENSE); retain all third-party notices. Supported Pi host versions and release policy remain undecided.
+Project-owned work uses [MIT](LICENSE); retain all third-party notices. The initial extension target is the maintainer's Bun-compiled Pi, under the [runtime policy](docs/agents/engineering.md#pi-and-bun-runtime). Publish supported versions only with actual host acceptance evidence. Release policy remains undecided.
 
 ## Template sources
 

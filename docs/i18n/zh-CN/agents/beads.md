@@ -8,7 +8,7 @@
 
 工作树通过 Git 公共目录发现同一工作区. 在每个工作树写任务前运行 `bd where` 确认. 不要为每个工作树单独初始化数据库, 也不要在工作树之间复制正在使用的数据库文件.
 
-并发代理认领和更新任务时, 使用不同的 `bd --actor <actor-id>` 身份, 并在交接中记录. 共享 Git 作者名不能区分代理身份. 认领失败时处理冲突, 不覆盖其他代理的分配.
+认领和更新任务时, 按[会话归属](issue-tracker.md#会话归属)使用真实会话身份作为 `bd --actor`. assignee 记录当前执行负责会话, actor 记录实际执行操作的会话. 认领失败时处理冲突, 不覆盖其他会话的分配. 在 `bd 1.2.1` 中, `bd update --session` 是 Claude Code 的关闭会话字段, 不是通用的负责会话字段.
 
 数据库文件和本地配置不进入 Git. 当前设置如下:
 
@@ -17,11 +17,11 @@
 | Issue 前缀          | `pi-stuff`           | 稳定任务标识符              |
 | `github.repository` | `jczhang02/pi-stuff` | 公开协作目标                |
 | `dolt.local-only`   | `true`               | 不向远端发布完整数据库      |
-| `backup.enabled`    | `false`              | 尚未批准备份目标            |
+| `backup.enabled`    | `false`              | 维护者决定不设置备份        |
 | `export.auto`       | `false`              | 不自动导出 JSONL            |
 | `no-git-ops`        | `true`               | Beads 不负责源码 Git 工作流 |
 
-未配置 Dolt remote 或备份. GitHub Issue 同步不是数据库备份, 不保留内部评论、依赖图或完整历史. 将数据库作为重要工作的唯一持久副本前, 先配置并验证 Dolt 原生备份.
+未配置 Dolt remote 或备份. GitHub Issue 同步不保留内部评论、依赖图或完整数据库历史. 维护者决定不设置备份; 备份不是仓库工作的前置条件.
 
 `no-git-ops` 影响 Beads 生成的指引, 不取消 `AGENTS.md` 的提交和推送要求. 不要通过宽泛的 `bd doctor --fix`、破坏性重新初始化或自动编辑器设置, 抹掉本仓库有意保留的上游默认值差异.
 
