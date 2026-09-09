@@ -4,13 +4,13 @@
 
 ## 语言与呈现
 
-以英文版为准. docs 下的文档及已有根文档对照在同一 PR 中维护中英版本, 双向链接且含义一致. 当前文档对为:
+以英文版为准. docs 下的文档及已有根文档对照在同一 PR 中维护中英版本, 文件名相同、双向链接且含义一致. 当前文档对为:
 
 - `README.md` / `docs/i18n/zh-CN/README.md`.
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
 - `docs/research/` / [中文研究对照](research/).
-- 根 `AGENTS.md` / [中文阅读对照](agent-instructions.md).
+- 根 `AGENTS.md` / [中文阅读对照](AGENTS.md).
 - `docs/agents/` / [中文阅读对照目录](agents/).
 
 中文文档放在 `docs/i18n/zh-CN/`, 代理执行指令和技能仅用英文. 根 `AGENTS.md` 和 `docs/agents/` 中的每份文档均配有中文阅读对照, 在同一 PR 中同步更新并双向链接, 不作为另一套代理指令来源. 对话使用中文.
