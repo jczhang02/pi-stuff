@@ -16,7 +16,7 @@
 
 这不是全局排名。`nicobailon/pi-subagents` 是最强的 standalone/recovery 参照：它有 detached runner、持久 artifact、父 session reload 恢复、使用真实 Pi binary、SDK 和确定性 provider 的 Linux standalone 测试矩阵，并明确区分结果完成与进程退出。代价是范围很宽，missions、workflow、scheduler、worktree、external jobs、intercom 和 TUI 与有效核心交织。如果持久后台执行和恢复是首要目标，nicobailon 是可信的替代起点，也可能是更值得先研究的来源。
 
-`goofansu/pi-subagent` 是最强的同 Effect 参照。它的 typed lifecycle 和 Pi backend 对选择进程内、session-scoped runtime 很有价值，但它是约 2.5 万行的双 backend runtime，ResultStore 只在内存中工作。不能因为 Effect 仍是 release candidate 就排除它；真正的问题是迁移范围，以及缺少目标主机 standalone gate。`j0k3r` 是中等规模、带持久历史的进程内替代；`everyx` 是简洁的持久 RPC 设计，但 peer 范围排除 Pi 0.85.1，扩展继承和 nested delegation 也很宽；`tintinweb` 是能力完整的进程内 manager，但 workflow/worktree/UI 面很大，stop 不是 LLM 工具；`mjakl` 提供前台 RPC 参照，`aefreedman` 提供前台 JSON-print 参照，却没有真正的后台任务。官方示例和 HamdiMaz 说明了简单 foreground 基线；andrea-tomassi 和 giuseppecrj 有参考价值，但解决的是明显不同的问题。
+`goofansu/pi-subagent` 是最强的同 Effect 参照。它的 typed lifecycle 和 Pi backend 对选择进程内、session-scoped runtime 很有价值，但它是包含 25,644 个物理源码行（16,351 行代码）的双 backend runtime，ResultStore 只在内存中工作。不能因为 Effect 仍是 release candidate 就排除它；真正的问题是迁移范围，以及缺少目标主机 standalone gate。`j0k3r` 是中等规模、带持久历史的进程内替代；`everyx` 是简洁的持久 RPC 设计，但 peer 范围排除 Pi 0.85.1，扩展继承和 nested delegation 也很宽；`tintinweb` 是能力完整的进程内 manager，但 workflow/worktree/UI 面很大，stop 不是 LLM 工具；`mjakl` 提供前台 RPC 参照，`aefreedman` 提供前台 JSON-print 参照，却没有真正的后台任务。官方示例和 HamdiMaz 说明了简单 foreground 基线；andrea-tomassi 和 giuseppecrj 有参考价值，但解决的是明显不同的问题。
 
 后台执行与持久化是两个维度。前台封装会让父工具调用等待；进程内后台管理器返回任务 ID 后，在宿主内继续运行独立 Pi session；后台 RPC 管理器则让独立子进程继续运行；detached SDK runner 还单独管理运行进程和落盘状态。goofansu、tintinweb、j0k3r 属于进程内后台，everyx、ogulcancelik 属于后台 RPC，nicobailon 使用独立 runner。它们都支持后台执行，区别在于退出、恢复和资源管理。mjakl、aefreedman、HamdiMaz 与官方示例均等待子任务完成才结束父工具调用。
 
@@ -40,6 +40,33 @@
 | Official Pi    | 研究中的官方上游示例；不是候选包                             | [`12f5933`](https://github.com/earendil-works/pi/blob/12f59336afa67af6e996cdb6f220f0bf4cbd571a/packages/coding-agent/examples/extensions/subagent/index.ts) | 简单 foreground JSON child                                   | 官方示例基线，不是后台验收                                                                                                                                                                         |
 
 源码快照与 npm 发布物不一定相同。registry 分别记录 [mjakl 3.0.1](https://registry.npmjs.org/@mjakl/pi-subagent/3.0.1)、[tintinweb 0.19.0](https://registry.npmjs.org/@tintinweb/pi-subagents/0.19.0) 和 [j0k3r 1.5.15](https://registry.npmjs.org/pi-subagents-j0k3r/1.5.15)。前两者的发布 gitHead 与研究源码不同；j0k3r 的 gitHead 一致，但源码版本字段不同。Pi 支持 Git 与 npm 两种包来源，因此 npm 查询限制不影响 goofansu 作为候选。[官方包来源说明](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/docs/packages.md#L1-L4)。
+
+## 实现规模与维护范围
+
+以下数据由本机 cloc 2.00 对上表固定源码提交统计。**代码行**去除注释和空行；**物理行**保留两者。文件数和最大文件只统计实现部分。静态类型和源码中内嵌的字符串计入代码。它们衡量需要阅读、修改的源码规模，不等同于圈复杂度、代码质量或已经实测的 fork 工时。
+
+| 候选           | 实现代码行 / 物理行 | 实现文件数 | 最大实现文件：代码行                                                                                                                                                             | 测试与支撑代码行 / 文件数 |
+| -------------- | ------------------: | ---------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------: |
+| Pi 官方示例    |       1,027 / 1,195 |          2 | [index.ts](https://github.com/earendil-works/pi/blob/12f59336afa67af6e996cdb6f220f0bf4cbd571a/packages/coding-agent/examples/extensions/subagent/index.ts)：917                  |                     0 / 0 |
+| HamdiMaz       |       1,593 / 1,755 |          2 | [index.ts](https://github.com/HamdiMaz/pi-sub-agent/blob/f1c0ae29f4cf370255530d3d126ec71b0d7a6194/extensions/index.ts)：1,414                                                    |                 3,116 / 1 |
+| aefreedman     |       2,652 / 2,988 |         11 | [index.ts](https://github.com/aefreedman/pi-subagents/blob/dab12e3f13c47d054dd41b6a91c6f315c1215fe2/extensions/index.ts)：1,383                                                  |                  813 / 10 |
+| ogulcancelik   |       2,703 / 2,908 |          3 | [core.ts](https://github.com/ogulcancelik/pi-extensions/blob/9f2cae165dabf66a62f1579c3422bce21133bb9d/packages/pi-codex-subagents/core.ts)：1,736                                |                 1,121 / 3 |
+| andrea-tomassi |       2,919 / 4,390 |         22 | [executor.ts](https://github.com/andrea-tomassi/pi-open-agents/blob/9273b556726a5b86cce9159891094f8c4b3ecc8b/src/subagent/executor.ts)：587                                      |                1,988 / 11 |
+| everyx         |       3,142 / 4,404 |         18 | [preview.ts](https://github.com/everyx/pi-extensions/blob/6cdaae394c0458fbce7947a7e8c95c51a9721a8e/packages/pi-subagent/preview.ts)：974                                         |                1,821 / 14 |
+| mjakl          |       3,463 / 4,106 |         11 | [index.ts](https://github.com/mjakl/pi-subagent/blob/8e1b40b51440804246e312ef2a27a6399ded3186/index.ts)：944                                                                     |                2,936 / 10 |
+| j0k3r          |       7,560 / 8,225 |         59 | [manager.ts](https://github.com/j0k3r-dev-rgl/pi-subagents-j0k3r/blob/ccde60b51e5ab9ae5ff9ea0bd3eb6bae1eae7c73/src/manager.ts)：1,028                                            |                8,934 / 29 |
+| giuseppecrj    |     10,339 / 11,577 |         19 | [index.ts](https://github.com/giuseppecrj/pi-herdr-agents/blob/371265e74fb7485afbfbc7c028d60dc4f98d2779/pi-extension/subagents/index.ts)：3,930                                  |               14,976 / 18 |
+| tintinweb      |     12,217 / 20,929 |         56 | [index.ts](https://github.com/tintinweb/pi-subagents/blob/e955e29c51b7a6cce37e1108cd2d6c57a77e151c/src/index.ts)：2,555                                                          |              28,542 / 115 |
+| goofansu       |     16,351 / 25,644 |        112 | [agent-tool-renderers.ts](https://github.com/goofansu/pi-subagent/blob/74dc62c5827ed727223fe533f656e35b329b48c2/extensions/subagent/presentation/agent-tool-renderers.ts)：1,544 |              42,456 / 125 |
+| nicobailon     |     90,437 / 99,741 |        283 | [subagent-executor.ts](https://github.com/nicobailon/pi-subagents/blob/aa75b3353836f7868898e3bd58234d21eaff1463/src/runs/foreground/subagent-executor.ts)：6,953                 |             107,765 / 298 |
+
+实现范围是包内 Git 跟踪的 TypeScript/JavaScript 入口和运行源码，包括随包提供的启动、安装脚本。ogulcancelik 和 everyx 只统计对应 package 目录，不计 monorepo 的其他包。nicobailon 计入 `index.ts`、全部 `src/` 和根目录四个 `.mjs` 文件；j0k3r、andrea-tomassi 计入 `index.ts` 与 `src/`；tintinweb 为 `src/`；aefreedman 为 `extensions/` 与 `src/`；goofansu 为 `extensions/subagent/`；HamdiMaz 为 `extensions/`；mjakl 为根目录十一个源码文件；giuseppecrj 为 `pi-extension/`。官方基线只计示例的 `index.ts` 和 `agents.ts`，不计整个 Pi。
+
+测试单列：计入 `*.test.*`、`*.spec.*` 文件，以及 `test`、`tests`、`testing`、`__tests__` 目录中的源码和支撑代码，排除 fixture 与 benchmark 目录。测试路径之外的开发脚本、lint/build 配置、示例、Markdown agents/skills/prompts、生成的依赖文件和外部运行时均不计入两栏。具体而言，nicobailon 复制的 Pi fixture 树、everyx 单独依赖的 `pi-ui` 和 Herdr 外部 CLI 均不在统计范围内。官方示例的 0 表示该示例范围内没有测试；测试行数不代表覆盖率或已经运行通过。
+
+复现时，按上述范围选择 Git 跟踪的源码，分出实现与测试两组，将绝对路径逐行写入文件，执行 `cloc --config=/dev/null --quiet --json --by-file --skip-uniqueness --timeout=0 --list-file=<paths.txt>`。内容相同的不同文件仍分别计数。已逐文件核对代码、注释、空行之和与物理行数一致。首次统计有四个测试文件超过 cloc 默认过滤超时；对受影响的两个测试组取消该超时后，补算成功。本次没有执行候选代码。
+
+这些数字使 fork 的取舍更明确。ogulcancelik 只有 2,703 行代码，但 `core.ts` 占 1,736 行、约 64%；只有三个文件并不能说明职责拆分合理。everyx 总量接近，为 3,142 行、18 个文件；j0k3r 为中等规模的 7,560 行。goofansu 的 25,644 个物理行中有 16,351 行代码，同时列出两种口径可以区分实现与注释、空行。nicobailon 有 90,437 行代码，约为 ogulcancelik 整包的 33.5 倍，最大文件单独就有 6,953 行代码。更宽的功能范围解释了部分实现规模；大量测试单独计数，也需要维护。整体 fork 会带入显著更多需要理解、维护的代码。这些数据支持先验证较窄的 fork，同时有针对性地参考大型实现。
 
 ## 能力矩阵
 
