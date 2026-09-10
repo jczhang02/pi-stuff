@@ -31,7 +31,7 @@
 
 ## 终端 E2E
 
-终端 E2E 使用 `tuistory` 驱动终端, 使用 Bun test 运行测试. 开发依赖版本固定在 `package.json`. 编程测试使用其 `launchTerminal` API; 交互式检查通过 `bun run tui` 使用 CLI. 使用前阅读 [上游 skill](../../../.agents/skills/tuistory/SKILL.md). 运行 `bun run tui --help` 查看完整 CLI 参考, 并核对 skill 获取的最新上游 README 是否适用于已安装版本. 使用仓库依赖, 不调用全局安装或临时拉取的版本.
+终端 E2E 使用 `tuistory` 驱动终端, 使用 Bun test 运行测试. 开发依赖版本固定在 `package.json`. 编程测试使用其 `launchTerminal` API; 交互式检查通过 `bun run tui` 使用 CLI. 使用前阅读 [tuistory skill](../../../.agents/skills/tuistory/SKILL.md). 运行 `bun run tui --help` 查看 CLI 参考, API 细节以已安装包的文档和类型声明为准. 只有本地资料无法回答当前问题时才查阅匹配的上游文档, 并复用已经有效的上下文而不是重复查询. 使用仓库依赖, 不调用全局安装或临时拉取的版本.
 
 测试聚焦自有的用户可见行为:
 

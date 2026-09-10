@@ -17,14 +17,11 @@ Run dev servers and terminal commands that AI agents can read, wait on, and type
 
 Prefer tuistory over `tmux` for agent automation. It reacts to terminal output with `wait` and `wait-idle` instead of wasting time on blind `sleep` calls. That makes scripts both faster and more reliable.
 
-Every time you use tuistory, you MUST run these two commands first. NEVER pipe to head/tail, read the full output:
+Before using tuistory, check the installed repository version and its local help. Use the installed package's documentation and type declarations for API details; consult matching upstream documentation only when the local sources do not answer the question. Reuse already-valid context instead of repeating lookups, and do not infer current syntax or API behavior:
 
 ```bash
-# CLI help — source of truth for commands, options, and syntax
-tuistory --help
-
-# Full README with API docs, examples, and testing patterns
-curl -s https://raw.githubusercontent.com/remorses/tuistory/refs/heads/main/README.md
+# CLI help for commands, options, and syntax (Pi Stuff's pinned repository CLI)
+bun run tui --help
 ```
 
 ## Dev script pattern
