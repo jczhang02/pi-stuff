@@ -24,7 +24,6 @@
 
 ## 审查与设计
 
-- 仅在用户要求时创建 Pi Stuff UI 原型。遵循已安装 `prototype` skill 的流程：明确并记录设计问题，制作和比较临时方案，再记录决策。使用真实 Pi TUI 组件及仓库内 tuistory skill，提供可交互的共享终端。将网页路由、URL 方案选择和切换控件适配为终端命令及符合 Pi 操作习惯的方案控件。使用隔离的示例数据，明确标注模拟状态。该流程不替代仓库验证，也不授权正式功能实现。
 - 按原始 Issue/spec 检查完整 base-to-head 差异. PR 证据覆盖行为/影响、方案/决策、验证/复现、风险/审查及关联工作. 未验证行为如实说明, 适用时提供真实 UI 证据或有用图示. 实质变更后刷新受影响证据.
 - 每个 PR 围绕一个完整目标, 包含必要测试和文档. 记录前置 PR 与合并顺序, 按风险说明回退办法, 包括有依赖的改动及持久化数据兼容性.
 - 安全、权限、持久化/恢复、并发/取消、公共 API、依赖、CI/合并政策及广泛重构属于高风险, 须独立只读审查或维护者明确豁免. 审查待完成或无法取得时保持 draft.
@@ -67,7 +66,7 @@
 - 开始/恢复任务、提交、推送、交接或清理: [任务流程](agents/workflow.md).
 - 源码、测试、依赖或检查变更/审查: [工程规则](agents/engineering.md).
 - TUI 设计或界面变更: [TUI 设计](design.md).
-- 用户要求的 UI 原型: 已安装 `prototype` skill 的 `SKILL.md` 和 `UI.md`，以及仓库内 [tuistory skill](../../../.agents/skills/tuistory/SKILL.md)。
+- TUI 原型（仅在用户要求时创建）: 仓库内 [prototype-tui skill](../../../.agents/skills/prototype-tui/SKILL.md)。
 - 终端 E2E 或交互式 TUI 自动化: [tuistory skill](../../../.agents/skills/tuistory/SKILL.md) 和 [终端 E2E](quality-assurance.md#终端-e2e).
 - 测试组织、环境选择或验证/CI 政策: [质量保证](quality-assurance.md).
 - 创建、读取、更新、评论或关闭任务: [任务跟踪](agents/issue-tracker.md). 设置/认证/存储变更还需[Beads 设置](agents/beads.md).

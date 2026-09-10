@@ -2,7 +2,9 @@
 
 [简体中文](docs/i18n/zh-CN/design.md) · English is normative.
 
-Pi Stuff fits into Pi's interface, theme and interaction conventions, extending them when a feature needs it. These are shared design rules for future features; they do not describe an implemented Pi Stuff interface. The [agent instructions](AGENTS.md#review-and-design) define when and how to create a UI prototype.
+Pi Stuff fits into Pi's interface, theme and interaction conventions, extending them when a feature needs it. These are shared design rules for future features; they do not describe an implemented Pi Stuff interface. The [agent instructions](AGENTS.md#detailed-procedures) define when to create a TUI prototype and which skill to use.
+
+For TUI prototypes, use real Pi TUI components in their intended host context. Use isolated sample data and label simulated states.
 
 ## Information and state
 
