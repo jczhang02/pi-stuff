@@ -37,6 +37,6 @@
 - 引入或实质重构抽象：选择设计前阅读[抽象消融比较](agents/workflow.md#抽象消融比较)。
 - TUI 设计或界面变更：[设计规则](design.md)。用户要求的 TUI 原型：[prototype-tui 技能](../../../.agents/skills/prototype-tui/SKILL.md)。
 - 终端 E2E 或交互式 TUI 自动化：[tuistory 技能](../../../.agents/skills/tuistory/SKILL.md)及[终端 E2E](quality-assurance.md#终端-e2e)。测试组织、环境选择或验证/CI 政策：[质量保证](quality-assurance.md)。
-- GitHub 文本、仓库文档或 PR 准备：[贡献指南](CONTRIBUTING.md)中的模板与语言政策。开启、更新、审查或交接 PR 还需 [PR 证据](agents/pr-evidence.md)及适用证据。
+- CI/Actions/规则集/合并门禁的变更或审查、GitHub 文本、仓库文档或 PR 准备：[贡献指南](CONTRIBUTING.md)中的模板、语言、CI 安全和远端设置要求。开启、更新、审查或交接 PR 还需 [PR 证据](agents/pr-evidence.md)及适用证据。
 
 这里的链接供人阅读中文对照；代理实际读取英文 AGENTS.md 指定的英文文件。

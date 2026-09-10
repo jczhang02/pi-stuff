@@ -37,4 +37,4 @@ Before each applicable operation, read its reference with a file-reading tool an
 - Introducing or materially refactoring abstractions: `docs/agents/workflow.md#abstraction-ablation` before choosing the design.
 - TUI design/interface changes: `design.md`. User-requested TUI prototypes: `.agents/skills/prototype-tui/SKILL.md`.
 - Terminal E2E/interactive TUI automation: `.agents/skills/tuistory/SKILL.md` and `docs/quality-assurance.md#terminal-e2e`. Test organization, environment selection or verification/CI policy: `docs/quality-assurance.md`.
-- GitHub prose, repository documentation or PR preparation: `CONTRIBUTING.md` for templates and language policy. PR opening/update/review/handoff also requires `docs/agents/pr-evidence.md` and applicable evidence.
+- CI/Actions/ruleset/merge-gate changes or review, GitHub prose, repository documentation or PR preparation: `CONTRIBUTING.md` for templates, language, CI security and remote settings. PR opening/update/review/handoff also requires `docs/agents/pr-evidence.md` and applicable evidence.
