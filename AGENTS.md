@@ -2,10 +2,17 @@
 
 The execution requirements below are inline so they do not depend on following a link. This English file is authoritative. The [Chinese reading reference](docs/i18n/zh-CN/AGENTS.md) is for people, not a separate agent instruction source.
 
+## Conversational style
+
+- Use concise, direct technical language. Explain necessary terminology and omit filler. Keep commits, issues, PR comments and code free of emojis.
+- Make a non-trivial explanation concrete: describe the problem, show an example or short execution trace, then explain the solution and why it is needed. Distinguish required behavior from optional complexity.
+- Answer informational questions before taking implementation steps. A standalone informational question stays a discussion; during authorized work, answer first and then continue within the agreed scope. Honor explicit discussion or approval checkpoints.
+- When responding to feedback or analysis, state whether you agree, partly agree or disagree and explain why before describing changes. If evidence conflicts with the user's assumptions or proposed approach, explain the evidence, impact and recommendation. Distinguish factual errors from preference tradeoffs. Revisit an agreed decision only when new evidence or changed conditions warrant it.
+
 ## Execution and authorization
 
 - Use Sepia for all prose, including Beads entries; preserve facts and technical details.
-- Before proposing a solution, read the relevant implementation, agreed decisions and necessary official documentation; prefer existing capabilities. When evidence conflicts with the user's assumptions or proposed approach, explain the evidence, impact and recommendation. Distinguish factual errors from preference tradeoffs. Revisit an agreed decision only when new evidence or changed conditions warrant it.
+- Before proposing a solution, read the relevant implementation, agreed decisions and necessary official documentation; prefer existing capabilities.
 - Keep work proportional to risk. Avoid implementation-mirroring tests for reversible, low-impact changes. Complete required checks and reviews, then finish; expand or repeat verification only for new changes, failures, or unresolved concerns.
 - Before behavior changes or multi-step work, establish the issue, execution owner and acceptance criteria. Typo/formatting fixes may go directly to a PR. Search existing tasks before creating one; use one linked GitHub Issue and Beads record, not independent duplicates.
 - Use one current execution-owner session, task branch and worktree per task. Identify the owner by platform and stable session ID; retain contributor/reviewer sessions and handoff history in the linked task. Put worktrees under `.worktrees/<branch-name>`, keep that directory ignored, and check existing ownership before starting. Preserve others' work and stage only task files.
@@ -36,6 +43,16 @@ The execution requirements below are inline so they do not depend on following a
 ## Code quality
 
 Use strict TypeScript and unused-code checks. Preserve known types and decode external inputs at the boundary into explicit models, validating only what the consumer needs. Effect v4 is chosen for boundary decoding, typed errors and necessary I/O; keep pure algorithms as ordinary functions and avoid pass-through service wrappers. RC status alone must never justify rejecting v4, downgrading to v3 or choosing another framework. Specific incompatibilities need reproduction, v4 API evidence and a maintainer decision.
+
+- Read each file in full before editing it. For broad changes, investigations or audits, read the relevant files in full instead of relying on search snippets.
+- Use `any` only when absolutely necessary; it must not bypass the existing boundary-decoding, type-preservation or no-suppression requirements.
+- Check external APIs against the installed dependency's type declarations and version. Consult the matching official documentation rather than guessing.
+- Keep imports at module scope, including type imports. Do not use dynamic imports or inline import types such as `import('package').Type`.
+- Inline a single-line helper with one call site when it has no independent responsibility. Preserve useful module boundaries and invariants under the existing abstraction-review rules.
+- Fix type incompatibilities caused by outdated dependencies through dependency updates, subject to existing authorization, review and framework decisions. Do not remove or downgrade intentional functionality to work around those errors.
+- For apparently intentional code or functionality, establish why its removal fits the agreed scope; ask the user if that remains unclear. Reuse authorization already supplied by the task.
+- Do not add compatibility code for old versions or callers without a requirement. Preserve agreed support and behavior; handle interface or persistent-format changes under the existing authorization, compatibility and recovery rules.
+- Update generated files through their source or generator instead of editing the generated output directly.
 
 All owned source and tests require Oxlint correctness and these rules at error severity:
 
