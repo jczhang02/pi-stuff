@@ -24,7 +24,6 @@ The execution requirements below are inline so they do not depend on following a
 
 ## Review and design
 
-- Create Pi Stuff TUI prototypes only when the user requests one. Apply the repository `prototype-tui` skill: define and record the design question, follow its logic/state or UI workflow, and capture the decision. Follow `design.md` for host components, theme and controls, and use the repository tuistory skill for a shared interactive terminal. Use isolated sample data and label simulated states. This workflow does not replace repository verification or authorize production implementation.
 - Compare the complete base-to-head diff against the originating issue/spec. PR evidence covers behavior/impact, approach/decisions, verification/reproduction, risk/review and related work. Report unverified behavior honestly; provide actual UI evidence or useful diagrams when relevant. Refresh affected evidence after material changes.
 - Scope each PR around one complete outcome, including its necessary tests and documentation. Record prerequisite PRs and merge order, and explain rollback in proportion to risk, including dependent changes and persisted-data compatibility.
 - Security, permissions, persistence/recovery, concurrency/cancellation, public APIs, dependencies, CI/merge policy and broad refactors are high risk: obtain separate read-only review or an explicit maintainer waiver. Keep the PR draft while review is pending or unavailable.
@@ -67,7 +66,7 @@ The requirements above apply without opening these references. A file path or hy
 - Task start/resumption, commit, push, handoff or cleanup: `docs/agents/workflow.md`.
 - Source/tests/dependencies/check changes or review: `docs/agents/engineering.md`.
 - TUI design or interface changes: `design.md`.
-- User-requested TUI prototypes: `.agents/skills/prototype-tui/SKILL.md` and its applicable `LOGIC.md` or `UI.md` branch, plus `design.md` and `.agents/skills/tuistory/SKILL.md`.
+- TUI prototypes (create only when the user requests one): `.agents/skills/prototype-tui/SKILL.md`.
 - Terminal E2E or interactive TUI automation: `.agents/skills/tuistory/SKILL.md` and `docs/quality-assurance.md#terminal-e2e`.
 - Test organization, environment selection or verification/CI policy: `docs/quality-assurance.md`.
 - Task creation/read/update/comment/closure: `docs/agents/issue-tracker.md`; setup/authentication/storage changes also require `docs/agents/beads.md`.
