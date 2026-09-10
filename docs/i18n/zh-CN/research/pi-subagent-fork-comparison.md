@@ -123,7 +123,7 @@ j0k3r 在进程内候选中提供最明确的 task API：run、continue、send m
 | goofansu     | Effect 4.0.0-rc.112 与 Claude Agent SDK              | [包清单](https://github.com/goofansu/pi-subagent/blob/74dc62c5827ed727223fe533f656e35b329b48c2/package.json)                                   |
 | j0k3r        | 未声明额外依赖；使用运行时提供的 Node/Bun SQLite     | [包清单](https://github.com/j0k3r-dev-rgl/pi-subagents-j0k3r/blob/ccde60b51e5ab9ae5ff9ea0bd3eb6bae1eae7c73/package.json)                       |
 | tintinweb    | @sinclair/typebox、typebox、croner、nanoid           | [包清单](https://github.com/tintinweb/pi-subagents/blob/e955e29c51b7a6cce37e1108cd2d6c57a77e151c/package.json)                                 |
-| everyx       | @everyx/pi-ui 1.1.2；发布物 Pi peer 为 ^0.84.0       | 固定 HEAD Node24/pnpm [CI 成功](https://github.com/everyx/pi-extensions/actions/runs/34119410582)；测试使用 fake RPC，非真实 Pi                |
+| everyx       | @everyx/pi-ui 1.1.2；发布物 Pi peer 为 ^0.84.0       | [已发布 1.3.6 元数据](https://registry.npmjs.org/@everyx/pi-subagent/1.3.6)                                                                    |
 | mjakl        | 未声明额外依赖                                       | [包清单](https://github.com/mjakl/pi-subagent/blob/8e1b40b51440804246e312ef2a27a6399ded3186/package.json)                                      |
 | aefreedman   | @aefree/pi-capability-registry                       | [包清单](https://github.com/aefreedman/pi-subagents/blob/dab12e3f13c47d054dd41b6a91c6f315c1215fe2/package.json)                                |
 
