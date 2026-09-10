@@ -12,7 +12,7 @@ Behavior changes and multi-step work need a tracked task. Typo and formatting fi
 
 Before creating a task, search both trackers for an existing record. Use one linked GitHub issue and Beads record for the same task; do not independently create duplicates with `gh issue create` and `bd create`.
 
-For an existing GitHub issue, pull it into Beads. For a new Beads task intended for publication, push it to GitHub and verify its external reference. Record the association in Beads and include the Beads ID in the initial GitHub progress comment when available.
+For a GitHub issue without a linked Beads record, import it with `bd github pull <issue-url>` before claiming work, then verify its external reference. For a new Beads task intended for publication, use `bd github push <bead-id>` and verify the link. Read and reconcile existing linked tasks through the work cycle below; do not pull them again. Record the association in Beads and include the Beads ID in the initial GitHub progress comment when available.
 
 When a skill says "publish to the issue tracker," publish a GitHub issue and establish its Beads association. When it says "fetch the relevant ticket," read the GitHub body, labels, comments, and associated Beads context.
 
@@ -24,11 +24,15 @@ Store the current owner identity in the Beads assignee field. Keep its platform,
 
 Use `bd --actor <platform:session-id>` for the session performing an update. The actor is the writer of that operation; the assignee owns delivery. A reviewer records their own identity without replacing the execution owner. Reflect the current owner and relevant handoffs in the GitHub issue body or progress comments; GitHub account assignees do not represent agent sessions. Publish useful session references without exposing private transcripts or personal filesystem paths.
 
+Claim unassigned work with `bd --actor <platform:session-id> update <bead-id> --claim`. Keep native Beads claims; metadata and notes retain session context but do not replace the claim mechanism. If an initial GitHub import brings an account assignee, resolve that assignment before claiming rather than silently replacing it with a session.
+
 When another session takes over, check the existing claim, update the current assignee, and retain the previous and new session identities, reason, completed work and next steps. Use guarded reassignment when supported and resolve live claims rather than overwriting them. Resuming the same session keeps the same identity. For example, a task can have session B as its current owner, session A as its previous owner, and session C as its independent reviewer.
 
 ## Before using sync
 
 Read `docs/agents/beads.md` for the local workspace, shared-worktree behavior, and transient GitHub authentication. Load the official `beads` skill and run `bd prime` when starting or recovering task context.
+
+GitHub pull maps its account assignee, including an empty value, onto the Beads assignee used for session claims. This mapping exists in both checked versions, v1.2.1 and v1.2.2; see the [v1.2.2 GitHub mapping](https://github.com/gastownhall/beads/blob/6c124203e771433a3550c348771a5b5e27fd3c21/internal/github/mapping.go) and [tracker pull updates](https://github.com/gastownhall/beads/blob/6c124203e771433a3550c348771a5b5e27fd3c21/internal/tracker/engine.go). Use initial imports and selective pushes; do not run bidirectional sync or pull over existing tasks, even when every task is approved for publication. This is a repository usage boundary for the current integration, not a custom synchronization tool.
 
 Check `bd version`, `bd github --help`, and `bd github status`. If Beads is not initialized or authentication is unavailable, report the blocker; do not claim synchronization succeeded or initialize infrastructure implicitly.
 
@@ -38,26 +42,26 @@ The intended repository setting is:
 bd config set github.repository jczhang02/pi-stuff
 ```
 
-Provide credentials through `GITHUB_TOKEN`; never commit credentials. Before the first sync, or after changing its scope, run:
+Provide credentials through `GITHUB_TOKEN`; never commit credentials. Preview an initial import with `bd github pull <issue-url> --dry-run`. Before the first publication, or after changing its approved scope, run:
 
 ```bash
-bd github sync --dry-run
+bd github push <bead-id> --dry-run
 ```
 
-Inspect the proposed changes before proceeding. Full bidirectional sync can publish local tasks. If some records must remain unpublished, use selective operations supported by the installed CLI instead of full sync. Beads is not inherently private: check database remote access before storing nonpublic information.
+Inspect the proposed changes before proceeding and name only the approved records. Selective push operates on whole records, not individual fields, and does not atomically merge concurrent GitHub edits. Read the current GitHub fields and reconcile changes before publishing. Beads is not inherently private: check database remote access before storing nonpublic information.
 
 `bd sync` synchronizes Beads data; `bd github sync` synchronizes with GitHub. Do not treat them as interchangeable.
 
 ## Work cycle
 
-1. At task start or resumption, synchronize the approved scope. For a workspace whose full contents are approved for publication, run `bd github sync`.
-2. Read GitHub discussion separately with `gh issue view <number> --repo jczhang02/pi-stuff --comments`. Check the current labels as well.
-3. Summarize new requirements, feedback, and decisions in Beads, preserving source links. Avoid copying the same feedback again on each session.
-4. Before claiming work, check Beads blockers and ownership. Claim using the actual session identity and record execution state, findings, and next steps in Beads. Triage labels do not replace execution state.
-5. After task-field changes, run `bd github push <bead-id>` and verify the result. Publish milestone comments separately as described below.
-6. Before ending the session, synchronize the approved scope again and record a Beads handoff with remaining work and pending publication.
+1. At task start or resumption, find the linked records and read their current state. Import only a GitHub issue that has no linked Beads record, before claiming it.
+2. Read GitHub discussion with `gh issue view <number> --repo jczhang02/pi-stuff --comments`. Inspect the current title, body, state, labels and assignees too; use `--json title,body,state,labels,assignees` when needed.
+3. Reconcile relevant changes through explicit `bd update` or `bd close` operations, preserving the session assignee, metadata, dependencies and handoff history. Summarize new requirements, feedback and decisions with source links. A GitHub account assignment or closed state alone does not authorize session reassignment or establish task acceptance.
+4. Before claiming work, check Beads blockers and ownership. Claim using the actual session identity and record execution state, findings and next steps in Beads. Triage labels do not replace execution state.
+5. After task-field changes, read the current GitHub fields again, resolve any concurrent edits, then run `bd github push <bead-id>` and verify the result. Publish milestone comments separately as described below.
+6. Before ending the session, reconcile new GitHub feedback, publish approved changes and record a Beads handoff with remaining work and pending publication. Avoid repeating unchanged updates.
 
-The CLI defaults to preferring the newer version on conflicts; this is not a substitute for reviewing concurrent edits. If both sides have changed, inspect the differences before syncing. Ask the user to resolve ambiguous requirements or acceptance criteria rather than blindly applying `--prefer-local` or `--prefer-github`.
+If both sides have changed, inspect the differences before updating or pushing. Ask the user to resolve ambiguous requirements or acceptance criteria rather than applying whole-record conflict preferences. Keep unresolved changes pending and report them. These explicit reads and updates use existing `gh` and `bd` commands; they do not provide unattended bidirectional synchronization or an atomic cross-tracker transaction.
 
 ## Comments and public updates
 
@@ -90,9 +94,9 @@ Remove credentials, personal information, and nonpublic details from public summ
 
 Use `gh` for GitHub reads, comments, and any direct GitHub edits. Explicitly target this repository when the working directory is ambiguous.
 
-Issues created through the CLI must contain the same information as the matching template and have an explicit triage label; web templates do not enforce CLI submissions. After direct GitHub field changes, pull the affected task into Beads before resuming local edits.
+Issues created through the CLI must contain the same information as the matching template and have an explicit triage label; web templates do not enforce CLI submissions. After direct GitHub field changes, read the affected issue and reconcile those changes through explicit Beads updates before further local edits or publication.
 
-Close tasks only when acceptance criteria are met, recording the result in both trackers. Opening a PR is not completion. Use `Closes #<number>` only when merging the PR will satisfy the issue's acceptance criteria; otherwise use `Refs #<number>`. After merge-driven closure, reconcile the Beads state on the next sync.
+Close tasks only when acceptance criteria are met, recording the result in both trackers. Opening a PR is not completion. Use `Closes #<number>` only when merging the PR will satisfy the issue's acceptance criteria; otherwise use `Refs #<number>`. After merge-driven closure, verify the merge and acceptance results, then close the Beads task explicitly without pulling over its session ownership.
 
 ## Parent tasks and dependencies
 

@@ -6,6 +6,8 @@
 
 本克隆使用 Beads v1.2.1 和嵌入式 Dolt. 工作区位于主 checkout 的 `.beads/`, `bd where` 显示实际数据库路径, 不需要外部 SQL 服务器.
 
+[官方 v1.2.2 恢复版本](https://github.com/gastownhall/beads/releases/tag/v1.2.2)已取代误发布的 v1.2.1，主机恢复尚待处理。在单独获准的主机恢复任务中遵循[官方恢复指南](https://github.com/gastownhall/beads/blob/v1.2.2/docs/RECOVERY-1.2.1.md)；本文描述当前安装状态。新设置选择经过测试的官方版本，并核对对应 CLI 选项。GitHub 会话归属限制及已批准流程见[任务跟踪](issue-tracker.md#同步前)；仅升级版本不能消除该限制。
+
 工作树通过 Git 公共目录发现同一工作区. 在每个工作树写任务前运行 `bd where` 确认. 不要为每个工作树单独初始化数据库, 也不要在工作树之间复制正在使用的数据库文件.
 
 认领和更新任务时, 按[会话归属](issue-tracker.md#会话归属)使用真实会话身份作为 `bd --actor`. assignee 记录当前执行负责会话, actor 记录实际执行操作的会话. 认领失败时处理冲突, 不覆盖其他会话的分配. 在 `bd 1.2.1` 中, `bd update --session` 是 Claude Code 的关闭会话字段, 不是通用的负责会话字段.
@@ -62,10 +64,10 @@ bd info --json
 集成使用 `GITHUB_TOKEN`. 本主机已有认证的 gh 会话, 可以向单条命令提供凭据而不再保存令牌:
 
 ```bash
-GITHUB_TOKEN="$(gh auth token)" bd github sync --dry-run
+GITHUB_TOKEN="$(gh auth token)" bd github push <bead-id> --dry-run
 ```
 
-不要打印或持久化令牌. 认证失败时报告并请求设置, 不把凭据存入仓库文件. 先运行 dry-run, 仅对已批准发布的范围进行真实同步. 任务字段同步与单独发布评论遵循[跟踪规则](issue-tracker.md).
+不要打印或持久化令牌。认证失败时报告并请求设置，不把凭据存入仓库文件。先运行 dry-run，仅发布获准的记录。首次导入、显式对齐、定向推送和单独发布评论遵循[跟踪规则](issue-tracker.md)。
 
 ## 验证
 

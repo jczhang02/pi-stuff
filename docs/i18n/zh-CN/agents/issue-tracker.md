@@ -12,7 +12,7 @@ GitHub Issues 保存需求、验收条件、公开进展、决策和 PR 链接. 
 
 创建前搜索两个跟踪器是否已有记录. 同一任务只使用一组关联的 GitHub Issue 和 Beads 记录, 不分别调用 `gh issue create` 与 `bd create` 制造重复任务.
 
-已有 GitHub Issue 时将其拉入 Beads. 从 Beads 创建的新任务准备发布时, 推送至 GitHub 并核验外部引用. 在 Beads 中记录关联, 首条 GitHub 进展评论中尽可能包含 Beads ID.
+GitHub Issue 尚无关联的 Beads 记录时，先用 `bd github pull <issue-url>` 导入，再认领，并核验外部引用。从 Beads 创建的新任务准备发布时，用 `bd github push <bead-id>` 推送并核验链接。已有的关联任务按下方工作周期读取和对齐，不再次拉取。在 Beads 中记录关联，首条 GitHub 进展评论中尽可能包含 Beads ID。
 
 技能要求发布到 Issue 跟踪器时, 发布 GitHub Issue 并建立 Beads 关联. 技能要求读取相关任务时, 阅读 GitHub 正文、标签、评论及对应 Beads 上下文.
 
@@ -24,11 +24,15 @@ Beads assignee 字段保存当前负责人身份. 在任务元数据或笔记中
 
 执行更新的会话使用 `bd --actor <platform:session-id>`. actor 是该次操作的记录者, assignee 是交付负责人. 审查者记录自己的身份, 不替换执行负责人. 在 GitHub Issue 正文或进展评论中体现当前负责人和相关交接；GitHub 账号 assignee 不代表 agent session. 发布有用的会话引用, 不暴露私有完整对话或个人文件系统路径.
 
+用 `bd --actor <platform:session-id> update <bead-id> --claim` 认领未分配的工作。保留 Beads 原生认领；元数据和笔记保存会话上下文，但不能替代认领机制。首次从 GitHub 导入时若带入了账号 assignee，须先处理该分配，再认领，不能悄悄替换为某个 session。
+
 其他会话接手时, 检查既有认领、更新当前 assignee, 并保留前后 session 身份、交接原因、已完成工作和下一步. 工具支持时使用带前置条件的重新分配, 先处理仍有效的认领, 不覆盖他人归属. 恢复同一个 session 时沿用原身份. 例如, 一个任务可以由 session B 当前负责、session A 为前任负责人、session C 负责独立审查.
 
 ## 同步前
 
 阅读 [Beads 设置](beads.md), 了解本地工作区、共享工作树和临时 GitHub 认证. 开始或恢复上下文时加载官方 beads 技能并运行 `bd prime`.
+
+GitHub 拉取会将账号 assignee（包括空值）写入 Beads 用于会话认领的 assignee。已核对的 v1.2.1 和 v1.2.2 都有这一映射；参见 [v1.2.2 GitHub 映射](https://github.com/gastownhall/beads/blob/6c124203e771433a3550c348771a5b5e27fd3c21/internal/github/mapping.go)与 [tracker 拉取更新](https://github.com/gastownhall/beads/blob/6c124203e771433a3550c348771a5b5e27fd3c21/internal/tracker/engine.go)。采用首次导入和定向推送；即使所有任务都获准公开，也不做双向同步，不拉取覆盖现有任务。这是本仓库针对当前集成的使用边界，不是新增同步工具。
 
 检查 `bd version`、`bd github --help` 和 `bd github status`. Beads 未初始化或无认证时报告阻塞, 不声称同步成功, 不暗中初始化基础设施.
 
@@ -38,26 +42,26 @@ Beads assignee 字段保存当前负责人身份. 在任务元数据或笔记中
 bd config set github.repository jczhang02/pi-stuff
 ```
 
-通过 `GITHUB_TOKEN` 提供凭据, 不提交凭据. 首次同步或同步范围改变后, 先运行:
+通过 `GITHUB_TOKEN` 提供凭据，不提交凭据。首次导入用 `bd github pull <issue-url> --dry-run` 预览。首次发布或获准发布的范围改变后，先运行：
 
 ```bash
-bd github sync --dry-run
+bd github push <bead-id> --dry-run
 ```
 
-继续前检查预期修改. 完整双向同步可能发布本地任务. 某些记录必须保持未发布时, 使用当前 CLI 支持的选择性操作, 不做全量同步. Beads 并非天然私密, 写入非公开信息前检查数据库远端访问权限.
+继续前检查预期修改，仅指定获准的记录。定向推送以完整记录为单位，不是字段级同步，也不能原子合并并发的 GitHub 编辑。发布前读取当前 GitHub 字段并对齐变更。Beads 并非天然私密，写入非公开信息前检查数据库远端访问权限。
 
 `bd sync` 同步 Beads 数据, `bd github sync` 与 GitHub 同步, 两者不能混用.
 
 ## 工作周期
 
-1. 开始或恢复任务时同步已批准范围. 工作区全部内容均获准发布时, 运行 `bd github sync`.
-2. 用 `gh issue view <number> --repo jczhang02/pi-stuff --comments` 单独阅读 GitHub 讨论, 同时检查当前标签.
-3. 将新需求、反馈和决策概括进 Beads, 保留来源链接, 不在每次会话重复抄写相同反馈.
-4. 认领前检查阻塞和归属. 使用实际 session 身份认领, 在 Beads 记录执行状态、发现和下一步. 分流标签不替代执行状态.
-5. 修改任务字段后运行 `bd github push <bead-id>` 并核验结果. 里程碑评论按下方规则另行发布.
-6. 结束会话前再次同步已批准范围, 记录剩余工作和待发布事项的 Beads 交接.
+1. 开始或恢复任务时，找到关联记录并读取当前状态。仅导入尚无 Beads 关联记录的 GitHub Issue，导入后再认领。
+2. 用 `gh issue view <number> --repo jczhang02/pi-stuff --comments` 阅读 GitHub 讨论，并检查当前标题、正文、状态、标签和 assignee；需要时使用 `--json title,body,state,labels,assignees`。
+3. 用显式 `bd update` 或 `bd close` 对齐相关变更，保留 session assignee、元数据、依赖和交接历史。概括新需求、反馈和决策，保留来源链接。GitHub 账号分配或关闭状态本身不授权更换 session 负责人，也不能证明已满足验收。
+4. 认领前检查阻塞和归属。使用实际 session 身份认领，在 Beads 记录执行状态、发现和下一步。分流标签不替代执行状态。
+5. 修改任务字段后，再次读取当前 GitHub 字段，处理并发编辑，再运行 `bd github push <bead-id>` 并核验结果。里程碑评论按下方规则另行发布。
+6. 结束会话前，对齐新的 GitHub 反馈，发布获准的变更，在 Beads 记录剩余工作和待发布事项的交接。没有变化的内容不重复更新。
 
-CLI 默认在冲突时偏向较新的版本, 这不能替代检查并发编辑. 两端都发生变化时先比较再同步. 需求或验收条件有歧义时请用户决定, 不盲目使用 `--prefer-local` 或 `--prefer-github`.
+两端都发生变化时，先比较再更新或推送。需求或验收条件有歧义时请用户决定，不用整条记录的冲突偏好代替判断。未解决的变更保留为待处理并报告。这些显式读取和更新复用现有 `gh`、`bd` 命令，不提供无人值守的双向同步或跨 tracker 原子事务。
 
 ## 评论与公开更新
 
@@ -90,9 +94,9 @@ gh issue comment <number> --repo jczhang02/pi-stuff --body-file <summary-file>
 
 GitHub 读取、评论和直接编辑使用 gh, 工作目录有歧义时显式指定本仓库.
 
-CLI 创建的 Issue 须具备对应模板信息和明确分流标签, 网页模板不会约束 CLI. 直接修改 GitHub 字段后, 先将该任务拉入 Beads, 再继续本地编辑.
+CLI 创建的 Issue 须具备对应模板信息和明确分流标签，网页模板不会约束 CLI。直接修改 GitHub 字段后，先读取该 Issue，并通过显式 Beads 更新对齐变更，再继续本地编辑或发布。
 
-只有满足验收条件时才关闭任务, 并在两个跟踪器记录结果. 开 PR 不等于完成. 合并能满足验收时使用 `Closes #<number>`, 否则使用 `Refs #<number>`. 合并触发 Issue 关闭后, 下次同步时协调 Beads 状态.
+只有满足验收条件时才关闭任务，并在两个跟踪器记录结果。开 PR 不等于完成。合并能满足验收时使用 `Closes #<number>`，否则使用 `Refs #<number>`。合并触发 Issue 关闭后，核验合并和验收结果，再显式关闭 Beads 任务，不通过拉取覆盖会话归属。
 
 ## 父任务与依赖
 
