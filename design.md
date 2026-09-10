@@ -4,6 +4,8 @@
 
 Pi Stuff fits into Pi's interface, theme and interaction conventions, extending them when a feature needs it. These are shared design rules for future features; they do not describe an implemented Pi Stuff interface. The [agent instructions](AGENTS.md#review-and-design) define when and how to create a UI prototype.
 
+For TUI prototypes, use real Pi TUI components in their intended host context.
+
 ## Information and state
 
 Make the current operation, key result and available next action easy to identify. Choose the layout and supporting detail with the feature.
