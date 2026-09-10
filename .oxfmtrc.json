@@ -9,7 +9,6 @@
   "arrowParens": "avoid",
   "endOfLine": "lf",
   "ignorePatterns": [
-    ".agents/skills/eli5/SKILL.md",
     ".agents/skills/thermo-nuclear-code-quality-review/SKILL.md",
     ".agents/skills/tuistory/SKILL.md",
     ".beads/**",

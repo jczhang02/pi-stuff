@@ -31,7 +31,7 @@ Offline and isolated temporary settings, directories, and sessions are the defau
 
 ## Terminal E2E
 
-Use `tuistory` as the terminal driver and Bun test as the runner for terminal E2E. The development dependency is pinned in `package.json`. Use its `launchTerminal` API for programmatic tests; the CLI is available through `bun run tui` for interactive inspection. Read the [upstream skill](../.agents/skills/tuistory/SKILL.md) before using either. Run `bun run tui --help` for the full CLI reference, and check the skill's current upstream README against the installed version. Use the repository dependency rather than a globally installed or freshly fetched version.
+Use `tuistory` as the terminal driver and Bun test as the runner for terminal E2E. The development dependency is pinned in `package.json`. Use its `launchTerminal` API for programmatic tests; the CLI is available through `bun run tui` for interactive inspection. Read the [tuistory skill](../.agents/skills/tuistory/SKILL.md) before using either. Run `bun run tui --help` for the CLI reference, then use the installed package's documentation and type declarations for API details. Consult matching upstream documentation only when local sources do not answer the question, and reuse already-valid context rather than repeating lookups. Use the repository dependency rather than a globally installed or freshly fetched version.
 
 Keep tests focused on owned user-visible behavior:
 

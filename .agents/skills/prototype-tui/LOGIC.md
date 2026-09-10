@@ -53,9 +53,9 @@ Keep it beautiful but restrained: readable terminal text, spacing suited to the 
 
 Give them the launch command, working directory and Tuistory attachment command, or open the terminal for them. They'll step through the walkthroughs and free-play whenever they get to it; the interesting moments are when they say "wait, that shouldn't be possible" or "huh, I assumed X would be different"; those are the bugs in the _idea_, which is the whole point. If they want new actions or a new scenario, add them. Prototypes evolve.
 
-### 5. Capture the answer and the prototype
+### 5. Capture findings and decide whether to adopt
 
-Once the prototype has answered its question, capture the answer, then capture the prototype the way the [SKILL](SKILL.md) describes. The logic-specific mapping: the validated reducer / machine / function set lifts into the real module (the decision, absorbed); the terminal shell rides along to the throwaway branch that keeps the prototype as a primary source, with its launch command so it stays trivially re-runnable there.
+When the prototype answers its question, follow the capture and source-retention boundary in [SKILL.md](SKILL.md). A prototype-only task ends with the runnable artifact and findings. If product adoption is already within the implementation authorization, lift the validated reducer, state machine, or function set into the real module and resume product QA; keep the terminal shell as prototype work.
 
 ## Anti-patterns
 

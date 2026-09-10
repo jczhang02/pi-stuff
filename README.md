@@ -58,7 +58,7 @@ There is no Pi Stuff extension to install yet. To install development dependenci
 | [Engineering rules](docs/agents/engineering.md)                | Types, boundaries, formatting, and review obligations       |
 | [Quality assurance](docs/quality-assurance.md)                 | Four QA activities, five test levels and execution policy   |
 
-English is normative. Human docs have linked English/Chinese counterparts, with Chinese versions under `docs/i18n/zh-CN/`, updated in the same PR. New or substantively updated human-facing GitHub prose is English first, Chinese second; agent instructions and skills remain English-only, and conversation is in Chinese. See [language and presentation](CONTRIBUTING.md#language-and-presentation) for scope, exceptions, and Markdown guidance. Historical research is not being mass-translated.
+English is normative. Human docs have linked English/Chinese counterparts, with Chinese versions under `docs/i18n/zh-CN/`, updated in the same PR. New or substantively updated human-facing GitHub prose is English first, Chinese second; agent instructions and skills remain English-only, and conversation is in Chinese. See [language and presentation](CONTRIBUTING.md#language-and-presentation) for scope, exceptions, and Markdown guidance. Historical documents under `docs/` retain Chinese counterparts and remain clearly marked; do not bulk-rewrite historical discussions or machine-generated metadata.
 
 ## Contributing
 
