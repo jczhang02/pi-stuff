@@ -4,6 +4,12 @@
 
 Pi Stuff fits into Pi's interface, theme and interaction conventions, extending them when a feature needs it. These are shared design rules for future features; they do not describe an implemented Pi Stuff interface. The [agent instructions](AGENTS.md#review-and-design) define when and how to create a UI prototype.
 
+## Information and state
+
+Make the current operation, key result and available next action easy to identify. Choose the layout and supporting detail with the feature.
+
+Distinguish loading, no data, no matching results and failure where applicable. Give long-running operations visible status feedback. Show a percentage only when actual progress can be calculated. Prefer Pi's existing components and presentation conventions for these states.
+
 ## Theme and feedback colors
 
 Use Pi's active theme and semantic colors for text, selection, borders, success, warnings and errors. A custom component uses the theme Pi supplies to it. Communicate status in words as well as color, so the user can understand a failure without identifying its color.

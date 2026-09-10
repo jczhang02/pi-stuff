@@ -6,6 +6,8 @@
 
 This clone uses Beads v1.2.1 with embedded Dolt. The workspace is `.beads/` in the main checkout; `bd where` reports the actual database path. No external SQL server is required.
 
+The [official v1.2.2 recovery release](https://github.com/gastownhall/beads/releases/tag/v1.2.2) supersedes the accidentally published v1.2.1. Host recovery is pending. Follow the [official recovery guide](https://github.com/gastownhall/beads/blob/v1.2.2/docs/RECOVERY-1.2.1.md) in a separately authorized host-recovery task; these notes describe the current installation. Choose a tested official release for new setup and verify its CLI options. The GitHub ownership limitation and approved workflow are in [issue tracking](issue-tracker.md#before-using-sync); upgrading alone does not remove that limitation.
+
 Worktrees discover the same workspace through Git's common directory. Run `bd where` from each worktree to confirm this before writing tasks. Do not initialize a separate database in each worktree or copy live database files between them.
 
 Use the actual session identity for `bd --actor` when claiming and updating work, following [session ownership](issue-tracker.md#session-ownership). The assignee records the current execution-owner session; the actor records who performed an operation. Handle claim failures rather than overwriting another session's assignment. In `bd 1.2.1`, `bd update --session` is a Claude Code closure field, not a general owner-session field.
@@ -62,10 +64,10 @@ bd info --json
 The integration uses `GITHUB_TOKEN`. On this host, an existing authenticated `gh` session can provide it to a single command without saving another token:
 
 ```bash
-GITHUB_TOKEN="$(gh auth token)" bd github sync --dry-run
+GITHUB_TOKEN="$(gh auth token)" bd github push <bead-id> --dry-run
 ```
 
-Do not print or persist the token. If authentication fails, report it and request setup rather than storing credentials in repository files. Run the dry-run first; perform a real sync only for an approved publication scope. Follow `issue-tracker.md` for task-field sync and separate comment publication.
+Do not print or persist the token. If authentication fails, report it and request setup rather than storing credentials in repository files. Run the dry-run first and publish only approved records. Follow `issue-tracker.md` for initial imports, explicit reconciliation, selective pushes and separate comment publication.
 
 ## Verification
 
