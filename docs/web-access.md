@@ -14,6 +14,8 @@ The purpose is to let Pi find current information and read source material durin
 | `fetch_content`      | Read public webpage text or raw text.                                                                   |
 | `get_search_content` | Retrieve stored search or fetched content, including paging and text lookup.                            |
 
+Search and fetching are separate calls. `web_search` does not fetch result-page bodies; remove upstream `includeContent` and its background-fetch state and notifications. The model selects useful links and calls `fetch_content` within the Pi conversation, without a manual result-selection step.
+
 The following upstream features are excluded from the first release:
 
 - Curator, its browser page, local server and result-selection workflow.
@@ -42,7 +44,7 @@ Report the rewritten runtime source using the same counting scope, and list test
 
 ## Unresolved contracts
 
-The current interview round asks whether to separate search from fetching, keep stored content only in the current session, and use a global tool-switch configuration applied through `/reload`. These are recommendations, not accepted decisions.
+Search/fetch separation is accepted. The current interview round still asks whether to keep stored content only in the current session and use a global tool-switch configuration applied through `/reload`. Those two recommendations are not accepted decisions.
 
 The remaining design also needs to settle provider authentication and fallback, native search answers, public-page extraction coverage, and bounded retrieval/storage behavior. Existing runtime capabilities and source evidence should resolve implementation facts; product choices belong in the interview. This document does not approve a dependency list, disk format or complete tool schema.
 
