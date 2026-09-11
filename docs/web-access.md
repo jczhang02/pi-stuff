@@ -30,7 +30,15 @@ Removing GitHub-specific handling does not blacklist GitHub URLs from ordinary p
 
 ## Shared tool switches
 
-Pi Stuff must support independent tool switches beyond web access. A switch governs direct model access to one tool entry. Disabling `fetch_content`, for example, removes that direct model entry; it does not by itself prohibit every internal HTTP request or parser call. Configuration scope, application timing and interaction with Pi's own tool selection remain unresolved.
+Pi Stuff must support independent tool switches beyond web access. A switch governs direct model access to one tool entry. Disabling `fetch_content`, for example, removes that direct model entry; it does not by itself prohibit every internal HTTP request or parser call.
+
+Use one global configuration for these switches and apply changes through `/reload`. The first release has no temporary session-switch command or project-level override. The configuration schema and interaction with Pi's own tool selection remain to be specified.
+
+## Content lifetime
+
+Keep stored search results and fetched bodies in bounded, current-session memory only. Do not write a separate content cache to disk or restore content references after Pi restarts or `/reload`. When a reference is no longer available, the model must repeat the search or fetch before paging or searching that content. Exact capacity limits and eviction behavior remain to be specified.
+
+This decision concerns Pi Stuff's content cache. Tool output already included in the conversation remains subject to Pi's normal session-history behavior.
 
 ## Rewrite and source size
 
@@ -44,7 +52,7 @@ Report the rewritten runtime source using the same counting scope, and list test
 
 ## Unresolved contracts
 
-Search/fetch separation is accepted. The current interview round still asks whether to keep stored content only in the current session and use a global tool-switch configuration applied through `/reload`. Those two recommendations are not accepted decisions.
+Search/fetch separation, current-session memory storage and global tool-switch configuration applied through `/reload` are accepted.
 
 The remaining design also needs to settle provider authentication and fallback, native search answers, public-page extraction coverage, and bounded retrieval/storage behavior. Existing runtime capabilities and source evidence should resolve implementation facts; product choices belong in the interview. This document does not approve a dependency list, disk format or complete tool schema.
 
