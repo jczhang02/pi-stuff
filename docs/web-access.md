@@ -1,155 +1,143 @@
-# Web access design
+# Web access specification
 
 [简体中文](i18n/zh-CN/web-access.md) · English is normative.
 
-This document records the design interview in [#43](https://github.com/jczhang02/pi-stuff/issues/43). The scope sections are accepted; the final contract proposal is still awaiting confirmation. Implementation starts after the maintainer confirms shared understanding. See the [glossary](../CONTEXT.md) and [maintenance decision](adr/0003-web-access-fork.md).
+Terminology follows the [glossary](../CONTEXT.md) and [independent maintenance decision](adr/0003-web-access-fork.md).
 
-## Accepted first-release scope
+## Problem Statement
 
-The purpose is to let Pi find current information and read source material during development without leaving the Pi conversation.
+During development in Pi, the maintainer needs to find current documentation and other source material, read useful public pages, and revisit retrieved content without leaving the conversation. The upstream pi-web-access package covers many unrelated workflows and providers, creating more code and maintenance work than this project needs. Pi Stuff also needs a consistent way to disable any individual tool, including tools outside web access.
 
-| Tool                 | Retained capability                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------- |
-| `web_search`         | Single or batch searches, with titles, URLs, snippets and sources. Only OpenAI/Codex and Exa providers. |
-| `fetch_content`      | Read public webpage text or raw text.                                                                   |
-| `get_search_content` | Retrieve stored search or fetched content, including paging and text lookup.                            |
+## Solution
 
-Search and fetching are separate calls. `web_search` does not fetch result-page bodies; remove upstream `includeContent` and its background-fetch state and notifications. The model selects useful links and calls `fetch_content` within the Pi conversation, without a manual result-selection step.
+Independently maintain a reduced rewrite based on pi-web-access 0.28.0. Provide web_search, fetch_content and get_search_content, with OpenAI/Codex and Exa as the only search providers. The model searches, chooses links and reads them automatically within Pi. Retain one public-text extraction path, bounded current-session content storage and global independent tool switches applied through /reload. Remove the agreed upstream features and preserve the accepted limits, source provenance and license notices. Use the repository's TypeScript, Bun and Effect v4 rules.
 
-The following upstream features are excluded from the first release:
+## User Stories
 
-- Curator, its browser page, local server and result-selection workflow.
-- All search providers except OpenAI/Codex and Exa.
-- GitHub-specific repository, tree/blob, issue and pull-request reading.
-- PDF, image, video and YouTube handling.
-- Authenticated-page and browser-cookie reading.
-- `source_check`, separate automatic summarization and page-answer generation.
-- Hosted content-extraction fallbacks.
-- Exa's keyless MCP and `/answer` paths, separate web-specific OpenAI credentials, credential commands and custom gateways.
-- Parallel provider searches, multi-stage routing, a dedicated recency parameter, secondary HTML parsers, RSC-specific extraction and browser rendering.
+1. As a developer using Pi, I want to search the web within the conversation, so that I can consult current information while coding.
+2. As a developer, I want the model to select useful result links and fetch them, so that I do not need to curate results in another interface.
+3. As a developer, I want search and page fetching to be separate tool calls, so that search does not start hidden background body downloads.
+4. As a developer, I want single and batch searches through one input format, so that related questions use the same workflow.
+5. As a developer, I want result titles, URLs, snippets and sources, so that I can judge relevance and inspect evidence.
+6. As a developer, I want OpenAI's native answer and citations retained, so that useful search output is available without a second summarization request.
+7. As a developer, I want Exa to return search results directly, so that a separate answer request does not add work or latency.
+8. As a developer, I want to set a maximum result count, so that searches fit the task without promising unavailable sources.
+9. As a developer, I want to include domains, so that I can restrict returned sources to relevant sites.
+10. As a developer, I want to exclude domains and their subdomains, so that unwanted sources do not appear in the results.
+11. As a developer, I want exclusion to take precedence over inclusion, so that overlapping filters have a predictable result.
+12. As a developer, I want all filtered searches to use Exa and validate returned URLs, so that provider differences do not silently weaken filtering.
+13. As a developer, I want a clear error when domain filtering lacks an Exa key, so that I know which configuration is required.
+14. As a developer, I want ordinary searches to use a globally preferred provider, so that I do not specify a backend in every tool call.
+15. As a developer, I want an available provider selected before a request when the preferred one is unconfigured, so that an optional backend does not prevent searching.
+16. As a developer, I want at most one fallback for temporary provider failures, so that an occasional outage can be handled without a long retry chain.
+17. As a developer, I want authentication errors, invalid requests and valid empty results reported directly, so that fallback does not hide the underlying outcome.
+18. As a developer, I want the actual provider and fallback recorded, so that I can understand how a result was obtained.
+19. As a developer, I want to reuse Pi's official OpenAI/Codex authentication, so that I do not maintain another login or credential system.
+20. As a developer, I want an explicit search model to override the conversation model, so that search remains predictable when I switch chat models.
+21. As a developer, I want a compatible current model reused when no search model is configured, so that the common case needs less configuration.
+22. As a developer, I want an invalid explicit model reported instead of guessed around, so that configuration mistakes remain visible.
+23. As a developer, I want Exa authentication read from EXA_API_KEY, so that the extension has one clear Exa credential source.
+24. As a developer, I want readable public HTML converted to Markdown, so that the model can inspect page content in a useful form.
+25. As a developer, I want raw textual responses, including Markdown and JSON, so that I can read sources that do not need article extraction.
+26. As a developer, I want ordinary public GitHub URLs treated like other public text URLs, so that removing special GitHub handling does not blacklist the site.
+27. As a developer, I want extraction, HTTP and unsupported-content failures reported, so that the model can choose another source.
+28. As a developer, I want each batch input to retain its own ordered success or error, so that one failed page or query does not discard other results.
+29. As a developer, I want content references and bounded previews, so that large pages do not flood the conversation.
+30. As a developer, I want to page through retained content using continuation information, so that output truncation does not skip material.
+31. As a developer, I want literal case-insensitive text lookup with nearby context, so that I can locate a term without reading the entire page.
+32. As a developer, I want expired or evicted references to explain that I must search or fetch again, so that I can recover without guessing.
+33. As a developer, I want the content cache limited to the current session's memory, so that the extension does not create a disk-content archive.
+34. As a developer, I want content references cleared on restart, reload and session switch, so that their lifetime is explicit.
+35. As a developer, I want the oldest stored content evicted when the cache is full, so that a long session stays within the content budget.
+36. As a developer, I want cancellation to stop active and queued work, so that cancelled searches do not trigger further provider requests.
+37. As a developer, I want bounded inputs, responses, attempts and output, so that one request cannot grow without limit.
+38. As a developer, I want page retrieval restricted to public HTTP(S) destinations throughout redirects, so that this web tool does not become a private-network or authenticated-page reader.
+39. As a developer, I want each Pi Stuff tool independently disabled through global configuration, so that I can expose only the tools I want.
+40. As a developer, I want the same switch mechanism available to future Pi Stuff tools, so that web access does not define a special configuration system.
+41. As a developer, I want switch changes applied through /reload, so that the extension has one clear configuration lifecycle.
+42. As a developer, I want Pi Stuff switches and Pi's own tool selection both respected, so that enabling one does not override a disable in the other.
+43. As a developer, I want disabling fetching to leave search and existing cached-content lookup independent, so that tool switches do not introduce hidden cascades.
+44. As a developer, I want missing configuration to use defaults and invalid configuration to report an error, so that setup remains simple and mistakes remain visible.
+45. As a developer, I want Pi's default tool presentation, so that web access does not add a panel, browser flow or custom interaction model.
+46. As a maintainer, I want a rewrite that follows the repository's module and I/O rules, so that future Pi Stuff development uses a consistent codebase.
+47. As a maintainer, I want imported notices and fixed upstream provenance retained, so that the independently maintained fork remains traceable.
+48. As a maintainer, I want comparable runtime source counts and separate test, documentation and dependency reporting, so that feature reduction can be assessed without code compression.
+49. As a maintainer, I want tests through the public tool contract and actual Pi-host acceptance, so that the evidence describes behavior I rely on.
+50. As a maintainer, I want selective upstream fixes and no compatibility promise for upstream internals, so that removed features do not return through routine upstream merges.
 
-Removing GitHub-specific handling does not blacklist GitHub URLs from ordinary public text retrieval. Removing authenticated-page reading does not remove authentication required by the two retained search providers.
+## Implementation Decisions
 
-## Search providers and results
+- **Ownership and modules:** The web-access capability owns search, public-text retrieval, retained content and their rules. A small shared tool-switch capability owns global tool availability for all Pi Stuff tools. The Pi integration composes these capabilities with host model/authentication and lifecycle services; the network boundary handles provider and page I/O. Prefer these existing host boundaries to additional frameworks or pass-through layers. Compare any new abstraction with an inline or simpler alternative under the repository rules.
+- **Tool contracts:** web_search accepts a nonempty queries array and optional maxResults, includeDomains and excludeDomains. fetch_content accepts a nonempty urls array and optional mode, readable or raw, defaulting to readable. get_search_content accepts contentId with either optional offset/limit or one find string; mixing find with paging options is invalid. A single search or URL is a one-element array. Provider choice is global, not a per-call argument.
+- **Search/fetch separation:** web_search never downloads result-page bodies, starts background content tasks or emits completion notifications for them. The model calls fetch_content separately after selecting sources. Search responses contain a query, actual provider, ordered source results, optional native answer, content reference and bounded preview. Every batch input has its own ordered success or error.
+- **Authentication and model selection:** Reuse Pi's authentication for official OpenAI/Codex models only. An explicit search-model provider/ID must exactly match an existing compatible Pi model and takes precedence. Otherwise reuse a compatible current model; never guess from names, price tiers or registry order. A different chat provider therefore requires explicit OpenAI search-model configuration or Exa. Read Exa authentication only from EXA_API_KEY. Exa uses its search endpoint, without an answer endpoint or keyless MCP route.
+- **Configuration:** Use one global Pi Stuff configuration named pi-stuff.json in the host-resolved agent directory. The file and fields are optional: known tools default to enabled, and the preferred search provider defaults to openai, with exa as the alternative. The tools map holds per-tool booleans; web.provider selects the preferred provider, and optional web.openaiModel holds the explicit OpenAI/Codex model provider/ID. No upstream configuration migration, project override or temporary-session switch command is included. Invalid explicit configuration fails visibly rather than choosing another model. Invalid configuration leaves Pi Stuff tools unavailable until corrected and reloaded; it does not rewrite configuration or change other extensions.
+- **Tool switches:** Changes apply through /reload. A switch controls direct model access to one tool, not every internal use of its underlying capability. Globally disabled tools cannot be re-enabled through Pi's tool selection; globally enabled tools still respect a disable from Pi. Switching one tool off does not cascade to another.
+- **Ordinary search routing:** Before requesting, choose a configured compatible provider; if the preferred provider is unconfigured, use the other available provider and report the selection. After a request starts, permit at most one attempt on the other provider for transport errors, timeout, HTTP 408, 429 or 5xx. Never retry the same provider. Authentication/configuration/request errors, malformed responses, unsupported capabilities, cancellation and valid empty results do not trigger fallback.
+- **Domain filtering:** Any nonempty include/exclude filter selects Exa regardless of the preferred provider. Require an Exa key and never fall back to OpenAI/Codex for that query. Pass the filters to Exa and validate returned source URL hosts. A domain matches itself and its subdomains; exclusion wins. Return fewer valid results when needed, without promising exhaustive subdomain coverage. Domains are hostnames, not URL or wildcard expressions. Do not replace constraints with query hints.
+- **Native answers and time:** Preserve OpenAI's native answer and citations without a separate summarization call. Exa supplies search results only. Result count is an upper bound. There is no dedicated recency parameter; dates in query text express intent, not guaranteed publication-date filtering.
+- **Extraction and network scope:** Use one main-content HTML extraction and Markdown-conversion path. Raw mode handles textual responses such as plain text, Markdown, JSON and HTML, not binary conversion. HTTP errors and extraction failures remain errors. Only public HTTP(S) destinations are allowed, including every redirect target; allow at most five redirects. Reject localhost/private-network destinations and caller-supplied credentials, cookies and headers. Removing GitHub-specific handling does not block ordinary public GitHub URLs.
+- **Stored content:** Keep retained search content and fetched text only in current-session memory. Successful references support later paging/find; full retained bodies must not be hidden in tool-result details or session custom entries. Normal visible tool output remains subject to Pi's conversation-history behavior. Clear on restart, reload or session switch. No disk cache, recovery, TTL or request deduplication. Evict oldest-stored content first at either cache limit; unavailable references instruct the caller to search or fetch again.
+- **Paging and find:** Offsets and lengths use JavaScript UTF-16 code units. Return actual continuation offsets and total length under the output byte budget. Find is one nonempty, case-insensitive literal term, with match positions and nearby excerpts; omit regex, fuzzy matching and multi-term search. Report whether more matches exist.
+- **Fixed limits:** Use the following defaults instead of a configuration option for every value. These are accepted boundaries, not benchmark results.
 
-Reuse Pi's existing authentication for official OpenAI/Codex search. Do not add a second login system, web-specific OpenAI credential configuration, credential commands or custom gateways. Search may use a configured OpenAI/Codex model even when the conversation uses another provider; the concrete model-selection rule remains to be specified. Exa requires an API key and uses `/search` only. Without an Exa key, OpenAI/Codex remains usable.
+| Boundary          | Contract                                                                                                                |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Batch/concurrency | At most 5 queries or URLs per call; at most 3 items in flight per call; a query attempts providers sequentially.        |
+| Results           | Default 5, maximum 20 per query; fewer is valid.                                                                        |
+| Input             | Query at most 2,000 UTF-16 code units; URL at most 8,192; each domain list at most 20 entries.                          |
+| Time              | 30 seconds per provider attempt or page fetch; one fallback allows at most two attempts per ordinary query.             |
+| Response/content  | At most 5 MiB per network response body and 1 MiB of retained text per item, measured as UTF-8; excess fails that item. |
+| Cache             | At most 64 entries and 32 MiB of UTF-8 content; this is a content budget, not total process heap.                       |
+| Visible output    | At most 32 KiB of model-visible text per tool result, with truncation and continuation metadata.                        |
+| Paging            | Default page/preview 8,000 UTF-16 code units; requested page limit at most 20,000, also subject to the byte budget.     |
+| Find              | One term of at most 200 UTF-16 code units; at most 10 matches, with up to 200 code units on each side.                  |
 
-Make the preferred provider globally configurable, defaulting to OpenAI/Codex. When both providers are available, allow at most one fallback to the other provider for network errors, timeouts, rate limits or server errors. Parameter errors, authentication failures and cancellation end the attempt; a valid empty result does not trigger another search. Record the actual provider and any fallback in the result. Initial availability checks and concrete status mappings remain to be specified.
+- **Cancellation and presentation:** Cancellation stops active and queued work and starts no fallback. Use Pi's default tool rendering, with no separate activity panel, progress command, browser server or custom renderer.
+- **Toolchain and dependencies:** Keep strict TypeScript, Bun 1.4.0 and Effect 4.0.0-rc.112. Pure algorithms stay ordinary functions; Effect handles application boundaries, typed failures and necessary I/O. Approved runtime additions are @mozilla/readability 0.6.0 (Apache-2.0), linkedom 0.18.13 (ISC), turndown 7.2.4 (MIT) and typebox 1.3.7 (MIT); add @types/turndown 5.0.6 (MIT) for development. TypeBox supplies the host-required tool parameter schema, while Effect handles configuration and provider-response decoding. Pi Coding Agent and directly imported Pi AI are host peer dependencies, using the inspected 0.85.1 baseline; actual Bun-host compatibility must be verified. No direct Pi TUI dependency is needed for default rendering.
+- **Provider adapters:** Reuse Pi model/authentication services, but retain dedicated official OpenAI Responses/Codex search requests because the inspected ordinary Pi model interface does not expose hosted web_search. Use direct Exa search requests. No OpenAI/Exa SDK, p-limit, undici, defuddle, unpdf or compatibility polyfill is included in the approved dependency plan.
+- **Maintenance and size:** Base the rewrite on pi-web-access 0.28.0 at commit e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5, preserve imported source/license notices and record provenance in implementation evidence. Selectively port upstream fixes without promising upstream layout, configuration or tool-interface compatibility. Compare runtime source against the inspected 25,795 code lines across 66 files using the same cloc scope: exclude blanks, comments, tests, docs, declarations, standalone assets and dependency internals; include UI embedded in TypeScript. Report tests, documentation and dependencies separately. Reduce through agreed feature removal, without a hard cap, same-function quota, compressed formatting or deleted necessary verification.
 
-The shared result contract contains titles, URLs, snippets and sources, with an optional provider-native answer. Preserve OpenAI's native answer and citations without making an additional summarization call. Exa returns search results without a separate answer request.
+## Testing Decisions
 
-Keep single or batch queries, a result-count upper bound, and domain inclusion/exclusion. The count is a maximum, not a promise to produce that many sources. Domain filters must not silently become query hints; report unsupported filtering explicitly. Omit a dedicated time-filter parameter. Time requirements may appear in the query, but do not guarantee publication-date filtering.
+- **Primary seam:** Exercise the registered tools through the complete web-access capability. Keep real routing, parsing, filtering, storage and output behavior in these tests. Substitute only host/environment and network boundaries with deterministic supplied adapters; do not mock modules, test private helpers by default or build a generic test framework. This follows the public tool contracts and verification scope confirmed in the design interview.
+- **What a good test proves:** Observable inputs produce the promised output, failure, state transition or resource cleanup. Assert returned sources and metadata, continuation correctness, tool availability and externally visible request behavior; avoid assertions about helper names, internal call structure or incidental serialization.
+- **Search cases:** Cover single/batch ordering and partial failure; exact model selection and authentication reuse; configured-provider selection; every fallback and non-fallback class; one-fallback maximum; cancellation before/during requests and while queued; native answer/citations; valid empty results; result caps; and malformed provider data. Distinguish an unconfigured provider from failed authentication.
+- **Filtering cases:** Verify Exa-only selection even when OpenAI is preferred, missing-key failure, inclusion and exclusion together, exclusion precedence, exact/subdomain host matching, invalid host input, post-validation of returned URLs, fewer valid results and no fallback that relaxes filters. Provider request fixtures should verify the external request contract, not private adapter structure.
+- **Fetch cases:** Use representative public HTML, plain text, Markdown and JSON fixtures through the real extraction path. Cover empty/unextractable pages, binary content, HTTP failures, redirect limits, public-address checks on initial and redirected targets, cancellation, timeouts and byte/text limits. Controlled local fixtures must not weaken the production public-destination policy.
+- **Storage/output cases:** Verify exact paging continuation across byte truncation, UTF-16 positions, bounded previews, literal case-insensitive find and context, mixed-parameter rejection, count and byte-budget eviction, unavailable-reference recovery instructions, and cache clearing on restart/reload/session switch. Verify that full retained content is not persisted through hidden result details or custom entries.
+- **Switch/configuration cases:** Verify defaults, invalid configuration, independent switches, unchanged unrelated tools, /reload application, and intersection with Pi's own tool selection. Cover a disabled fetch tool while search and existing-content lookup remain independently available.
+- **Actual host acceptance:** Load the extension in the maintainer's supported Bun-compiled Pi using isolated settings, sessions and unrelated resources. Run search-to-fetch-to-page/find, cancellation, reload and tool-switch scenarios. Record actual Pi/Bun versions and environment; cached SDK declarations alone are not acceptance. Separate deterministic/offline evidence from live OpenAI/Codex and Exa checks using explicitly selected accounts/models, and report unavailable required checks.
+- **Prior art and runners:** The repository has no owned product suite or test script to reuse. Use Bun's test runner and the existing QA policy when adding the first real suite and its CI entry, including the policy's pinned actionlint requirement. Existing tuistory 0.11.0 and the Pi 0.85.1/Bun 1.4.0 experiment in #29 provide terminal-driver prior art, not proof of web behavior. Use tuistory only where real terminal interaction needs verification; deterministic fixtures and RPC can cover other host behavior.
+- **Review and evidence:** Run the repository's required static checks and focused behavior tests. Obtain the mandatory independent full-diff standards/requirements review under the strict code-quality skill for substantive implementation, and the required high-risk review for dependencies, interfaces, network/cancellation and state boundaries. Fix or independently refute structural findings; tests alone are not a rebuttal. No coverage quota, placeholder suite, retired governance tests or TDD claim without an observed failing test.
 
-## Public text extraction
+## Out of Scope
 
-Keep one HTML main-content extraction and Markdown-conversion path, plus raw-text retrieval. Omit a secondary parser, RSC-specific extraction and browser rendering. A page whose content requires JavaScript or cannot be identified by the parser may fail extraction; report that failure so the model can select another source. The concrete parser dependencies remain subject to review.
+- Curator, browser curation, its local server, manual result selection and any alternate search-result UI.
+- All search providers except official OpenAI/Codex and Exa; provider fan-out, complex routing and retries beyond the accepted single fallback.
+- Keyless Exa MCP, Exa answer requests, separate OpenAI credentials/login, credential commands, custom gateways and upstream configuration compatibility.
+- Search-triggered page-body downloads, includeContent, background fetching state and associated completion notifications.
+- GitHub-specific repository/tree/blob/issue/PR reading; PDF, image, video and YouTube handling; authenticated-page/browser-cookie reading; private-network fetches.
+- source_check, additional automatic summaries, page-answer generation and hosted content-extraction fallbacks.
+- A second HTML parser, RSC-specific extraction, JavaScript/browser rendering and arbitrary binary-to-text conversion.
+- Dedicated recency filtering, regex/fuzzy/multi-term content find, disk content caches, restart recovery, TTL and request deduplication.
+- Temporary-session switch commands, project configuration overrides, custom tool rendering, activity panels, progress commands and automatic upstream migration.
+- Subagent functionality and the separately owned research in #41.
+- Hard source-line targets, equal-function shrink quotas, new test frameworks, coverage mandates, speculative performance work, merge/release authorization or claims of untested runtime support.
 
-## Shared tool switches
+## Further Notes
 
-Pi Stuff must support independent tool switches beyond web access. A switch governs direct model access to one tool entry. Disabling `fetch_content`, for example, removes that direct model entry; it does not by itself prohibit every internal HTTP request or parser call.
+The maintainer confirmed the complete contract and ended the design interview on 2026-09-11, then requested publication through to-spec. The design record is [#43](https://github.com/jczhang02/pi-stuff/issues/43), with documentation in [PR #44](https://github.com/jczhang02/pi-stuff/pull/44). The implementation specification is published in [#45](https://github.com/jczhang02/pi-stuff/issues/45), ready for an agent to claim under the repository workflow; publishing this spec does not start implementation or authorize merging either PR.
 
-Use one global configuration for these switches and apply changes through `/reload`. The first release has no temporary session-switch command or project-level override. The configuration schema and interaction with Pi's own tool selection remain to be specified.
+Implementation acceptance requires:
 
-## Content lifetime
+- [ ] All three tools and the shared switches implement the contracts, defaults, limits and exclusions above.
+- [ ] Provider/model/authentication selection and domain filtering preserve their stated semantics, including failure paths.
+- [ ] Search, fetch, paging/find, partial failures, cancellation, cache eviction and lifecycle behavior pass applicable tests.
+- [ ] Actual supported-host acceptance and required provider evidence are recorded; unavailable required checks remain explicit.
+- [ ] Runtime source counts use the stated upstream comparison scope, and imported notices/provenance are retained.
+- [ ] English/Chinese usage and configuration documentation describe the delivered behavior and known limits.
+- [ ] Repository checks and required independent reviews pass, and unresolved structural or high-risk findings are cleared.
+- [ ] Implementation is delivered through its own focused PR with actual evidence; merge and release retain separate authorization.
 
-Keep stored search results and fetched bodies in bounded, current-session memory only. Do not write a separate content cache to disk or restore content references after Pi restarts or `/reload`. When a reference is no longer available, the model must repeat the search or fetch before paging or searching that content. Exact capacity limits and eviction behavior remain to be specified.
-
-This decision concerns Pi Stuff's content cache. Tool output already included in the conversation remains subject to Pi's normal session-history behavior.
-
-## Rewrite and source size
-
-The source baseline is npm `pi-web-access@0.28.0`, commit `e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5`. The fork will use the repository's strict TypeScript, Bun and Effect v4 rules. Pure algorithms remain ordinary functions; boundary decoding, typed errors and necessary I/O follow [ADR 0002](adr/0002-effect-quality.md).
-
-Keep source and license notices for imported code, record the version and commit in implementation/PR evidence, and selectively port later upstream fixes. There is no promise to preserve upstream layout, configuration or tool-interface compatibility. Dependencies and final interfaces require concrete review before implementation.
-
-The inspected baseline contains **25,795 source lines across 66 runtime files**. This is the `cloc` code column, excluding comments, blank lines, tests, documentation, declaration files and standalone assets; page code embedded in TypeScript is included. Third-party dependency internals are excluded.
-
-Report the rewritten runtime source using the same counting scope, and list tests, documentation and dependencies separately. Explain size changes through retained and removed functionality. Do not impose a hard total, demand an extra percentage reduction at equal functionality, compress readable code to improve a count, or remove needed verification to meet a target. The final count requires an implemented diff; static deletion estimates are not measurements of the rewrite.
-
-## Unresolved contracts
-
-The feature scope, authentication routes, fallback policy, search output, filtering, extraction coverage, content lifetime and tool-switch scope above are accepted.
-
-The remaining contract needs concrete configuration and model-selection rules, interaction with Pi's tool selection, tool schemas, dependency choices and bounded retrieval/storage behavior. Existing runtime capabilities and source evidence should resolve implementation facts; product choices belong in the interview. Final shared-understanding confirmation remains pending. This document does not yet approve a dependency list, configuration format or complete tool schema.
-
-## Final contract proposal — pending confirmation
-
-The following details are recommendations for the next interview round, not accepted decisions or implemented behavior.
-
-### Configuration and host integration
-
-Use `getAgentDir()/pi-stuff.json`, which follows Pi's agent-directory setting and defaults to `~/.pi/agent/pi-stuff.json` in the inspected Pi 0.85.1 SDK. This is Pi Stuff configuration, not a content cache. Do not read or migrate upstream `web-search.json` automatically.
-
-```json
-{
-  "tools": {
-    "web_search": true,
-    "fetch_content": true,
-    "get_search_content": true
-  },
-  "web": {
-    "provider": "openai",
-    "openaiModel": {
-      "provider": "openai-codex",
-      "id": "<an existing Pi model ID>"
-    }
-  }
-}
-```
-
-The file and every field are optional. Known tools default to enabled and `web.provider` defaults to `openai`; its other value is `exa`. If supplied, `web.openaiModel` takes precedence and must exactly identify an existing official OpenAI/Codex model. Otherwise reuse a compatible current conversation model. Do not guess a model from names, pricing tiers or registry order. A conversation using another provider therefore needs an explicit OpenAI search model or an Exa key. Resolve OpenAI authentication through Pi; read Exa's key from `EXA_API_KEY` only.
-
-Before sending a search, select a configured, compatible provider. If the preferred provider is unconfigured, use the other available provider and report the selection. An invalid explicit model or configuration is an error, not a reason to silently select something else. Once a request starts, only the accepted transient failures permit one fallback; use HTTP 408, 429 and 5xx, transport errors and timeouts. Do not retry the same provider. A malformed response or unsupported capability fails explicitly.
-
-Route every query with domain filters to Exa, regardless of the preferred provider; without an Exa key, report that filtering is unavailable. Do not fall back from a filtered Exa search to OpenAI/Codex. The official standard Responses schema documents domain inclusion, but equivalent exclusion and Codex filtering contracts were not established by this inspection. Using one filtering route avoids pretending the two adapters have identical capabilities. Pass the filters to Exa and check returned source URLs as well. A domain matches its exact hostname and subdomains; exclusion wins over inclusion. Return fewer results when necessary, without promising exhaustive subdomain coverage.
-
-Treat Pi Stuff's global switches as an additional restriction on Pi's own tool selection: a global disable cannot be re-enabled through Pi's tool selection, while a global enable does not override a tool disabled by Pi. Switches are independent; disabling fetch does not disable search or access to content already cached. Missing configuration uses defaults. Invalid configuration reports a useful error and leaves Pi Stuff tools unavailable until corrected and reloaded; it does not rewrite the file or alter other extensions' tools.
-
-### Tool inputs and returned content
-
-| Tool                 | Proposed input                                                                                                                                                                                            |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `web_search`         | `queries: string[]`, optional `maxResults`, `includeDomains`, `excludeDomains`. One query is a one-element array; provider selection stays in global configuration.                                       |
-| `fetch_content`      | `urls: string[]`, optional `mode: "readable" \| "raw"`, default `readable`. Raw mode reads textual responses, including plain text, Markdown, JSON and HTML; it does not turn binary responses into text. |
-| `get_search_content` | `contentId` plus either optional `offset`/`limit` for paging, or a single `find` string. Reject a call that mixes find and paging options.                                                                |
-
-Search and fetch batches return an independent result or error for each input, in input order. Successful entries carry a content reference, source metadata and a bounded preview; search also records the query, actual provider, result list and optional native answer. Store the complete retained content only in memory, not hidden in tool-result details or session custom entries.
-
-Paging returns the actual next offset and total length. Offsets and lengths use JavaScript UTF-16 code units. Find uses case-insensitive literal matching and returns positions with short surrounding excerpts; omit regular expressions, fuzzy matching and multiple simultaneous find terms. An unavailable reference gives a clear instruction to search or fetch again.
-
-### Fixed initial limits
-
-Keep these as implementation defaults rather than adding user configuration for every value. They are proposed limits, not measured performance claims.
-
-| Boundary                    | Proposed rule                                                                                                                                                                                                                                         |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Batch size and concurrency  | At most 5 queries or URLs per call; at most 3 items in flight per call. A query uses providers sequentially.                                                                                                                                          |
-| Search results              | Default 5, maximum 20 per query; fewer results are valid.                                                                                                                                                                                             |
-| Input size                  | Query at most 2,000 UTF-16 code units; URL at most 8,192; at most 20 domains per include/exclude list. Domains are hostnames, not URLs or wildcard expressions.                                                                                       |
-| Network timeout             | 30 seconds per provider attempt or page fetch. One fallback permits at most two attempts for a query. Cancellation stops active and queued work and never starts fallback.                                                                            |
-| Public-page retrieval       | HTTP(S) public destinations only, including redirect targets; at most 5 redirects. No localhost/private-network access, caller-supplied credentials, cookies or headers. HTTP errors are returned as errors.                                          |
-| Response and stored content | At most 5 MiB per network response body and 1 MiB of retained text per item, measured as UTF-8. Exceeding either limit fails that item explicitly.                                                                                                    |
-| Memory cache                | At most 64 entries and 32 MiB of UTF-8 content, evicting the oldest stored entry first. This is a content budget, not a guarantee about total process heap. No TTL, disk writes or request deduplication. Clear on restart, reload or session switch. |
-| Tool output and paging      | At most 32 KiB of model-visible text per tool result. Default page/preview length 8,000 UTF-16 code units; requested page limit at most 20,000, also subject to the byte budget. Return truncation and continuation metadata.                         |
-| Find                        | One nonempty term of at most 200 UTF-16 code units; return at most 10 matches, each with up to 200 code units of context on either side. Report when further matches exist.                                                                           |
-
-Use Pi's default tool rendering. No separate activity panel, custom renderer, progress command or browser UI is part of this proposal. Verification must cover the owned filtering, fallback, cancellation, public-network boundary, output limits, cache eviction and reload behavior. Real-host and live-provider acceptance remain future implementation work.
-
-### Dependency proposal
-
-Keep the existing Effect v4 dependency. The proposed new runtime pins are `@mozilla/readability@0.6.0` (Apache-2.0), `linkedom@0.18.13` (ISC), `turndown@7.2.4` (MIT) and `typebox@1.3.7` (MIT). The first three provide the single extraction path; TypeBox matches the inspected Pi 0.85.1 SDK's dependency. Preserve all applicable notices. These are dependency candidates, not an installation or a runtime compatibility claim.
-
-Add `@types/turndown@5.0.6` (MIT) as a development-only type dependency. TypeBox declares the host tool inputs; keep configuration and provider-response decoding under the existing Effect rule rather than introducing another application-wide validation framework.
-
-Use Pi Coding Agent and, if directly imported, Pi AI as host peer dependencies, with 0.85.1 as the inspected development baseline; do not claim support for other host versions without evidence. Use the host's default rendering without a Pi TUI dependency. No OpenAI/Exa SDK, `p-limit`, `undici`, `defuddle`, `unpdf` or compatibility polyfill is proposed.
-
-Pi's ordinary model-completion interface does not expose a native hosted `web_search` tool in the inspected 0.85.1 declarations. Reuse its model/authentication services, but keep a dedicated official OpenAI Responses/Codex search adapter. This SDK inspection does not establish compatibility with the running Bun-compiled host; that requires actual extension acceptance.
-
-## Source evidence
-
-- [Tool registration and orchestration](https://github.com/nicobailon/pi-web-access/blob/e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5/index.ts).
-- [OpenAI/Codex search](https://github.com/nicobailon/pi-web-access/blob/e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5/openai-search.ts) and [Exa search](https://github.com/nicobailon/pi-web-access/blob/e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5/exa.ts).
-- [Content extraction](https://github.com/nicobailon/pi-web-access/blob/e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5/extract.ts), [storage](https://github.com/nicobailon/pi-web-access/blob/e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5/storage.ts) and [text lookup](https://github.com/nicobailon/pi-web-access/blob/e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5/content-find.ts).
-- [OpenAI Responses API reference](https://platform.openai.com/docs/api-reference/responses-streaming?lang=python) and [Exa search API reference](https://exa.ai/docs/reference/search), inspected for filter capabilities on 2026-09-11.
-- Published [Pi Coding Agent 0.85.1](https://registry.npmjs.org/@earendil-works/pi-coding-agent/0.85.1) and [Pi AI 0.85.1](https://registry.npmjs.org/@earendil-works/pi-ai/0.85.1): inspected the cached package declarations, agent-directory implementation and extension lifecycle documentation, without starting Pi or reading user credentials.
-- Dependency metadata: [Readability](https://registry.npmjs.org/@mozilla/readability/0.6.0), [linkedom](https://registry.npmjs.org/linkedom/0.18.13), [Turndown](https://registry.npmjs.org/turndown/7.2.4), [TypeBox](https://registry.npmjs.org/typebox/1.3.7) and [Turndown types](https://registry.npmjs.org/@types/turndown/5.0.6).
+The inspected upstream source is [pi-web-access 0.28.0](https://github.com/nicobailon/pi-web-access/tree/e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5). Official [OpenAI Responses](https://platform.openai.com/docs/api-reference/responses-streaming?lang=python) and [Exa search](https://exa.ai/docs/reference/search) references informed the accepted filtering boundary. Pi 0.85.1 package declarations and lifecycle documentation informed host integration; they were inspected without starting Pi or reading credentials. Product behavior, dependency integration and live providers have not been validated by this specification work.
