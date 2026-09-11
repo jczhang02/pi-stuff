@@ -2,6 +2,8 @@
 
 [English authoritative version](../../../research/pi-selected-subagent-comparison.md)。英文版为规范正文。
 
+> 当前选型以[扩大范围后的 fork 复核](pi-subagent-fork-decision.md)为准。本报告保留原有范围和时点，推荐结论已被新报告替代。
+
 调研日期：**2026-09-11**。本文补充[此前按下载量筛选的比较](pi-subagent-fork-comparison.md)。这四个实现由维护者明确指定，下载量仅供参考，不再作为准入门槛。调研问题是：后续使用 Pi Stuff 开发 Pi Stuff，哪个实现最适合作为 fork 基础。
 
 **建议：如果第一个功能是普通 Pi 子代理协作，优先采用 ogul 的任务控制设计。**它用 2,703 行生产代码覆盖了创建、等待、查看、追加指令、打断和继续同一子会话，也不接管仓库的 Git 流程。如果第一版就需要子代理提问、兄弟通信和依赖调度，Arhen 更值得优先考虑。Henry 适合预设角色工作流；Davis 适合明确需要支持多种代理运行时的产品。这是源码层面的选型建议，尚未完成接入或兼容性验证。

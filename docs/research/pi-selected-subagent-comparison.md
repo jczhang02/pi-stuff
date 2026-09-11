@@ -2,6 +2,8 @@
 
 [Chinese reading reference](../i18n/zh-CN/research/pi-selected-subagent-comparison.md). English is authoritative.
 
+> Current decision: the [broader fork reassessment](pi-subagent-fork-decision.md) supersedes this report's recommendation. This file preserves its original scope and snapshot.
+
 Research date: **2026-09-11**. This supplements the [earlier download-filtered comparison](pi-subagent-fork-comparison.md). The maintainer selected these four implementations explicitly; download volume is descriptive here, not an eligibility gate. The question is which source makes the best fork foundation for developing Pi Stuff with Pi Stuff.
 
 **Recommendation: start with ogul's task-control design if the first feature is ordinary Pi delegation: spawn, wait, inspect, send another instruction, interrupt, and continue the same child conversation.** Its 2,703 production code lines cover that loop without owning the repository's Git workflow. Arhen is the stronger alternative when child-to-parent questions, sibling messages and dependency scheduling are first-release requirements. Henry fits prescribed role workflows; Davis fits a deliberate choice to support several agent runtimes. This is a source-based recommendation, not a completed integration or compatibility result.

@@ -2,6 +2,8 @@
 
 [简体中文](../i18n/zh-CN/research/pi-subagent-fork-comparison.md)
 
+> Current decision: the [broader fork reassessment](pi-subagent-fork-decision.md) supersedes this report's recommendation. This file preserves its original scope and snapshot.
+
 ## Scope and selection
 
 The core comparison is limited to **five high-download packages in the official Pi package catalog**. A candidate must be listed in the catalog, have at least **10,000 npm downloads in the fixed 30-day window**, and provide a reusable child-agent runtime through a Pi package. Candidates are ordered by downloads. Replacement CLI distributions, role/prompt packages without a general dispatch surface, and fixed-purpose commands are outside this comparison. This threshold is a research selection rule, not a Pi certification or a quality score.
