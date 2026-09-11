@@ -53,6 +53,49 @@ export function createWebTools(
 ) {
   const content = new Content();
   let lifetime = new AbortController();
+  async function batch(
+    items: readonly string[],
+    retrieve: (item: string) => Effect.Effect<string, WebError>,
+    signal: AbortSignal | undefined,
+  ) {
+    const budget = Math.floor((OUTPUT_BYTES - 100) / items.length);
+    const output = await Effect.runPromise(
+      Effect.forEach(
+        items,
+        (item, index) =>
+          retrieve(item).pipe(
+            Effect.flatMap(text =>
+              Effect.try({
+                try: () =>
+                  `item: ${index}\n${content.page(content.store(text), 0, 8000, budget - 32)}`,
+                catch: error =>
+                  error instanceof WebError
+                    ? error
+                    : new WebError({
+                        kind: 'content',
+                        message: 'Could not retain content.',
+                      }),
+              }),
+            ),
+            Effect.catch(error =>
+              Effect.succeed(
+                `item: ${index}\nerror: ${error.kind}: ${error.message}`,
+              ),
+            ),
+          ),
+        {concurrency: 3},
+      ),
+      {
+        signal: signal
+          ? AbortSignal.any([signal, lifetime.signal])
+          : lifetime.signal,
+      },
+    );
+    return {
+      content: [{type: 'text' as const, text: output.join('\n\n')}],
+      details: undefined,
+    };
+  }
   const webSearch = {
     name: 'web_search',
     label: 'Web search',
@@ -70,43 +113,11 @@ export function createWebTools(
           kind: 'input',
           message: 'Invalid search arguments.',
         });
-      const budget = Math.floor((OUTPUT_BYTES - 100) / params.queries.length);
-      const output = await Effect.runPromise(
-        Effect.forEach(
-          params.queries,
-          (query, index) =>
-            search(query, params, settings, credentials, network).pipe(
-              Effect.flatMap(text =>
-                Effect.try({
-                  try: () =>
-                    `item: ${index}\n${content.page(content.store(text), 0, 8000, budget - 32)}`,
-                  catch: error =>
-                    error instanceof WebError
-                      ? error
-                      : new WebError({
-                          kind: 'content',
-                          message: 'Could not retain search.',
-                        }),
-                }),
-              ),
-              Effect.catch(error =>
-                Effect.succeed(
-                  `item: ${index}\nerror: ${error.kind}: ${error.message}`,
-                ),
-              ),
-            ),
-          {concurrency: 3},
-        ),
-        {
-          signal: signal
-            ? AbortSignal.any([signal, lifetime.signal])
-            : lifetime.signal,
-        },
+      return batch(
+        params.queries,
+        query => search(query, params, settings, credentials, network),
+        signal,
       );
-      return {
-        content: [{type: 'text' as const, text: output.join('\n\n')}],
-        details: undefined,
-      };
     },
   };
   const fetchContent = {
@@ -126,43 +137,11 @@ export function createWebTools(
           kind: 'input',
           message: 'Invalid fetch arguments.',
         });
-      const budget = Math.floor((OUTPUT_BYTES - 100) / params.urls.length);
-      const output = await Effect.runPromise(
-        Effect.forEach(
-          params.urls,
-          (url, index) =>
-            fetchText(url, params.mode ?? 'readable', network).pipe(
-              Effect.flatMap(text =>
-                Effect.try({
-                  try: () =>
-                    `item: ${index}\n${content.page(content.store(text), 0, 8000, budget - 32)}`,
-                  catch: error =>
-                    error instanceof WebError
-                      ? error
-                      : new WebError({
-                          kind: 'content',
-                          message: 'Could not retain content.',
-                        }),
-                }),
-              ),
-              Effect.catch(error =>
-                Effect.succeed(
-                  `item: ${index}\nerror: ${error.kind}: ${error.message}`,
-                ),
-              ),
-            ),
-          {concurrency: 3},
-        ),
-        {
-          signal: signal
-            ? AbortSignal.any([signal, lifetime.signal])
-            : lifetime.signal,
-        },
+      return batch(
+        params.urls,
+        url => fetchText(url, params.mode ?? 'readable', network),
+        signal,
       );
-      return {
-        content: [{type: 'text' as const, text: output.join('\n\n')}],
-        details: undefined,
-      };
     },
   };
   const getSearchContent = {

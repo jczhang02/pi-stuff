@@ -77,7 +77,7 @@ Oxfmt 使用 Google GTS 格式偏好, 不安装 GTS、ESLint 或 Prettier. 上�
 
 在本地用 `bun run format` 写入格式修改, CI 只运行 `bun run format:check`. 完整命令见[贡献指南](../CONTRIBUTING.md#验证变更). Bun 保持固定为 `1.4.0`, 使用 `bun install --frozen-lockfile --ignore-scripts` 安装.
 
-当前基线运行 Oxfmt、Oxlint 和 TypeScript. Husky 在提交前调用这些检查, 不写入或暂存文件；commitlint 标准配置检查提交消息和 PR 标题. 获批准的治理削减后没有自有自动化测试, 也没有占位测试命令. 质量规则保持错误级, 对应探针不再保留为单独套件. 不为形式增加 Knip、覆盖率目标、变异测试框架或竞争性的 lint/格式工具. 报告实际验证和剩余测试.
+当前基线运行 Oxfmt、Oxlint 和 TypeScript. Husky 在提交前调用这些检查, 不写入或暂存文件；commitlint 标准配置检查提交消息和 PR 标题. 用 `bun run test` 运行自有离线产品测试; 已退役的治理套件继续保持删除. 质量规则保持错误级, 对应探针不再保留为单独套件. 不为形式增加 Knip、覆盖率目标、变异测试框架或竞争性的 lint/格式工具. 报告实际验证和剩余测试.
 
 ## 结构质量与审查
 

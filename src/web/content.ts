@@ -18,10 +18,13 @@ function fitEnd(
     if (Buffer.byteLength(text.slice(start, mid)) <= bytes) low = mid;
     else high = mid - 1;
   }
+  // Explicit limits count UTF-16 units, even inside a surrogate pair.
+  // Preserve pairs only when the byte budget shortens the requested range.
   const last = text.charCodeAt(low - 1);
   const next = text.charCodeAt(low);
   if (
     low > start &&
+    low < end &&
     last >= 0xd800 &&
     last <= 0xdbff &&
     next >= 0xdc00 &&

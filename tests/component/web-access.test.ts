@@ -92,6 +92,33 @@ test('fetch retains raw text for subsequent paging without hidden body details',
   expect(page.content[0]?.text).toContain('nextOffset: 10');
 });
 
+test('minimum UTF-16 pages always advance through supplementary characters', async () => {
+  const web = createWebTools({
+    request: () =>
+      Effect.succeed(
+        new Response('\u{1f600}x', {headers: {'content-type': 'text/plain'}}),
+      ),
+  });
+  const fetched = await web.fetchContent.execute(
+    'fetch',
+    {urls: ['https://example.com']},
+    undefined,
+  );
+  const id = /contentId: (\S+)/.exec(fetched.content[0]?.text ?? '')?.[1] ?? '';
+  let combined = '';
+  for (const offset of [0, 1, 2]) {
+    const page = await web.getSearchContent.execute(
+      'page',
+      {contentId: id, offset, limit: 1},
+      undefined,
+    );
+    const text = page.content[0]?.text ?? '';
+    expect(text).toContain(`nextOffset: ${offset + 1}`);
+    combined += text.split('\n\n')[1];
+  }
+  expect(combined).toBe('\u{1f600}x');
+});
+
 test('byte-bounded paging continues exactly and find reports UTF-16 positions', async () => {
   const body = '界'.repeat(18000) + 'İ [a] BETA beta';
   const web = createWebTools({

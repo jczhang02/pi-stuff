@@ -80,11 +80,11 @@ The 15 generic anti-slop rules, Effect rule and Oxlint correctness rules remain 
 
 Effect `4.0.0-rc.112` remains the selected framework for boundary decoding, typed errors and necessary I/O; pure algorithms remain ordinary functions. RC status alone never justifies rejecting v4, downgrading to v3 or choosing another framework. Specific incompatibilities need reproduction, evidence and a maintainer decision; consult v4 APIs. See [ADR 0001](docs/adr/0001-typescript-bun.md) and [ADR 0002](docs/adr/0002-effect-quality.md).
 
-There are currently no repository-owned automated tests or `test` script. The removed governance programs' six suites are not retained as placeholder tests. Add tests when owned behavior warrants them, including useful bug regressions; report actual commands and limitations. Standard hook wiring gets focused integration verification, not a new suite that retests Husky or commitlint.
+Run `bun run test` for the offline product suite; CI runs it in the existing `checks` job. See [terminal E2E](docs/quality-assurance.md#terminal-e2e) for the separate compiled-host profile. The removed governance programs' six suites are not retained as placeholder tests. Add tests when owned behavior warrants them, including useful bug regressions; report actual commands and limitations. Standard hook wiring gets focused integration verification, not a new suite that retests Husky or commitlint.
 
 Authors and reviewers check affected Markdown links, templates, labels, dependency changes and CI security settings directly. There is no custom repository-policy or PR-body validator. Remove secrets and personal information before publishing evidence.
 
-Use the [quality assurance policy](docs/quality-assurance.md) to select test levels, isolated environments and necessary verification. Its classification and future CI steps are not claims that product tests already exist.
+Use the [quality assurance policy](docs/quality-assurance.md) to select test levels, isolated environments and necessary verification. Offline test success does not establish live-provider or untested-runtime compatibility.
 
 ## Open a pull request
 
