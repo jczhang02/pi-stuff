@@ -33,8 +33,19 @@ PI_TEST_HOST=/absolute/path/to/compiled/pi bun test tests/system
 Implement 在同一个子代理会话内累计七条用户消息和一次压缩。主代理保存了十二条 subagent 通知，全部为 `display: false`。保留的子代理费用是 SDK 报告值，不作为账户实际账单。
 
 将手动压缩交由运行时管理后，又用真实模型压缩了 Explore 的 2,891 tokens，隔离设置为
-`keepRecentTokens=100`。Fleet 显示 `Compacting context`、运行图标和递增耗时；完成后
+`keepRecentTokens=100`。Fleet 显示 `Compacting context` 和运行图标；完成后
 恢复此前结果，并累计压缩用量与耗时。原先的对话与工具条目仍保留在新压缩记录上方。
+
+增加恢复检查后，`/reload` 仍能打开原来的只读 Explore 与可写 Implement 对话。再用真实
+模型继续 Implement，它根据原上下文正确回答：非法上下界抛出 `RangeError`，四个测试
+通过。第八条用户消息保存在原会话 id 和原工作树中。此时主代理共有十三条子代理通知，
+全部隐藏。补充验证的计数单独保存在证据 JSON 中，保留原测试过程的记录。
+
+恢复回归只修改测试自己的文件，然后重新启动真实 Pi。它们拒绝缺少工作树信息、未知
+工具、丢失的会话文件或路径、空文件和不同的会话头 id，检查没有第二次子模型请求、
+没有写入主目录，已有文件的字节内容也不变。放回原文件后，同一进程中的查看器可以
+重新打开它。压缩回归会挂起真实摘要 HTTP 请求，在没有键盘输入或模型事件时检查 Fleet
+的秒数持续增长，然后通过主代理工具取消压缩。
 
 ## 实际界面
 

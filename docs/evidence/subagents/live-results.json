@@ -90,5 +90,24 @@
     "observed_activity": "Compacting context",
     "original_final_text_preserved": true,
     "compaction_entries": 1
+  },
+  "restoration_validation_followup": {
+    "read_only_session_opened": true,
+    "write_session_opened": true,
+    "writer_session_id_unchanged": true,
+    "writer_worktree_unchanged": true,
+    "writer_user_messages": 8,
+    "writer_status": "completed",
+    "writer_result": "`clamp` 在 `minimum > maximum` 时抛出 `RangeError`，最终测试为 4 个通过、0 个失败。",
+    "writer_usage": {
+      "input": 27452,
+      "output": 2242,
+      "cacheRead": 35328,
+      "cacheWrite": 0,
+      "cost": 0.008887360000000002,
+      "turns": 19
+    },
+    "parent_notification_count": 13,
+    "all_parent_notifications_hidden": true
   }
 }

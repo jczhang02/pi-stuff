@@ -97,7 +97,18 @@ class Subagents {
     });
     this.installFooter();
     this.renderTimer = setInterval(() => {
-      if (this.fleet.views().some(view => !view.task.endedAt))
+      if (
+        this.fleet
+          .views()
+          .some(
+            view =>
+              !view.task.endedAt ||
+              this.manager.compactionStartedAt(
+                view.task.runId,
+                view.task.id,
+              ) !== undefined,
+          )
+      )
         this.tui?.requestRender();
     }, 500);
   }

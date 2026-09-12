@@ -34,10 +34,27 @@ Implement accumulated seven user messages and one compaction in the same child s
 
 After moving manual compaction into the runtime execution owner, a further live
 run compacted Explore from 2,891 tokens with `keepRecentTokens=100` in the
-isolated settings. Fleet showed `Compacting context`, a running icon and an
-advancing timer; on completion it restored Explore's prior result and included
+isolated settings. Fleet showed `Compacting context` and a running icon;
+on completion it restored Explore's prior result and included
 the compaction usage and elapsed time. Existing conversation/tool rows remained
 above the new compaction entry.
+
+After adding restoration checks, `/reload` reopened the same read-only Explore
+conversation and write-capable Implement conversation. A further real-model
+continuation answered correctly from Implement's existing context: invalid
+bounds throw `RangeError`, and four tests passed. Its eighth user message was
+saved under the same session id and worktree. The parent then had thirteen
+subagent notifications, all hidden. These follow-up counters are stored
+separately in the evidence JSON so the original trace remains identifiable.
+
+The restoration regressions restart real Pi after changing only test-owned
+files. They reject missing worktree metadata, unknown tools, missing session
+files or paths, empty files, and a different header id. No second child model
+request or parent-directory write occurs, and existing files retain their
+bytes. Replacing the missing file with its original contents allows the viewer
+to reopen it in the same process. The compaction regression holds the real
+summary HTTP request and checks that Fleet's seconds advance without any
+keyboard input or model events, then cancels it through the parent tool.
 
 ## Actual interface
 

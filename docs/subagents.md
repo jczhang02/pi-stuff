@@ -245,6 +245,15 @@ are normalized to `aborted` with an interruption error; the runtime does not
 pretend that an in-flight process survived a Pi restart. Saved terminal child
 sessions can be opened and continued after restoration.
 
+Restoration rechecks the allowed tools and the original worktree metadata.
+A saved write-capable child must still have its registered isolated worktree.
+The saved conversation file must exist and have a session header matching the
+recorded id. An empty file, invalid header, or different session id is rejected
+without creating a new conversation in its place. Message records use Pi's
+native parser, which skips malformed JSONL lines; this is not a whole-file
+integrity check. Keep the session files as well as the sidecar when backing up
+or moving a parent session.
+
 This runtime reads its own validated sidecar schema. It is not compatible with
 the older Arhen sidecar format. Keep the sidecar with its parent session and
 do not rename an Arhen sidecar into the Pi Stuff filename expecting migration.

@@ -144,6 +144,14 @@ function allRequestText(request: ChildRequest): string {
   return request.request.messages.map(messageText).join('\n');
 }
 
+function compactionElapsed(screenText: string): number | undefined {
+  const line = screenText
+    .split('\n')
+    .find(candidate => candidate.includes('Compacting context'));
+  const seconds = line?.match(/\b(\d+)s\b/)?.[1];
+  return seconds === undefined ? undefined : Number(seconds);
+}
+
 function task(run: SidecarRun, id: string) {
   const found = run.tasks.find(item => item.id === id);
   if (!found) throw new Error(`Missing task ${id} in run ${run.id}.`);
@@ -416,6 +424,21 @@ test('parent cancellation aborts a manual child compaction and preserves its ses
       fixture.summaryRequests[0]?.messages.map(messageText).join('\n') ?? '';
     expect(summaryPrompt).toContain(
       'This is the PREFIX of a turn that was too large to keep.',
+    );
+    const initialCompactionElapsed = compactionElapsed(screen(terminal));
+    expect(initialCompactionElapsed).toBeDefined();
+    if (initialCompactionElapsed === undefined)
+      throw new Error('Compaction status did not expose elapsed time.');
+    await terminal.text({
+      timeout: 5_000,
+      trimEnd: true,
+      waitFor: () => {
+        const elapsed = compactionElapsed(screen(terminal));
+        return elapsed !== undefined && elapsed > initialCompactionElapsed;
+      },
+    });
+    expect(compactionElapsed(screen(terminal))).toBeGreaterThan(
+      initialCompactionElapsed,
     );
 
     await terminal.press(['ctrl', 'c']);

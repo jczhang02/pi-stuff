@@ -7,10 +7,11 @@ import {
   DefaultResourceLoader,
   getAgentDir,
   ModelRuntime,
+  parseSessionEntries,
   SessionManager,
 } from '@earendil-works/pi-coding-agent';
 import {dirname, isAbsolute, join, relative, resolve} from 'node:path';
-import {realpath} from 'node:fs/promises';
+import {readFile, realpath} from 'node:fs/promises';
 import {Effect, Schema} from 'effect';
 import {resolveAgentFile} from './agentfile';
 import {CHILD_TALK_TOOLS, createChildTools, type ChildHandlers} from './child';
@@ -85,7 +86,10 @@ export class TaskSession {
                 : 'Cannot open child session.',
           }),
       }),
-    );
+    ).catch(error => {
+      this.opening = undefined;
+      throw error;
+    });
     return this.opening;
   }
 
@@ -93,6 +97,39 @@ export class TaskSession {
     const task = this.task;
     const agentDir = getAgentDir();
     const restored = Boolean(task.sessionFile);
+    if (task.sessionId && !task.sessionFile)
+      throw new SubagentError({
+        message: 'Saved child session is missing its conversation file path.',
+      });
+    const sessionDir = join(
+      this.ctx.sessionManager.getSessionDir(),
+      'pi-stuff-subagents',
+      this.ctx.sessionManager.getSessionId(),
+      task.runId,
+      task.id,
+    );
+    if (task.sessionFile) {
+      if (resolve(dirname(task.sessionFile)) !== resolve(sessionDir))
+        throw new SubagentError({
+          message:
+            'Child session file is outside this task’s session directory.',
+        });
+      // Pi open() creates a new session for a missing or empty file. Validate
+      // saved identity first so restoration cannot silently replace history.
+      const entries = parseSessionEntries(
+        await readFile(task.sessionFile, 'utf8'),
+      );
+      const header = entries[0];
+      if (
+        !task.sessionId ||
+        header?.type !== 'session' ||
+        header.id !== task.sessionId
+      )
+        throw new SubagentError({
+          message:
+            'Saved child session is empty, invalid, or has a different session id. Its file was left untouched.',
+        });
+    }
     if (!restored) {
       const file = await resolveAgentFile(
         task.agent,
@@ -105,30 +142,42 @@ export class TaskSession {
       task.model = task.model ?? file?.model;
       task.tools =
         task.tools ?? file?.tools ?? (task.write ? WRITE_TOOLS : READ_TOOLS);
-      const invalid = task.tools.filter(
-        tool => !WRITE_TOOLS.includes(tool) && !CHILD_TALK_TOOLS.includes(tool),
-      );
-      if (invalid.length)
+    }
+    task.tools ??= task.write ? WRITE_TOOLS : READ_TOOLS;
+    const invalid = task.tools.filter(
+      tool => !WRITE_TOOLS.includes(tool) && !CHILD_TALK_TOOLS.includes(tool),
+    );
+    if (invalid.length)
+      throw new SubagentError({
+        message: `Unknown child tools: ${invalid.join(', ')}.`,
+      });
+    task.write =
+      task.write ||
+      task.tools.some(tool => ['bash', 'edit', 'write'].includes(tool));
+    task.tools = [...new Set([...task.tools, ...CHILD_TALK_TOOLS])];
+    if (
+      ((restored && task.write) ||
+        task.branch ||
+        task.originCwd ||
+        task.isolation) &&
+      (!task.branch || !task.originCwd || task.isolation !== 'worktree')
+    )
+      throw new SubagentError({
+        message:
+          'Missing child worktree metadata. Write-capable saved sessions require their original isolated worktree.',
+      });
+    if (task.write && !task.branch) {
+      const source = await realpath(task.cwd);
+      const worktree = await createWorktree(source, task.runId, task.id);
+      if (!worktree)
         throw new SubagentError({
-          message: `Unknown child tools: ${invalid.join(', ')}.`,
+          message:
+            'Write-capable tasks require an isolated Git worktree. Use a Git repository with a commit.',
         });
-      task.write =
-        task.write ||
-        task.tools.some(tool => ['bash', 'edit', 'write'].includes(tool));
-      task.tools = [...new Set([...task.tools, ...CHILD_TALK_TOOLS])];
-      if (task.write && !task.branch) {
-        const source = await realpath(task.cwd);
-        const worktree = await createWorktree(source, task.runId, task.id);
-        if (!worktree)
-          throw new SubagentError({
-            message:
-              'Write-capable tasks require an isolated Git worktree. Use a Git repository with a commit.',
-          });
-        task.originCwd = source;
-        task.cwd = join(worktree.path, relative(worktree.root, source));
-        task.branch = worktree.branch;
-        task.isolation = 'worktree';
-      }
+      task.originCwd = source;
+      task.cwd = join(worktree.path, relative(worktree.root, source));
+      task.branch = worktree.branch;
+      task.isolation = 'worktree';
     }
     if (task.branch) {
       const worktree = await attachWorktree(
@@ -200,21 +249,7 @@ export class TaskSession {
       appendSystemPromptOverride: base => [...base, instructions],
     });
     await loader.reload();
-    const sessionDir = join(
-      this.ctx.sessionManager.getSessionDir(),
-      'pi-stuff-subagents',
-      this.ctx.sessionManager.getSessionId(),
-      task.runId,
-      task.id,
-    );
     const parentSession = this.ctx.sessionManager.getSessionFile();
-    if (
-      task.sessionFile &&
-      resolve(dirname(task.sessionFile)) !== resolve(sessionDir)
-    )
-      throw new SubagentError({
-        message: 'Child session file is outside this task’s session directory.',
-      });
     const sessionManager = task.sessionFile
       ? SessionManager.open(task.sessionFile, sessionDir, task.cwd)
       : SessionManager.create(
