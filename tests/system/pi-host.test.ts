@@ -76,6 +76,11 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
           {headers: {'content-type': 'text/plain'}},
         );
       }
+      if (
+        request.method !== 'POST' ||
+        !new URL(request.url).pathname.endsWith('/chat/completions')
+      )
+        return new Response('not found', {status: 404});
       const body = Schema.decodeUnknownSync(RequestBody)(await request.json());
       offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
@@ -221,8 +226,16 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
       );
       expect(first).toContain('HOST_CONTENT 中文 needle');
       expect(offered.toSorted()).toEqual([
+        'await_subagent',
         'fetch_content',
         'get_search_content',
+        'reply_subagent',
+        'resume_subagent',
+        'steer_subagent',
+        'subagent',
+        'subagent_cancel',
+        'subagent_result',
+        'subagent_status',
         'web_search',
       ]);
       const sessions = join(directory, 'sessions');
@@ -311,7 +324,18 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
       await terminal.press('enter');
       await terminal.waitForText('Reloaded', {timeout: 15000});
       await invoke('', '{}');
-      expect(offered.toSorted()).toEqual(['get_search_content', 'web_search']);
+      expect(offered.toSorted()).toEqual([
+        'await_subagent',
+        'get_search_content',
+        'reply_subagent',
+        'resume_subagent',
+        'steer_subagent',
+        'subagent',
+        'subagent_cancel',
+        'subagent_result',
+        'subagent_status',
+        'web_search',
+      ]);
       await terminal.type(
         '/host-tools fetch_content,get_search_content,web_search',
       );
@@ -332,8 +356,16 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
       await terminal.waitForText('Reloaded', {timeout: 15000});
       await invoke('', '{}');
       expect(offered.toSorted()).toEqual([
+        'await_subagent',
         'fetch_content',
         'get_search_content',
+        'reply_subagent',
+        'resume_subagent',
+        'steer_subagent',
+        'subagent',
+        'subagent_cancel',
+        'subagent_result',
+        'subagent_status',
         'web_search',
       ]);
       requestedTool = 'fetch_content';
