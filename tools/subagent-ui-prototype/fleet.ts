@@ -1,5 +1,10 @@
-import type {Theme} from '@earendil-works/pi-coding-agent';
-import {Text, truncateToWidth, visibleWidth} from '@earendil-works/pi-tui';
+import {getMarkdownTheme, type Theme} from '@earendil-works/pi-coding-agent';
+import {
+  Markdown,
+  Text,
+  truncateToWidth,
+  visibleWidth,
+} from '@earendil-works/pi-tui';
 import type {DemoAgent, Status} from './model';
 
 export type Variant = 'A' | 'B' | 'C';
@@ -113,9 +118,12 @@ export function VariantC(
     ...new Text(agent.task, 0, 0).render(detailWidth),
     '',
     theme.fg('dim', '最近消息'),
-    ...new Text(latest?.kind === 'assistant' ? latest.text : '', 0, 0).render(
-      detailWidth,
-    ),
+    ...new Markdown(
+      latest?.kind === 'assistant' ? latest.text : '',
+      0,
+      0,
+      getMarkdownTheme(),
+    ).render(detailWidth),
     '',
     theme.fg('accent', 'Enter 进入完整对话'),
   ];

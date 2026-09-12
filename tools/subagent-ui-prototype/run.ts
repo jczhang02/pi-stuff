@@ -7,6 +7,9 @@ const argument = process.argv.find(value => value.startsWith('--variant='));
 const variant = Schema.decodeUnknownSync(Schema.Literals(['A', 'B', 'C']))(
   argument?.slice(10) ?? 'A',
 );
+const theme = Schema.decodeUnknownSync(
+  Schema.Literals(['auto', 'light', 'dark']),
+)(process.argv.find(value => value.startsWith('--theme='))?.slice(8) ?? 'auto');
 const directory = await Effect.runPromise(
   Effect.promise(() => mkdtemp(join(tmpdir(), 'pi-subagent-ui-prototype-'))),
 );
@@ -23,6 +26,8 @@ try {
       '--no-themes',
       '--no-context-files',
       '--no-approve',
+      '--use-theme',
+      theme === 'auto' ? 'light/dark' : theme,
       '--tui-mode',
       'fullscreen',
       '-e',
@@ -35,6 +40,9 @@ try {
       env: {
         PATH: process.env.PATH,
         TERM: process.env.TERM ?? 'xterm-256color',
+        COLORTERM: process.env.COLORTERM,
+        COLORFGBG: process.env.COLORFGBG,
+        TERM_PROGRAM: process.env.TERM_PROGRAM,
         LANG: process.env.LANG ?? 'C.UTF-8',
         PI_CODING_AGENT_DIR: directory,
         PI_OFFLINE: '1',

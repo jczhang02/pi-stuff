@@ -1,22 +1,22 @@
 // Three fleet layouts inside real Pi; every agent opens the same full conversation view.
 // Throwaway UI prototype. All work, messages and counters below are simulated in memory.
 import {
-  getMarkdownTheme,
+  CustomEditor,
   getSelectListTheme,
   type ExtensionAPI,
   type ExtensionContext,
   type Theme,
+  type KeybindingsManager,
 } from '@earendil-works/pi-coding-agent';
 import {
-  Editor,
-  Markdown,
   Text,
   matchesKey,
   truncateToWidth,
   visibleWidth,
   type TUI,
 } from '@earendil-works/pi-tui';
-import {advance, createAgents, send, type DemoAgent} from './model';
+import {advance, createAgents, send, stop, type DemoAgent} from './model';
+import {Conversation} from './conversation';
 import {
   names,
   orderedAgents,
@@ -33,6 +33,8 @@ function createView(
   theme: Theme,
   close: () => void,
   initial: Variant,
+  keys: KeybindingsManager,
+  ctx: ExtensionContext,
 ) {
   let agents = createAgents();
   let selectedId = 'reviewer';
@@ -42,12 +44,14 @@ function createView(
   let stopping = false;
   let message = '选中代理后按 Enter，直接进入它的对话。';
   let bodyRows = 12;
-  const editor = new Editor(
+  const transcript = new Conversation(tui, ctx.cwd);
+  const editor = new CustomEditor(
     tui,
     {
       borderColor: text => theme.fg('border', text),
       selectList: getSelectListTheme(),
     },
+    keys,
     {paddingX: 1},
   );
   editor.onSubmit = value => {
@@ -58,13 +62,16 @@ function createView(
     }
     send(viewing, value);
     editor.setText('');
-    message = `已发送给 ${viewing.name} · 回复为本地模拟`;
+    message = viewing.pending
+      ? `已交给 ${viewing.name}；当前工具结束后处理。`
+      : `已发送给 ${viewing.name}`;
     tui.requestRender();
   };
   const timer = setInterval(() => {
     advance(agents, viewing?.id);
+    transcript.settleTools(agents);
     tui.requestRender();
-  }, 1000);
+  }, 200);
 
   function enter(agent: DemoAgent) {
     if (viewing) viewing.draft = editor.getText();
@@ -78,31 +85,24 @@ function createView(
         : '这里的输入只发送给当前代理。';
   }
 
-  function conversation(agent: DemoAgent, width: number): string[] {
-    return agent.messages.flatMap(entry => {
-      if (entry.kind === 'tool') {
-        const title = theme.fg(
-          'toolTitle',
-          `${agent.expanded ? '▾' : '▸'} ${entry.name}  ${entry.summary}`,
-        );
-        return [
-          title,
-          ...(agent.expanded
-            ? new Markdown(entry.detail, 1, 0, getMarkdownTheme()).render(width)
-            : []),
-          '',
-        ];
-      }
-      const title =
-        entry.kind === 'user'
-          ? theme.fg('accent', '你')
-          : theme.bold(agent.name);
-      return [
-        title,
-        ...new Markdown(entry.text, 1, 0, getMarkdownTheme()).render(width),
-        '',
-      ];
-    });
+  function paint(line: string, width: number): string {
+    // Pi 0.85.1's bundled light/dark export.pageBg values. Explicit canvas
+    // colors prevent Tuistory attach from mixing dark text defaults with a light terminal.
+    const bg =
+      theme.name === 'light' ? '\x1b[48;2;248;248;248m' : '\x1b[48;2;24;24;30m';
+    const fg = theme.getFgAnsi('text');
+    const fitted = truncateToWidth(line, width, '…');
+    const padded =
+      fitted + ' '.repeat(Math.max(0, width - visibleWidth(fitted)));
+    return (
+      fg +
+      bg +
+      padded
+        .replaceAll('\x1b[0m', `\x1b[0m${fg}${bg}`)
+        .replaceAll('\x1b[39m', fg)
+        .replaceAll('\x1b[49m', bg) +
+      '\x1b[0m'
+    );
   }
 
   return {
@@ -112,6 +112,7 @@ function createView(
     },
     dispose() {
       clearInterval(timer);
+      transcript.clear();
     },
     render(width: number): string[] {
       const height = tui.terminal.rows;
@@ -120,21 +121,26 @@ function createView(
           '终端至少需要 44 列 × 18 行。请放大窗口；Esc 返回，Ctrl+Q 退出原型。',
           0,
           0,
-        ).render(Math.max(1, width));
+        )
+          .render(Math.max(1, width))
+          .map(line => paint(line, width));
       }
       const inner = width - 4;
       editor.focused = Boolean(viewing) && !controls && !stopping;
       const title = viewing
         ? `主代理${viewing.id === 'main' ? '' : ` › ${viewing.name}`}`
         : 'Subagents  /  代理列表';
-      const heading = `${theme.bold(title)}${viewing ? `  ${statusText(viewing.status, theme)}` : ''}`;
+      const heading = `${theme.bold(title)}${viewing ? `  ${statusText(viewing.status, theme)} · ${viewing.elapsed}s` : ''}`;
       const subtitle = viewing
         ? `任务：${viewing.task}`
         : '进入现场，查看过程，直接交流。';
       const header = [
         heading,
         theme.fg('muted', subtitle),
-        theme.fg('dim', 'UI PROTOTYPE · 模拟任务 / 模拟回复 · 不调用模型'),
+        theme.fg(
+          'muted',
+          `UI PROTOTYPE · 模拟数据 · Pi 原生组件 · ${theme.name} 主题`,
+        ),
         theme.fg('border', '─'.repeat(inner)),
       ];
       const others = agents.filter(agent => agent.id !== viewing?.id);
@@ -149,8 +155,8 @@ function createView(
         ? 'Esc 列表  Ctrl+O 工具详情  PgUp/PgDn 记录  Ctrl+X 停止'
         : '↑↓ 选择  Enter 进入  m 主代理  Esc 返回 Pi';
       const switcher = controls
-        ? `← 上个  ${variant} ${names[variant]}  下个 → · r 重置 · F2 返回`
-        : `F2 原型布局：${variant} ${names[variant]}   Ctrl+Q 退出原型`;
+        ? `Ctrl+Q 退出 · F2 返回 · ← ${variant} ${names[variant]} → · t 主题 · r 重播`
+        : `Ctrl+Q 退出原型 · F2 布局/主题/重播 · ${variant} ${names[variant]}`;
       const editorLines = viewing
         ? [
             theme.fg(
@@ -161,13 +167,16 @@ function createView(
           ]
         : [];
       const footer = [
-        theme.fg('border', '─'.repeat(inner)),
         ...editorLines,
         theme.fg(
-          'warning',
+          stopping ? 'warning' : 'muted',
           stopping
             ? `停止 ${viewing?.name}？y 确认 / n 返回；已有内容保留。`
-            : message,
+            : viewing?.scroll
+              ? `较早记录 · 距最新 ${viewing.scroll} 行 · Ctrl+End 回到最新`
+              : viewing?.status === '运行中'
+                ? `${['⠋', '⠙', '⠹', '⠸'][Math.abs(viewing.step) % 4]} ${viewing.activity}${viewing.pending ? ' · 已收到补充消息' : ''}`
+                : message,
         ),
         theme.fg('muted', `后台 ${counts} │ ${background}`),
         theme.fg('dim', keyHelp),
@@ -176,18 +185,13 @@ function createView(
       bodyRows = Math.max(1, height - header.length - footer.length - 2);
       let body: string[];
       if (viewing) {
-        const all = conversation(viewing, inner);
+        const all = transcript.render(viewing, inner);
         viewing.scroll = Math.min(
           viewing.scroll,
           Math.max(0, all.length - bodyRows),
         );
         const end = all.length - viewing.scroll;
         body = all.slice(Math.max(0, end - bodyRows), end);
-        if (viewing.scroll > 0)
-          body[0] = theme.fg(
-            'warning',
-            `正在查看较早记录 · 距最新 ${viewing.scroll} 行 · Ctrl+End 回到最新`,
-          );
       } else {
         const ordered = orderedAgents(agents, variant);
         const selected = ordered.findIndex(agent => agent.id === selectedId);
@@ -202,7 +206,10 @@ function createView(
       const lines = ['', ...header, ...body, ...footer, ''];
       return lines.map(line => {
         const fitted = truncateToWidth(line, inner, '…');
-        return `  ${fitted}${' '.repeat(Math.max(0, inner - visibleWidth(fitted)))}  `;
+        return paint(
+          `  ${fitted}${' '.repeat(Math.max(0, inner - visibleWidth(fitted)))}  `,
+          width,
+        );
       });
     },
     handleInput(data: string) {
@@ -224,7 +231,13 @@ function createView(
                 variants.length
             ] ?? 'A';
           message = `重开此布局：bun tools/subagent-ui-prototype/run.ts --variant=${variant}`;
+        } else if (data === 't') {
+          ctx.ui.setTheme(theme.name === 'light' ? 'dark' : 'light');
+          transcript.clear();
+          editor.invalidate();
         } else if (data === 'r') {
+          transcript.clear();
+          stopping = false;
           agents = createAgents();
           viewing = undefined;
           selectedId = 'reviewer';
@@ -236,13 +249,8 @@ function createView(
       }
       if (stopping) {
         if (data === 'y' && viewing) {
-          viewing.status = '已停止';
-          viewing.remaining = 0;
-          viewing.activity = '已停止，历史消息保留';
-          viewing.messages.push({
-            kind: 'assistant',
-            text: '已停止当前工作（模拟）。已有消息和结果保留；发送新要求可以继续。',
-          });
+          stop(viewing);
+          transcript.settleTools(agents);
           message = `已停止 ${viewing.name}；其他代理继续运行。`;
         }
         stopping = false;
@@ -256,7 +264,8 @@ function createView(
           message = '已返回列表；未发送的草稿已保留。';
         } else close();
       } else if (viewing) {
-        if (matchesKey(data, 'ctrl+o')) viewing.expanded = !viewing.expanded;
+        if (keys.matches(data, 'app.tools.expand'))
+          viewing.expanded = !viewing.expanded;
         else if (matchesKey(data, 'pageUp'))
           viewing.scroll += Math.max(1, bodyRows - 2);
         else if (matchesKey(data, 'pageDown'))
@@ -300,8 +309,8 @@ export default function (pi: ExtensionAPI) {
     const requested = pi.getFlag('fleet-variant');
     const initial = requested === 'B' || requested === 'C' ? requested : 'A';
     await ctx.ui.custom<void>(
-      (tui, theme, _keys, done) =>
-        createView(tui, theme, () => done(), initial),
+      (tui, theme, keys, done) =>
+        createView(tui, theme, () => done(), initial, keys, ctx),
       {
         overlay: true,
         overlayOptions: {
