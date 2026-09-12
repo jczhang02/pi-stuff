@@ -62,6 +62,10 @@ Subsequent searches resolve needed credentials through the host, so login/logout
 
 **Pi 0.85.1 limitations:** its login input visibly renders the key. Avoid entering secrets while recording or sharing the terminal; directly managing the credential file is an alternative. With no chat model selected, login can save the key successfully and then report that Exa has no default model. Select an actual chat model, not Exa. Pi Stuff does not patch that host UI.
 
+Actual isolated Pi 0.85.1 login screen, with an unsubmitted dummy value and a separate chat model still selected:
+
+![Pi Exa login displaying a dummy key, with gpt-4.1 selected](assets/exa-login-pi-0.85.1.png)
+
 Keep `auth.json` out of ordinary configuration Git/cloud synchronization; use a separately encrypted backup if needed. Pi creates new credential files with `0600` permissions but preserves existing permissions. Plaintext files and environment variables are not encrypted storage, and `0600` does not isolate processes running as the same user.
 
 ### OpenAI and Codex
