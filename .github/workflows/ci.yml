@@ -37,3 +37,16 @@ jobs:
         run: bun run lint
       - name: Type check owned code
         run: bun run typecheck
+      - name: Run offline product and Pi terminal tests
+        run: bun run test
+      - name: Validate workflows with actionlint 1.7.12
+        run: |
+          mkdir -p "$RUNNER_TEMP/actionlint"
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            -o "$RUNNER_TEMP/actionlint/archive.tar.gz"
+          printf '%s  %s\n' \
+            8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 \
+            "$RUNNER_TEMP/actionlint/archive.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/actionlint/archive.tar.gz" -C "$RUNNER_TEMP/actionlint"
+          "$RUNNER_TEMP/actionlint/actionlint"
