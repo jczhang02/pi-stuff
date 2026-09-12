@@ -17,6 +17,8 @@ pi -e /absolute/path/to/pi-stuff/src/pi/index.ts
 
 ## 设置与凭据分开
 
+决策理由见 [ADR 0004: 宿主管理的 API Key 存储](adr/0004-host-api-key-storage.md).
+
 `pi-stuff.json` 和 `auth.json` 位于宿主解析的 **Pi agent 目录**, `PI_CODING_AGENT_DIR` 可覆盖宿主默认值. Pi Stuff 不读取项目级配置, 也不新建第二套凭据存储.
 
 可选的 `pi-stuff.json`:
