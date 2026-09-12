@@ -1,6 +1,6 @@
 diff --git a/agentfile.d.ts b/agentfile.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..ad44ab8013cc785c05b31e93d01cea4d205c6d4d
+index 0000000..ad44ab8
 --- /dev/null
 +++ b/agentfile.d.ts
 @@ -0,0 +1,9 @@
@@ -15,7 +15,7 @@ index 0000000000000000000000000000000000000000..ad44ab8013cc785c05b31e93d01cea4d
 +export declare function resolveAgentFile(name: string, task: string, cwd: string, agentDir: string): AgentFileInfo | undefined;
 diff --git a/child.d.ts b/child.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..39d15cb8dba9ab403735397e27fc9ebf49afa209
+index 0000000..39d15cb
 --- /dev/null
 +++ b/child.d.ts
 @@ -0,0 +1,10 @@
@@ -31,7 +31,7 @@ index 0000000000000000000000000000000000000000..39d15cb8dba9ab403735397e27fc9ebf
 +export declare function createChildTools(taskId: string, handlers: ChildHandlers): ToolDefinition[];
 diff --git a/format.d.ts b/format.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..e61642c61e091946f086e1aca80fa154db2080f8
+index 0000000..e61642c
 --- /dev/null
 +++ b/format.d.ts
 @@ -0,0 +1,25 @@
@@ -62,7 +62,7 @@ index 0000000000000000000000000000000000000000..e61642c61e091946f086e1aca80fa154
 +export declare function makeNotice(run: RunSnapshot, kind: string): string;
 diff --git a/graph.d.ts b/graph.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..97603e06f7a1a420da6bc2e9f8dd6b0a39c0d48d
+index 0000000..97603e0
 --- /dev/null
 +++ b/graph.d.ts
 @@ -0,0 +1,21 @@
@@ -89,7 +89,7 @@ index 0000000000000000000000000000000000000000..97603e06f7a1a420da6bc2e9f8dd6b0a
 +}>;
 diff --git a/index.d.ts b/index.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..226ce979eec7b03ad178c7bb379b10a05a4a646d
+index 0000000..226ce97
 --- /dev/null
 +++ b/index.d.ts
 @@ -0,0 +1,3 @@
@@ -98,7 +98,7 @@ index 0000000000000000000000000000000000000000..226ce979eec7b03ad178c7bb379b10a0
 +export default function (pi: ExtensionAPI, hooks?: SubagentHooks): void;
 diff --git a/mailbox.d.ts b/mailbox.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..8ddc5b7ea82698a2a4c1747473b51dddff364573
+index 0000000..8ddc5b7
 --- /dev/null
 +++ b/mailbox.d.ts
 @@ -0,0 +1,12 @@
@@ -116,7 +116,7 @@ index 0000000000000000000000000000000000000000..8ddc5b7ea82698a2a4c1747473b51ddd
 +export declare function createMailbox(): Mailbox;
 diff --git a/manager.d.ts b/manager.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..8b8084b785affd9179803d7a042c9fb953bac1df
+index 0000000..8b8084b
 --- /dev/null
 +++ b/manager.d.ts
 @@ -0,0 +1,110 @@
@@ -230,9 +230,20 @@ index 0000000000000000000000000000000000000000..8b8084b785affd9179803d7a042c9fb9
 +        intercom: ParkedMsg[];
 +    } | undefined>;
 +}
+diff --git a/package.json b/package.json
+index e5579ae..4d3c4d2 100644
+--- a/package.json
++++ b/package.json
+@@ -7,0 +8,6 @@
++	"types": "./index.d.ts",
++	"exports": {
++		".": { "types": "./index.d.ts", "default": "./src/index.ts" },
++		"./src/manager.ts": { "types": "./manager.d.ts", "default": "./src/manager.ts" },
++		"./src/types.ts": { "types": "./types.d.ts", "default": "./src/types.ts" }
++	},
 diff --git a/peek.d.ts b/peek.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..de0f84b20a863f9ceb615aa5a5ddc67221550552
+index 0000000..de0f84b
 --- /dev/null
 +++ b/peek.d.ts
 @@ -0,0 +1,22 @@
@@ -260,7 +271,7 @@ index 0000000000000000000000000000000000000000..de0f84b20a863f9ceb615aa5a5ddc672
 +export declare function createPeekPane(getTasks: () => PeekTask[], theme: Theme, requestRender: () => void, close: () => void, abort: (task: PeekTask) => void): PeekPane;
 diff --git a/schemas.d.ts b/schemas.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..beca65999cb7905c94611dc48b838d820a3277a5
+index 0000000..beca659
 --- /dev/null
 +++ b/schemas.d.ts
 @@ -0,0 +1,84 @@
@@ -348,9 +359,50 @@ index 0000000000000000000000000000000000000000..beca65999cb7905c94611dc48b838d82
 +    message: Type.TString;
 +}>;
 +export {};
+diff --git a/src/index.ts b/src/index.ts
+index 3d3a619..14ec78c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -5 +5 @@ import { waveNotation } from "./graph.ts";
+-import { cloneRun, type ParkedMsg, SubagentManager } from "./manager.ts";
++import { cloneRun, type ParkedMsg, SubagentManager, type SubagentHooks } from "./manager.ts";
+@@ -20,2 +20,3 @@ import { cleanupMerged, ownerAlive, reapDeadWorktrees, repoRoot, sweepStale } fr
+-export default function (pi: ExtensionAPI) {
+-	const manager = new SubagentManager(pi);
++export default function (pi: ExtensionAPI, hooks?: SubagentHooks) {
++	const manager = new SubagentManager(pi, hooks);
++	hooks?.ready?.(manager);
+diff --git a/src/manager.ts b/src/manager.ts
+index 7c3218a..069711a 100644
+--- a/src/manager.ts
++++ b/src/manager.ts
+@@ -6,0 +7 @@ import {
++	type AgentSession,
+@@ -248,0 +250,7 @@ export interface ParkedMsg {
++export interface SubagentHooks {
++	ready?: (manager: SubagentManager) => void;
++	session?: (task: TaskSnapshot, session: AgentSession) => (() => void);
++	nativeWidget?: boolean;
++	allowCompletedResume?: boolean;
++}
++
+@@ -274 +282 @@ export class SubagentManager {
+-	constructor(private readonly pi: ExtensionAPI) {
++	constructor(private readonly pi: ExtensionAPI, private readonly hooks?: SubagentHooks) {
+@@ -538,0 +547 @@ export class SubagentManager {
++		if (this.hooks?.nativeWidget === false) return;
+@@ -840,0 +850 @@ export class SubagentManager {
++		let releaseView: (() => void) | undefined;
+@@ -878,0 +889 @@ export class SubagentManager {
++			releaseView = this.hooks?.session?.(task, child);
+@@ -1030,0 +1042 @@ export class SubagentManager {
++			releaseView?.();
+@@ -1337 +1349 @@ export class SubagentManager {
+-		if (task.status === "completed") return { ok: false, reason: `${taskId} completed — spawn a new task instead.` };
++		if (task.status === "completed" && !this.hooks?.allowCompletedResume) return { ok: false, reason: `${taskId} completed — spawn a new task instead.` };
 diff --git a/types.d.ts b/types.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..f72d5f7b9582c42c6ca159dc62bfa93e25f8c6e9
+index 0000000..f72d5f7
 --- /dev/null
 +++ b/types.d.ts
 @@ -0,0 +1,65 @@
@@ -421,7 +473,7 @@ index 0000000000000000000000000000000000000000..f72d5f7b9582c42c6ca159dc62bfa93e
 +}
 diff --git a/worktree.d.ts b/worktree.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..aaa6c4fea0139c9a568b2f7e1c79564e268e3d28
+index 0000000..aaa6c4f
 --- /dev/null
 +++ b/worktree.d.ts
 @@ -0,0 +1,24 @@
@@ -449,121 +501,3 @@ index 0000000000000000000000000000000000000000..aaa6c4fea0139c9a568b2f7e1c79564e
 +export declare function claimWorktree(wt: Worktree): void;
 +export declare function ownerAlive(path: string, ownedHere?: (path: string) => boolean): boolean;
 +export declare function sweepStale(root: string): void;
-diff --git a/package.json b/package.json
-index e5579aeaf0edcefaffdee264ada895ecf1beb0e2..5b51a62063cc9903ac8f1248e1cab4c2c6620dba 100644
---- a/package.json
-+++ b/package.json
-@@ -5,6 +5,12 @@
- 	"description": "pi extension: fast in-process subagents with a dependency-graph scheduler (needs edges gate tasks and carry upstream output into dependent prompts), plus background runs, intercom and agent-to-agent mailbox. Leader defines agents inline.",
- 	"license": "MIT",
- 	"main": "./src/index.ts",
-+	"types": "./index.d.ts",
-+	"exports": {
-+		".": { "types": "./index.d.ts", "default": "./src/index.ts" },
-+		"./src/manager.ts": { "types": "./manager.d.ts", "default": "./src/manager.ts" },
-+		"./src/types.ts": { "types": "./types.d.ts", "default": "./src/types.ts" }
-+	},
- 	"scripts": {
- 		"test": "bun test",
- 		"typecheck": "tsc --noEmit",
-diff --git a/src/index.ts b/src/index.ts
-index 3d3a619856a43cadf6a346c0dfe5e89ec490862f..14ec78cf5089f88eea37acedb4af22a5624a5eac 100644
---- a/src/index.ts
-+++ b/src/index.ts
-@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
- import { Text, truncateToWidth } from "@earendil-works/pi-tui";
- import { compactLines, formatUsage, makeSummary, statusIcon, taskLine, truncateText } from "./format.ts";
- import { waveNotation } from "./graph.ts";
--import { cloneRun, type ParkedMsg, SubagentManager } from "./manager.ts";
-+import { cloneRun, type ParkedMsg, SubagentManager, type SubagentHooks } from "./manager.ts";
- import { createPeekPane, type PeekTask } from "./peek.ts";
- import {
- 	AwaitParam,
-@@ -17,8 +17,9 @@ import {
- import { type RunDetails, type RunSnapshot, TERMINAL } from "./types.ts";
- import { cleanupMerged, ownerAlive, reapDeadWorktrees, repoRoot, sweepStale } from "./worktree.ts";
- 
--export default function (pi: ExtensionAPI) {
--	const manager = new SubagentManager(pi);
-+export default function (pi: ExtensionAPI, hooks?: SubagentHooks) {
-+	const manager = new SubagentManager(pi, hooks);
-+	hooks?.ready?.(manager);
- 
- 	const openPeek = async (ctx: ExtensionContext) => {
- 		if (!ctx.hasUI) return;
-diff --git a/src/manager.ts b/src/manager.ts
-index 7c3218a76cd59875b1563fbce0bb7ff826667cb2..069711a8abb7e1aee5c8fc9e52e81ba74ae4a374 100644
---- a/src/manager.ts
-+++ b/src/manager.ts
-@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, sep } from "node:path";
- import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
- import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
- import {
-+	type AgentSession,
- 	type AgentSessionEvent,
- 	createAgentSession,
- 	DefaultResourceLoader,
-@@ -246,6 +247,13 @@ export interface ParkedMsg {
- 	text: string;
- }
- 
-+export interface SubagentHooks {
-+	ready?: (manager: SubagentManager) => void;
-+	session?: (task: TaskSnapshot, session: AgentSession) => (() => void);
-+	nativeWidget?: boolean;
-+	allowCompletedResume?: boolean;
-+}
-+
- export class SubagentManager {
- 	private runs = new Map<string, RunSnapshot>();
- 	private settlers = new Map<string, true>();
-@@ -271,7 +279,7 @@ export class SubagentManager {
- 
- 	turnActivity = false;
- 
--	constructor(private readonly pi: ExtensionAPI) {
-+	constructor(private readonly pi: ExtensionAPI, private readonly hooks?: SubagentHooks) {
- 		try {
- 			const cfg = JSON.parse(readFileSync(join(getAgentDir(), "subagents-config.json"), "utf8"));
- 			if (typeof cfg.autoLimit === "boolean") this.autoLimit = cfg.autoLimit;
-@@ -536,6 +544,7 @@ export class SubagentManager {
- 		});
- 	}
- 	private ensureWidget(ctx: ExtensionContext): void {
-+		if (this.hooks?.nativeWidget === false) return;
- 		if (this.widgetTui !== null || !ctx.hasUI) return;
- 		ctx.ui.setWidget(
- 			"subagents",
-@@ -838,6 +847,7 @@ export class SubagentManager {
- 		let keepWorktreeDir = false;
- 		let child: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
- 		let unsubscribe: (() => void) | undefined;
-+		let releaseView: (() => void) | undefined;
- 		let timeout: ReturnType<typeof setTimeout> | undefined;
- 		let abortListener: (() => void) | undefined;
- 		const childState: ChildEventState = {};
-@@ -876,6 +886,7 @@ export class SubagentManager {
- 				customTools,
- 			});
- 			child = created.session;
-+			releaseView = this.hooks?.session?.(task, child);
- 			child.setSessionName?.(`subagent: ${task.agent}`);
- 			this.updateTask(
- 				run,
-@@ -1028,6 +1039,7 @@ export class SubagentManager {
- 			this.pendingReplies.delete(key);
- 			abortListener?.();
- 			unsubscribe?.();
-+			releaseView?.();
- 			if (timeout) clearTimeout(timeout);
- 			child?.dispose();
- 
-@@ -1334,7 +1346,7 @@ export class SubagentManager {
- 		if (!run || !task) return { ok: false, reason: `Unknown ${runId}/${taskId}.` };
- 		if (!TERMINAL.includes(task.status))
- 			return { ok: false, reason: `${taskId} is still ${task.status} — use steer_subagent.` };
--		if (task.status === "completed") return { ok: false, reason: `${taskId} completed — spawn a new task instead.` };
-+		if (task.status === "completed" && !this.hooks?.allowCompletedResume) return { ok: false, reason: `${taskId} completed — spawn a new task instead.` };
- 		if (!task.sessionFile || !existsSync(task.sessionFile)) {
- 			return { ok: false, reason: `${taskId} has no session file to resume (never started) — respawn it.` };
- 		}
