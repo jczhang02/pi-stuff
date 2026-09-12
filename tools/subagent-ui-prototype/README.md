@@ -1,92 +1,93 @@
 # Subagent Fleet UI prototype
 
-A throwaway, offline prototype for [issue #49](https://github.com/jczhang02/pi-stuff/issues/49), retained on `codex/prototype-subagent-ui` and [draft PR #52](https://github.com/jczhang02/pi-stuff/pull/52). The production fork source remains Arhen's `pi-core-subagent`; this artifact does not import its runtime.
+This runnable UI preview answers how a bottom Fleet and full agent conversations should look and respond. It follows the [prototype fidelity standard](../../design.md#tui-prototype-fidelity) merged in #54. The interface contains product content and controls; the sample execution and its limits are explained here.
 
-## Run
+The artifact belongs to [issue #49](https://github.com/jczhang02/pi-stuff/issues/49), branch `codex/prototype-subagent-ui` and [draft PR #52](https://github.com/jczhang02/pi-stuff/pull/52). It remains outside main. The production fork source is Arhen's `pi-core-subagent`; this preview does not import its runtime.
 
-From this worktree:
+## Run and join
 
-```bash
-bun tools/subagent-ui-prototype/run.ts --theme=light
-```
-
-Use `--theme=dark` or `--theme=auto` for the other theme modes. To join the shared demonstration:
+Use the main project checkout as the working directory, so the native statusline shows the project being evaluated. With the retained worktree under `.worktrees/codex/prototype-subagent-ui`, run:
 
 ```bash
-bun run tui attach -s subagent-fleet-v3
+bun .worktrees/codex/prototype-subagent-ui/tools/subagent-ui-prototype/run.ts --theme=light
 ```
 
-If that session is absent, launch it:
+The launcher uses its caller's project directory for Pi's visible context and a temporary directory for process execution and agent storage. Use `--theme=dark` or `--theme=auto` for the other theme modes. `--scenario=running` starts the ongoing work; `--scenario=completed` opens after the checks have finished, with tester still awaiting input. Restart the command to replay. Scenario and theme selection take no terminal rows or keys; F2 has no prototype handler.
+
+To join the shared preview from that checkout:
 
 ```bash
-bun run tui -s subagent-fleet-v3 --cols 125 --rows 38 --background -- bun tools/subagent-ui-prototype/run.ts --theme=light
+bun run tui attach -s subagent-fleet-v4
 ```
 
-F2 opens prototype controls: `t` switches theme, `r` resets sample work, and F2 returns to the editor. These controls are available from main. They are prototype controls, not Claude Code shortcuts. The previous three layout variants are replaced by the maintainer's selected single layout.
+If the session is absent, launch it:
 
-Return to main, clear its editor, and press Ctrl+D to exit the isolated host.
+```bash
+bun run tui -s subagent-fleet-v4 --cols 125 --rows 38 --background -- bun .worktrees/codex/prototype-subagent-ui/tools/subagent-ui-prototype/run.ts --theme=light
+```
 
-## Confirmed layout
+After returning to main and clearing the editor, Ctrl+D exits. To replay your shared preview, run this from another terminal:
 
-The order is **conversation → editor → native Pi statusline → Fleet**. Each agent has one uniform row containing its status icon, name, current activity, input/output token counts and elapsed time. Selection changes the highlight, not the information shown. At 125 columns and wider, rows also include tools, turns and cost; narrower rows retain tokens and elapsed time and shorten activity first. The prototype needs at least 50 columns to display useful Fleet rows.
+```bash
+bun run tui -s subagent-fleet-v4 restart
+```
 
-A spinner denotes running, `?` waiting for input, `✓` completed and `■` stopped. `›` marks keyboard selection; `*` marks the conversation currently shown. Finished sample agents remain available for continuation. This retention follows the maintainer's requirement and does not reproduce the secondary reference implementation's timed removal of idle rows.
+## Layout and controls
 
-## Interaction reference and limits
+The order is **conversation → native editor → native Pi statusline → Fleet**. Every agent row shows a status icon, name, current activity, input/output tokens and elapsed time. Selection changes highlight only. At 125 columns, the row also shows tools, turns and cost. Narrower rows retain tokens and elapsed time and shorten activity first. The useful minimum is 50 columns; the child view also needs 18 rows.
 
-The reference is Claude Code's **in-process teammate panel**, not its separate `claude agents` page. Sources checked on 2026-09-12: [agent teams](https://code.claude.com/docs/en/agent-teams), [Footer and Transcript keybindings](https://code.claude.com/docs/en/keybindings), and [interactive mode](https://code.claude.com/docs/en/interactive-mode). The published [`@tintinweb/pi-subagents` 0.19.0 FleetView](https://github.com/tintinweb/pi-subagents) was inspected as a secondary implementation reference; no source was copied.
+A spinner means running, `?` waiting for input, `✓` completed and `■` stopped. `›` marks keyboard selection and `*` the open conversation. Completed agents remain available for continuation. No automatic child notification is injected into a visible Follow-up queue.
 
-| Context                    | Prototype behavior                                                          | Evidence boundary                                                                                                                      |
-| -------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Empty editor               | Down or Left selects the main Fleet row                                     | Third-party FleetView reference; exact Claude activation gate is not specified in the official docs                                    |
-| Fleet selected             | Up/Down moves; Up above main or Esc returns focus to the editor             | Official Footer bindings                                                                                                               |
-| Fleet selected             | Enter opens the selected conversation; main returns to the native main view | Enter is official; the main-row convention follows the reference implementation                                                        |
-| Fleet selected             | `x` stops the selected running child                                        | Official teammate-panel behavior                                                                                                       |
-| Fleet selected             | Typing returns focus to the editor and preserves that keystroke             | Reference implementation; no global input interception                                                                                 |
-| Child conversation         | Type and Enter to continue that conversation; other agents keep progressing | Documented direct teammate messaging; replies here are fixtures                                                                        |
-| Running child conversation | Esc interrupts its current sample round and leaves the conversation open    | Interrupt is official; remaining in the view is an explicit prototype choice because the docs do not define the combined exit behavior |
-| Idle child conversation    | Esc returns to main                                                         | Generic Transcript exit binding; team-specific idle behavior is not separately specified                                               |
-| Child conversation         | Ctrl+C returns to main, preserving the draft and background work            | Generic Transcript exit binding applied to this prototype                                                                              |
-| Child conversation         | Ctrl+O expands tools; PgUp/PgDn scroll; Ctrl+End shows latest               | Pi presentation controls, not a claim of Claude Code parity                                                                            |
+| Context            | Action                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------- |
+| Empty editor       | Down or Left selects the main Fleet row                                                   |
+| Fleet selected     | Up/Down selects; Up above main or Esc returns to the editor                               |
+| Fleet selected     | Enter opens the selected conversation; selecting main returns to the main view            |
+| Fleet selected     | `x` stops a running child; typing returns to the editor and preserves the typed character |
+| Child conversation | Type and Enter sends to that agent; other work keeps progressing                          |
+| Running child      | Esc interrupts the current round and keeps the conversation open                          |
+| Idle child         | Esc returns to main                                                                       |
+| Child conversation | Ctrl+C returns to main and preserves the draft and background work                        |
+| Child conversation | Ctrl+O expands tools; PgUp/PgDn scroll; Ctrl+End shows the latest content                 |
 
-Claude Code is not installed in this environment. **Exact interaction parity has not been verified.** In particular, the official team and transcript documentation does not fully specify whether Esc both interrupts and exits a running teammate view. The prototype makes that boundary reviewable rather than presenting an inferred behavior as an observed fact.
+The reference is Claude Code's in-process teammate panel. Sources checked in the preceding revision on 2026-09-12: [agent teams](https://code.claude.com/docs/en/agent-teams), [keybindings](https://code.claude.com/docs/en/keybindings) and [interactive mode](https://code.claude.com/docs/en/interactive-mode). [`@tintinweb/pi-subagents` 0.19.0](https://github.com/tintinweb/pi-subagents) provided a secondary FleetView reference; no source was copied.
 
-## What is native and what is simulated
+Claude Code is absent on this host, so exact interaction parity is unverified. Official documentation specifies Footer navigation, Enter, stopping with `x`, and interruption with Esc, but does not completely define the combined interrupt/exit behavior of a running teammate view. Staying in the running view after Esc is the current design choice. Empty-editor activation and typing out of Fleet selection follow the secondary reference. Tool expansion and scrolling use Pi controls. The maintainer can evaluate these interactions without deciding the internal runtime design first.
 
-`run.ts` starts Bun with an isolated temporary cwd and a whitelist of environment variables. `host.ts` starts Pi 0.85.1's real SDK `InteractiveMode`, an in-memory `SessionManager`, in-memory settings and an offline model runtime. Resource discovery is disabled. This revision is an SDK-hosted Pi UI; it is not an extension loaded by the separately compiled `/opt/bin/pi` binary.
+## Execution boundary
 
-Main uses the native Pi conversation layout and editor. A custom message renderer displays the fixture through Pi's `UserMessageComponent`, `AssistantMessageComponent` and `ToolExecutionComponent`. The bottom component renders a real `FooterComponent` first and appends Fleet rows. A plain extension's `belowEditor` widget would put Fleet above the native footer, which is the wrong position for this design. The SDK closure provides the actual `AgentSession` needed to construct the native footer, without private-field access.
+`host.ts` uses the real Pi 0.85.1 SDK `InteractiveMode`, native messages, tools, editor and `FooterComponent`. The footer renders its normal project/model/usage lines before Fleet. Each displayed agent has an in-memory `AgentSession` with its own seeded usage. Opening a child switches the native footer with the public `setSession` API; the main footer is restored on return. Fleet and the native footer derive their numbers from the same fixture usage. Native rounding differs from Fleet rounding.
 
-Child conversations are full-screen custom views using the same native message/tool/editor components and native host footer. They are not independent Pi session runtimes. The native footer describes the isolated host session; fixture token counts belong to the Fleet rows. No model is configured, so the native footer reports zero usage and an unknown model.
+Only main owns an interactive runtime. Children use full-screen views composed of Pi's native components; their sessions supply native display context, not independent execution. Replies, source excerpts, tool output, paths under `src/subagent`, token totals and timings are samples. The displayed model is sample Sonnet metadata, not a connected provider. Costs derive from sample tokens; output tokens pause during tool execution. Sample tools are rendered but never executed. Plain text continues a fixed cancellation-review scenario; it is not interpreted by a model. Shell execution is disabled, child slash commands direct the user back to main, and session replacement/forking is blocked. These remain outside the UI interactions being evaluated.
 
-Sample agents, responses, code, paths, tools, token/cost totals and timing are synthetic. Tools are rendered but never executed; user shell execution and session replacement are blocked inside the demo. No real model requests, Arhen scheduling, context transfer, automatic follow-up delivery or recovery are implemented. In-memory session data disappears on exit; the launcher removes its temporary directory after normal host exit.
+Settings, sessions, auth and cache paths are isolated; credentials are not forwarded. Resource discovery is disabled, model catalog networking is off and the fixture model endpoint is loopback port 1. `HOME` is forwarded for native `~` path formatting. Normal host exit removes the temporary directory. The launcher does not change the live project's files.
 
-The explicit light/dark canvas reuses Pi 0.85.1's bundled `export.pageBg` colors and semantic foreground colors to prevent Tuistory's fallback foreground from mixing with a light outer terminal. The isolated host decorates the public terminal write function so native fullscreen erase operations and default SGR colors receive the same canvas; disposal restores the writer and resets SGR. Theme changes request a full repaint, including otherwise unchanged blank rows. Previous contrast measurements describe the earlier revision, not a new measurement of every current widget.
+The light/dark canvas uses Pi's semantic foreground and bundled page background colors. A decoration of the public terminal writer covers default SGR colors and fullscreen erase operations, including blank rows; disposal restores the writer. Theme changes trigger a full repaint. No private host fields are accessed and no dependencies were added.
 
-## Verification and evidence
+## Verification
 
-Verified with Bun 1.4.0, Pi SDK 0.85.1 and Tuistory 0.11.0 on Linux: native footer placement; uniform row statistics; empty/nonempty editor focus; selection/open/return; drafts; running input; Esc interruption; background work; completed continuation; tool expansion and streamed failure; 62-column and minimum-size views; theme switching; replay; native settings-menu focus. Focused probes passed main Ctrl+O, main submission, shell-command interception and graceful exit. Direct launch and actual Tuistory attach each passed light → dark → light with six blank rows containing explicit background cells in every state. Temporary probes use actual terminal state; no permanent test suite was added. Early probe failures came from an assumed token total, a short-lived activity label and a nonexistent settings heading; the corrected probe passed. Screenshot inspection also exposed unpainted fullscreen blank rows: a component wrapper did not cover the separate fullscreen layout root, and an early color assertion had accepted empty spans. The terminal-output fix and a nonempty-cell assertion now pass. `bun run check` and `git diff --check` passed. Exact Claude Code comparison and production subagent execution remain unverified.
+Current environment: Linux, Bun 1.4.0, Pi SDK 0.85.1, Tuistory 0.11.0. Actual terminal checks cover footer order and per-agent usage; row statistics; empty/nonempty editor focus; selection, entry and return; drafts; running input, interruption and completed continuation; tool expansion; native settings focus; 62-column and minimum-size layouts; and removal of F2 controls. Direct launch and actual Tuistory attach both passed light and dark canvas checks, each requiring six nonempty blank rows with the correct background, per-agent footer switching and normal host exit. The captures include streaming output, tool failure and completion. Temporary terminal probes are used instead of a permanent prototype test suite.
 
-Actual terminal captures: [main](evidence/fleet-main.png), [selection](evidence/fleet-selected.png), [child conversation](evidence/fleet-child.png), [expanded tool](evidence/expanded.png), [streaming tool](evidence/streaming.png), [dark theme](evidence/fleet-dark.png), [narrow terminal](evidence/narrow.png).
+This is SDK-hosted UI evidence. Loading the production extension in the separately compiled Pi host, Arhen scheduling, context transfer, recovery and exact Claude Code parity remain unverified. UI acceptance remains with the maintainer.
+
+Actual terminal captures: [main](evidence/fleet-main.png), [selection](evidence/fleet-selected.png), [child](evidence/fleet-child.png), [expanded tool](evidence/expanded.png), [streaming output](evidence/streaming.png), [failure](evidence/failure.png), [dark theme](evidence/fleet-dark.png), [narrow view](evidence/narrow.png).
 
 ## 中文说明
 
-这是 [Issue #49](https://github.com/jczhang02/pi-stuff/issues/49) 的离线原型，保留在独立分支和草稿 [PR #52](https://github.com/jczhang02/pi-stuff/pull/52)，不合入 main。正式 fork 仍以 Arhen 的 `pi-core-subagent` 为基础，本原型没有引入其运行时。
+这个可运行原型用于评估底部 Fleet 和代理完整对话的样式与操作，遵循 #54 合并的[原型呈现标准](../../design.md#tui-prototype-fidelity)。终端内只显示产品内容和控制；模拟范围及限制写在本文中。产物保留在 Issue #49、分支 `codex/prototype-subagent-ui` 和草稿 PR #52，不合入 main；尚未导入正式 Arhen 运行时。
 
-使用上方命令启动，或加入 `subagent-fleet-v3`。支持 `--theme=light|dark|auto`。在 main 中按 F2 打开演示控制，`t` 切换主题，`r` 重播，再按 F2 返回输入。这些是原型控制，不是 Claude Code 的快捷键。此前的三种布局已替换为维护者选定的单一布局。
+从主项目 checkout 执行上方启动命令，原生 statusline 会显示该项目。启动器另用临时目录运行进程和存放隔离的 agent 数据。支持 `--theme=light|dark|auto`；`--scenario=running` 从进行中的工作开始，`--scenario=completed` 直接显示检查结束的状态，此时 tester 仍等待输入。重新启动命令即可重播。这些开发控制不占界面空间或按键，F2 没有原型处理逻辑。共享会话为 `subagent-fleet-v4`，加入及重播命令见上方；返回 main、清空输入后，Ctrl+D 退出。
 
-返回 main 并清空输入框后，Ctrl+D 退出隔离宿主。
+布局为 **对话 → 原生 editor → Pi 原有 statusline → Fleet**。每行都有状态图标、名称、活动、输入/输出 token 和耗时，选择只改变高亮。125 列显示工具数、轮数及费用；窄屏先缩短活动，保留 token 和耗时。Fleet 至少需要 50 列，子对话至少需要 18 行。旋转图标表示运行，`?` 等待输入，`✓` 完成，`■` 停止；`›` 表示键盘选择，`*` 表示当前会话。完成的代理保留，可继续交流；自动通知不进入可见 Follow-up 队列。
 
-布局顺序固定为：**对话 → editor → Pi 原有 statusline → Fleet**。所有代理行同时显示状态图标、名称、当前活动、输入与输出 token、耗时；选择只改变高亮，不改变信息。125 列以上额外显示工具次数、轮次和费用，较窄时保留 token 与耗时并缩短活动文本。Fleet 至少需要 50 列。旋转图标表示运行，`?` 表示等待输入，`✓` 表示完成，`■` 表示停止；`›` 是键盘选择，`*` 是当前对话。完成的样例代理保留以便继续交流，这与第三方参考实现定时收起闲置行的行为不同。
+空输入按 Down/Left 进入 Fleet，Up/Down 选行，Enter 进入；Esc 或 main 上再按 Up 返回输入。选中运行中的子代理按 `x` 停止。在子对话输入并按 Enter 发送，其他代理继续推进。运行时 Esc 中断并留在当前对话，空闲时 Esc 返回 main；Ctrl+C 保留草稿返回。Ctrl+O 展开工具，PgUp/PgDn 滚动，Ctrl+End 回到最新。
 
-空输入时按 Down 或 Left 进入 Fleet；Up/Down 选行，Enter 进入，Esc 或 main 上再按 Up 返回输入。选中运行中的子代理后，`x` 停止它。在子对话中直接输入并按 Enter 发送；运行时 Esc 中断当前轮并留在对话中，空闲时 Esc 返回 main，Ctrl+C 可保留草稿返回 main，后台任务继续。Ctrl+O 展开工具，PgUp/PgDn 浏览记录，Ctrl+End 回到最新。后面这些是 Pi 的呈现操作。
+参考的是 Claude Code 会话内的队友面板。上方列出此前调研的官方资料和第三方参考；当前机器未安装 Claude Code，尚未逐项实测两个程序完全一致。官方文档没有完整说明运行中 Esc 是否同时退出，因此原型采用中断后留在当前对话的选择。空输入激活和选中后直接打字来自第三方参考；工具展开及滚动采用 Pi 按键。这轮仍是 UI 评估，无需先决定内部技术方案。
 
-参照的是 Claude Code 当前会话内的底部队友面板，不是独立的 `claude agents` 页面。上表逐项区分官方绑定、第三方参考和原型选择。当前环境没有安装 Claude Code，**没有完成两个程序的逐项一致性实测**。官方文档明确 Esc 会中断正在运行的队友，但没有完整定义是否同时退出该视图；本原型采用中断后留在对话中的行为，并明确保留这个待核实项。
+界面使用真实 Pi SDK `InteractiveMode` 及原生消息、工具、editor、footer。每个代理都有独立的内存会话与样例用量；切换时通过公开的 `FooterComponent.setSession` 显示该代理的原生底栏，返回时恢复主会话。Fleet 与原生底栏使用同一份计数，格式化精度不同。
 
-本轮通过 Pi SDK 启动真正的 `InteractiveMode`，主界面使用原生布局和编辑器；以原生消息与工具组件显示演示内容。底栏先调用真实 `FooterComponent`，再显示 Fleet。普通扩展的 `belowEditor` 实际位于 statusline 上方，不能满足已确认的位置；SDK 闭包提供真实会话对象，因此无需访问私有字段。此版本不是由单独编译的 `/opt/bin/pi` 加载的扩展。
+只有 main 拥有交互运行时；子代理是原生组件组成的全屏视图，内存会话只提供显示信息。回复、代码、工具输出、`src/subagent` 路径、token 和耗时都是样例。显示的 Sonnet 元数据不代表连接了模型；费用由样例 token 计算，工具运行时输出 token 暂停增长。工具不会执行，文字输入继续固定场景，不会被模型理解。Shell 禁用，子对话中的斜杠命令提示返回 main，持久化会话切换和 fork 被阻止；这些不属于本轮评估的 UI 操作。
 
-子代理对话仍是使用原生组件的全屏自定义视图，不是独立 Pi 会话运行时。原生底栏描述隔离宿主，Fleet 行中的 token 属于模拟代理；宿主没有配置模型，因此原生底栏的用量为零、模型为 unknown。回复、代码、路径、工具结果、计数和耗时都是样例，不代表真实仓库检查结果。不会执行工具或用户 shell 命令，也不会调用模型、切换持久化会话或接入正式调度。会话和设置在内存中，正常退出后清理临时启动目录。
+会话、设置、认证及缓存使用隔离存储，不传递凭证，不发现额外资源，不刷新模型目录；样例模型地址指向 loopback 端口 1。转发 `HOME` 仅用于原生路径中的 `~`。正常退出清理临时目录，不修改真实项目文件。浅色/深色使用 Pi 语义颜色，通过公开终端写接口覆盖空白行与擦除操作，释放时恢复接口；主题变化会完整重绘。没有访问私有字段或添加依赖。
 
-浅色与深色画布继续使用 Pi 的语义文字色和内置页面背景色；隔离宿主装饰公开的终端 write 方法，让全屏擦除操作和默认 SGR 颜色也使用一致画布；释放时恢复原方法并重置颜色。主题切换强制完整重绘，包括内容没有变化的空白行。此前的对比度数字属于旧版测量，不代表本轮每个组件均重新测量。
-
-验证环境为 Linux、Bun 1.4.0、Pi SDK 0.85.1 和 Tuistory 0.11.0。实际终端检查通过：底栏位置、所有行的统计、空与非空输入焦点、选择与进入、返回与草稿、运行中输入、Esc 中断、后台推进、完成后继续、工具展开与流式失败、62 列和最小窗口、主题、重播、原生设置菜单的按键。补充验证通过主界面 Ctrl+O、主会话发送、shell 命令拦截和正常退出。直接启动与实际 Tuistory attach 都通过浅色→深色→浅色切换，每个状态检查六条空白行确实包含指定背景色的非空单元数据。早期脚本误用了固定 token 数、短暂的活动文案和不存在的设置标题，修正为真实可见状态后通过。截图还发现全屏空白行未着色：普通组件包装覆盖不到独立的全屏布局，早期颜色断言又误将空数据判为通过。终端输出修正与要求非空单元的验证现已通过。`bun run check` 和 `git diff --check` 均通过；上方七个链接均为实际终端截图。Claude Code 完全一致性与正式子代理执行仍待验证。
+本轮在 Linux、Bun 1.4.0、Pi SDK 0.85.1、Tuistory 0.11.0 上检查底栏顺序与对应代理用量、行统计、输入焦点、选择进入返回、草稿、运行中输入与中断、完成后继续、工具展开、原生设置、62 列及最小窗口和 F2 清理。直接启动和实际 Tuistory attach 均通过浅色/深色检查：每次验证六条空白行确实包含正确背景色单元，并检查对应代理底栏和正常退出。上方八张链接均为实际终端截图，包括流式输出、失败和完成。验证使用临时终端脚本，没有添加永久原型测试套件。正式扩展在独立编译宿主中的加载、Arhen 调度、上下文转交、恢复及 Claude Code 完全一致性仍待验证，UI 等待维护者试玩验收。
