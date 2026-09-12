@@ -3,10 +3,6 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Effect, Schema} from 'effect';
 
-const argument = process.argv.find(value => value.startsWith('--variant='));
-const variant = Schema.decodeUnknownSync(Schema.Literals(['A', 'B', 'C']))(
-  argument?.slice(10) ?? 'A',
-);
 const theme = Schema.decodeUnknownSync(
   Schema.Literals(['auto', 'light', 'dark']),
 )(process.argv.find(value => value.startsWith('--theme='))?.slice(8) ?? 'auto');
@@ -15,26 +11,7 @@ const directory = await Effect.runPromise(
 );
 try {
   const child = Bun.spawn(
-    [
-      process.env.PI_PROTOTYPE_HOST ?? '/opt/bin/pi',
-      '--offline',
-      '--no-session',
-      '--no-tools',
-      '--no-extensions',
-      '--no-skills',
-      '--no-prompt-templates',
-      '--no-themes',
-      '--no-context-files',
-      '--no-approve',
-      '--use-theme',
-      theme === 'auto' ? 'light/dark' : theme,
-      '--tui-mode',
-      'fullscreen',
-      '-e',
-      join(import.meta.dir, 'index.ts'),
-      '--fleet-variant',
-      variant,
-    ],
+    [process.execPath, join(import.meta.dir, 'host.ts')],
     {
       cwd: directory,
       env: {
@@ -45,6 +22,7 @@ try {
         TERM_PROGRAM: process.env.TERM_PROGRAM,
         LANG: process.env.LANG ?? 'C.UTF-8',
         PI_CODING_AGENT_DIR: directory,
+        PI_PROTOTYPE_THEME: theme === 'auto' ? 'light/dark' : theme,
         PI_OFFLINE: '1',
         PI_TELEMETRY: '0',
       },

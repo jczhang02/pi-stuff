@@ -29,6 +29,10 @@ export interface DemoAgent {
   unread: number;
   elapsed: number;
   tools: number;
+  turns: number;
+  inputTokens: number;
+  outputTokens: number;
+  cost: number;
   step: number;
   pending: number;
 }
@@ -115,6 +119,11 @@ export function createAgents(): DemoAgent[] {
     unread: spec.status === '等待输入' ? 1 : 0,
     elapsed: spec.id === 'explorer' ? 28 : 12,
     tools: spec.id === 'tester' ? 0 : 1,
+    turns: 3,
+    inputTokens:
+      spec.id === 'main' ? 18200 : spec.id === 'tester' ? 8200 : 12900,
+    outputTokens: spec.id === 'main' ? 860 : 114,
+    cost: 0.1409,
     step: spec.id === 'main' ? -60 : 0,
     pending: 0,
   }));
@@ -145,8 +154,14 @@ export function advance(
     if (agent.status !== '运行中') continue;
     agent.step += 1;
     if (agent.step % 5 === 0) agent.elapsed += 1;
+    if (agent.step > 0 && agent.step % 5 === 0) {
+      agent.outputTokens += 17;
+      agent.cost += 0.0003;
+    }
     if (agent.step < 1) continue;
     if (agent.step === 1) {
+      agent.turns += 1;
+      agent.inputTokens += 620;
       agent.activity = '分析取消边界';
       agent.messages.push({kind: 'assistant', text: '', streaming: true});
     }
@@ -189,6 +204,8 @@ export function advance(
       }
     }
     if (agent.step === 64) {
+      agent.turns += 1;
+      agent.inputTokens += 930;
       agent.activity = '整理检查结果';
       agent.messages.push({kind: 'assistant', text: '', streaming: true});
     }
