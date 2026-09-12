@@ -46,6 +46,7 @@ To try the reviewed source extension, follow [Web access](docs/web-access.md#loa
 | Document                                                       | Purpose                                                     |
 | -------------------------------------------------------------- | ----------------------------------------------------------- |
 | [Web access](docs/web-access.md)                               | Loading, settings, credentials, tools and limits            |
+| [Subagents](docs/subagents.md)                                 | Delegation, Fleet navigation, child sessions, and limits    |
 | [Contributing](CONTRIBUTING.md)                                | Issues, focused changes, verification, and pull requests    |
 | [Agent instructions](AGENTS.md)                                | Agent writing and Git workflow requirements                 |
 | [TUI design](design.md)                                        | Pi themes, controls, narrow terminals and feedback          |

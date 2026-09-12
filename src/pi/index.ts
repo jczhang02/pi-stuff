@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Effect, Schema} from 'effect';
 import {registerTool} from '../tool-switches';
+import {installSubagents} from '../subagent';
 import {createWebTools} from '../web';
 import {ConfigurationError, readConfiguration} from './configuration';
 import {exaProvider, resolveExa} from './exa';
@@ -27,6 +28,7 @@ export default async function (pi: ExtensionAPI) {
     ),
   );
   pi.registerProvider(exaProvider);
+  installSubagents(pi, configuration.tools);
   let model: Model<Api> | undefined;
   let web: ReturnType<typeof createWebTools> | undefined;
   pi.on('model_select', event => {
