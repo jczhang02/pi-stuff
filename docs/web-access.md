@@ -17,6 +17,8 @@ Replace the absolute path with your checkout. Load only one extension registerin
 
 ## Settings and credentials are separate
 
+The rationale is recorded in [ADR 0004: host-managed API-key storage](adr/0004-host-api-key-storage.md).
+
 `pi-stuff.json` and `auth.json` live in Pi's **agent directory**, resolved by the host (`PI_CODING_AGENT_DIR` overrides its default). Pi Stuff does not read a project-local configuration file or create a second credential store.
 
 An optional `pi-stuff.json`:
