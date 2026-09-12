@@ -4,7 +4,17 @@
 
 Pi Stuff fits into Pi's interface, theme and interaction conventions, extending them when a feature needs it. These are shared design rules for future features; they do not describe an implemented Pi Stuff interface. The [agent instructions](AGENTS.md#detailed-procedures) define when to create a TUI prototype and which skill to use.
 
-For TUI prototypes, use real Pi TUI components in their intended host context. Use isolated sample data and label simulated states.
+## TUI prototype fidelity
+
+A TUI prototype presents the intended product interface directly. For the scenario being evaluated, its layout, spacing, copy, states and interactions must match the intended real interface. This standard applies while exploring a design; it does not require a completed product specification first.
+
+Use real Pi TUI components in their intended host context, including the surrounding editor and statusline. Sample data and execution may be simulated in isolation. Keep displayed messages, paths, model information, counters and timing coherent with the scenario so implementation shortcuts do not distort the interface.
+
+The evaluated terminal contains only product content and controls. Do not add demo/prototype badges, simulation disclaimers, guided-tour panels, debug state or prototype-only shortcuts. Normal product help, status and error feedback still belong in the interface. Removing a demo label also removes its reserved space.
+
+Identify the artifact as a prototype in its files and delivery documentation. Explain simulated execution, unimplemented behavior and verification limits there. Put variant selection, replay, scenario injection and diagnostic inspection in launch arguments or a separate developer control surface outside the evaluated terminal; they must not take its space, focus or keybindings.
+
+Inspect the actual terminal and exercise the interactions being evaluated before delivery. The user must be able to judge the screen and operate it without mentally removing demo elements or imagining missing UI behavior. Record remaining fidelity gaps outside the interface and do not claim exact parity without verification.
 
 ## Information and state
 

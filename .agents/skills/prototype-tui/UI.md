@@ -1,107 +1,45 @@
 # UI Prototype
 
-Generate **several radically different UI variations** in a single terminal view, switchable from a prototype control. The user flips between variants in the shared terminal, picks one (or steals bits from each), then throws the rest away.
+Build an interactive preview of the intended product screen. Apply [TUI prototype fidelity](../../../design.md#tui-prototype-fidelity) throughout. The user evaluates the rendered interface and its behavior directly.
 
-If the question is about logic/state rather than what something looks like, this is the wrong branch. Use [LOGIC.md](LOGIC.md).
+Use this branch for layout, information density, copy, navigation, focus and interaction feedback. Use [LOGIC.md](LOGIC.md) when the question concerns a state model or data shape.
 
-## When this is the right shape
+## Host context
 
-- "What should this terminal screen look like?"
-- "I want to see a few options for this dashboard before committing."
-- "Try a different layout for the settings screen."
-- Any time the user would otherwise spend a day picking between three vague mockups in their head.
+Prefer the existing screen where the feature belongs. Mount the proposed UI alongside its real surrounding components so the editor, statusline, available space and input ownership constrain the design. Use an isolated host when sample execution must be separated from live work, while preserving the intended interface.
 
-## Two sub-shapes: strongly prefer sub-shape A
-
-A UI prototype is much easier to judge when it's **butting up against the rest of the app**: real header, real sidebar, real data, real density. A throwaway view on its own is a vacuum: every variant looks fine in isolation. Default to sub-shape A whenever there's a plausible existing screen to host the variants. Only reach for sub-shape B if the prototype genuinely has no nearby home.
-
-### Sub-shape A: adjustment to an existing screen (preferred)
-
-The screen already exists. Variants are rendered **in the same view**, selected by a prototype command argument such as `--variant=B` and changed through the switcher. The existing data loading, arguments, and auth all stay. Only the rendering swaps. This is the default; pick it unless there's a specific reason not to.
-
-If the prototype is for something that doesn't yet have a screen but _would naturally live inside one_ (a new section of the dashboard, a new card on the settings screen, a new step in an existing flow), it's still sub-shape A. Mount the variants inside the host screen.
-
-### Sub-shape B: a new screen (last resort)
-
-Only use this when the thing being prototyped genuinely has no existing screen to live inside (e.g. an entirely new top-level surface, or a flow that can't be embedded anywhere sensible).
-
-Create a **throwaway TUI entrypoint** following whatever convention the project already uses. Don't invent a new top-level structure. Name it so it's obviously a prototype (e.g. include the word `prototype` in the path or filename). Same variant argument pattern.
-
-Before committing to sub-shape B, sanity-check: is there really no existing screen this could be embedded in? An empty view hides design problems that a populated one would expose.
-
-In both sub-shapes the prototype switcher is identical.
+Create a standalone screen only when the proposed feature has no existing host. Follow the project's entrypoint convention and identify prototype source in its path or filename.
 
 ## Process
 
-### 1. State the question and pick N
+### 1. Choose what to evaluate
 
-Default to **3 variants**. More than 5 stops being radically different and starts being noise, so cap there.
+Use the user's current design choices and record the open UI question in the delivery notes or source comments. Work on the selected design when it is settled. When alternatives are useful and their number is unspecified, start with three structurally different candidates; this is an exploration default, not a prerequisite for every prototype.
 
-Write down the plan in one line, in the prototype's location or a top-of-file comment:
+### 2. Build the intended interface
 
-> "Three variants of the existing settings screen, selectable by a command argument and switchable in the same terminal session."
+Use the project's native components, theme and input conventions. Populate the screen with a coherent usage scenario, including enough surrounding content to judge density. Simulated replies and counters must fit that scenario and change consistently with its events.
 
-This works whether the user is here to push back or not.
+Wire the interactions under evaluation: selection, entry, return, editing, submission, interruption and state feedback where applicable. A visible action must produce its intended UI response even when execution behind it is simulated. Represent unfinished execution with sample events; record any remaining UI gap in the delivery notes.
 
-### 2. Generate radically different variants
+For alternatives, vary the relevant structure or information hierarchy. Keep each candidate independent enough to answer the open question; reuse components where they do not predetermine the layout.
 
-Draft each variant. Hold each one to:
+### 3. Drive scenarios outside the screen
 
-- The screen's purpose and the data it has access to.
-- The project's TUI components, theme and input conventions, as defined by its design document.
-- A clear exported component name, e.g. `VariantA`, `VariantB`, `VariantC`.
+Select a candidate through a launch argument such as `--variant=B`, or run candidates in separate named Tuistory sessions. Replay, reset and forced states use launch options or a separate developer driver. Keep the same sample scenario when comparing candidates.
 
-Variants must be **structurally different**: different layout, different information hierarchy, different primary affordance, not just different colours. Three slightly-tweaked card grids isn't a UI prototype, it's wallpaper. If two drafts come out too similar, redo one with explicit "do not use a card grid" guidance.
+The evaluated screen contains the candidate's product controls only. Prototype switching must not add a toolbar, label, hidden key handler or reserved row to it. Provide commands and scenario instructions in the handoff rather than rendering them in the product terminal.
 
-### 3. Wire them together
+### 4. Verify the actual experience
 
-Create a single switcher component in the view:
+Run and inspect the actual TUI through [Tuistory](../tuistory/SKILL.md). Exercise the chosen scenario and its visible actions, including focus restoration and any normal/loading/waiting/failure/completion states relevant to the design. Inspect the intended theme and terminal sizes; correct rendering failures before handing over the screen.
 
-```text
-# Pseudo-code: adapt argument parsing and rendering to the project's TUI.
-variant = requested variant, default A
-render the matching VariantA, VariantB or VariantC with the same data
-render PrototypeSwitcher with keys A, B, C and the current variant
-on selection: update variant and re-render the view
-```
-
-For sub-shape A (existing screen): keep all the existing data loading above the switcher; only the rendered subtree changes per variant.
-
-For sub-shape B (new screen): the throwaway TUI entrypoint mounts the same switcher.
-
-### 4. Build the terminal switcher
-
-A small, visible prototype control with three pieces, placed according to the project's TUI layout conventions:
-
-- **Previous action**: cycles to the previous variant (wraps around).
-- **Variant label**: shows the current variant key and, if the variant exports a name, that name too. e.g. `B (Sidebar layout)`.
-- **Next action**: cycles forward (wraps around).
-
-Behaviour:
-
-- Selecting an action changes the rendered variant in the same session. Show its launch command with the variant argument so rerunning that command opens the selected variant again.
-- Keyboard: use the project's input conventions and make the switcher's controls visible. Handle navigation keys only when the switcher has focus; preserve text editing and navigation in the view being evaluated.
-- Visually distinct from the view, using the project's theme, so it's obviously a prototype control rather than part of the design being evaluated.
-- Available only through the prototype/development entrypoint or equivalent project gate, so a stray prototype merge can't expose the switcher to ordinary users.
-
-Put the switcher in a single shared component so both sub-shapes can reuse it. Locate it wherever shared TUI components live in the project.
+Capture actual terminal screenshots after checking the content. Judge the whole screen, including host chrome and empty space. Apply the design document's fidelity criterion; backend simulation is not a reason to leave presentation or interaction defects.
 
 ### 5. Hand it over
 
-Surface the launch command (and variant arguments), working directory and Tuistory attachment command. The user can join the shared session and flip through whenever they get to it. The interesting feedback is usually **"I want the header from B with the sidebar from C"**, which is the actual design they want.
+Provide the working directory, launch command, Tuistory attachment command and any external scenario or variant controls. Explain simulation and verification limits in those notes. The user should be able to join the terminal and evaluate the product UI immediately.
 
-### 6. Capture findings and decide whether to adopt
+### 6. Capture findings and retain the artifact
 
-When a variant has won, follow the capture and source-retention boundary in [SKILL.md](SKILL.md). A prototype-only task ends with the runnable artifact and findings. If product adoption is already within the implementation authorization, resume product QA while rewriting the winner for production:
-
-- **Sub-shape A**: fold the winner into the existing screen and remove the losing variants and switcher from the product path.
-- **Sub-shape B**: promote the winning variant to a real screen and remove the throwaway entrypoint and switcher from the product path.
-
-Keep the prototype shell under prototype constraints and do not treat prototype feedback as authorization for separate product work.
-
-## Anti-patterns
-
-- **Variants that differ only in colour or copy.** That's a tweak, not a prototype. Real variants disagree about structure.
-- **Sharing too much code between variants.** A shared `<Header>` is fine; a shared `<Layout>` defeats the point. Each variant should be free to throw out the layout.
-- **Wiring variants to real mutations.** Read-only prototypes are fine. If a variant needs to mutate, point it at a stub: the question is "what should this look like", not "does the backend work".
-- **Promoting the prototype directly to production.** The variant code was written under prototype constraints (no tests, minimal error handling). Rewrite it properly when you fold it in.
+Follow [SKILL.md](SKILL.md) for findings, branch retention and product-adoption authorization. Record the selected design and remaining UI questions. Prototype feedback alone does not authorize separate production implementation.

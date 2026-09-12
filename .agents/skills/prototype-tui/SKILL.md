@@ -8,22 +8,22 @@ license: MIT
 
 A prototype is **throwaway code that answers a question**. The question decides the shape.
 
-Read the project's design document, when present, for its components, theme and input conventions. Read and use the [tuistory skill](../tuistory/SKILL.md) to run and inspect a shared interactive terminal that the user can join.
+Before either branch, read [TUI prototype fidelity](../../../design.md#tui-prototype-fidelity), the authoritative presentation standard, and the rest of that design document for components, theme and input conventions. Read and use the [tuistory skill](../tuistory/SKILL.md) to run and inspect a shared interactive terminal that the user can join.
 
 ## Pick a branch
 
 Identify which question is being answered, using the user's prompt, the surrounding code, or by asking if the user is around:
 
-- **"Does this logic / state model feel right?"** → [LOGIC.md](LOGIC.md). Build a shareable terminal demo (free-play actions plus tabbed guided walkthroughs) that pushes the state machine through cases that are hard to reason about on paper, and that a non-developer can drive.
-- **"What should this look like?"** → [UI.md](UI.md). Generate several radically different UI variations in a single terminal view, selectable through a command argument and an interactive switcher.
+- **"Does this logic / state model feel right?"** → [LOGIC.md](LOGIC.md). Exercise the relevant state transitions, with scenario drivers and diagnostic inspection outside any product UI being evaluated.
+- **"What should this look like or how should it respond?"** → [UI.md](UI.md). Present the intended product interface. Compare alternatives when the design is open; use the user's selected design when it is already settled.
 
-The two branches produce very different artifacts, so getting this wrong wastes the whole prototype. If the question is genuinely ambiguous and the user isn't reachable, default to whichever branch better matches the surrounding code (a backend module → logic; a screen or component → UI) and state the assumption at the top of the prototype.
+If the branch is ambiguous and the user is unavailable, use the surrounding task (a backend module → logic; a screen or interaction → UI) and record the assumption in the delivery notes. A UI exploration does not require a separate product specification before work can begin.
 
 ## Rules that apply to both
 
-1. **Throwaway from day one, and clearly marked as such.** Locate the prototype code close to where it will actually be used (next to the module or screen it's prototyping for) so context is obvious, but name it so a casual reader can see it's a prototype, not production. For throwaway TUI entrypoints, obey whatever convention the project already uses; don't invent a new top-level structure.
+1. **Mark the source and delivery notes.** Locate the prototype code close to where it will be used and identify it in filenames or comments. Keep that identification outside the evaluated interface, as required by the design standard. Follow the project's existing entrypoint convention.
 2. **Trivial to run.** Both branches start from one command in the project's task runner: `pnpm <name>`, `python <path>`, `bun <path>`, etc., using the existing project setup. Provide the working directory, launch command and Tuistory attachment command so the user can start the demo or join the running session.
 3. **No persistence by default.** State lives in memory. Persistence is the thing the prototype is _checking_, not something it should depend on. If the question explicitly involves a database, hit a scratch DB or a local file with a clear "PROTOTYPE, wipe me" name.
-4. **Skip the polish.** No tests, no error handling beyond what makes the prototype _runnable_, no abstractions. The point is to learn something fast.
-5. **Surface the state.** After every action (logic) or on every variant switch (UI), print or render the full relevant state so the user can see what changed.
+4. **Keep implementation small.** Use only the execution and error handling needed for the scenario. Skip production infrastructure and a permanent prototype test suite; visual fidelity and working UI interactions remain required. Verify them through the actual terminal.
+5. **Separate product feedback from diagnostics.** Show state changes through the intended product presentation. Inspect internal state and drive scenarios through developer controls outside that interface.
 6. **Capture findings when done.** Record the question and verdict, then retain the runnable prototype on a throwaway branch outside main. Link that branch and its launch command from the related issue so the prototype remains a reproducible primary source. A prototype-only task ends with the artifact and findings. If product adoption is already within the implementation authorization, carry the validated decision into the real product work and resume product QA; do not infer that prototype feedback authorizes a separate product change.
