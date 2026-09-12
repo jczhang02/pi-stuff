@@ -3,6 +3,21 @@ import type {
   BashToolInput,
   ReadToolInput,
 } from '@earendil-works/pi-coding-agent';
+import type {Model, Usage} from '@earendil-works/pi-ai';
+
+// Display metadata only. The isolated host has no credentials or live provider.
+export const fixtureModel: Model<'anthropic-messages'> = {
+  id: 'claude-sonnet-4-5',
+  name: 'Claude Sonnet 4.5',
+  api: 'anthropic-messages',
+  provider: 'anthropic',
+  baseUrl: 'http://127.0.0.1:1',
+  reasoning: true,
+  input: ['text'],
+  cost: {input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75},
+  contextWindow: 200000,
+  maxTokens: 8192,
+};
 
 export type Status = '运行中' | '等待输入' | '已完成' | '已停止';
 export type ToolMessage = {
@@ -32,7 +47,6 @@ export interface DemoAgent {
   turns: number;
   inputTokens: number;
   outputTokens: number;
-  cost: number;
   step: number;
   pending: number;
 }
@@ -55,7 +69,7 @@ export async function runChild(task: Task) {
   }
 }`;
 
-export function createAgents(): DemoAgent[] {
+export function createAgents(completed = false): DemoAgent[] {
   const specs: {
     id: string;
     name: string;
@@ -106,7 +120,7 @@ export function createAgents(): DemoAgent[] {
         '定位完成：`cancelTask` 发出取消请求，`runChild` 释放会话，`awaitRun` 等待结果。\n\n建议优先检查 `finally` 中的释放路径。你可以继续让我追踪其中一条调用。',
     },
   ];
-  return specs.map(spec => ({
+  const agents: DemoAgent[] = specs.map(spec => ({
     ...spec,
     messages: [
       {kind: 'user', text: spec.task},
@@ -119,14 +133,30 @@ export function createAgents(): DemoAgent[] {
     unread: spec.status === '等待输入' ? 1 : 0,
     elapsed: spec.id === 'explorer' ? 28 : 12,
     tools: spec.id === 'tester' ? 0 : 1,
-    turns: 3,
+    turns: 1,
     inputTokens:
       spec.id === 'main' ? 18200 : spec.id === 'tester' ? 8200 : 12900,
     outputTokens: spec.id === 'main' ? 860 : 114,
-    cost: 0.1409,
     step: spec.id === 'main' ? -60 : 0,
     pending: 0,
   }));
+  if (completed) {
+    for (let step = 0; step < 150; step += 1) advance(agents, 'main');
+  }
+  return agents;
+}
+
+export function usageFor(agent: DemoAgent): Usage {
+  const input = (agent.inputTokens * fixtureModel.cost.input) / 1000000;
+  const output = (agent.outputTokens * fixtureModel.cost.output) / 1000000;
+  return {
+    input: agent.inputTokens,
+    output: agent.outputTokens,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: agent.inputTokens + agent.outputTokens,
+    cost: {input, output, cacheRead: 0, cacheWrite: 0, total: input + output},
+  };
 }
 
 function readResult(): ToolMessage {
@@ -141,8 +171,6 @@ function readResult(): ToolMessage {
 
 const intro =
   '我会先验证等待者是否收到结束信号，再检查重复取消。现在运行这组取消场景，结果会逐条显示在下面。';
-const passOutput =
-  'bun test v1.4.0\n\n(pass) cancel running task\n(pass) cancel queued task\n(pass) cancel twice\n\n3 pass\n0 fail';
 const failOutput =
   'bun test v1.4.0\n\n(pass) cancel running task\n(pass) cancel queued task\n(fail) cancel twice\n\nerror: Test timed out after 5000ms\n  at tests/subagent/cancel.test.ts:42\n\n2 pass\n1 fail\nProcess exited with code 1';
 
@@ -154,9 +182,12 @@ export function advance(
     if (agent.status !== '运行中') continue;
     agent.step += 1;
     if (agent.step % 5 === 0) agent.elapsed += 1;
-    if (agent.step > 0 && agent.step % 5 === 0) {
+    if (
+      agent.step > 0 &&
+      agent.step % 5 === 0 &&
+      (agent.step <= 20 || agent.step >= 64)
+    ) {
       agent.outputTokens += 17;
-      agent.cost += 0.0003;
     }
     if (agent.step < 1) continue;
     if (agent.step === 1) {
@@ -188,18 +219,16 @@ export function advance(
         state: 'running',
       });
     }
-    const fails = agent.id === 'reviewer';
     if (agent.step >= 30 && agent.step <= 60) {
       const tool = agent.messages.findLast(entry => entry.kind === 'tool');
       if (tool?.kind === 'tool' && tool.name === 'bash') {
-        const output = fails ? failOutput : passOutput;
-        tool.detail = output
+        tool.detail = failOutput
           .split('\n')
           .slice(0, Math.floor((agent.step - 25) / 3))
           .join('\n');
         if (agent.step === 60) {
-          tool.detail = output;
-          tool.state = fails ? 'error' : 'success';
+          tool.detail = failOutput;
+          tool.state = 'error';
         }
       }
     }
@@ -210,9 +239,10 @@ export function advance(
       agent.messages.push({kind: 'assistant', text: '', streaming: true});
     }
     if (agent.step >= 64 && agent.step <= 90) {
-      const final = fails
-        ? '**发现一处问题：连续取消会让第二个等待者超时。**\n\n单次取消与排队任务取消通过。重复取消失败，位置在 `tests/subagent/cancel.test.ts:42`。建议让同一任务的取消请求复用同一个完成信号。\n\n这轮审查完成。你可以继续让我检查修复后的路径。'
-        : '**本轮检查完成。**\n\n单次取消、排队任务取消与重复取消均通过。会话在 `finally` 中释放，等待者能收到完成信号。\n\n你可以继续追问；之前的对话和工具结果仍在。';
+      const final =
+        agent.id === 'main'
+          ? '**重复取消仍有一处问题。**\n\n审查已定位第二个等待者超时；代码入口在 `cancelTask`。下一步让重复取消复用同一个完成信号，再验证资源释放。'
+          : '**发现一处问题：连续取消会让第二个等待者超时。**\n\n单次取消与排队任务取消通过。重复取消失败，位置在 `tests/subagent/cancel.test.ts:42`。建议让同一任务的取消请求复用同一个完成信号。\n\n这轮检查完成，可以继续检查修复后的路径。';
       const current = agent.messages.findLast(
         entry => entry.kind === 'assistant',
       );
@@ -228,9 +258,7 @@ export function advance(
       agent.status = agent.pending ? '运行中' : '已完成';
       agent.activity = agent.pending
         ? '继续处理你的补充消息'
-        : fails
-          ? '审查完成 · 发现 1 项问题'
-          : '本轮已完成，可以在原对话中继续';
+        : '检查完成 · 发现 1 项问题';
       agent.step = 0;
       agent.pending = 0;
       if (viewing !== agent.id) agent.unread += 1;

@@ -44,8 +44,8 @@ export class Conversation {
     this.bashTool = createBashToolDefinition(cwd);
   }
 
-  render(agent: DemoAgent, width: number): string[] {
-    return agent.messages.flatMap(entry => {
+  render(agent: DemoAgent, width: number, skip = 0): string[] {
+    return agent.messages.slice(skip).flatMap(entry => {
       let component = this.components.get(entry);
       if (!component) {
         if (entry.kind === 'user')

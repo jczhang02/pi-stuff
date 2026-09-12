@@ -32,7 +32,7 @@ export function openConversation(
       agent.unread = 0;
       editor.onSubmit = value => {
         if (value.trim().startsWith('/'))
-          notice = '原型只模拟文字交流；Pi 命令请返回 main 使用。';
+          notice = '该命令需要在主会话中运行。Ctrl+C 返回 main。';
         else {
           send(agent, value);
           editor.setText('');
@@ -55,14 +55,7 @@ export function openConversation(
             return [
               paint('至少需要 50 列 × 18 行；Ctrl+C 返回 main。', width, theme),
             ];
-          const header = [
-            theme.bold(`${agent.name}  /  ${agent.task}`),
-            theme.fg(
-              'muted',
-              'UI PROTOTYPE · 模拟执行 · Pi 原生消息与工具组件',
-            ),
-            '',
-          ];
+          const header = [theme.bold(`${agent.name}  /  ${agent.task}`), ''];
           const hints = fleet.focused
             ? '↑↓ 选择 · Enter 进入 · x 停止 · Esc 回到输入'
             : `Enter 发送 · 空输入 ↓ 选择代理 · Ctrl+C 返回 main · Esc ${agent.status === '运行中' ? '中断' : '返回'}`;

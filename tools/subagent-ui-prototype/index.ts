@@ -8,24 +8,24 @@ import {
   type ExtensionContext,
 } from '@earendil-works/pi-coding-agent';
 import {isKeyRelease, matchesKey, type TUI} from '@earendil-works/pi-tui';
-import {advance, createAgents, send, stop, type DemoAgent} from './model';
+import {advance, send, stop, type DemoAgent} from './model';
 import {Conversation} from './conversation';
 import {Fleet, canvas, paint} from './fleet';
 import {openConversation} from './viewer';
 
 export function createFleetExtension(
-  getSession: () => AgentSession,
+  agents: DemoAgent[],
+  getSession: (agent: DemoAgent) => AgentSession,
 ): ExtensionFactory {
   return pi => {
-    const agents = createAgents();
-    const main = agents[0];
-    if (!main) throw new Error('Prototype needs a main agent');
+    const first = agents[0];
+    if (!first) throw new Error('Prototype needs a main agent');
+    const main: DemoAgent = first;
     const fleet = new Fleet(agents);
     let tui: TUI | undefined;
     let footer: FooterComponent | undefined;
     let transcript: Conversation | undefined;
     let viewing = 'main';
-    let controls = false;
     let timer: ReturnType<typeof setInterval> | undefined;
 
     pi.registerMessageRenderer('fleet-demo', (_message, options, theme) => {
@@ -33,10 +33,9 @@ export function createFleetExtension(
       return {
         invalidate() {},
         render: width =>
-          [
-            theme.fg('muted', 'UI PROTOTYPE · 模拟执行 · 不调用模型'),
-            ...(transcript?.render(main, width) ?? []),
-          ].map(line => paint(line, width, theme)),
+          (transcript?.render(main, width, 2) ?? []).map(line =>
+            paint(line, width, theme),
+          ),
       };
     });
 
@@ -45,34 +44,13 @@ export function createFleetExtension(
       let next: DemoAgent | undefined = selected;
       while (next && next.id !== 'main') {
         viewing = next.id;
+        footer.setSession(getSession(next));
         next = await openConversation(ctx, fleet, next, footer);
       }
       viewing = 'main';
+      footer.setSession(getSession(main));
       fleet.focused = false;
       tui?.requestRender();
-    }
-
-    function prototypeControl(data: string, ctx: ExtensionContext): boolean {
-      if (matchesKey(data, 'f2')) {
-        controls = !controls;
-        return true;
-      }
-      if (!controls) return false;
-      if (data === 't') {
-        ctx.ui.setTheme(ctx.ui.theme.name === 'light' ? 'dark' : 'light');
-        transcript?.clear();
-        tui?.requestRender(true);
-      } else if (data === 'r') {
-        transcript?.clear();
-        const fresh = createAgents();
-        agents.forEach((agent, index) => {
-          const replacement = fresh[index];
-          if (replacement) Object.assign(agent, replacement);
-        });
-        ctx.ui.setEditorText('');
-        fleet.focused = false;
-      } else if (matchesKey(data, 'escape')) controls = false;
-      return true;
     }
 
     pi.on('session_start', (_event, ctx) => {
@@ -82,10 +60,16 @@ export function createFleetExtension(
         // Color the isolated terminal's default SGR/erase output as well.
         const output = terminal.terminal;
         const write = output.write;
-        const themedWrite = (data: string) =>
+        let themeName = ctx.ui.theme.name;
+        const themedWrite = (data: string) => {
+          if (themeName !== ctx.ui.theme.name) {
+            themeName = ctx.ui.theme.name;
+            terminal.requestRender(true);
+          }
           write.call(output, canvas(data, ctx.ui.theme));
+        };
         output.write = themedWrite;
-        footer = new FooterComponent(getSession(), data);
+        footer = new FooterComponent(getSession(main), data);
         transcript = new Conversation(terminal, ctx.cwd);
         const nativeFooter = footer;
         return {
@@ -100,11 +84,9 @@ export function createFleetExtension(
             }
           },
           render(width: number) {
-            const hint = controls
-              ? '原型控制 · t 切换主题 · r 重播 · F2 返回'
-              : fleet.focused
-                ? '↑↓ 选择 · Enter 进入 · x 停止 · Esc 回到输入'
-                : '空输入 ↓ 选择代理 · F2 原型控制';
+            const hint = fleet.focused
+              ? '↑↓ 选择 · Enter 进入 · x 停止 · Esc 回到输入'
+              : '空输入 ↓ 选择代理';
             return [
               ...nativeFooter.render(width),
               '',
@@ -120,17 +102,13 @@ export function createFleetExtension(
         return new (class extends CustomEditor {
           override render(width: number): string[] {
             const editorFocused = this.focused;
-            this.focused = editorFocused && !fleet.focused && !controls;
+            this.focused = editorFocused && !fleet.focused;
             const lines = super.render(width);
             this.focused = editorFocused;
             return lines;
           }
           override handleInput(data: string) {
             if (isKeyRelease(data)) return;
-            if (prototypeControl(data, ctx)) {
-              terminal.requestRender();
-              return;
-            }
             const action = fleet.handleInput(data, this.getText() === '');
             if (action) {
               if (action !== true) void open(ctx, action);
@@ -157,6 +135,7 @@ export function createFleetExtension(
       );
       timer = setInterval(() => {
         advance(agents, viewing);
+        for (const agent of agents) getSession(agent);
         transcript?.settleTools(agents);
         tui?.requestRender();
       }, 200);
@@ -169,8 +148,8 @@ export function createFleetExtension(
     });
     pi.on('user_bash', () => ({
       result: {
-        output: 'UI prototype: shell execution is disabled.',
-        exitCode: 0,
+        output: '当前会话未启用 shell 执行。',
+        exitCode: 1,
         cancelled: false,
         truncated: false,
       },

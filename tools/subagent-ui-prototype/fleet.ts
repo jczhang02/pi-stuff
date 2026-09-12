@@ -7,7 +7,7 @@ import {
   truncateToWidth,
   visibleWidth,
 } from '@earendil-works/pi-tui';
-import {stop, type DemoAgent} from './model';
+import {stop, usageFor, type DemoAgent} from './model';
 
 export function canvas(text: string, theme: Theme): string {
   // Pi 0.85.1 bundled export.pageBg values prevent relay default-color mixing.
@@ -96,7 +96,7 @@ export class Fleet {
       const essential = `↑ ${tokens(agent.inputTokens)} · ↓ ${tokens(agent.outputTokens)} · ${agent.elapsed}s`;
       const stats =
         width >= 125
-          ? `${agent.tools} tools · ${agent.turns} turns · ${essential} · $${agent.cost.toFixed(4)}`
+          ? `${agent.tools} tool${agent.tools === 1 ? '' : 's'} · ${agent.turns} turn${agent.turns === 1 ? '' : 's'} · ${essential} · $${usageFor(agent).cost.total.toFixed(4)}`
           : essential;
       const leftWidth = Math.max(0, width - visibleWidth(stats) - 3);
       const left = truncateToWidth(
