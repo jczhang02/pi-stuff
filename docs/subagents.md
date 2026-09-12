@@ -291,6 +291,12 @@ forked from `@arhen/pi-core-subagent` `1.3.54`, source snapshot
 The retained upstream license and attribution are in
 [`src/subagent/runtime/LICENSE.arhen`](../src/subagent/runtime/LICENSE.arhen).
 
+This is a source fork embedded in Pi Stuff, not an added npm dependency.
+Arhen's [license at that exact snapshot](https://github.com/arhen/pi-extensions/blob/de1c8783c2a39b1cbb0f86b412307193de9774c1/packages/core/pi-core-subagent/LICENSE)
+already credits `minimalist-subagents` and its earlier `@ghoulm370/pi-subagent-ui`
+origin. Those notices are retained verbatim. The upstream and retained license
+both have SHA-256 `fe11eff3cb2d48ea8daa78cf07259fdbf818270fa2e7e46d1680a79391565125`.
+
 The editor border-label idea was checked against
 [`mitsuhiko/agent-stuff`](https://github.com/mitsuhiko/agent-stuff/tree/122e2994adddb113c04764c5697217dae120fcc6)
 at commit `122e2994adddb113c04764c5697217dae120fcc6`. Only its public editor

@@ -238,6 +238,12 @@ Pi `0.85.1` 没有公开的另一扩展 footer getter。因此两个独立调用
 保留的上游许可与署名见
 [`src/subagent/runtime/LICENSE.arhen`](../../../src/subagent/runtime/LICENSE.arhen)。
 
+这里是内置到 Pi Stuff 的源码 fork，没有新增 npm 依赖。
+Arhen [该固定快照的许可](https://github.com/arhen/pi-extensions/blob/de1c8783c2a39b1cbb0f86b412307193de9774c1/packages/core/pi-core-subagent/LICENSE)
+本身就署名 `minimalist-subagents`，并保留更早的 `@ghoulm370/pi-subagent-ui` 来源；
+这些声明按原文保留。上游与本地保留文件的 SHA-256 都是
+`fe11eff3cb2d48ea8daa78cf07259fdbf818270fa2e7e46d1680a79391565125`。
+
 编辑器边框标签的思路参考了
 [`mitsuhiko/agent-stuff`](https://github.com/mitsuhiko/agent-stuff/tree/122e2994adddb113c04764c5697217dae120fcc6)
 的 `122e2994adddb113c04764c5697217dae120fcc6` 提交。这里只参考公开 editor API 形状，
