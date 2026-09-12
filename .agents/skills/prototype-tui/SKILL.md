@@ -22,7 +22,7 @@ If the branch is ambiguous and the user is unavailable, use the surrounding task
 ## Rules that apply to both
 
 1. **Mark the source and delivery notes.** Locate the prototype code close to where it will be used and identify it in filenames or comments. Keep that identification outside the evaluated interface, as required by the design standard. Follow the project's existing entrypoint convention.
-2. **Trivial to run.** Both branches start from one command in the project's task runner: `pnpm <name>`, `python <path>`, `bun <path>`, etc., using the existing project setup. Provide the working directory, launch command and Tuistory attachment command so the user can start the demo or join the running session.
+2. **Trivial to run.** Start either branch with one command using the project's existing runtime or task runner, such as `bun <path>` or `bun run <name>`. A direct entrypoint does not require a new package script. Provide the working directory, launch command and Tuistory attachment command.
 3. **No persistence by default.** State lives in memory. Persistence is the thing the prototype is _checking_, not something it should depend on. If the question explicitly involves a database, hit a scratch DB or a local file with a clear "PROTOTYPE, wipe me" name.
 4. **Keep implementation small.** Use only the execution and error handling needed for the scenario. Skip production infrastructure and a permanent prototype test suite; visual fidelity and working UI interactions remain required. Verify them through the actual terminal.
 5. **Separate product feedback from diagnostics.** Show state changes through the intended product presentation. Inspect internal state and drive scenarios through developer controls outside that interface.
