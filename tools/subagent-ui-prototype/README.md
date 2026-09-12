@@ -1,5 +1,9 @@
 # Subagent Fleet UI prototype
 
+For the subsequent real Arhen execution and host-compatibility findings, use the [runtime E2E artifact](../subagent-runtime-e2e/README.md). This directory retains the earlier UI-only preview.
+
+后续真实 Arhen 执行及宿主兼容性验证见[运行时 E2E 产物](../subagent-runtime-e2e/README.md)。本目录保留此前纯 UI 预览。
+
 This runnable UI preview answers how a bottom Fleet and full agent conversations should look and respond. It follows the [prototype fidelity standard](../../design.md#tui-prototype-fidelity) merged in #54. The interface contains product content and controls; the sample execution and its limits are explained here.
 
 The artifact belongs to [issue #49](https://github.com/jczhang02/pi-stuff/issues/49), branch `codex/prototype-subagent-ui` and [draft PR #52](https://github.com/jczhang02/pi-stuff/pull/52). It remains outside main. The production fork source is Arhen's `pi-core-subagent`; this preview does not import its runtime.

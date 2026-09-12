@@ -1,0 +1,569 @@
+diff --git a/agentfile.d.ts b/agentfile.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ad44ab8013cc785c05b31e93d01cea4d205c6d4d
+--- /dev/null
++++ b/agentfile.d.ts
+@@ -0,0 +1,9 @@
++export interface AgentFileInfo {
++    body: string;
++    model?: string;
++    tools?: string[];
++    description?: string;
++    path?: string;
++}
++export declare function clearAgentFileCache(): void;
++export declare function resolveAgentFile(name: string, task: string, cwd: string, agentDir: string): AgentFileInfo | undefined;
+diff --git a/child.d.ts b/child.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..39d15cb8dba9ab403735397e27fc9ebf49afa209
+--- /dev/null
++++ b/child.d.ts
+@@ -0,0 +1,10 @@
++import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
++import type { MailboxMessage } from "./mailbox.ts";
++export declare const CHILD_TALK_TOOLS: readonly ["ask_parent", "notify_parent", "send_agent_message", "poll_agent_messages"];
++export interface ChildHandlers {
++    onAskParent(taskId: string, question: string): Promise<string>;
++    onNotifyParent(taskId: string, message: string, level: "info" | "warning" | "error"): void;
++    onSendMessage(taskId: string, to: string, text: string): boolean;
++    onPollMailbox(taskId: string): MailboxMessage[];
++}
++export declare function createChildTools(taskId: string, handlers: ChildHandlers): ToolDefinition[];
+diff --git a/format.d.ts b/format.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e61642c61e091946f086e1aca80fa154db2080f8
+--- /dev/null
++++ b/format.d.ts
+@@ -0,0 +1,25 @@
++import type { AssistantMessage } from "@earendil-works/pi-ai";
++import type { Theme } from "@earendil-works/pi-coding-agent";
++import { type Component } from "@earendil-works/pi-tui";
++import { type RunSnapshot, type RunStatus, type TaskSnapshot, type TaskStatus, type UsageStats } from "./types.ts";
++export declare function truncateText(text: string, max?: number): string;
++export declare function getFirstText(message: AssistantMessage): string;
++export declare function formatUsage(usage: UsageStats): string;
++export declare function statusIcon(status: TaskStatus | RunStatus): string;
++export declare function taskLine(task: TaskSnapshot): string;
++export declare function colorNums(text: string, theme: Theme): string;
++export declare function describeCall(toolName: string, args: unknown, cwd?: string): string;
++export declare function activitySnippet(text: string): string;
++export declare function isTalking(task: TaskSnapshot): boolean;
++export declare function compactLines(run: RunSnapshot): string[];
++export declare class SubagentsWidget implements Component {
++    private readonly getRuns;
++    private readonly theme;
++    constructor(getRuns: () => RunSnapshot[], theme: Theme);
++    invalidate(): void;
++    render(width: number): string[];
++}
++export declare function makeSummary(run: RunSnapshot): string;
++export declare function isStartupFailure(task: TaskSnapshot, kind: string): boolean;
++export declare function makeTaskNotice(run: RunSnapshot, task: TaskSnapshot, kind: string): string;
++export declare function makeNotice(run: RunSnapshot, kind: string): string;
+diff --git a/graph.d.ts b/graph.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..97603e06f7a1a420da6bc2e9f8dd6b0a39c0d48d
+--- /dev/null
++++ b/graph.d.ts
+@@ -0,0 +1,21 @@
++import type { RunMode } from "./types.ts";
++export declare function resolveNeeds(inputs: {
++    id?: string;
++    needs?: string[];
++}[], mode: RunMode): string[][];
++export declare function waveNotation(tasks: {
++    id?: string;
++    needs?: string[];
++}[]): string;
++export declare function applyUpstream(task: string, needs: string[], outputs: Map<string, string>): string;
++export interface SchedulerTask {
++    id: string;
++    needs?: string[];
++}
++export interface SkippedTask {
++    id: string;
++    needs: string[];
++}
++export declare function runWaveScheduler<T extends SchedulerTask>(tasks: T[], concurrency: number, outputs: Map<string, string>, settled: Set<string>, run: (task: T, index: number) => Promise<void>): Promise<{
++    skipped: SkippedTask[];
++}>;
+diff --git a/index.d.ts b/index.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..226ce979eec7b03ad178c7bb379b10a05a4a646d
+--- /dev/null
++++ b/index.d.ts
+@@ -0,0 +1,3 @@
++import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
++import { type SubagentHooks } from "./manager.ts";
++export default function (pi: ExtensionAPI, hooks?: SubagentHooks): void;
+diff --git a/mailbox.d.ts b/mailbox.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ddc5b7ea82698a2a4c1747473b51dddff364573
+--- /dev/null
++++ b/mailbox.d.ts
+@@ -0,0 +1,12 @@
++export interface MailboxMessage {
++    from: string;
++    text: string;
++    at: number;
++}
++export interface Mailbox {
++    open(taskId: string): void;
++    send(from: string, to: string, text: string): boolean;
++    poll(taskId: string): MailboxMessage[];
++    close(taskId: string): void;
++}
++export declare function createMailbox(): Mailbox;
+diff --git a/manager.d.ts b/manager.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b8084b785affd9179803d7a042c9fb953bac1df
+--- /dev/null
++++ b/manager.d.ts
+@@ -0,0 +1,110 @@
++import type { Api, Model } from "@earendil-works/pi-ai";
++import { type AgentSession, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
++import type { SubagentParamsShape, TaskInput } from "./schemas.ts";
++import { type RunDetails, type RunSnapshot, type TaskSnapshot } from "./types.ts";
++export declare const DEFAULT_CONCURRENCY = 3;
++export declare const MAX_CONCURRENCY = 8;
++export declare function classifyFailure(stopReason: string | undefined, errorMessage?: string): {
++    status: "failed" | "aborted";
++    message: string;
++} | undefined;
++export declare function cloneRun(run: RunSnapshot): RunSnapshot;
++export declare function resolveChildModel(ctx: ExtensionContext, explicit: string | undefined): Model<any> | undefined;
++export declare function ensureUsableModel(ctx: ExtensionContext, model: Model<Api> | undefined, signal: AbortSignal | undefined): Promise<{
++    model: Model<Api> | undefined;
++    note?: string;
++}>;
++export declare function validateThinking(model: Model<Api> | undefined, level: string | undefined): void;
++export interface ParkedMsg {
++    kind: "ask" | "notify" | "done";
++    taskId: string;
++    agent: string;
++    text: string;
++}
++export interface SubagentHooks {
++    ready?: (manager: SubagentManager) => void;
++    session?: (task: TaskSnapshot, session: AgentSession) => (() => void);
++    nativeWidget?: boolean;
++    allowCompletedResume?: boolean;
++}
++export declare class SubagentManager {
++    private readonly pi;
++    private readonly hooks?;
++    private runs;
++    private settlers;
++    private settleWaiters;
++    private pendingReplies;
++    private liveChildren;
++    private mailboxes;
++    private liveWorktrees;
++    private runControllers;
++    private widgetTimers;
++    private widgetRuns;
++    private eventSeq;
++    private persistSeq;
++    private persistedSeq;
++    private persistChain;
++    private readonly instanceNonce;
++    private cleared;
++    private autoLimit;
++    turnActivity: boolean;
++    constructor(pi: ExtensionAPI, hooks?: SubagentHooks | undefined);
++    setAutoLimit(on: boolean): boolean;
++    get autoLimitOn(): boolean;
++    hasActiveRun(): boolean;
++    clearWidget(ctx: ExtensionContext): void;
++    listRuns(): RunSnapshot[];
++    getRun(runId: string | undefined): RunSnapshot | undefined;
++    clearRuns(): void;
++    restoreFromSidecar(ctx: ExtensionContext): Promise<void>;
++    private persist;
++    private emit;
++    private deliverMode;
++    private notifyTask;
++    private notifyParent;
++    private widgetTui;
++    private upsertWidgetRun;
++    private scheduleWidget;
++    private pulseTimer;
++    private maybePulse;
++    private flushWidget;
++    private ensureWidget;
++    private updateRun;
++    private updateTask;
++    private makeChildHandlers;
++    private awaitParentReply;
++    deliverReply(runId: string, taskId: string, message: string): boolean;
++    private onChildEvent;
++    private runChild;
++    createRun(params: SubagentParamsShape, ctx: ExtensionContext): {
++        run: RunSnapshot;
++        inputs: TaskInput[];
++    };
++    private executeTasks;
++    ownsWorktree: (path: string) => boolean;
++    liveBranches(): Set<string>;
++    startInBackground(params: SubagentParamsShape, ctx: ExtensionContext): RunDetails;
++    resumeTask(runId: string, taskId: string, ctx: ExtensionContext, opts?: {
++        message?: string;
++        model?: string;
++    }): {
++        ok: true;
++        task: TaskSnapshot;
++    } | {
++        ok: false;
++        reason: string;
++    };
++    private finishRunIfSettled;
++    steerTask(runId: string, taskId: string | undefined, message: string): boolean;
++    cancelTask(runId: string, taskId: string, ctx?: ExtensionContext): boolean;
++    cancelRun(runId: string): {
++        aborted: number;
++    };
++    private settleRun;
++    private parked;
++    private collectParked;
++    awaitRun(runId: string, timeoutMs?: number): Promise<{
++        run: RunSnapshot | undefined;
++        intercom: ParkedMsg[];
++    } | undefined>;
++}
+diff --git a/peek.d.ts b/peek.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..de0f84b20a863f9ceb615aa5a5ddc67221550552
+--- /dev/null
++++ b/peek.d.ts
+@@ -0,0 +1,22 @@
++import type { Theme } from "@earendil-works/pi-coding-agent";
++export interface PeekTask {
++    runId: string;
++    taskId: string;
++    agent: string;
++    status: string;
++    running: boolean;
++    sessionFile?: string;
++    line: string;
++}
++export type PeekLine = {
++    gutter: string;
++    text: string;
++    kind: "call" | "result" | "error" | "say";
++};
++export interface PeekPane {
++    render(width: number): string[];
++    handleInput(data: string): void;
++    invalidate(): void;
++    dispose(): void;
++}
++export declare function createPeekPane(getTasks: () => PeekTask[], theme: Theme, requestRender: () => void, close: () => void, abort: (task: PeekTask) => void): PeekPane;
+diff --git a/schemas.d.ts b/schemas.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..beca65999cb7905c94611dc48b838d820a3277a5
+--- /dev/null
++++ b/schemas.d.ts
+@@ -0,0 +1,84 @@
++import { type Static, Type } from "typebox";
++declare const TaskItem: Type.TObject<{
++    id: Type.TOptional<Type.TString>;
++    agent: Type.TString;
++    task: Type.TString;
++    prompt: Type.TOptional<Type.TString>;
++    write: Type.TOptional<Type.TBoolean>;
++    model: Type.TOptional<Type.TString>;
++    thinking: Type.TOptional<Type.TUnsafe<"high" | "low" | "max" | "medium" | "minimal" | "off" | "xhigh">>;
++    cwd: Type.TOptional<Type.TString>;
++    tools: Type.TOptional<Type.TArray<Type.TString>>;
++    maxRuntimeMs: Type.TOptional<Type.TNumber>;
++    needs: Type.TOptional<Type.TArray<Type.TString>>;
++}>;
++export declare const SubagentParams: Type.TObject<{
++    agent: Type.TOptional<Type.TString>;
++    task: Type.TOptional<Type.TString>;
++    prompt: Type.TOptional<Type.TString>;
++    write: Type.TOptional<Type.TBoolean>;
++    tools: Type.TOptional<Type.TArray<Type.TString>>;
++    tasks: Type.TOptional<Type.TArray<Type.TObject<{
++        id: Type.TOptional<Type.TString>;
++        agent: Type.TString;
++        task: Type.TString;
++        prompt: Type.TOptional<Type.TString>;
++        write: Type.TOptional<Type.TBoolean>;
++        model: Type.TOptional<Type.TString>;
++        thinking: Type.TOptional<Type.TUnsafe<"high" | "low" | "max" | "medium" | "minimal" | "off" | "xhigh">>;
++        cwd: Type.TOptional<Type.TString>;
++        tools: Type.TOptional<Type.TArray<Type.TString>>;
++        maxRuntimeMs: Type.TOptional<Type.TNumber>;
++        needs: Type.TOptional<Type.TArray<Type.TString>>;
++    }>>>;
++    chain: Type.TOptional<Type.TArray<Type.TObject<{
++        id: Type.TOptional<Type.TString>;
++        agent: Type.TString;
++        task: Type.TString;
++        prompt: Type.TOptional<Type.TString>;
++        write: Type.TOptional<Type.TBoolean>;
++        model: Type.TOptional<Type.TString>;
++        thinking: Type.TOptional<Type.TUnsafe<"high" | "low" | "max" | "medium" | "minimal" | "off" | "xhigh">>;
++        cwd: Type.TOptional<Type.TString>;
++        tools: Type.TOptional<Type.TArray<Type.TString>>;
++        maxRuntimeMs: Type.TOptional<Type.TNumber>;
++        needs: Type.TOptional<Type.TArray<Type.TString>>;
++    }>>>;
++    model: Type.TOptional<Type.TString>;
++    thinking: Type.TOptional<Type.TUnsafe<"high" | "low" | "max" | "medium" | "minimal" | "off" | "xhigh">>;
++    cwd: Type.TOptional<Type.TString>;
++    concurrency: Type.TOptional<Type.TNumber>;
++    maxRuntimeMs: Type.TOptional<Type.TNumber>;
++    autoAwait: Type.TOptional<Type.TBoolean>;
++    notifyPerTask: Type.TOptional<Type.TBoolean>;
++}>;
++export type TaskInput = Static<typeof TaskItem>;
++export type SubagentParamsShape = Static<typeof SubagentParams>;
++export declare const RunIdParam: Type.TObject<{
++    runId: Type.TString;
++}>;
++export declare const ResultParam: Type.TObject<{
++    runId: Type.TString;
++    taskId: Type.TOptional<Type.TString>;
++}>;
++export declare const AwaitParam: Type.TObject<{
++    runId: Type.TString;
++    timeoutMs: Type.TOptional<Type.TNumber>;
++}>;
++export declare const ReplyParam: Type.TObject<{
++    runId: Type.TString;
++    taskId: Type.TString;
++    message: Type.TString;
++}>;
++export declare const ResumeParam: Type.TObject<{
++    runId: Type.TString;
++    taskId: Type.TString;
++    message: Type.TOptional<Type.TString>;
++    model: Type.TOptional<Type.TString>;
++}>;
++export declare const SteerParam: Type.TObject<{
++    runId: Type.TString;
++    taskId: Type.TOptional<Type.TString>;
++    message: Type.TString;
++}>;
++export {};
+diff --git a/types.d.ts b/types.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f72d5f7b9582c42c6ca159dc62bfa93e25f8c6e9
+--- /dev/null
++++ b/types.d.ts
+@@ -0,0 +1,65 @@
++export type RunMode = "single" | "parallel" | "chain";
++export type TaskStatus = "queued" | "starting" | "running" | "awaiting_parent" | "completed" | "failed" | "aborted";
++export type RunStatus = "queued" | "running" | "awaiting_parent" | "completed" | "failed" | "aborted";
++export declare const TERMINAL: TaskStatus[];
++export declare const MAX_TASKS = 16;
++export interface UsageStats {
++    input: number;
++    output: number;
++    cacheRead: number;
++    cacheWrite: number;
++    cost: number;
++    turns: number;
++}
++export interface TaskSnapshot {
++    id: string;
++    runId: string;
++    agent: string;
++    task: string;
++    cwd: string;
++    status: TaskStatus;
++    needs?: string[];
++    sessionId?: string;
++    sessionFile?: string;
++    startedAt?: number;
++    endedAt?: number;
++    toolCalls: number;
++    lastActivity?: string;
++    finalText?: string;
++    notifiedParent?: boolean;
++    error?: string;
++    model?: string;
++    modelNote?: string;
++    toolsNote?: string;
++    thinking?: string;
++    tools?: string[];
++    usage: UsageStats;
++    roster?: string;
++    agentFile?: string;
++    branch?: string;
++    diffStat?: string;
++    changedFiles?: string[];
++    isolation?: "worktree" | "in-place";
++    isolationReason?: string;
++    stackedOn?: string;
++    worktreeError?: string;
++}
++export interface RunSnapshot {
++    id: string;
++    mode: RunMode;
++    status: RunStatus;
++    notifyPerTask: boolean;
++    createdAt: number;
++    startedAt?: number;
++    endedAt?: number;
++    concurrency: number;
++    tasks: TaskSnapshot[];
++    aggregateUsage: UsageStats;
++    awaited?: boolean;
++}
++export interface RunDetails {
++    run: RunSnapshot;
++}
++export interface PendingReply {
++    resolve: (message: string) => void;
++}
+diff --git a/worktree.d.ts b/worktree.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..aaa6c4fea0139c9a568b2f7e1c79564e268e3d28
+--- /dev/null
++++ b/worktree.d.ts
+@@ -0,0 +1,24 @@
++export interface Worktree {
++    root: string;
++    path: string;
++    branch: string;
++    base: string;
++}
++export declare function repoRoot(cwd: string): string | undefined;
++export declare function createWorktree(cwd: string, runId: string, taskId: string, baseRef?: string): Worktree | undefined;
++export declare function attachWorktree(cwd: string, branch: string): Worktree | undefined;
++export declare function commitWorktree(wt: Worktree, message: string): "committed" | "empty";
++export declare function branchDiff(wt: Worktree): {
++    stat: string;
++    files: string[];
++};
++export declare function removeWorktree(wt: Worktree): void;
++export declare function removeByBranch(cwd: string, branch: string): void;
++export declare function cleanupMerged(root: string, opts?: {
++    skipBranches?: Set<string>;
++    target?: string;
++}): number;
++export declare function reapDeadWorktrees(root: string, isLive?: (path: string) => boolean): number;
++export declare function claimWorktree(wt: Worktree): void;
++export declare function ownerAlive(path: string, ownedHere?: (path: string) => boolean): boolean;
++export declare function sweepStale(root: string): void;
+diff --git a/package.json b/package.json
+index e5579aeaf0edcefaffdee264ada895ecf1beb0e2..5b51a62063cc9903ac8f1248e1cab4c2c6620dba 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,12 @@
+ 	"description": "pi extension: fast in-process subagents with a dependency-graph scheduler (needs edges gate tasks and carry upstream output into dependent prompts), plus background runs, intercom and agent-to-agent mailbox. Leader defines agents inline.",
+ 	"license": "MIT",
+ 	"main": "./src/index.ts",
++	"types": "./index.d.ts",
++	"exports": {
++		".": { "types": "./index.d.ts", "default": "./src/index.ts" },
++		"./src/manager.ts": { "types": "./manager.d.ts", "default": "./src/manager.ts" },
++		"./src/types.ts": { "types": "./types.d.ts", "default": "./src/types.ts" }
++	},
+ 	"scripts": {
+ 		"test": "bun test",
+ 		"typecheck": "tsc --noEmit",
+diff --git a/src/index.ts b/src/index.ts
+index 3d3a619856a43cadf6a346c0dfe5e89ec490862f..14ec78cf5089f88eea37acedb4af22a5624a5eac 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
+ import { Text, truncateToWidth } from "@earendil-works/pi-tui";
+ import { compactLines, formatUsage, makeSummary, statusIcon, taskLine, truncateText } from "./format.ts";
+ import { waveNotation } from "./graph.ts";
+-import { cloneRun, type ParkedMsg, SubagentManager } from "./manager.ts";
++import { cloneRun, type ParkedMsg, SubagentManager, type SubagentHooks } from "./manager.ts";
+ import { createPeekPane, type PeekTask } from "./peek.ts";
+ import {
+ 	AwaitParam,
+@@ -17,8 +17,9 @@ import {
+ import { type RunDetails, type RunSnapshot, TERMINAL } from "./types.ts";
+ import { cleanupMerged, ownerAlive, reapDeadWorktrees, repoRoot, sweepStale } from "./worktree.ts";
+ 
+-export default function (pi: ExtensionAPI) {
+-	const manager = new SubagentManager(pi);
++export default function (pi: ExtensionAPI, hooks?: SubagentHooks) {
++	const manager = new SubagentManager(pi, hooks);
++	hooks?.ready?.(manager);
+ 
+ 	const openPeek = async (ctx: ExtensionContext) => {
+ 		if (!ctx.hasUI) return;
+diff --git a/src/manager.ts b/src/manager.ts
+index 7c3218a76cd59875b1563fbce0bb7ff826667cb2..069711a8abb7e1aee5c8fc9e52e81ba74ae4a374 100644
+--- a/src/manager.ts
++++ b/src/manager.ts
+@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, sep } from "node:path";
+ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+ import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+ import {
++	type AgentSession,
+ 	type AgentSessionEvent,
+ 	createAgentSession,
+ 	DefaultResourceLoader,
+@@ -246,6 +247,13 @@ export interface ParkedMsg {
+ 	text: string;
+ }
+ 
++export interface SubagentHooks {
++	ready?: (manager: SubagentManager) => void;
++	session?: (task: TaskSnapshot, session: AgentSession) => (() => void);
++	nativeWidget?: boolean;
++	allowCompletedResume?: boolean;
++}
++
+ export class SubagentManager {
+ 	private runs = new Map<string, RunSnapshot>();
+ 	private settlers = new Map<string, true>();
+@@ -271,7 +279,7 @@ export class SubagentManager {
+ 
+ 	turnActivity = false;
+ 
+-	constructor(private readonly pi: ExtensionAPI) {
++	constructor(private readonly pi: ExtensionAPI, private readonly hooks?: SubagentHooks) {
+ 		try {
+ 			const cfg = JSON.parse(readFileSync(join(getAgentDir(), "subagents-config.json"), "utf8"));
+ 			if (typeof cfg.autoLimit === "boolean") this.autoLimit = cfg.autoLimit;
+@@ -536,6 +544,7 @@ export class SubagentManager {
+ 		});
+ 	}
+ 	private ensureWidget(ctx: ExtensionContext): void {
++		if (this.hooks?.nativeWidget === false) return;
+ 		if (this.widgetTui !== null || !ctx.hasUI) return;
+ 		ctx.ui.setWidget(
+ 			"subagents",
+@@ -838,6 +847,7 @@ export class SubagentManager {
+ 		let keepWorktreeDir = false;
+ 		let child: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
+ 		let unsubscribe: (() => void) | undefined;
++		let releaseView: (() => void) | undefined;
+ 		let timeout: ReturnType<typeof setTimeout> | undefined;
+ 		let abortListener: (() => void) | undefined;
+ 		const childState: ChildEventState = {};
+@@ -876,6 +886,7 @@ export class SubagentManager {
+ 				customTools,
+ 			});
+ 			child = created.session;
++			releaseView = this.hooks?.session?.(task, child);
+ 			child.setSessionName?.(`subagent: ${task.agent}`);
+ 			this.updateTask(
+ 				run,
+@@ -1028,6 +1039,7 @@ export class SubagentManager {
+ 			this.pendingReplies.delete(key);
+ 			abortListener?.();
+ 			unsubscribe?.();
++			releaseView?.();
+ 			if (timeout) clearTimeout(timeout);
+ 			child?.dispose();
+ 
+@@ -1334,7 +1346,7 @@ export class SubagentManager {
+ 		if (!run || !task) return { ok: false, reason: `Unknown ${runId}/${taskId}.` };
+ 		if (!TERMINAL.includes(task.status))
+ 			return { ok: false, reason: `${taskId} is still ${task.status} — use steer_subagent.` };
+-		if (task.status === "completed") return { ok: false, reason: `${taskId} completed — spawn a new task instead.` };
++		if (task.status === "completed" && !this.hooks?.allowCompletedResume) return { ok: false, reason: `${taskId} completed — spawn a new task instead.` };
+ 		if (!task.sessionFile || !existsSync(task.sessionFile)) {
+ 			return { ok: false, reason: `${taskId} has no session file to resume (never started) — respawn it.` };
+ 		}
