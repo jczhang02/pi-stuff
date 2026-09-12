@@ -1,4 +1,5 @@
 import {expect, test} from 'bun:test';
+import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {launchTerminal, type Session} from 'tuistory';
 import {
@@ -372,6 +373,72 @@ test('completed and HTTP-failed children resume with the same session history', 
     expect(allRequestText(resumedFailedRequest)).toContain(
       'fixture resume failed follow-up',
     );
+  } catch (error) {
+    console.error(screen(terminal));
+    throw error;
+  } finally {
+    await closeTerminal(terminal, fixture);
+  }
+}, 90_000);
+
+test('parent cancellation aborts a manual child compaction and preserves its session', async () => {
+  const fixture = await createSubagentMechanismFixture('compaction-cancel');
+  const terminal = await launch(fixture);
+  try {
+    await waitScreen(terminal, 'mechanism-fixture');
+    await send(terminal, 'mechanism compaction');
+    await waitScreen(terminal, 'MECHANISM_COMPACTION_READY');
+    await fixture.waitFor(() => fixture.runIds.length === 1);
+    const runId = fixture.runIds[0];
+    if (!runId) throw new Error('Compaction fixture did not create a run.');
+    const before = await waitRun(
+      fixture,
+      runId,
+      candidate => candidate.status === 'completed',
+    );
+    const beforeTask = task(before, 'task_1');
+    const sessionId = beforeTask.sessionId;
+    const sessionFile = beforeTask.sessionFile;
+    if (!sessionId || !sessionFile)
+      throw new Error('Compaction fixture did not persist the child session.');
+    const historyBefore = await readFile(sessionFile, 'utf8');
+    const childCompactionRequests = fixture.childRequests.filter(
+      request => request.role === 'compaction-child',
+    );
+    expect(childCompactionRequests.length).toBe(3);
+    expect(historyBefore).toContain('COMPACTION_CHILD_FINAL');
+
+    await send(terminal, '/subagents');
+    await waitScreen(terminal, 'compactor');
+    await send(terminal, '/compact');
+    await fixture.waitFor(() => fixture.summaryRequests.length === 1, 15_000);
+    const summaryPrompt =
+      fixture.summaryRequests[0]?.messages.map(messageText).join('\n') ?? '';
+    expect(summaryPrompt).toContain(
+      'This is the PREFIX of a turn that was too large to keep.',
+    );
+
+    await terminal.press(['ctrl', 'c']);
+    await waitScreen(terminal, 'mechanism-fixture');
+    await send(terminal, 'mechanism compaction cancel');
+    await waitScreen(terminal, 'MECHANISM_COMPACTION_CANCEL_DONE');
+    await fixture.waitFor(() => fixture.summaryAborts === 1, 15_000);
+    await Bun.sleep(100);
+
+    expect(fixture.summaryAborts).toBe(1);
+    const afterRuns = await fixture.readSidecar();
+    const after = afterRuns.find(candidate => candidate.id === runId);
+    if (!after)
+      throw new Error(`Missing run ${runId} after compaction cancel.`);
+    const afterTask = task(after, 'task_1');
+    expect(afterTask.sessionId).toBe(sessionId);
+    expect(afterTask.sessionFile).toBe(sessionFile);
+    expect(await readFile(sessionFile, 'utf8')).toBe(historyBefore);
+
+    expect(terminal.isDead).toBe(false);
+    await send(terminal, 'mechanism compaction parent');
+    await waitScreen(terminal, 'MECHANISM_COMPACTION_PARENT_ALIVE');
+    expect(terminal.isDead).toBe(false);
   } catch (error) {
     console.error(screen(terminal));
     throw error;

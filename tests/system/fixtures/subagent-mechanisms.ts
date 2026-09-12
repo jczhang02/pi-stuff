@@ -81,7 +81,8 @@ export type MechanismScenario =
   | 'ask'
   | 'resume'
   | 'sibling'
-  | 'scoped-cancel';
+  | 'scoped-cancel'
+  | 'compaction-cancel';
 
 export type ChildRole =
   | 'timeout'
@@ -100,7 +101,8 @@ export type ChildRole =
   | 'sibling-a'
   | 'sibling-b'
   | 'scoped-keep'
-  | 'scoped-cancel';
+  | 'scoped-cancel'
+  | 'compaction-child';
 
 export interface ChildRequest {
   role: ChildRole;
@@ -124,7 +126,18 @@ interface FixtureState {
   completedRunId: string | undefined;
   failedRunId: string | undefined;
   scopedRunId: string | undefined;
+  compactionRunId: string | undefined;
   awaitStartedAt: number | undefined;
+}
+
+interface FixtureSettings {
+  quietStartup: boolean;
+  retry: {enabled: boolean};
+  compaction?: {
+    enabled: boolean;
+    keepRecentTokens: number;
+    reserveTokens: number;
+  };
 }
 
 type Delta =
@@ -238,8 +251,22 @@ function childRole(first: string): ChildRole | undefined {
     ['fixture sibling b', 'sibling-b'],
     ['fixture scoped keep', 'scoped-keep'],
     ['fixture scoped cancel', 'scoped-cancel'],
+    ['fixture compaction child', 'compaction-child'],
   ];
   return roles.find(([marker]) => first.includes(marker))?.[1];
+}
+
+function isSummaryRequest(request: FixtureRequest): boolean {
+  const markers = [
+    'Create a structured context checkpoint summary',
+    'Update the existing structured summary with new information',
+    'This is the PREFIX of a turn that was too large to keep.',
+  ];
+  return request.messages.some(
+    message =>
+      message.role === 'user' &&
+      markers.some(marker => messageText(message).includes(marker)),
+  );
 }
 
 export async function createSubagentMechanismFixture(
@@ -263,6 +290,8 @@ export async function createSubagentMechanismFixture(
   const runIds: string[] = [];
   const httpFailures: string[] = [];
   const answers: string[] = [];
+  const summaryRequests: FixtureRequest[] = [];
+  let summaryAborts = 0;
   const state: FixtureState = {
     scenario,
     dependencyPhase: 'chain',
@@ -274,6 +303,7 @@ export async function createSubagentMechanismFixture(
     completedRunId: undefined,
     failedRunId: undefined,
     scopedRunId: undefined,
+    compactionRunId: undefined,
     awaitStartedAt: undefined,
   };
   let callSequence = 0;
@@ -537,6 +567,41 @@ export async function createSubagentMechanismFixture(
       return mainText('MECHANISM_FIXTURE_READY');
     }
 
+    if (scenario === 'compaction-cancel') {
+      if (called?.name === 'subagent') {
+        const runId = runIdFrom(called.text);
+        state.compactionRunId = runId;
+        return awaitSubagent(runId);
+      }
+      if (called?.name === 'await_subagent')
+        return mainText(
+          `MECHANISM_COMPACTION_READY:${state.compactionRunId ?? ''}`,
+        );
+      if (called?.name === 'subagent_cancel')
+        return mainText(
+          `MECHANISM_COMPACTION_CANCEL_DONE:${state.compactionRunId ?? ''}`,
+        );
+      if (latest.includes('mechanism compaction parent'))
+        return mainText('MECHANISM_COMPACTION_PARENT_ALIVE');
+      if (latest.includes('mechanism compaction cancel'))
+        return mainTool(
+          'subagent_cancel',
+          JSON.stringify({
+            runId: state.compactionRunId ?? '',
+            taskId: 'task_1',
+          }),
+        );
+      if (latest.includes('mechanism compaction'))
+        return subagent(
+          JSON.stringify({
+            agent: 'compactor',
+            task: 'fixture compaction child',
+            notifyPerTask: false,
+          }),
+        );
+      return mainText('MECHANISM_FIXTURE_READY');
+    }
+
     if (scenario === 'sibling') {
       if (called?.name === 'subagent')
         return awaitSubagent(runIdFrom(called.text));
@@ -686,6 +751,22 @@ export async function createSubagentMechanismFixture(
         return response([tool('poll_agent_messages', '{}', nextCallId())]);
       }
     }
+    if (role === 'compaction-child') {
+      if (!called)
+        return response([
+          tool('read', JSON.stringify({path: 'src/fixture.ts'}), nextCallId()),
+        ]);
+      if (called.name === 'read' && requestCount(role) === 2)
+        return response([
+          tool('read', JSON.stringify({path: 'README.md'}), nextCallId()),
+        ]);
+      if (called.name === 'read')
+        return response([
+          {
+            content: `COMPACTION_CHILD_FINAL ${'child transcript '.repeat(800)}`,
+          },
+        ]);
+    }
     if (role === 'scoped-keep' && !called)
       return response([
         tool(
@@ -720,6 +801,12 @@ export async function createSubagentMechanismFixture(
             },
           ],
         });
+      if (isSummaryRequest(decoded)) {
+        summaryRequests.push(decoded);
+        const result = await holdUntilAbort(request.signal);
+        summaryAborts++;
+        return result;
+      }
       const first = userTexts(decoded.messages)[0] ?? '';
       const role = childRole(first);
       if (role) {
@@ -743,10 +830,17 @@ export async function createSubagentMechanismFixture(
       },
     }),
   );
-  await writeFile(
-    join(agentDir, 'settings.json'),
-    JSON.stringify({quietStartup: true, retry: {enabled: false}}),
-  );
+  const settings: FixtureSettings = {
+    quietStartup: true,
+    retry: {enabled: false},
+  };
+  if (scenario === 'compaction-cancel')
+    settings.compaction = {
+      enabled: true,
+      keepRecentTokens: 1,
+      reserveTokens: 128,
+    };
+  await writeFile(join(agentDir, 'settings.json'), JSON.stringify(settings));
 
   async function readSidecar(): Promise<SidecarRun[]> {
     let files: string[];
@@ -797,6 +891,10 @@ export async function createSubagentMechanismFixture(
     runIds,
     httpFailures,
     answers,
+    summaryRequests,
+    get summaryAborts() {
+      return summaryAborts;
+    },
     readSidecar,
     waitFor,
     close,
