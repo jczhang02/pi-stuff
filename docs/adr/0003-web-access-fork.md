@@ -1,5 +1,0 @@
-# Maintain a reduced web-access fork independently
-
-[简体中文](../i18n/zh-CN/adr/0003-web-access-fork.md) · English is normative.
-
-Pi Stuff needs web research within Pi while developing the project; the maintainer will not switch to a browser to curate search results. In [#43](https://github.com/jczhang02/pi-stuff/issues/43), the maintainer chose an independently maintained rewrite based on [pi-web-access 0.28.0](https://github.com/nicobailon/pi-web-access/tree/e55f78a6cf28e2ba5013e14c3dd7bb5eef2ac7c5), removing Curator and narrowing the first release to search, public text retrieval and stored-content lookup under the existing TypeScript/Bun/Effect rules. Preserve imported source and license notices and record provenance, but do not promise upstream layout, configuration or tool-interface compatibility; selective upstream fixes and independent maintenance replace routine merging of the full package. This accepts porting work to reduce the feature and maintenance surface; source reduction follows the [agreed scope](../web-access.md), without a hard line-count cap or a same-function reduction quota.
