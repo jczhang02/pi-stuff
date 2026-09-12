@@ -130,7 +130,9 @@ test('missing sidecars are empty and terminal tasks repair stale run status', as
   stale.status = 'running';
   store.save([stale]);
   await store.flush();
-  expect((await store.load())[0]?.status).toBe('completed');
+  const restored = (await store.load())[0];
+  expect(restored?.status).toBe('completed');
+  expect(restored?.endedAt).toBeGreaterThan(0);
 });
 
 test('rejects unsafe identities and duplicate task ids', async () => {

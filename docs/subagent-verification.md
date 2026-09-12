@@ -32,6 +32,13 @@ The live exercise used the already configured `openai-codex/gpt-5.6-luna` with `
 
 Implement accumulated seven user messages and one compaction in the same child session. The parent received twelve stored subagent notifications; every one had `display: false`. SDK-reported child usage is retained as evidence, not represented as an account billing statement.
 
+After moving manual compaction into the runtime execution owner, a further live
+run compacted Explore from 2,891 tokens with `keepRecentTokens=100` in the
+isolated settings. Fleet showed `Compacting context`, a running icon and an
+advancing timer; on completion it restored Explore's prior result and included
+the compaction usage and elapsed time. Existing conversation/tool rows remained
+above the new compaction entry.
+
 ## Actual interface
 
 Fleet below the parent statusline, with a selected row:

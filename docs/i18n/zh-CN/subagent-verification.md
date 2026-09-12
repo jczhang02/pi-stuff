@@ -32,6 +32,10 @@ PI_TEST_HOST=/absolute/path/to/compiled/pi bun test tests/system
 
 Implement 在同一个子代理会话内累计七条用户消息和一次压缩。主代理保存了十二条 subagent 通知，全部为 `display: false`。保留的子代理费用是 SDK 报告值，不作为账户实际账单。
 
+将手动压缩交由运行时管理后，又用真实模型压缩了 Explore 的 2,891 tokens，隔离设置为
+`keepRecentTokens=100`。Fleet 显示 `Compacting context`、运行图标和递增耗时；完成后
+恢复此前结果，并累计压缩用量与耗时。原先的对话与工具条目仍保留在新压缩记录上方。
+
 ## 实际界面
 
 Fleet 位于主代理 statusline 下方，当前有一行获得选择焦点：

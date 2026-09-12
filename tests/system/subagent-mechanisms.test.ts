@@ -423,14 +423,17 @@ test('parent cancellation aborts a manual child compaction and preserves its ses
     await send(terminal, 'mechanism compaction cancel');
     await waitScreen(terminal, 'MECHANISM_COMPACTION_CANCEL_DONE');
     await fixture.waitFor(() => fixture.summaryAborts === 1, 15_000);
-    await Bun.sleep(100);
 
     expect(fixture.summaryAborts).toBe(1);
-    const afterRuns = await fixture.readSidecar();
-    const after = afterRuns.find(candidate => candidate.id === runId);
-    if (!after)
-      throw new Error(`Missing run ${runId} after compaction cancel.`);
+    const after = await waitRun(
+      fixture,
+      runId,
+      candidate =>
+        candidate.status === 'completed' &&
+        (candidate.endedAt ?? 0) > (before.endedAt ?? 0),
+    );
     const afterTask = task(after, 'task_1');
+    expect(afterTask.status).toBe(beforeTask.status);
     expect(afterTask.sessionId).toBe(sessionId);
     expect(afterTask.sessionFile).toBe(sessionFile);
     expect(await readFile(sessionFile, 'utf8')).toBe(historyBefore);

@@ -72,5 +72,23 @@
       "compactions": 0
     }
   ],
-  "parent_worktree_clean": true
+  "parent_worktree_clean": true,
+  "runtime_compaction_followup": {
+    "task_id": "review",
+    "keep_recent_tokens": 100,
+    "tokens_before": 2891,
+    "status_after": "completed",
+    "elapsed_ms_after": 29756,
+    "usage_after": {
+      "input": 12922,
+      "output": 1097,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "cost": 0.0039008000000000003,
+      "turns": 6
+    },
+    "observed_activity": "Compacting context",
+    "original_final_text_preserved": true,
+    "compaction_entries": 1
+  }
 }

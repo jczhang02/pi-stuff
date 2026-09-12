@@ -47,6 +47,8 @@ interface RunState {
   terminalNotified: boolean;
 }
 interface Execution {
+  kind: 'prompt' | 'compaction';
+  startedAt: number;
   controller: AbortController;
   done: Promise<void>;
 }
@@ -373,7 +375,75 @@ export class SubagentManager {
         this.pump();
       }
     });
-    this.active.set(key, {controller, done});
+    this.active.set(key, {
+      kind: 'prompt',
+      startedAt: task.startedAt,
+      controller,
+      done,
+    });
+  }
+
+  compactionStartedAt(runId: string, taskId: string): number | undefined {
+    const execution = this.active.get(`${runId}:${taskId}`);
+    return execution?.kind === 'compaction' ? execution.startedAt : undefined;
+  }
+
+  compactTask(runId: string, taskId: string): Promise<void> {
+    const state = this.runs.get(runId);
+    const task = state?.run.tasks.find(task => task.id === taskId);
+    const key = `${runId}:${taskId}`;
+    if (
+      !state ||
+      !task ||
+      !task.sessionFile ||
+      this.closed ||
+      !TERMINAL.includes(task.status) ||
+      this.active.has(key)
+    )
+      return Promise.reject(
+        new SubagentError({
+          message:
+            'Wait for a saved child conversation to finish before compacting.',
+        }),
+      );
+    const running = state.run.tasks.filter(candidate =>
+      this.active.has(`${runId}:${candidate.id}`),
+    ).length;
+    if (running >= state.run.concurrency || this.active.size >= MAX_CONCURRENCY)
+      return Promise.reject(
+        new SubagentError({
+          message:
+            'All execution slots are occupied. Retry compaction after a child finishes.',
+        }),
+      );
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, task.maxRuntimeMs ?? 3_600_000);
+    const done = Promise.resolve().then(async () => {
+      try {
+        await this.taskSession(state, task).compact(controller.signal);
+      } catch (error) {
+        if (timedOut)
+          throw new SubagentError({
+            message: 'Child compaction exceeded its runtime limit.',
+          });
+        throw error;
+      } finally {
+        clearTimeout(timer);
+        this.active.delete(key);
+        task.elapsedMs = (task.elapsedMs ?? 0) + Date.now() - startedAt;
+        this.refresh(state);
+        this.pump();
+      }
+    });
+    this.active.set(key, {kind: 'compaction', startedAt, controller, done});
+    this.refresh(state);
+    this.changed();
+    return done;
   }
 
   private refresh(state: RunState): void {
@@ -396,6 +466,7 @@ export class SubagentManager {
         this.active.has(`${run.id}:${task.id}`),
     );
     if (active) {
+      run.endedAt = undefined;
       run.status = run.tasks.some(
         task => task.status === 'running' || task.status === 'starting',
       )
@@ -572,7 +643,10 @@ export class SubagentManager {
         ok: false,
         reason: `Task is ${task.status}; use steer or answer its pending question.`,
       };
-    if (this.getSession(runId, taskId)?.isCompacting)
+    if (
+      this.compactionStartedAt(runId, taskId) !== undefined ||
+      this.getSession(runId, taskId)?.isCompacting
+    )
       return {
         ok: false,
         reason:
@@ -580,7 +654,11 @@ export class SubagentManager {
       };
     const key = `${runId}:${taskId}`;
     await this.active.get(key)?.done;
-    if (this.closed || !TERMINAL.includes(task.status))
+    if (
+      this.closed ||
+      !TERMINAL.includes(task.status) ||
+      this.compactionStartedAt(runId, taskId) !== undefined
+    )
       return {ok: false, reason: 'Task state changed before continuation.'};
     if (options.model) {
       try {
@@ -629,31 +707,33 @@ export class SubagentManager {
   cancelTask(runId: string, taskId: string, _ctx?: ExtensionContext): boolean {
     const state = this.runs.get(runId);
     const task = state?.run.tasks.find(task => task.id === taskId);
-    if (!state || !task || TERMINAL.includes(task.status)) return false;
-    this.cancel(task);
+    if (!state || !task) return false;
+    const canceled = this.cancel(task);
     this.pump();
-    return true;
+    return canceled;
   }
   cancelRun(runId: string) {
     const state = this.runs.get(runId);
     let aborted = 0;
-    for (const task of state?.run.tasks ?? []) {
-      if (TERMINAL.includes(task.status)) continue;
-      this.cancel(task);
-      aborted++;
-    }
+    for (const task of state?.run.tasks ?? []) if (this.cancel(task)) aborted++;
     this.pump();
     return {aborted};
   }
 
-  private cancel(task: TaskSnapshot): void {
-    task.status = 'aborted';
-    task.error = 'Cancellation requested.';
+  private cancel(task: TaskSnapshot): boolean {
     const key = `${task.runId}:${task.id}`;
     const execution = this.active.get(key);
+    if (execution?.kind === 'compaction') {
+      execution.controller.abort();
+      return true;
+    }
+    if (TERMINAL.includes(task.status)) return false;
+    task.status = 'aborted';
+    task.error = 'Cancellation requested.';
     if (execution) execution.controller.abort();
     else task.endedAt = Date.now();
     this.replies.get(key)?.('Task canceled. Stop work.');
+    return true;
   }
 
   awaitRun(
@@ -704,7 +784,9 @@ export class SubagentManager {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     for (const state of this.runs.values()) this.cancelRun(state.run.id);
     await Promise.all(
-      [...this.active.values()].map(execution => execution.done),
+      [...this.active.values()].map(execution =>
+        execution.done.catch(() => undefined),
+      ),
     );
     await Promise.all(
       [...this.sessions.values()].map(session => session.dispose()),

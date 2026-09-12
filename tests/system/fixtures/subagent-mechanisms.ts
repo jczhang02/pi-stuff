@@ -61,6 +61,7 @@ const StoredTask = Schema.Struct({
 });
 const StoredRun = Schema.Struct({
   id: Schema.String,
+  endedAt: Schema.optional(Schema.Number),
   status: Schema.Literals([
     'queued',
     'running',

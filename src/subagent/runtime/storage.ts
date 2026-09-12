@@ -210,7 +210,7 @@ function normalize(runs: readonly StoredRun[]): RunSnapshot[] {
       ...run,
       tasks,
       status,
-      endedAt: interrupted ? now : run.endedAt,
+      endedAt: interrupted ? now : (run.endedAt ?? now),
     };
   });
 }

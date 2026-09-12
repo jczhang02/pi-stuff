@@ -186,24 +186,35 @@ export class Fleet {
         output: usage.output,
         seconds: 0,
       },
-      ...this.views().map(view => ({
-        name: view.task.agent,
-        status: view.task.status,
-        activity: view.task.error ?? view.task.lastActivity ?? view.task.task,
-        input:
-          view.task.usage.input +
-          view.task.usage.cacheRead +
-          view.task.usage.cacheWrite,
-        output: view.task.usage.output,
-        seconds:
-          ((view.task.elapsedMs ?? 0) +
-            (['starting', 'running', 'awaiting_parent'].includes(
-              view.task.status,
-            ) && view.task.startedAt
-              ? Date.now() - view.task.startedAt
-              : 0)) /
-          1000,
-      })),
+      ...this.views().map(view => {
+        const compacting = this.manager.compactionStartedAt(
+          view.task.runId,
+          view.task.id,
+        );
+        const startedAt =
+          compacting ??
+          (['starting', 'running', 'awaiting_parent'].includes(view.task.status)
+            ? view.task.startedAt
+            : undefined);
+        return {
+          name: view.task.agent,
+          status:
+            compacting !== undefined ? ('running' as const) : view.task.status,
+          activity:
+            compacting !== undefined
+              ? 'Compacting context'
+              : (view.task.error ?? view.task.lastActivity ?? view.task.task),
+          input:
+            view.task.usage.input +
+            view.task.usage.cacheRead +
+            view.task.usage.cacheWrite,
+          output: view.task.usage.output,
+          seconds:
+            ((view.task.elapsedMs ?? 0) +
+              (startedAt === undefined ? 0 : Date.now() - startedAt)) /
+            1000,
+        };
+      }),
     ];
     return renderFleet(
       rows,

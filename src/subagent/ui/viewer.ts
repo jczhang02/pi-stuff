@@ -83,8 +83,8 @@ export async function openViewer(
               view.notice = '请等待当前执行结束后再压缩上下文。';
             else {
               view.notice = '正在压缩上下文……';
-              void view.session
-                .compact()
+              void fleet.manager
+                .compactTask(view.task.runId, view.task.id)
                 .then(() => {
                   view.notice = '上下文已压缩；完整对话仍可翻阅。';
                   tui.requestRender();
@@ -198,7 +198,14 @@ export async function openViewer(
           } else if (matchesKey(data, 'ctrl+c')) {
             done(undefined);
           } else if (matchesKey(data, 'escape')) {
-            if (view.session?.isCompacting) view.session.abortCompaction();
+            if (
+              view.session?.isCompacting ||
+              fleet.manager.compactionStartedAt(
+                view.task.runId,
+                view.task.id,
+              ) !== undefined
+            )
+              fleet.stop(view);
             else if (
               ['starting', 'running', 'awaiting_parent', 'queued'].includes(
                 view.task.status,

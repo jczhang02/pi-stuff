@@ -298,6 +298,25 @@ export class TaskSession {
     );
   }
 
+  async compact(signal: AbortSignal): Promise<void> {
+    const session = await this.open();
+    if (signal.aborted)
+      throw new SubagentError({message: 'Compaction canceled.'});
+    const abort = () => session.abortCompaction();
+    // Pi initializes its compaction controller after awaiting abort(). Cover a
+    // cancellation in that interval as well as a live summarization request.
+    const unsubscribe = session.subscribe(event => {
+      if (event.type === 'compaction_start' && signal.aborted) abort();
+    });
+    signal.addEventListener('abort', abort, {once: true});
+    try {
+      await session.compact();
+    } finally {
+      signal.removeEventListener('abort', abort);
+      unsubscribe();
+    }
+  }
+
   private event(event: AgentSessionEvent): void {
     if (event.type === 'tool_execution_start') {
       this.task.toolCalls++;

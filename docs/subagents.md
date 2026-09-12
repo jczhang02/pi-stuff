@@ -153,6 +153,12 @@ and Fleet counters show usage. `/compact` runs only when the child is not
 streaming, compacting, or submitting, and leaves the conversation available
 for browsing afterward.
 
+Manual compaction occupies a runtime execution slot and uses the child's
+runtime limit. Fleet shows its activity and elapsed time. Esc, Fleet `x`,
+`subagent_cancel`, and parent shutdown all cancel it. Continuation is rejected
+until compaction settles, with the draft retained. Compaction preserves the
+task's previous completion/failure state and final result.
+
 The editor border labels the input target (`main` or the child name and task),
 and a blank child editor uses a `Message @agent…` placeholder. This makes the
 recipient visible without replacing the parent session or changing Pi's
