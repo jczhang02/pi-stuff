@@ -1,5 +1,6 @@
 import {expect, test} from 'bun:test';
 import {Effect} from 'effect';
+import {resolveExa} from '../../src/pi/exa';
 import {createWebTools} from '../../src/web';
 import {WebError} from '../../src/web/errors';
 
@@ -29,7 +30,8 @@ test('unconfigured preferred provider selects available provider without fallbac
       {
         openai:
           provider === 'openai' ? () => Effect.succeed(undefined) : openai,
-        ...(provider === 'openai' ? {exaKey: 'fixture'} : {exaKey: undefined}),
+        exa: () =>
+          Effect.succeed(provider === 'openai' ? 'fixture' : undefined),
       },
     );
     const result = await web.webSearch.execute(
@@ -60,7 +62,7 @@ test('transport fallback is attempted only once even if the alternate also fails
       },
     },
     {},
-    {openai, exaKey: 'fixture'},
+    {openai, exa: () => Effect.succeed('fixture')},
   );
   expect(
     (await web.webSearch.execute('transport', {queries: ['q']}, undefined))
@@ -86,7 +88,7 @@ test('malformed provider response and valid empty results never cause fallback',
         },
       },
       {},
-      {openai, exaKey: 'fixture'},
+      {openai, exa: () => Effect.succeed('fixture')},
     );
     const output = await web.webSearch.execute(
       'decode',
@@ -110,7 +112,7 @@ test('filters fail before requesting without Exa or with invalid hostnames', asy
       },
     },
     {},
-    {openai},
+    {openai, exa: () => Effect.succeed(undefined)},
   );
   for (const domain of [
     'example.com',
@@ -150,7 +152,7 @@ test('filtered temporary failure never relaxes constraints; result cap is an upp
       },
     },
     {},
-    {openai, exaKey: 'fixture'},
+    {openai, exa: () => Effect.succeed('fixture')},
   );
   const failure = await web.webSearch.execute(
     'filtered',
@@ -170,7 +172,7 @@ test('filtered temporary failure never relaxes constraints; result cap is an upp
   expect(capped.content[0]?.text).not.toContain('https://example.com/c');
 });
 
-test('real 30-second deadlines interrupt page and provider work before one fallback', async () => {
+test('real 30-second deadlines bound page, provider and authentication waits', async () => {
   let interrupted = 0;
   const hosts: string[] = [];
   const web = createWebTools(
@@ -189,16 +191,23 @@ test('real 30-second deadlines interrupt page and provider work before one fallb
       },
     },
     {},
-    {openai, exaKey: 'fixture'},
+    {openai, exa: () => Effect.succeed('fixture')},
   );
-  const [page, search] = await Promise.all([
+  const [page, search, authError] = await Promise.all([
     web.fetchContent.execute(
       'deadline',
       {urls: ['https://example.com']},
       undefined,
     ),
     web.webSearch.execute('deadline', {queries: ['q']}, undefined),
+    Effect.runPromise(
+      resolveExa({getProviderAuth: () => new Promise(() => {})}).pipe(
+        Effect.flip,
+      ),
+    ),
   ]);
+  expect(authError.kind).toBe('authentication');
+  expect(authError.message).toContain('timed out');
   expect(page.content[0]?.text).toContain(
     'Page fetch timed out after 30 seconds',
   );

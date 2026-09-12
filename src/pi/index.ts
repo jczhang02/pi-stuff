@@ -6,6 +6,7 @@ import {Effect, Schema} from 'effect';
 import {registerTool} from '../tool-switches';
 import {createWebTools} from '../web';
 import {ConfigurationError, readConfiguration} from './configuration';
+import {exaProvider, resolveExa} from './exa';
 import {network} from './network';
 import {resolveOpenAI, selectSearchModel} from './openai';
 
@@ -25,6 +26,7 @@ export default async function (pi: ExtensionAPI) {
       ),
     ),
   );
+  pi.registerProvider(exaProvider);
   let model: Model<Api> | undefined;
   let web: ReturnType<typeof createWebTools> | undefined;
   pi.on('model_select', event => {
@@ -37,7 +39,7 @@ export default async function (pi: ExtensionAPI) {
     // Validate explicit model configuration before exposing any Pi Stuff tool.
     selectSearchModel(ctx.modelRegistry, model, settings);
     web = createWebTools(network, settings, {
-      exaKey: process.env.EXA_API_KEY?.trim(),
+      exa: () => resolveExa(ctx.modelRegistry),
       openai: () => resolveOpenAI(ctx.modelRegistry, model, settings),
     });
     registerTool(pi, configuration.tools, web.webSearch);

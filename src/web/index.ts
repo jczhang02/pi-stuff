@@ -49,7 +49,10 @@ const searchParameters = Type.Object(
 export function createWebTools(
   network: Network,
   settings: WebSettings = {},
-  credentials: Credentials = {openai: () => Effect.succeed(undefined)},
+  credentials: Credentials = {
+    exa: () => Effect.succeed(undefined),
+    openai: () => Effect.succeed(undefined),
+  },
 ) {
   const content = new Content();
   let lifetime = new AbortController();

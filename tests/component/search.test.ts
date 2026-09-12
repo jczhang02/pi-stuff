@@ -26,7 +26,7 @@ for (const status of [408, 429, 500, 503]) {
         },
       },
       {},
-      {openai, exaKey: 'fixture'},
+      {openai, exa: () => Effect.succeed('fixture')},
     );
     const result = await web.webSearch.execute(
       's',
@@ -50,7 +50,7 @@ for (const status of [400, 401, 403, 404, 422]) {
         },
       },
       {},
-      {openai, exaKey: 'fixture'},
+      {openai, exa: () => Effect.succeed('fixture')},
     );
     const result = await web.webSearch.execute(
       's',
@@ -80,7 +80,7 @@ test('authentication failure is not an unconfigured provider', async () => {
             message: 'Authentication failed.',
           }),
         ),
-      exaKey: 'fixture',
+      exa: () => Effect.succeed('fixture'),
     },
   );
   const result = await web.webSearch.execute('s', {queries: ['q']}, undefined);
@@ -128,7 +128,7 @@ test('OpenAI native answer and citations survive without a second request', asyn
       },
     },
     {},
-    {openai},
+    {openai, exa: () => Effect.succeed(undefined)},
   );
   const result = await web.webSearch.execute('s', {queries: ['q']}, undefined);
   expect(requests).toBe(1);
@@ -159,7 +159,10 @@ test('filtered searches use Exa, validate domains and never fetch result bodies'
       },
     },
     {},
-    {exaKey: 'fixture-exa', openai: () => Effect.succeed(undefined)},
+    {
+      exa: () => Effect.succeed('fixture-exa'),
+      openai: () => Effect.succeed(undefined),
+    },
   );
   const result = await web.webSearch.execute(
     's',
@@ -230,7 +233,7 @@ test('Codex accepts unlabelled SSE and retains items when final output is empty'
         ),
     },
     {},
-    {openai},
+    {openai, exa: () => Effect.succeed(undefined)},
   );
   const result = await web.webSearch.execute(
     'stream',

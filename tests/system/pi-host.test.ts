@@ -4,6 +4,7 @@ import {
   mkdir,
   writeFile,
   readFile,
+  stat,
   readdir,
   rm,
 } from 'node:fs/promises';
@@ -158,7 +159,7 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
         PI_CODING_AGENT_SESSION_DIR: join(directory, 'sessions'),
         PI_OFFLINE: '1',
         PI_TELEMETRY: '0',
-        EXA_API_KEY: undefined,
+        EXA_API_KEY: 'fixture-env-key',
         HTTP_PROXY: undefined,
         HTTPS_PROXY: undefined,
         ALL_PROXY: undefined,
@@ -189,6 +190,31 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
         });
         return resultText;
       }
+      async function auth(label: string, source: string) {
+        await terminal.type(`/host-auth ${label}`);
+        await terminal.press('enter');
+        await terminal.waitForText(
+          `HOST_AUTH_${label}:${source}:exaModels=0:model=fixture/fixture`,
+          {timeout: 5000},
+        );
+      }
+      await auth('before', 'env');
+      await terminal.type('/login exa');
+      await terminal.press('esc'); // Close command completion before submitting.
+      await terminal.press('enter');
+      await terminal.waitForText('Enter Exa API key', {timeout: 5000});
+      await terminal.type('fixture-stored-key');
+      await terminal.press('enter');
+      await terminal.waitForText('Saved API key for Exa', {timeout: 5000});
+      await auth('saved', 'stored');
+      const authPath = join(agent, 'auth.json');
+      expect(await readFile(authPath, 'utf8')).toContain('fixture-stored-key');
+      expect((await stat(authPath)).mode & 0o777).toBe(0o600);
+      await writeFile(
+        authPath,
+        JSON.stringify({exa: {type: 'api_key', key: 'fixture-next-key'}}),
+      );
+      await auth('edited', 'changed');
       const first = await invoke(
         'fetch_content',
         JSON.stringify({urls: [`${server.url}page`], mode: 'raw'}),
@@ -207,6 +233,12 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
       for (const file of sessionFiles) {
         expect(await readFile(join(sessions, file), 'utf8')).not.toContain(
           'HIDDEN_TAIL_MARKER',
+        );
+        expect(await readFile(join(sessions, file), 'utf8')).not.toContain(
+          'fixture-stored-key',
+        );
+        expect(await readFile(join(sessions, file), 'utf8')).not.toContain(
+          'fixture-next-key',
         );
       }
       const id = /contentId: ([^\s]+)/.exec(first)?.[1];
@@ -244,6 +276,18 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
       expect(
         await invoke('get_search_content', JSON.stringify({contentId: id})),
       ).toContain('fetch again');
+      await auth('reloaded', 'changed');
+      await terminal.type('/logout');
+      await terminal.press('enter');
+      await terminal.waitForText('Select provider to logout', {timeout: 5000});
+      await terminal.press('enter');
+      await terminal.waitForText('Removed stored API key for Exa', {
+        timeout: 5000,
+      });
+      await auth('removed', 'env');
+      expect(await readFile(authPath, 'utf8')).not.toContain(
+        'fixture-next-key',
+      );
       const second = await invoke(
         'fetch_content',
         JSON.stringify({urls: [`${server.url}page`], mode: 'raw'}),

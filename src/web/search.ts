@@ -10,7 +10,7 @@ export interface OpenAI {
   headers: Headers;
 }
 export interface Credentials {
-  exaKey?: string | undefined;
+  exa(): Effect.Effect<string | undefined, WebError>;
   openai(): Effect.Effect<OpenAI | undefined, WebError>;
 }
 export interface SearchOptions {
@@ -92,13 +92,6 @@ export function search(
     });
     const filtered = filters.include.length > 0 || filters.exclude.length > 0;
     const preferred = filtered ? 'exa' : (settings.provider ?? 'openai');
-    if (filtered && !credentials.exaKey)
-      return yield* Effect.fail(
-        new WebError({
-          kind: 'configuration',
-          message: 'Domain filtering requires EXA_API_KEY.',
-        }),
-      );
     const maxResults = options.maxResults ?? 5;
 
     function response(request: Request) {
@@ -201,9 +194,11 @@ export function search(
 
     // A candidate carries an already-authenticated operation, not an invalid
     // provider/optional-auth combination that each protocol must defend against.
-    const exa = credentials.exaKey
-      ? {provider: 'exa' as const, run: exaSearch(credentials.exaKey)}
-      : undefined;
+    const exa = Effect.suspend(() => credentials.exa()).pipe(
+      Effect.map(key =>
+        key ? {provider: 'exa' as const, run: exaSearch(key)} : undefined,
+      ),
+    );
     const openai = Effect.suspend(() => credentials.openai()).pipe(
       Effect.map(auth =>
         auth
@@ -211,14 +206,22 @@ export function search(
           : undefined,
       ),
     );
-    const selected =
-      preferred === 'exa' && exa ? exa : ((yield* openai) ?? exa);
+    const primary = yield* preferred === 'exa' ? exa : openai;
+    if (filtered && !primary)
+      return yield* Effect.fail(
+        new WebError({
+          kind: 'configuration',
+          message:
+            'Domain filtering requires Exa authentication. Use /login exa or EXA_API_KEY.',
+        }),
+      );
+    const selected = primary ?? (yield* preferred === 'exa' ? openai : exa);
     if (!selected)
       return yield* Effect.fail(
         new WebError({
           kind: 'configuration',
           message:
-            'Configure an official OpenAI search model/authentication or EXA_API_KEY.',
+            'Configure an official OpenAI search model/authentication, /login exa or EXA_API_KEY.',
         }),
       );
 
@@ -255,8 +258,9 @@ export function search(
                   error.status >= 500 &&
                   error.status <= 599)));
           if (filtered || !temporary) return yield* Effect.fail(error);
-          const alternate =
-            selected.provider === 'openai' ? exa : yield* openai;
+          const alternate = yield* selected.provider === 'openai'
+            ? exa
+            : openai;
           if (!alternate) return yield* Effect.fail(error);
           const text = yield* attempt(alternate.run);
           return {text, provider: alternate.provider, fallback: true};
