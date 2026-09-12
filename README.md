@@ -13,9 +13,9 @@ Focused interface, work, context, and integration capabilities for the native
 
 ## Project status
 
-This repository is at the project setup stage. It contains contribution templates, agent workflow conventions, and repository checks, but no installable Pi Stuff package yet. TypeScript, Bun `1.4.0`, and Effect v4 (`4.0.0-rc.112`) are the chosen stack; pure algorithms stay ordinary functions. The initial extension target is the maintainer's Bun-compiled Pi host. Supported versions will require actual host acceptance evidence.
+This checkout contains a development web extension with independent search, page-fetch and retained-content tools, shared tool switches, and host-managed OpenAI/Codex/Exa authentication. Exa supplies search and authentication, not chat models. No release is published. See [Web access](docs/web-access.md) for source loading, configuration, credentials and limits.
 
-The capabilities below describe the product direction, not implemented features. Installation instructions, supported versions, and screenshots will be added as the corresponding code and checks become available.
+The tested target is Linux Bun-compiled Pi `0.85.1`. The stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Other platforms/host versions are unverified. Beyond web access, the capabilities below describe product direction, not implemented features.
 
 ## About
 
@@ -30,7 +30,7 @@ These layers provide a starting point for this repository. Individual capabiliti
 
 ## Getting started
 
-For now, clone the repository to review the project conventions or contribute to setup:
+Clone the repository to review the source or contribute:
 
 ```bash
 git clone https://github.com/jczhang02/pi-stuff.git
@@ -39,12 +39,13 @@ cd pi-stuff
 
 Read [Contributing](CONTRIBUTING.md) before starting work. Coding agents must also read [AGENTS.md](AGENTS.md).
 
-There is no Pi Stuff extension to install yet. To install development dependencies and run the repository checks with Bun, follow the [verification instructions](CONTRIBUTING.md#verify-changes).
+To try the reviewed source extension, follow [Web access](docs/web-access.md#load-the-development-extension). To install development dependencies and run repository checks, follow the [verification instructions](CONTRIBUTING.md#verify-changes).
 
 ## Documentation
 
 | Document                                                       | Purpose                                                     |
 | -------------------------------------------------------------- | ----------------------------------------------------------- |
+| [Web access](docs/web-access.md)                               | Loading, settings, credentials, tools and limits            |
 | [Contributing](CONTRIBUTING.md)                                | Issues, focused changes, verification, and pull requests    |
 | [Agent instructions](AGENTS.md)                                | Agent writing and Git workflow requirements                 |
 | [TUI design](design.md)                                        | Pi themes, controls, narrow terminals and feedback          |

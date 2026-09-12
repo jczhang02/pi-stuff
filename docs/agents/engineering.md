@@ -75,7 +75,7 @@ Oxfmt applies Google GTS formatting preferences without installing GTS, ESLint, 
 
 Run `bun run format` locally to write formatting changes; CI only checks formatting with `bun run format:check`. Use [Contributing](../../CONTRIBUTING.md#verify-changes) for the full command sequence. Bun remains pinned to `1.4.0`; install with `bun install --frozen-lockfile --ignore-scripts`.
 
-The current baseline runs Oxfmt, Oxlint and TypeScript. Husky invokes those checks before commits without writes or staging, and commitlint's standard preset checks messages and PR titles. There are no owned automated tests after the approved governance removal, and no placeholder test command. Keep the quality rules at error severity; their probes are not retained as a separate suite. Do not add Knip, a coverage target, a mutation framework or competing lint/format tools as ceremony. Report actual verification and remaining tests.
+The current baseline runs Oxfmt, Oxlint and TypeScript. Husky invokes those checks before commits without writes or staging, and commitlint's standard preset checks messages and PR titles. Run the owned offline product tests with `bun run test`; the retired governance suites remain removed. Keep the quality rules at error severity; their probes are not retained as a separate suite. Do not add Knip, a coverage target, a mutation framework or competing lint/format tools as ceremony. Report actual verification and remaining tests.
 
 For the QA activities and test-level definitions, use the [quality-assurance reference](../quality-assurance.md). It keeps this document focused on engineering boundaries while defining the risk-proportionate evidence expected for a change.
 
