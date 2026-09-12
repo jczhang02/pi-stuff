@@ -76,6 +76,11 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
           {headers: {'content-type': 'text/plain'}},
         );
       }
+      if (
+        request.method !== 'POST' ||
+        new URL(request.url).pathname !== '/v1/chat/completions'
+      )
+        return new Response('not found', {status: 404});
       const body = Schema.decodeUnknownSync(RequestBody)(await request.json());
       offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
@@ -111,6 +116,7 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
     },
   });
   try {
+    expect((await fetch(server.url)).status).toBe(404);
     await writeFile(
       join(agent, 'models.json'),
       JSON.stringify({
