@@ -4,7 +4,26 @@
 
 Checked 2026-09-11 for [#45](https://github.com/jczhang02/pi-stuff/issues/45). This is research and a design recommendation, **not an implemented or accepted configuration contract**. The current implementation reads Exa credentials only from `EXA_API_KEY`. No real credentials are included here.
 
-## Conclusion
+## Follow-up: reusing Pi auth.json
+
+A subsequent bounded experiment on the actual Linux Bun-compiled Pi 0.85.1 confirms that **host credential reuse is feasible without registering a chat model**. This is now the preferred direction for users who back up ordinary configuration separately from secrets; the earlier literal-field proposal below is retained as research history, not the current recommendation.
+
+The temporary extension used only public APIs:
+
+- `pi.registerProvider(createProvider({id: 'exa', auth: {apiKey: envApiKeyAuth(...)}, models: [], api: {}}))` registers authentication with an empty model catalog and empty stream implementation map. It adds no fictitious model or protocol adapter.
+- `/login exa` invokes the host's API-key flow and stores an `exa` entry shaped as `{type: 'api_key', key: '...'}` in the isolated `auth.json`.
+- `ctx.modelRegistry.getProviderAuth('exa')` resolves authentication without a model. Prefer it over `getApiKeyForProvider`, whose implementation catches failures and returns `undefined`, losing the distinction between missing and failed authentication.
+- `/logout` removes the stored entry. It does not remove a separately supplied `EXA_API_KEY`.
+
+The built-in `envApiKeyAuth` helper uses **stored credential before environment**, not the earlier proposed environment-first policy. Reusing that ordering avoids a second custom resolver; changing it would require an explicit policy decision. [Helper source](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/ai/src/auth/helpers.ts), [provider API/factory](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/ai/src/models.ts), [registry facade](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/model-registry.ts).
+
+Tuistory experiments used only synthetic keys and isolated work/settings/session directories. Two profiles each passed one test with seven assertions: no selected model, and an explicitly selected existing OpenAI model without calling it. Both verified login persistence, `0600` file creation, credential resolution after reload and process restart, stored-over-environment precedence, logout removal, environment fallback after logout and zero Exa models. Temporary processes/directories were cleaned up; real credentials were not accessed. These are feasibility experiments, not shipped product tests or Exa API acceptance.
+
+**Observed host limitations:** the secret prompt visibly rendered the synthetic key, so an initial masking assertion failed. With no selected model, successful login also displayed a no-default-model error; it did not undo the saved credential. The selected-model profile did not show that error. The login path must not be advertised as masked. Directly managing the separated credential file avoids exposing a key in the login screen, but still requires appropriate file permissions and secret-aware backups. [Host login completion](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/modes/interactive/interactive-mode.ts).
+
+Recommended layout: ordinary backend/switch settings remain in `pi-stuff.json`; Exa credentials live in the host-managed `auth.json`. Keep the latter out of ordinary configuration synchronization and use an encrypted backup if needed. File permissions are not encryption or same-user isolation. Production integration, error/cancellation handling and regression tests remain to be implemented after agreement; no personal auth file or runtime implementation was changed by this experiment.
+
+## Initial recommendation
 
 For this local extension, support a literal key in the existing global Pi Stuff configuration **and** retain an environment override. Requiring a launcher modification or separate secret file merely to use Exa adds unnecessary setup. A user-only plaintext file is a reasonable supported option, provided its limitations are explicit. Environment variables are not encrypted storage and are not automatically safer.
 
@@ -53,7 +72,7 @@ Custom providers can name an `env_key` or configure a literal `experimental_bear
 
 Pi itself supports literal `models.json` API keys, environment interpolation and `!command` resolution. Its credential store also persists API-key/OAuth entries in the host-resolved `auth.json`. File creation requests mode `0600` and new parent directories `0700`; existing administrator-managed permissions/ACLs are preserved. Therefore file-backed credentials are already an intentional host capability, not intrinsically disallowed. [Version-pinned model documentation](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/docs/models.md#value-resolution), [version-pinned auth storage](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/auth-storage.ts).
 
-The installed model documentation was byte-for-byte identical to that tag's primary source. Installed credential-storage and model-registry APIs were also inspected. This does **not** establish a ready-made search-only Exa integration with Pi's login/provider registry. Do not register a fictitious chat model or bypass host ownership merely to obtain key storage. Direct reuse of the host credential facility would need a separate bounded compatibility check.
+The installed model documentation was byte-for-byte identical to that tag's primary source. Installed credential-storage and model-registry APIs were also inspected. This does **not** establish a ready-made search-only Exa integration with Pi's login/provider registry. Do not register a fictitious chat model or bypass host ownership merely to obtain key storage. The follow-up above supplies the separate bounded compatibility check; the original source inspection alone did not establish that compatibility.
 
 ## Proposed boundaries
 
@@ -65,8 +84,8 @@ The installed model documentation was byte-for-byte identical to that tag's prim
 - Owner-only files do not protect against the same user, root, arbitrary same-user agents or accidental backups. Environment variables can propagate to child processes and leak through diagnostic dumps. Neither is a sandbox boundary.
 - Keychain or external secret-manager resolution can be useful when users need at-rest protection or centralized rotation. Prefer an existing supported host facility if one fits. Do not add native dependencies, encryption with a colocated key, a launcher change, or arbitrary command execution as a prerequisite for one Exa key.
 
-These are recommendations awaiting confirmation. No runtime behavior, personal configuration, credentials or launcher was changed by this research. The earlier env-only #45 contract must be explicitly reconciled before implementation.
+These are recommendations awaiting confirmation. No production behavior, personal configuration, real credentials or launcher was changed by this research. The earlier env-only #45 contract must be explicitly reconciled before implementation.
 
 ## Method and limits
 
-A separate research session examined public OpenAI Python, Exa JS, GitHub CLI and Codex sources; the owner checked Pi's installed and version-pinned implementation. The ordinary constructors, relevant complete resolvers and storage paths were read, rather than inferring behavior from search hits. Repository links pin the inspected snapshots; official websites are unversioned and may change. This is not a comprehensive authentication/security audit. No provider-acceptance or credential-access test was performed for this research; prior Exa acceptance is separate evidence in [PR #46](https://github.com/jczhang02/pi-stuff/pull/46).
+A separate research session examined public OpenAI Python, Exa JS, GitHub CLI and Codex sources; the owner checked Pi's installed and version-pinned implementation. The ordinary constructors, relevant complete resolvers and storage paths were read, rather than inferring behavior from search hits. Repository links pin the inspected snapshots; official websites are unversioned and may change. This is not a comprehensive authentication/security audit. The initial source survey performed no provider-acceptance or credential-access test; the later synthetic-credential experiment is described above. Prior Exa acceptance is separate evidence in [PR #46](https://github.com/jczhang02/pi-stuff/pull/46).

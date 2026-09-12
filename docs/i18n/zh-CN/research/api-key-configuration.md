@@ -4,7 +4,26 @@
 
 为 [#45](https://github.com/jczhang02/pi-stuff/issues/45) 于 2026-09-11 核查. 本文是调研和设计建议, **不是已实现或已确认的配置契约**. 当前实现仍只从 `EXA_API_KEY` 读取 Exa 凭据. 本文不包含真实凭据.
 
-## 结论
+## 后续验证: 复用 Pi auth.json
+
+在实际 Linux Bun 编译 Pi 0.85.1 上进行的有限实验已确认: **不注册聊天模型也能复用宿主凭据**. 对普通配置和秘密分开备份的用户, 现在更推荐这个方向. 下方原来的字面值字段方案保留为调研历史, 不再是当前建议.
+
+临时扩展只使用公开 API:
+
+- `pi.registerProvider(createProvider({id: 'exa', auth: {apiKey: envApiKeyAuth(...)}, models: [], api: {}}))` 注册认证, 模型目录和流实现映射都为空, 不增加虚构模型或协议适配器.
+- `/login exa` 使用宿主 API Key 流程, 在隔离的 `auth.json` 中保存形如 `{type: 'api_key', key: '...'}` 的 exa 条目.
+- `ctx.modelRegistry.getProviderAuth('exa')` 无须模型即可解析认证. 优先使用它, 而不是会捕获失败并返回 undefined 的 `getApiKeyForProvider`; 后者会丢失凭据缺失与认证失败的区别.
+- `/logout` 删除已保存条目, 不删除另外提供的 `EXA_API_KEY` 环境变量.
+
+内置 `envApiKeyAuth` 的顺序是**已保存凭据优先, 环境变量其次**, 与先前建议的 env-first 不同. 沿用宿主顺序可以不再自写一套解析器; 改变顺序需要明确决策. [辅助函数源码](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/ai/src/auth/helpers.ts), [provider API/工厂](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/ai/src/models.ts), [注册表接口](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/model-registry.ts).
+
+Tuistory 实验只使用假 Key, 隔离工作、设置和会话目录. 无选定模型和显式选定已有 OpenAI 模型两个环境各通过 1 测试/7 断言, 没有调用该模型. 均验证了登录保存、文件创建权限 0600、reload 和进程重启后读取、已保存值优先于环境变量、logout 删除、删除后回到环境变量, 以及 Exa 模型数量始终为零. 临时进程/目录已清理, 未访问真实凭据. 这是可行性实验, 不是已交付产品测试或 Exa API 验收.
+
+**实际观察到的宿主限制:** secret 输入框显示了假 Key 明文, 因此最初的遮蔽断言失败. 没有选定模型时, 登录保存成功后还显示“无默认模型”错误, 但不会撤销保存; 已选定模型的环境没有该错误. 不能宣称登录输入已遮蔽. 直接管理分离的凭据文件可以避免 Key 出现在登录画面, 但仍需正确权限和单独保护备份. [宿主登录完成流程](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/modes/interactive/interactive-mode.ts).
+
+建议布局: 后端偏好和工具开关继续放在 `pi-stuff.json`, Exa 凭据放在宿主管理的 `auth.json`. 后者排除普通配置同步, 需要时单独加密备份. 文件权限不是加密或同用户隔离. 生产集成、错误/取消处理和回归测试仍待达成一致后实现; 本次实验未修改个人 auth 文件或运行时实现.
+
+## 初始建议
 
 对这个本地扩展, 建议同时支持在已有全局 Pi Stuff 配置中直接填写 Key 和环境变量覆盖. 仅为使用 Exa 就要求修改启动器或另建凭据文件, 增加了不必要的配置步骤. 只允许当前用户读取的明文文件可以是合理的受支持选项, 前提是明确它的限制. 环境变量不是加密存储, 也不天然更安全.
 
@@ -53,7 +72,7 @@ Codex 支持 `file`、`keyring`、`auto`、`ephemeral` 凭据存储. 已检查�
 
 Pi 自身支持在 `models.json` 中直接写 Key、插入环境变量和 `!command` 解析. 凭据存储也会把 API Key/OAuth 条目保存到宿主解析出的 `auth.json`. 创建文件时请求 `0600`, 新父目录为 `0700`, 保留已有管理员设置的权限/ACL. 因此文件凭据本来就是宿主有意提供的能力, 并非原则上不允许. [固定版本的模型文档](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/docs/models.md#value-resolution), [固定版本的认证存储](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/auth-storage.ts).
 
-已安装的模型文档与该标签的官方源文件逐字节相同, 也检查了已安装的凭据存储和模型注册表 API. 这**不代表**已经验证了仅用于搜索的 Exa 能直接接入 Pi 登录/provider 注册表. 不应为了保存 Key 注册虚构聊天模型或绕过宿主职责. 若要直接复用宿主凭据能力, 还需独立的有限兼容性验证.
+已安装的模型文档与该标签的官方源文件逐字节相同, 也检查了已安装的凭据存储和模型注册表 API. 这**不代表**已经验证了仅用于搜索的 Exa 能直接接入 Pi 登录/provider 注册表. 不应为了保存 Key 注册虚构聊天模型或绕过宿主职责. 上方后续实验补充了独立的有限兼容性验证; 原先的源码检查本身不能证明已经兼容.
 
 ## 建议边界
 
@@ -65,8 +84,8 @@ Pi 自身支持在 `models.json` 中直接写 Key、插入环境变量和 `!comm
 - 属主专用权限不能防御同一用户、root、同用户下任意代理或意外备份. 环境变量可能被子进程继承或泄露到诊断转储. 两者都不是沙箱边界.
 - 用户需要静态存储保护或集中轮换时, 钥匙串/外部 secret manager 有价值; 有合适的宿主能力时优先复用. 不应为单个 Exa Key 强制新增原生依赖、把解密密钥放在旁边的自制加密、启动器修改或任意命令执行.
 
-以上建议等待确认. 本次调研没有修改运行时行为、个人配置、凭据或启动器. 实施前需要明确修订 #45 原来的 env-only 契约.
+以上建议等待确认. 本次调研没有修改产品运行时行为、个人配置、真实凭据或启动器. 实施前需要明确修订 #45 原来的 env-only 契约.
 
 ## 方法与限制
 
-独立调研会话检查了 OpenAI Python、Exa JS、GitHub CLI、Codex 的公共源码; 负责人核对 Pi 已安装及固定版本实现. 检查普通构造函数、相关完整解析函数和存储路径, 不根据搜索片段推断. 仓库链接固定到已检查快照, 官网文档没有版本固定且可能变化. 这不是完整认证/安全审计. 本次研究未进行后端验收或凭据访问测试, 先前 Exa 验收是 [PR #46](https://github.com/jczhang02/pi-stuff/pull/46) 中单独的证据.
+独立调研会话检查了 OpenAI Python、Exa JS、GitHub CLI、Codex 的公共源码; 负责人核对 Pi 已安装及固定版本实现. 检查普通构造函数、相关完整解析函数和存储路径, 不根据搜索片段推断. 仓库链接固定到已检查快照, 官网文档没有版本固定且可能变化. 这不是完整认证/安全审计. 最初的源码调查未进行后端验收或凭据访问测试, 后续假凭据实验见上文. 先前 Exa 验收是 [PR #46](https://github.com/jczhang02/pi-stuff/pull/46) 中单独的证据.
