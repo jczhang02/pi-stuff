@@ -10,7 +10,6 @@ English is normative. Maintain documents under `docs/` and the existing root doc
 - `design.md` / `docs/i18n/zh-CN/design.md`.
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
-- `docs/research/` / [Chinese research references](docs/i18n/zh-CN/research/).
 - Root `AGENTS.md` / [Chinese reading reference](docs/i18n/zh-CN/AGENTS.md).
 - `docs/agents/` / [Chinese reading references](docs/i18n/zh-CN/agents/).
 

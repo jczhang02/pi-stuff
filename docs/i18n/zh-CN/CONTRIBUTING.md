@@ -10,7 +10,6 @@
 - `design.md` / `docs/i18n/zh-CN/design.md`.
 - `CONTRIBUTING.md` / `docs/i18n/zh-CN/CONTRIBUTING.md`.
 - `docs/adr/` / `docs/i18n/zh-CN/adr/`.
-- `docs/research/` / [中文研究对照](research/).
 - 根 `AGENTS.md` / [中文阅读对照](AGENTS.md).
 - `docs/agents/` / [中文阅读对照目录](agents/).
 
