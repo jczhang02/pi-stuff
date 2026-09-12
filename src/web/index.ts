@@ -111,7 +111,11 @@ export function createWebTools(
       signal: AbortSignal | undefined,
     ) {
       signal?.throwIfAborted();
-      if (!Value.Check(searchParameters, params))
+      // TypeBox maxLength counts graphemes, not the contracted UTF-16 units.
+      if (
+        !Value.Check(searchParameters, params) ||
+        params.queries.some(query => query.length > 2000)
+      )
         throw new WebError({
           kind: 'input',
           message: 'Invalid search arguments.',
@@ -135,7 +139,10 @@ export function createWebTools(
       signal: AbortSignal | undefined,
     ) {
       signal?.throwIfAborted();
-      if (!Value.Check(fetchParameters, params))
+      if (
+        !Value.Check(fetchParameters, params) ||
+        params.urls.some(url => url.length > 8192)
+      )
         throw new WebError({
           kind: 'input',
           message: 'Invalid fetch arguments.',
