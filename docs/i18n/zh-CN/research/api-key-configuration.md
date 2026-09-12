@@ -2,9 +2,11 @@
 
 [English](../../../research/api-key-configuration.md)
 
-为 [#45](https://github.com/jczhang02/pi-stuff/issues/45) 于 2026-09-11 核查. 本文是调研和设计建议, **不是已实现或已确认的配置契约**. 当前实现仍只从 `EXA_API_KEY` 读取 Exa 凭据. 本文不包含真实凭据.
+为 [#45](https://github.com/jczhang02/pi-stuff/issues/45) 于 2026-09-11 开展最初调查. **本文是历史调研, 不是当前使用契约.** 维护者随后通过[本修订](https://github.com/jczhang02/pi-stuff/issues/45#issuecomment-5644351201)批准复用宿主 auth.json, 开发版扩展已在 `bfc7720` 实现. 当前行为见[网页访问](../web-access.md). 下方最初的仅环境变量实现和字面值字段建议均为历史记录. 本文不包含真实凭据.
 
 ## 后续验证: 复用 Pi auth.json
+
+本节记录实施前的可行性实验, 其中待实施的表述描述的是当时阶段.
 
 在实际 Linux Bun 编译 Pi 0.85.1 上进行的有限实验已确认: **不注册聊天模型也能复用宿主凭据**. 对普通配置和秘密分开备份的用户, 现在更推荐这个方向. 下方原来的字面值字段方案保留为调研历史, 不再是当前建议.
 

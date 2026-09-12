@@ -2,9 +2,11 @@
 
 [简体中文](../i18n/zh-CN/research/api-key-configuration.md)
 
-Checked 2026-09-11 for [#45](https://github.com/jczhang02/pi-stuff/issues/45). This is research and a design recommendation, **not an implemented or accepted configuration contract**. The current implementation reads Exa credentials only from `EXA_API_KEY`. No real credentials are included here.
+Initial survey checked 2026-09-11 for [#45](https://github.com/jczhang02/pi-stuff/issues/45). **Historical research, not the current usage contract.** The maintainer subsequently approved host `auth.json` reuse in [this amendment](https://github.com/jczhang02/pi-stuff/issues/45#issuecomment-5644351201), implemented in the development extension at `bfc7720`. See [Web access](../web-access.md) for current behavior. The initial environment-only implementation and literal-field recommendation below are historical. No real credentials are included here.
 
 ## Follow-up: reusing Pi auth.json
+
+This section records the feasibility experiment before implementation; its pending-implementation language describes that stage.
 
 A subsequent bounded experiment on the actual Linux Bun-compiled Pi 0.85.1 confirms that **host credential reuse is feasible without registering a chat model**. This is now the preferred direction for users who back up ordinary configuration separately from secrets; the earlier literal-field proposal below is retained as research history, not the current recommendation.
 
