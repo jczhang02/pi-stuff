@@ -133,7 +133,11 @@ leaves Fleet focus and returns to the input. `/subagents` and
 The child viewer keeps the selected child visible while siblings continue in
 the background. It uses Pi's native user, assistant, tool, compaction-summary,
 and branch-summary components for the complete saved conversation. `Ctrl+O`
-toggles expanded tool details, and Page Up/Page Down scroll the transcript.
+toggles expanded tool details. In fullscreen Pi, the mouse wheel scrolls the
+child transcript using Pi’s own scroll step. Page Up/Page Down and Home/End
+also navigate the transcript; configured Pi viewport bindings for pages,
+half-pages, lines, and top/bottom are respected. Scrolling keeps the editor
+draft and Fleet focus intact.
 `Ctrl+C` returns to the main editor.
 Esc cancels an active child (or an active compaction); once the child is
 terminal, Esc closes the viewer and returns to the main editor.
@@ -159,10 +163,10 @@ runtime limit. Fleet shows its activity and elapsed time. Esc, Fleet `x`,
 until compaction settles, with the draft retained. Compaction preserves the
 task's previous completion/failure state and final result.
 
-The editor border labels the input target (`main` or the child name and task),
-and a blank child editor uses a `Message @agent…` placeholder. This makes the
-recipient visible without replacing the parent session or changing Pi's
-normal editor bindings.
+Only the upper-right editor border label identifies the input target (`main`
+or the child name and task). The input area, empty cursor, padding, and
+thinking-level border colors use Pi’s native editor. No input placeholder
+or extra prompt glyph is drawn.
 
 ## Read the counters and icons
 

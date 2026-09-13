@@ -26,7 +26,12 @@ function screen(terminal: Session): string {
   return terminal
     .getTerminalData()
     .lines.slice(-terminal.currentRows)
-    .map(line => line.spans.map(span => span.text).join(''))
+    .map(line =>
+      line.spans
+        .map(span => span.text)
+        .join('')
+        .trimEnd(),
+    )
     .join('\n');
 }
 
@@ -59,6 +64,8 @@ test('production Pi host runs the offline subagent fleet through its public UI',
             resolve('node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
           ]),
       '--offline',
+      '--tui-mode',
+      'fullscreen',
       '--no-extensions',
       '--no-skills',
       '--no-context-files',
@@ -100,14 +107,14 @@ test('production Pi host runs the offline subagent fleet through its public UI',
     await terminal.press('enter');
     await terminal.text({
       timeout: 5000,
-      waitFor: () => screen(terminal).includes('Message @reviewer'),
+      waitFor: () => screen(terminal).includes('reviewer · 审查取消逻辑'),
     });
     expect(alive(mainPid)).toBe(true);
     await terminal.type('保留的 reviewer 草稿');
     await terminal.press(['ctrl', 'c']);
     await terminal.text({
       timeout: 5000,
-      waitFor: () => screen(terminal).includes('Message @main'),
+      waitFor: () => screen(terminal).includes(' main ─'),
     });
     expect(alive(mainPid)).toBe(true);
 
@@ -148,6 +155,45 @@ test('production Pi host runs the offline subagent fleet through its public UI',
     await terminal.type('继续验证恢复');
     await terminal.press('enter');
     await terminal.waitForText('已收到 tester 的补充', {timeout: 15_000});
+    await terminal.press(['ctrl', 'c']);
+
+    // Read the completed child's actual tool history with the mouse, without
+    // stealing its editor draft or cancelling the still-running main worker.
+    for (let index = 0; index < 4; index++) await terminal.press('down');
+    await terminal.press('enter');
+    await terminal.text({
+      timeout: 5000,
+      waitFor: () => screen(terminal).includes('explorer · 定位取消入口'),
+    });
+    await terminal.press(['ctrl', 'o']);
+    expect(screen(terminal)).not.toContain('Message @');
+    await terminal.type('滚动时保留的草稿');
+    await terminal.scrollUp(200, 40, 10);
+    await terminal.text({
+      timeout: 3000,
+      waitFor: () => screen(terminal).includes('checkpoint 1\n'),
+    });
+    expect(screen(terminal)).not.toContain('checkpoint 80');
+    expect(screen(terminal)).toContain('滚动时保留的草稿');
+    await terminal.scrollDown(200, 40, 10);
+    await terminal.text({
+      timeout: 3000,
+      waitFor: () => screen(terminal).includes('checkpoint 80'),
+    });
+    expect(screen(terminal)).not.toContain('checkpoint 1\n');
+    expect(screen(terminal)).toContain('滚动时保留的草稿');
+    await terminal.press('home');
+    await terminal.text({
+      timeout: 3000,
+      waitFor: () => screen(terminal).includes('checkpoint 1\n'),
+    });
+    await terminal.press('end');
+    await terminal.text({
+      timeout: 3000,
+      waitFor: () => screen(terminal).includes('checkpoint 80'),
+    });
+    expect(screen(terminal)).toContain('滚动时保留的草稿');
+    expect(alive(mainPid)).toBe(true);
     await terminal.press(['ctrl', 'c']);
 
     // Release all fixture workers and verify their real process output before shutdown.
@@ -227,7 +273,7 @@ test('production shutdown and reload release only owned workers and restore sess
     await terminal.press('enter');
     await terminal.text({
       timeout: 5000,
-      waitFor: () => screen(terminal).includes('Message @reviewer'),
+      waitFor: () => screen(terminal).includes('reviewer · 审查取消逻辑'),
     });
     await terminal.press(['ctrl', 'c']);
     await terminal.press(['ctrl', 'd']);

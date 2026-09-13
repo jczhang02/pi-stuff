@@ -132,7 +132,11 @@ export async function createSubagentFixture() {
   );
   await writeFile(
     join(cwd, 'src/cancel.ts'),
-    'export function cancel(id: string): void { void id; }\n',
+    'export function cancel(id: string): void { void id; }\n' +
+      Array.from(
+        {length: 80},
+        (_, index) => `// checkpoint ${index + 1}\n`,
+      ).join(''),
   );
   for (const args of [
     ['init', '-q'],

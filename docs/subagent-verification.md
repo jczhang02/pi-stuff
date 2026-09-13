@@ -56,6 +56,30 @@ to reopen it in the same process. The compaction regression holds the real
 summary HTTP request and checks that Fleet's seconds advance without any
 keyboard input or model events, then cancels it through the parent tool.
 
+## Native editor and scrolling correction
+
+The maintainer clarified that only the editor’s upper-right agent label may
+differ from native Pi. The blank-input placeholder and extra prompt glyph
+were removed; the child editor now uses Pi’s thinking-level border color and
+editor settings. A focused comparison against the installed `CustomEditor`
+confirmed unchanged native input rows, hidden-line text and working status.
+
+In the retained real-model Explore conversation on fullscreen compiled Pi,
+one wheel-up event and eight wheel-up events both left the transcript
+unchanged before the fix; PageUp worked. Pi dispatches normalized mouse
+events separately from keyboard input, and the viewer had no mouse handler.
+It now consumes Pi’s wheel delta and forwards editor mouse events to the
+native editor. Eight steps up followed by eight down restored the exact
+starting viewport. Clicking a draft and typing inserted text at the clicked
+position. These checks reused saved live-model history without new model
+calls.
+
+The compiled-host UI regression expands an actual 80-line `read` result,
+scrolls to its first and last lines in both directions, checks Home/End,
+and asserts that the draft remains intact and the main worker stays alive.
+The wheel assertion was observed failing before the handler was added.
+The final screenshots below were refreshed after restoring the native editor.
+
 ## Actual interface
 
 Fleet below the parent statusline, with a selected row:

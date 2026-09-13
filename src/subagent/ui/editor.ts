@@ -1,12 +1,11 @@
-import {CustomEditor, type Theme} from '@earendil-works/pi-coding-agent';
+import {type Theme} from '@earendil-works/pi-coding-agent';
 import {
-  CURSOR_MARKER,
   stripTerminalSequences,
   truncateToWidth,
   visibleWidth,
   type EditorComponent,
 } from '@earendil-works/pi-tui';
-import {icons, singleLine} from './rows';
+import {singleLine} from './rows';
 
 export interface EditorIdentity {
   name: string;
@@ -39,28 +38,15 @@ export function decorateEditor(
     );
     if (label && trailing > visibleWidth(label) + 4) {
       const remaining = Math.max(0, width - visibleWidth(label) - 3);
+      const trailingBorder =
+        editor.borderColor?.('─') ?? truncateToWidth(border, 1, '');
       lines[0] =
         truncateToWidth(border, remaining, '') +
         activeTheme.bg(
           'selectedBg',
           activeTheme.bold(activeTheme.fg('accent', ` ${label} `)),
         ) +
-        activeTheme.fg('accent', '─');
-    }
-    if (
-      editor instanceof CustomEditor &&
-      editor.getText() === '' &&
-      lines.length === 3
-    ) {
-      const placeholder = truncateToWidth(
-        `Message @${singleLine(target.name)}…`,
-        width - 4,
-        '…',
-      );
-      const cursor = editor.focused
-        ? `${CURSOR_MARKER}${activeTheme.inverse(placeholder.slice(0, 1))}`
-        : placeholder.slice(0, 1);
-      lines[1] = `${activeTheme.fg('muted', icons.selected)} ${activeTheme.fg('dim', cursor + placeholder.slice(1))}`;
+        trailingBorder;
     }
     return lines;
   };

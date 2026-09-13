@@ -9,6 +9,8 @@ import {
   isKeyRelease,
   matchesKey,
   truncateToWidth,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
 } from '@earendil-works/pi-tui';
 import {decorateEditor} from './editor';
 import {Fleet, type AgentView} from './fleet';
@@ -38,15 +40,26 @@ export async function openViewer(
       const editor = new CustomEditor(
         tui,
         {
-          borderColor: text => theme.fg('accent', text),
+          borderColor: text =>
+            ctx.ui.theme.getThinkingBorderColor(
+              view.session?.thinkingLevel ?? 'off',
+            )(text),
           selectList: getSelectListTheme(),
         },
         keys,
+        {
+          paddingX: view.session?.settingsManager.getEditorPaddingX() ?? 0,
+          autocompleteMaxVisible:
+            view.session?.settingsManager.getAutocompleteMaxVisible() ?? 5,
+          embedWorkingStatus: true,
+        },
       );
       let footer = view.session
         ? new FooterComponent(view.session, childFooterData(view, footerData))
         : undefined;
       let bodyRows = 1;
+      let editorRows = 0;
+      let maxScroll = 0;
       let closed = false;
       editor.setText(view.draft);
       for (const prompt of historyFor(view)) editor.addToHistory(prompt);
@@ -167,8 +180,10 @@ export async function openViewer(
               ? '↑↓ 选择 · Enter 进入 · x 停止 · Esc 回到输入'
               : 'Enter 发送 · 空输入 ↓ 选择代理 · Ctrl+C 返回 main · Esc 中断/返回',
           );
+          const editorLines = editor.render(width);
+          editorRows = editorLines.length;
           const bottom = [
-            ...editor.render(width),
+            ...editorLines,
             ...footerLines,
             '',
             ...fleetLines,
@@ -179,10 +194,8 @@ export async function openViewer(
           view.transcript?.attach(tui);
           const transcript =
             view.transcript?.render(width, view.expanded) ?? [];
-          view.scroll = Math.min(
-            view.scroll,
-            Math.max(0, transcript.length - bodyRows),
-          );
+          maxScroll = Math.max(0, transcript.length - bodyRows);
+          view.scroll = Math.min(view.scroll, maxScroll);
           const end = transcript.length - view.scroll;
           const body = transcript.slice(Math.max(0, end - bodyRows), end);
           while (body.length < bodyRows) body.push('');
@@ -190,8 +203,49 @@ export async function openViewer(
             truncateToWidth(line, width, '…'),
           );
         },
+        handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+          if (event.y >= bodyRows && event.y < bodyRows + editorRows) {
+            const result = editor.handleMouse({
+              ...event,
+              y: event.y - bodyRows,
+              height: editorRows,
+            });
+            if (result) {
+              if (result.focus) fleet.focused = false;
+              return result;
+            }
+          }
+          if (event.type !== 'wheel') return undefined;
+          view.scroll = Math.max(
+            0,
+            Math.min(maxScroll, view.scroll - (event.wheelDelta ?? 0)),
+          );
+          return {handled: true, render: true};
+        },
         handleInput(data: string) {
           if (isKeyRelease(data)) return;
+          const scrolling = [
+            ['tui.altScreen.pageUp', Math.max(1, bodyRows - 2)],
+            ['tui.altScreen.pageDown', -Math.max(1, bodyRows - 2)],
+            ['tui.altScreen.halfPageUp', Math.max(1, Math.floor(bodyRows / 2))],
+            [
+              'tui.altScreen.halfPageDown',
+              -Math.max(1, Math.floor(bodyRows / 2)),
+            ],
+            ['tui.altScreen.lineUp', 1],
+            ['tui.altScreen.lineDown', -1],
+            ['tui.altScreen.top', maxScroll],
+            ['tui.altScreen.bottom', -maxScroll],
+          ] as const;
+          const scroll = scrolling.find(([key]) => keys.matches(data, key));
+          if (scroll) {
+            view.scroll = Math.max(
+              0,
+              Math.min(maxScroll, view.scroll + scroll[1]),
+            );
+            tui.requestRender();
+            return;
+          }
           const action = fleet.select(data, editor.getText() === '', keys);
           if (action) {
             if (action !== true) done(action === 'main' ? undefined : action);
@@ -215,10 +269,6 @@ export async function openViewer(
             else done(undefined);
           } else if (keys.matches(data, 'app.tools.expand')) {
             view.expanded = !view.expanded;
-          } else if (matchesKey(data, 'pageUp')) {
-            view.scroll += Math.max(1, bodyRows - 2);
-          } else if (matchesKey(data, 'pageDown')) {
-            view.scroll = Math.max(0, view.scroll - bodyRows + 2);
           } else if (matchesKey(data, 'ctrl+end')) {
             view.scroll = 0;
           } else {

@@ -315,7 +315,7 @@ for (const recoveryCase of recoveryCases) {
       if (recoveryCase.mutation === 'missing-session') {
         await writeFile(sessionFile, originalHistory);
         await send(terminal, '/subagents');
-        await waitScreen(terminal, 'Message @readonly');
+        await waitScreen(terminal, 'readonly ·');
         expect(screen(terminal)).toContain('RESTORATION_CHILD_INITIAL');
         expect(fixture.childRequests.length).toBe(1);
         expect(await pathExists(unsafeParentWrite)).toBe(false);
