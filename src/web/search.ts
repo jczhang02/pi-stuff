@@ -111,22 +111,34 @@ export function search(
     }
 
     function exaSearch(key: string) {
-      return response({
-        url: new URL('https://api.exa.ai/search'),
-        method: 'POST',
-        headers: new Headers({
-          'x-api-key': key,
-          'content-type': 'application/json',
-        }),
-        body: JSON.stringify({
-          query,
-          type: 'auto',
-          numResults: maxResults,
-          includeDomains: filters.include,
-          excludeDomains: filters.exclude,
-          contents: {highlights: true, text: false},
-        }),
-      }).pipe(
+      const headers = Effect.try({
+        try: () =>
+          new Headers({
+            'x-api-key': key,
+            'content-type': 'application/json',
+          }),
+        catch: () =>
+          new WebError({
+            kind: 'authentication',
+            message: 'Invalid Exa authentication headers.',
+          }),
+      });
+      return headers.pipe(
+        Effect.flatMap(headers =>
+          response({
+            url: new URL('https://api.exa.ai/search'),
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              query,
+              type: 'auto',
+              numResults: maxResults,
+              includeDomains: filters.include,
+              excludeDomains: filters.exclude,
+              contents: {highlights: true, text: false},
+            }),
+          }),
+        ),
         Effect.flatMap(raw =>
           Schema.decodeUnknownEffect(Schema.fromJsonString(ExaResponse))(
             raw,
@@ -154,28 +166,43 @@ export function search(
     }
 
     function openaiSearch(auth: OpenAI) {
-      const headers = new Headers(auth.headers);
-      headers.set('content-type', 'application/json');
-      return response({
-        url: new URL(
-          auth.codex
-            ? 'https://chatgpt.com/backend-api/codex/responses'
-            : 'https://api.openai.com/v1/responses',
+      const headers = Effect.try({
+        try: () => {
+          const headers = new Headers(auth.headers);
+          headers.set('content-type', 'application/json');
+          return headers;
+        },
+        catch: () =>
+          new WebError({
+            kind: 'authentication',
+            message: 'Invalid OpenAI authentication headers.',
+          }),
+      });
+      return headers.pipe(
+        Effect.flatMap(headers =>
+          response({
+            url: new URL(
+              auth.codex
+                ? 'https://chatgpt.com/backend-api/codex/responses'
+                : 'https://api.openai.com/v1/responses',
+            ),
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              model: auth.model,
+              instructions:
+                'Search the web and answer concisely with source citations.',
+              input: [
+                {role: 'user', content: [{type: 'input_text', text: query}]},
+              ],
+              tools: [{type: 'web_search'}],
+              tool_choice: 'required',
+              include: ['web_search_call.action.sources'],
+              store: false,
+              stream: true,
+            }),
+          }),
         ),
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: auth.model,
-          instructions:
-            'Search the web and answer concisely with source citations.',
-          input: [{role: 'user', content: [{type: 'input_text', text: query}]}],
-          tools: [{type: 'web_search'}],
-          tool_choice: 'required',
-          include: ['web_search_call.action.sources'],
-          store: false,
-          stream: true,
-        }),
-      }).pipe(
         Effect.flatMap(raw => openAIResponse(raw, maxResults)),
         Effect.flatMap(data =>
           data.sources.some(source => !allowedSource(source.url, filters))

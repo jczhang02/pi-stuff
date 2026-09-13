@@ -99,12 +99,8 @@ export function resolveOpenAI(
           message: 'Search does not support a custom OpenAI gateway.',
         }),
       );
-    const headers = new Headers();
-    for (const [name, value] of Object.entries(resolved.headers ?? {}))
-      if (value !== null) headers.set(name, value);
-    headers.set('authorization', `Bearer ${resolved.apiKey}`);
-    headers.set('accept', 'text/event-stream');
     const codex = model.provider === 'openai-codex';
+    let accountId: string | undefined;
     if (codex) {
       const payload = resolved.apiKey.split('.')[1];
       if (!payload)
@@ -125,13 +121,28 @@ export function resolveOpenAI(
             }),
         ),
       );
-      headers.set(
-        'chatgpt-account-id',
-        account['https://api.openai.com/auth'].chatgpt_account_id,
-      );
-      headers.set('originator', 'pi');
-      headers.set('OpenAI-Beta', 'responses=experimental');
+      accountId = account['https://api.openai.com/auth'].chatgpt_account_id;
     }
+    const headers = yield* Effect.try({
+      try: () => {
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(resolved.headers ?? {}))
+          if (value !== null) headers.set(name, value);
+        headers.set('authorization', `Bearer ${resolved.apiKey}`);
+        headers.set('accept', 'text/event-stream');
+        if (accountId !== undefined) {
+          headers.set('chatgpt-account-id', accountId);
+          headers.set('originator', 'pi');
+          headers.set('OpenAI-Beta', 'responses=experimental');
+        }
+        return headers;
+      },
+      catch: () =>
+        new WebError({
+          kind: 'authentication',
+          message: 'Invalid OpenAI authentication headers.',
+        }),
+    });
     return {model: model.id, codex, headers};
   }).pipe(
     Effect.timeoutOrElse({
