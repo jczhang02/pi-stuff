@@ -17,7 +17,7 @@ The maintainer requested a plain feature inventory before capability selection. 
 
 Q3-Q9 confirmed all upstream capabilities F01-F29 as required. This includes execution modes and result delivery, task control, communication, role and resource configuration, limits and accounting, worktree management, persistence and lifecycle events. Every capability needs real-scenario acceptance coverage.
 
-Retaining a capability does not accept upstream parameter names, default values or known defects. Scheduling details, failure propagation and the form of result delivery will be decided separately.
+Retaining a capability does not accept upstream parameter names, default values or known defects. The accepted rules below specify selected behavior; other scheduling details and the form of result delivery remain open.
 
 ## Accepted additions
 
@@ -25,7 +25,7 @@ Q10-Q13 added the following capabilities to the rewrite. They extend the inspect
 
 | ID  | Capability                   | Accepted behavior and example                                                                                                                                                                                                        |
 | --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| F30 | Completed-subagent follow-up | Ask a reviewer to check the revised code using its earlier context after its first report is complete. Follow-up within the same parent session is required; cross-restart behavior remains to be decided.                           |
+| F30 | Completed-subagent follow-up | Ask a reviewer to check the revised code using its earlier context after its first report is complete. Q25 also requires restoring that context and allowing follow-up after a parent-session restart.                               |
 | F31 | Optional parent-history copy | Start with a fresh context by default, but let the caller explicitly copy the parent's history at dispatch. For example, give a child the earlier design discussion when assigning implementation. Q19 specifies the snapshot below. |
 | F32 | Recursive delegation         | Let a backend lead create database and API subagents. Impose depth and quantity limits, with shared tree limits and descendant lifetime rules specified in Q15-Q17 below.                                                            |
 | F33 | Extension tools in children  | Let a researcher use an existing parent extension's web-search tool, subject to the role's tool allowlist and Q18's inherited tool ceiling. Tool loading remains to be decided.                                                      |
@@ -35,13 +35,22 @@ The accepted scope is F01-F33. These are design requirements, not implementation
 ## Accepted task and context rules
 
 - **Q14, identity and task history:** Retain the subagent's identity and context across assignments, with a separate execution record and result for each task. A review and its later re-review remain individually inspectable. Follow-up does not replace the earlier result or automatically rerun tasks that consumed it.
-- **Q15, recursive limits:** The entire root task tree shares a concurrency limit and a cumulative creation limit, with an additional maximum depth. Three leads that each delegate four children do not receive independent allowances at every level. Numeric defaults and precise counting boundaries remain to be decided.
-- **Q16, completion:** A task cannot be marked complete until all its descendants have ended, even if its own subagent has returned a report. A backend lead is still pending while its database child is editing. Descendant failure propagation remains to be decided.
+- **Q15, recursive limits:** The entire root task tree shares a concurrency limit and a cumulative creation limit, with an additional maximum depth. Three leads that each delegate four children do not receive independent allowances at every level. Q24 defines the boundary across dispatches; numeric defaults and counting units remain to be decided.
+- **Q16, completion:** A task cannot be marked complete until all its descendants have ended, even if its own subagent has returned a report. A backend lead is still pending while its database child is editing. Q23 defines how the parent handles descendant failure.
 - **Q17, cancellation:** Cancelling a task cancels its entire descendant branch and prevents new descendants from starting. Retain existing records and code artifacts for inspection. Cancelling the backend lead also stops its database and API children.
 - **Q18, tool ceiling:** A descendant's available tools cannot exceed its parent's tool scope. Role definitions and per-call choices can only narrow that scope. A read-only researcher cannot give a child write tools; it must ask an ancestor with the needed tools to arrange the work.
 - **Q19, history snapshot:** Optional history copying takes the parent's complete visible conversation at dispatch, including tool calls and results. Already compacted history uses the existing summary. Later parent messages require explicit communication rather than automatic synchronization. A reviewer therefore receives the code and test logs visible at dispatch, not subsequent parent activity.
 
-These rules define required behavior for later scenario acceptance. They do not establish numeric limits, active-task follow-up handling, scheduling during waits, failure propagation or crash recovery.
+## Accepted scheduling, failure and recovery rules
+
+- **Q20, busy-agent follow-up:** A new assignment to a busy subagent enters its queue. The subagent executes one task at a time. A reviewer finishes its login review before starting a queued payment review; a correction to its current review uses steering instead.
+- **Q21, waiting and concurrency:** Explicitly waiting for descendants or an answer releases an execution slot. Resuming work requires rejoining the execution queue. Four leads waiting for children must not occupy all four slots and prevent those children from running.
+- **Q22, dependency failure:** A failed dependency prevents its dependent tasks from starting, while unrelated branches continue. Report the blocking reason. If database investigation fails, work requiring its result remains blocked while an independent API investigation continues.
+- **Q23, descendant failure:** Report a child's failure to its direct parent, allowing the parent to delegate again or complete the work itself. Keep the child's failure record. One child failure does not immediately cancel the whole tree or automatically make the parent fail; the parent can recover and still complete its assignment.
+- **Q24, limits across dispatches:** All dispatches within the same main session share its total concurrency limit. Each top-level dispatch and all its descendants have their own cumulative creation allowance. Dispatching five researchers and then five reviewers cannot bypass the main session's concurrency limit.
+- **Q25, restart recovery:** Restore subagent contexts and task records when reopening the parent session. Completed subagents can receive follow-up tasks. Unfinished tasks are marked interrupted and require explicit continuation by the main agent or user. Already executed write operations are not automatically replayed.
+
+These rules define required behavior for later scenario acceptance. Numeric limits, dependency release after recovery, execution deadlines, code handoff and recovery when records or artifacts are incomplete still need decisions.
 
 ## Upstream capability inventory
 
