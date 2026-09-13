@@ -1,7 +1,7 @@
 import {createProvider, envApiKeyAuth} from '@earendil-works/pi-ai';
 import type {ModelRegistry} from '@earendil-works/pi-coding-agent';
 import {Effect} from 'effect';
-import {WebError} from '../web/errors';
+import {WebError} from './errors';
 
 export const exaProvider = createProvider({
   id: 'exa',

@@ -1,6 +1,6 @@
 import {expect, test} from 'bun:test';
 import {Effect} from 'effect';
-import {createWebTools} from '../../src/web/index';
+import {createWebTools} from '../../src/web/tools';
 import type {Request} from '../../src/web/network';
 import {WebError} from '../../src/web/errors';
 

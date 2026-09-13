@@ -41,6 +41,15 @@ Read [Contributing](CONTRIBUTING.md) before starting work. Coding agents must al
 
 To try the reviewed source extension, follow [Web access](docs/web-access.md#load-the-development-extension). To install development dependencies and run repository checks, follow the [verification instructions](CONTRIBUTING.md#verify-changes).
 
+## Source layout
+
+- [src/index.ts](src/index.ts) loads configuration and registers capabilities with Pi.
+- [src/pi/](src/pi/) owns shared host configuration and tool-switch policy.
+- [src/web/](src/web/) owns Web access, including its tools, authentication, transport and session lifecycle. Other capabilities belong in sibling directories when implemented.
+- [tests/component/](tests/component/) exercises module behavior; [tests/system/](tests/system/) loads the extension in the real Pi host.
+
+Web host registration lives in `src/web/register.ts`; tool definitions live in `src/web/tools.ts`. Feature-specific code stays with its owning capability, including adapters that use Pi APIs. Adapted Web source carries its upstream provenance and full license notice inline.
+
 ## Documentation
 
 | Document                                                       | Purpose                                                     |

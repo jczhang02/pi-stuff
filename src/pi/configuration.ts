@@ -1,5 +1,5 @@
 import {Effect, Schema} from 'effect';
-import {ToolSwitches} from '../tool-switches';
+import {ToolSwitches} from './tool-switches';
 import {WebSettings} from '../web/settings';
 
 export class ConfigurationError extends Schema.TaggedError<ConfigurationError>()(

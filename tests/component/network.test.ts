@@ -2,8 +2,8 @@ import {expect, test} from 'bun:test';
 import {once} from 'node:events';
 import {createServer} from 'node:http';
 import {Schema} from 'effect';
-import {network} from '../../src/pi/network';
-import {createWebTools} from '../../src/web/index';
+import {network} from '../../src/web/transport';
+import {createWebTools} from '../../src/web/tools';
 
 test('runtime transport follows local redirects without retaining response cookies', async () => {
   const paths: string[] = [];

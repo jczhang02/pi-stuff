@@ -55,7 +55,8 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
     hostname: '127.0.0.1',
     port: 0,
     async fetch(request) {
-      if (new URL(request.url).pathname === '/slow') {
+      const path = new URL(request.url).pathname;
+      if (request.method === 'GET' && path === '/slow') {
         slowRequests++;
         return new Promise<Response>(resolveResponse => {
           request.signal.addEventListener(
@@ -68,7 +69,7 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
           );
         });
       }
-      if (new URL(request.url).pathname === '/page') {
+      if (request.method === 'GET' && path === '/page') {
         return new Response(
           'HOST_CONTENT 中文 needle ' +
             'body '.repeat(2000) +
@@ -76,6 +77,8 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
           {headers: {'content-type': 'text/plain'}},
         );
       }
+      if (request.method !== 'POST' || path !== '/v1/chat/completions')
+        return new Response(null, {status: 404});
       const body = Schema.decodeUnknownSync(RequestBody)(await request.json());
       offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
@@ -111,6 +114,20 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
     },
   });
   try {
+    for (const [path, method] of [
+      ['/', 'GET'],
+      ['/v1/chat/completions', 'GET'],
+      ['/unrelated', 'POST'],
+      ['/page', 'POST'],
+      ['/slow', 'POST'],
+    ] as const) {
+      const probe = await fetch(new URL(path, server.url), {
+        method,
+        signal: AbortSignal.timeout(1000),
+      });
+      expect(probe.status).toBe(404);
+      await probe.body?.cancel();
+    }
     await writeFile(
       join(agent, 'models.json'),
       JSON.stringify({
@@ -147,7 +164,7 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
         '--model',
         'fixture',
         '-e',
-        resolve('src/pi/index.ts'),
+        resolve('src/index.ts'),
         '-e',
         resolve('tests/system/fixtures/host-controls.ts'),
       ],
@@ -215,6 +232,23 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
         JSON.stringify({exa: {type: 'api_key', key: 'fixture-next-key'}}),
       );
       await auth('edited', 'changed');
+      await writeFile(
+        authPath,
+        JSON.stringify({
+          exa: {type: 'api_key', key: 'fixture-malformed\ncredential-marker'},
+        }),
+      );
+      const authFailure = await invoke(
+        'web_search',
+        JSON.stringify({queries: ['fixture authentication check']}),
+      );
+      expect(authFailure).toContain('error: authentication:');
+      expect(authFailure).not.toContain('fixture-malformed');
+      expect(authFailure).not.toContain('credential-marker');
+      await writeFile(
+        authPath,
+        JSON.stringify({exa: {type: 'api_key', key: 'fixture-next-key'}}),
+      );
       const first = await invoke(
         'fetch_content',
         JSON.stringify({urls: [`${server.url}page`], mode: 'raw'}),
@@ -231,15 +265,15 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
       );
       expect(sessionFiles.length).toBeGreaterThan(0);
       for (const file of sessionFiles) {
-        expect(await readFile(join(sessions, file), 'utf8')).not.toContain(
+        const contents = await readFile(join(sessions, file), 'utf8');
+        for (const hidden of [
           'HIDDEN_TAIL_MARKER',
-        );
-        expect(await readFile(join(sessions, file), 'utf8')).not.toContain(
           'fixture-stored-key',
-        );
-        expect(await readFile(join(sessions, file), 'utf8')).not.toContain(
           'fixture-next-key',
-        );
+          'fixture-malformed',
+          'credential-marker',
+        ])
+          expect(contents).not.toContain(hidden);
       }
       const id = /contentId: ([^\s]+)/.exec(first)?.[1];
       expect(id).toBeDefined();

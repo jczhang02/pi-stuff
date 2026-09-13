@@ -1,7 +1,7 @@
 import {expect, test} from 'bun:test';
 import type {Model} from '@earendil-works/pi-ai';
 import {Effect} from 'effect';
-import {resolveOpenAI, selectSearchModel} from '../../src/pi/openai';
+import {resolveOpenAI, selectSearchModel} from '../../src/web/openai-auth';
 
 const model: Model<'openai-responses'> = {
   id: 'gpt-4.1',

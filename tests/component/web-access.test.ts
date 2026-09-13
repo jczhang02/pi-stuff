@@ -1,6 +1,6 @@
 import {expect, test} from 'bun:test';
 import {Effect} from 'effect';
-import {createWebTools} from '../../src/web/index';
+import {createWebTools} from '../../src/web/tools';
 
 // Exercise the definitions registered with Pi, with only network I/O supplied.
 test('fetch accepts reachable local and private targets, including redirects', async () => {

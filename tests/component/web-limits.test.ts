@@ -1,6 +1,6 @@
 import {expect, test} from 'bun:test';
 import {Effect} from 'effect';
-import {createWebTools} from '../../src/web/index';
+import {createWebTools} from '../../src/web/tools';
 
 test('cancellation stops three active fetches without starting queued URLs', async () => {
   const started = Promise.withResolvers<void>();
