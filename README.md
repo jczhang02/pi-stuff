@@ -43,8 +43,7 @@ To try the reviewed source extension, follow [Web access](docs/web-access.md#loa
 
 ## Source layout
 
-- [index.ts](index.ts) is the package entrypoint; it forwards to the source factory so Pi's local extension list shows the checkout name rather than `src`.
-- [src/index.ts](src/index.ts) loads configuration and registers capabilities with Pi.
+- [index.ts](index.ts) is the sole Pi entrypoint. It loads configuration and registers capabilities directly; Pi's local extension list shows the checkout name.
 - [src/pi/](src/pi/) owns shared host configuration and tool-switch policy.
 - [src/web/](src/web/) owns Web access, including its tools, authentication, transport and session lifecycle. Other capabilities belong in sibling directories when implemented.
 - [tests/component/](tests/component/) exercises module behavior; [tests/system/](tests/system/) loads the extension in the real Pi host.

@@ -15,7 +15,7 @@ pi install /absolute/path/to/pi-stuff
 
 安装后重新启动 Pi. 本地包写入用户设置, 不会复制检出目录. Pi 按 `package.json` 声明加载根目录 `index.ts`; 名为 `pi-stuff` 的检出目录在启动时的简短 Extensions 列表中显示为 `pi-stuff`. 重命名检出目录也会改变这个本地显示名称. 修改源码后使用 `/reload`.
 
-只运行一次而不安装时, 使用 `pi -e /absolute/path/to/pi-stuff/index.ts`. 原 `src/index.ts` 仍可加载, 但会显示 `src`; 已有直接指向该文件的设置或启动命令应改为根入口. 不要同时加载两个入口.
+只运行一次而不安装时, 使用 `pi -e /absolute/path/to/pi-stuff/index.ts`. 根目录 `index.ts` 是唯一入口. 原 `src/index.ts` 已删除, 指向它的设置或启动命令需改为根入口. 已通过包方式安装的用户无需调整配置.
 
 隔离的 Pi `0.85.1` 安装名为 `pi-stuff` 的本地检出后的画面:
 

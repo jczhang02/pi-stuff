@@ -42,8 +42,7 @@ cd pi-stuff
 
 ## 源码组织
 
-- [index.ts](../../../index.ts) 是包入口, 转出源码中的工厂函数, 使 Pi 的本地扩展列表显示检出目录名, 而非 `src`.
-- [src/index.ts](../../../src/index.ts) 读取配置, 向 Pi 注册各项能力.
+- [index.ts](../../../index.ts) 是唯一的 Pi 入口, 直接读取配置并注册各项能力; Pi 的本地扩展列表显示检出目录名.
 - [src/pi/](../../../src/pi/) 管理共用的宿主配置和工具开关策略.
 - [src/web/](../../../src/web/) 管理网页访问, 包含工具, 认证, 网络实现和会话生命周期. 其他能力实现时放在同级目录.
 - [tests/component/](../../../tests/component/) 验证模块行为; [tests/system/](../../../tests/system/) 在真实 Pi 宿主中加载扩展.

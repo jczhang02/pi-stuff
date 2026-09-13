@@ -15,7 +15,7 @@ pi install /absolute/path/to/pi-stuff
 
 Restart Pi after installation. The local package is added to user settings without copying the checkout. Pi loads the root `index.ts` declared in `package.json`; a checkout named `pi-stuff` appears as `pi-stuff` in the compact Extensions startup list. Renaming the checkout changes this local display name. Use `/reload` after source changes.
 
-For a single run without installing, use `pi -e /absolute/path/to/pi-stuff/index.ts`. The previous `src/index.ts` entry still works, but displays `src`; switch existing direct-entry settings or launch commands to the root entry. Do not load both entries.
+For a single run without installing, use `pi -e /absolute/path/to/pi-stuff/index.ts`. Root `index.ts` is the sole entrypoint. The previous `src/index.ts` has been removed; update settings or launch commands that name it to use the root entry. Existing package installs need no configuration change.
 
 Isolated Pi `0.85.1` after installing a local checkout named `pi-stuff`:
 
