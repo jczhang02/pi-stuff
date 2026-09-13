@@ -10,9 +10,18 @@ Give each capability one owning module with a small interface. Callers use that 
 
 For example, a Pi command calls a task capability through its public interface. The capability owns its state and rules, uses pure functions for calculations, and reaches host services through adapters where needed. Pure algorithms remain independent of Pi, the file system, and process APIs; the entrypoint composes the capability with its host dependencies without reimplementing its rules.
 
-Choose concrete directories and entrypoints with the first real feature. Review responsibility and import boundaries while the structure is still small; automate import or cycle checks after the actual layout and dependency patterns have stabilized.
+Review responsibility and import boundaries while the structure is still small; automate import or cycle checks after the actual layout and dependency patterns have stabilized.
 
 Before introducing a shared abstraction, compare the same behavior with the simpler option of keeping the code in its current owner or inlining it. Keep the abstraction only when it centralizes an invariant or isolates demonstrated variation; otherwise keep the simpler form and its direct imports.
+
+### Source layout
+
+- Root `index.ts` is the sole Pi extension entrypoint. It directly loads package configuration and registers capabilities.
+- Keep feature implementation under `src/<capability>/`. Add new capabilities as sibling directories when implemented.
+- `src/pi/` owns shared host configuration and tool-switch policy. Feature-specific Pi registration, authentication and lifecycle adapters belong to their owning capability.
+- Source modules expose capability interfaces; they do not import the root entrypoint. Keep package startup composition in root `index.ts`, without a second entrypoint or forwarding layer.
+- Keep each capability's internal structure proportional to its implementation. Create files and subdirectories when they have a concrete responsibility.
+- When changing layout or entrypoints, update affected imports, package metadata and paired documentation in the same PR. Review module ownership and verify actual Pi package loading.
 
 ## Source changes
 

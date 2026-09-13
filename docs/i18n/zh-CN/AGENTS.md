@@ -35,6 +35,7 @@
 - 开始或恢复任务、提交、推送、交接或工作树清理：[任务流程](agents/workflow.md)。跟踪任务开始、恢复及压缩上下文后，还需加载 `beads` 技能并运行 `bd prime`。
 - 创建、读取、更新、评论或关闭任务：[任务跟踪](agents/issue-tracker.md)；设置、认证、存储变更或首次使用同步还需 [Beads 设置](agents/beads.md)。分流或标签变更：[分流标签](agents/triage-labels.md)。
 - 源码、测试、依赖或检查的修改与审查：[工程规则](agents/engineering.md)。代码探索或设计提案：[领域规则](agents/domain.md)、已有 `CONTEXT.md` 和相关 `docs/adr/` 记录。明确提出 ADR 冲突，不为缺失文件创建占位。
+- 提出或修改源码布局, 入口或导入边界前, 阅读[源码布局规则](agents/engineering.md#源码布局).
 - 引入或实质重构抽象：选择设计前阅读[抽象消融比较](agents/workflow.md#抽象消融比较)。
 - TUI 设计或界面变更：[设计规则](design.md)。用户要求的 TUI 原型：[prototype-tui 技能](../../../.agents/skills/prototype-tui/SKILL.md)。
 - 终端 E2E 或交互式 TUI 自动化：[tuistory 技能](../../../.agents/skills/tuistory/SKILL.md)及[终端 E2E](quality-assurance.md#终端-e2e)。测试组织、环境选择或验证/CI 政策：[质量保证](quality-assurance.md)。

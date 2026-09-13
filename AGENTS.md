@@ -35,6 +35,7 @@ Before each applicable operation, read its reference with a file-reading tool an
 - Task start/resumption, commit, push, handoff or worktree cleanup: `docs/agents/workflow.md`. At tracked-work start/resumption and after compaction, also load the `beads` skill and run `bd prime`.
 - Task creation/read/update/comment/closure: `docs/agents/issue-tracker.md`; setup, authentication, storage changes or first use of sync also require `docs/agents/beads.md`. Triage/label changes: `docs/agents/triage-labels.md`.
 - Source, test, dependency or check changes/review: `docs/agents/engineering.md`. Code exploration/design proposals: `docs/agents/domain.md`, existing `CONTEXT.md` and relevant `docs/adr/` records. Raise ADR conflicts; do not create missing-file placeholders.
+- Before proposing or changing source layout, entrypoints or import boundaries, read `docs/agents/engineering.md#source-layout`.
 - Introducing or materially refactoring abstractions: `docs/agents/workflow.md#abstraction-ablation` before choosing the design.
 - TUI design/interface changes: `design.md`. User-requested TUI prototypes: `.agents/skills/prototype-tui/SKILL.md`.
 - Terminal E2E/interactive TUI automation: `.agents/skills/tuistory/SKILL.md` and `docs/quality-assurance.md#terminal-e2e`. Test organization, environment selection or verification/CI policy: `docs/quality-assurance.md`.
