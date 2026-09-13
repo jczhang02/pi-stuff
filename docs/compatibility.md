@@ -4,6 +4,8 @@
 
 ## Non-overlay observation prototypes
 
+The current exploration adds [five source-informed candidates](../tools/subagent-observation-lab/README.md): resource inspector, telemetry monitor, notification inbox, trace waterfall and a stacked evidence workbench. The preceding three candidates below were judged insufficiently divergent and remain reproducible historical comparisons. The new candidates reuse their native component adapters and offline scenario, under the same pinned runtime. They add no dependencies or installed-package changes. Their launcher, input routing and view composition are isolated prototype code; no production subagent UI has been adopted.
+
 The [three observation candidates](../tools/subagent-observation-prototype/README.md) use `Bun.spawn` in their isolated launcher, with the same pinned Bun 1.4.0 / Pi 0.85.1 / Tuistory 0.11.0 Linux environment. They compose native TUI layout, scroll, editor, footer and message components, without importing the earlier overlay viewers or calling overlay APIs. Execution remains an in-memory sample; native SDK sessions supply footer metadata only.
 
 These candidates are not complete `InteractiveMode` instances or production extensions. The prototype imports the pinned keybindings/theme implementations because their concrete values are absent from the public root export. Split keyboard scrolling uses the current implementation's writable `ScrollView.primary` field through an owned subclass. Inline search takes normal layout space; Pi's floating search binding is disabled. These implementation dependencies need a supported host interface before production adoption. No dependencies or installed package files were changed for this revision.
