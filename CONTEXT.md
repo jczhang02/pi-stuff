@@ -17,3 +17,9 @@ A delegate with its own identity and conversation context, retained across succe
 
 **Subagent task**:
 One assignment to a subagent, with its own execution record and result. A follow-up is a new task for the same subagent.
+
+**Subagent task baseline**:
+The code state from which a subagent task begins, before that task adds its own changes.
+
+**Skipped task**:
+A subagent task that ended without starting because a dependency failed.

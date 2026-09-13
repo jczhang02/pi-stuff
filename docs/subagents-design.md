@@ -11,7 +11,7 @@ Status: design discussion in [#64](https://github.com/jczhang02/pi-stuff/issues/
 - Decide capabilities individually. Tool names, parameters and configuration may be redesigned; upstream compatibility is not a requirement imposed on this design.
 - Every supported capability needs acceptance in a real usage scenario. Parallel, serial and other supported execution modes each need their own acceptance coverage; one primary scenario cannot stand in for the full feature set.
 
-The maintainer requested a plain feature inventory before capability selection. Q14 subsequently established the distinction between a subagent and a subagent task, recorded in [the glossary](../CONTEXT.md). The rules below record explicit answers; the inventory alone does not settle runtime semantics.
+The maintainer requested a plain feature inventory before capability selection. Q14 established the distinction between a subagent and a subagent task; Q32-Q33 clarified skipped tasks and task baselines. These terms are recorded in [the glossary](../CONTEXT.md). The rules below record explicit answers; the inventory alone does not settle runtime semantics.
 
 ## Capability selection
 
@@ -45,7 +45,7 @@ The accepted scope is F01-F33. These are design requirements, not implementation
 
 - **Q20, busy-agent follow-up:** A new assignment to a busy subagent enters its queue. The subagent executes one task at a time. A reviewer finishes its login review before starting a queued payment review; a correction to its current review uses steering instead.
 - **Q21, waiting and concurrency:** Explicitly waiting for descendants or an answer releases an execution slot. Resuming work requires rejoining the execution queue. Four leads waiting for children must not occupy all four slots and prevent those children from running.
-- **Q22, dependency failure:** A failed dependency prevents its dependent tasks from starting, while unrelated branches continue. Report the blocking reason. If database investigation fails, work requiring its result remains blocked while an independent API investigation continues.
+- **Q22, dependency failure:** A failed dependency prevents its dependent tasks from starting, while unrelated branches continue. Report the blocking reason. If database investigation fails, work requiring its result is skipped under Q32 while an independent API investigation continues.
 - **Q23, descendant failure:** Report a child's failure to its direct parent, allowing the parent to delegate again or complete the work itself. Keep the child's failure record. One child failure does not immediately cancel the whole tree or automatically make the parent fail; the parent can recover and still complete its assignment.
 - **Q24, limits across dispatches:** All dispatches within the same main session share its total concurrency limit. Each top-level dispatch and all its descendants have their own cumulative creation allowance. Dispatching five researchers and then five reviewers cannot bypass the main session's concurrency limit.
 - **Q25, restart recovery:** Restore subagent contexts and task records when reopening the parent session. Completed subagents can receive follow-up tasks. Unfinished tasks are marked interrupted and require explicit continuation by the main agent or user. Already executed write operations are not automatically replayed.
@@ -55,11 +55,21 @@ The accepted scope is F01-F33. These are design requirements, not implementation
 - **Q26, configurable defaults:** Start with eight concurrent subagent tasks per main session, sixty-four cumulative tasks per top-level dispatch including descendants, and a maximum delegation depth of three with the main agent at depth zero. Initial tasks, recursive assignments and follow-ups count toward the task allowance; Pi's internal provider-request retries do not create another task. All three limits are configurable.
 - **Q27, execution clock:** Count time spent in model and tool execution stages toward the task's execution limit. Exclude queueing and explicit waits for descendants or answers. Answer waiting has a separate timeout. A researcher waiting half an hour for an answer does not consume half an hour of execution time.
 - **Q28, ready-task scheduling:** A task can start as soon as its own dependencies are satisfied and an execution slot is available. It does not wait for unrelated tasks in the same batch. API implementation can start after its thirty-second investigation while a five-minute database investigation continues.
-- **Q29, dependency recovery:** Keep the original graph and its failure records after repairing a failed task. The main agent explicitly dispatches subsequent work referring to the new result. Do not automatically release the blocked tasks in the old graph when a replacement investigation succeeds.
+- **Q29, dependency recovery:** Keep the original graph and its failure records after repairing a failed task. The main agent explicitly dispatches subsequent work referring to the new result. Do not automatically restart the skipped tasks in the old graph when a replacement investigation succeeds.
 - **Q30, write isolation:** Give each writable subagent task in a Git repository an independent worktree by default. If worktree creation fails, report startup failure rather than writing in the original directory. Two implementation agents retain separate code artifacts when editing concurrently.
 - **Q31, combining code:** When several write tasks produce branches, explicitly assign an integration task to combine them and handle conflicts. Later tasks inherit the integration branch. A task with one upstream code branch inherits that branch directly.
 
-These rules define required behavior for later scenario acceptance. The final state of dependency-blocked tasks, workspace baselines and retention, communication, timeout values and outcomes, and recovery when records or artifacts are incomplete still need decisions.
+## Accepted task outcomes, workspaces and message scope
+
+- **Q32, skipped tasks:** A task that cannot start because a dependency failed ends as skipped, with the failed dependency and reason retained. If A fails before B can start, B has a terminal outcome; its parent does not wait indefinitely for B.
+- **Q33, initial baseline:** When first dispatching into an isolated workspace, include uncommitted changes to tracked files in the task baseline. Include untracked files only when explicitly selected. Leave the original workspace unchanged. An implementation child therefore sees the interface definition its parent has just edited but not committed.
+- **Q34, follow-up workspace:** A follow-up write task starts a new task branch and worktree from the previous task's code artifact. Retain the same subagent context and the earlier artifact. Starting instead from the main workspace's latest code requires an explicit baseline choice.
+- **Q35, code delivery:** Save the task's changes on its own branch and return the commit, diff and check information. The main agent explicitly decides whether to apply the artifact to its workspace. A successful implementation task does not automatically write its changes back to the main agent's directory.
+- **Q36, cleanup:** Automatically reclaim worktrees whose artifacts are saved and which no active task is using. Retain branches and session records until explicit cleanup. Unsaved modifications prevent automatic worktree removal and must be reported, including partial work left by cancellation.
+- **Q37, non-Git writes:** Allow the caller to explicitly choose direct writes in a specified non-Git directory, such as a plain document folder. Unisolated writes are not the default.
+- **Q38, message scope:** Agents within the same top-level dispatch can address one another by known ID, including across delegation levels. Upward questions go to the direct parent by default. The main agent relays communication between separate dispatches. A database agent can send its field conventions directly to the API agent in the same dispatch.
+
+These rules define required behavior for later scenario acceptance. Message delivery, configuration resolution, timeout values and outcomes, and recovery when records or artifacts are incomplete still need decisions.
 
 ## Upstream capability inventory
 
