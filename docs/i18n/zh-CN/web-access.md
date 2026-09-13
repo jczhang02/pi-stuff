@@ -6,12 +6,20 @@ Pi Stuff 提供三个独立工具: `web_search`、`fetch_content` 和 `get_searc
 
 ## 加载开发版扩展
 
-尚未发布版本. 审查源码后, 在检出目录使用固定的 Bun `1.4.0` 安装依赖, 再加载入口:
+尚未发布版本. 审查源码后, 在检出目录使用固定的 Bun `1.4.0` 安装依赖, 再注册本地包:
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
-pi -e /absolute/path/to/pi-stuff/src/index.ts
+pi install /absolute/path/to/pi-stuff
 ```
+
+安装后重新启动 Pi. 本地包写入用户设置, 不会复制检出目录. Pi 按 `package.json` 声明加载根目录 `index.ts`; 名为 `pi-stuff` 的检出目录在启动时的简短 Extensions 列表中显示为 `pi-stuff`. 重命名检出目录也会改变这个本地显示名称. 修改源码后使用 `/reload`.
+
+只运行一次而不安装时, 使用 `pi -e /absolute/path/to/pi-stuff/index.ts`. 原 `src/index.ts` 仍可加载, 但会显示 `src`; 已有直接指向该文件的设置或启动命令应改为根入口. 不要同时加载两个入口.
+
+隔离的 Pi `0.85.1` 安装名为 `pi-stuff` 的本地检出后的画面:
+
+![Pi 启动列表显示已加载的 pi-stuff 扩展](../../assets/extension-name-pi-0.85.1.png)
 
 将绝对路径替换为你的检出目录. 这些工具名只由一个扩展注册, 避免冲突. 扩展代码使用你的账号权限运行. 已测试目标为 Linux Bun 编译版 Pi `0.85.1`, 其他版本/平台尚未验证. 开发检查还会通过 Bun 启动已安装的 Pi CLI. 两种环境的区别见[质量保证](quality-assurance.md#终端-e2e).
 
