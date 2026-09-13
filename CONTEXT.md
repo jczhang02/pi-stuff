@@ -11,3 +11,9 @@ Pi Stuff's capability for searching the web, reading public page text, and consu
 
 **Tool switch**:
 An independent setting for whether a Pi Stuff tool is available for direct model calls. It is an entry-point setting, not a prohibition on every internal use of the underlying capability.
+
+**Subagent**:
+A delegate with its own identity and conversation context, retained across successive assignments.
+
+**Subagent task**:
+One assignment to a subagent, with its own execution record and result. A follow-up is a new task for the same subagent.

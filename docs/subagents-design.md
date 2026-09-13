@@ -11,13 +11,37 @@ Status: design discussion in [#64](https://github.com/jczhang02/pi-stuff/issues/
 - Decide capabilities individually. Tool names, parameters and configuration may be redesigned; upstream compatibility is not a requirement imposed on this design.
 - Every supported capability needs acceptance in a real usage scenario. Parallel, serial and other supported execution modes each need their own acceptance coverage; one primary scenario cannot stand in for the full feature set.
 
-The maintainer requested a plain feature inventory before capability selection. Domain vocabulary and detailed lifecycle rules remain unsettled. No glossary definitions or architectural trade-offs have been inferred from the inventory.
+The maintainer requested a plain feature inventory before capability selection. Q14 subsequently established the distinction between a subagent and a subagent task, recorded in [the glossary](../CONTEXT.md). The rules below record explicit answers; the inventory alone does not settle runtime semantics.
 
 ## Capability selection
 
-Q3 confirmed F01-F05 as required: single-task delegation with separate context, parallel execution, serial execution, dependency-graph execution and automatic delivery of upstream results. Each execution mode and result delivery need real-scenario acceptance coverage.
+Q3-Q9 confirmed all upstream capabilities F01-F29 as required. This includes execution modes and result delivery, task control, communication, role and resource configuration, limits and accounting, worktree management, persistence and lifecycle events. Every capability needs real-scenario acceptance coverage.
 
-F06-F29 remain undecided. Retaining a capability does not accept upstream parameter names, default values or known defects. Scheduling details, failure propagation and the form of result delivery will be decided separately.
+Retaining a capability does not accept upstream parameter names, default values or known defects. Scheduling details, failure propagation and the form of result delivery will be decided separately.
+
+## Accepted additions
+
+Q10-Q13 added the following capabilities to the rewrite. They extend the inspected upstream package and require their own real-scenario acceptance coverage.
+
+| ID  | Capability                   | Accepted behavior and example                                                                                                                                                                                                        |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| F30 | Completed-subagent follow-up | Ask a reviewer to check the revised code using its earlier context after its first report is complete. Follow-up within the same parent session is required; cross-restart behavior remains to be decided.                           |
+| F31 | Optional parent-history copy | Start with a fresh context by default, but let the caller explicitly copy the parent's history at dispatch. For example, give a child the earlier design discussion when assigning implementation. Q19 specifies the snapshot below. |
+| F32 | Recursive delegation         | Let a backend lead create database and API subagents. Impose depth and quantity limits, with shared tree limits and descendant lifetime rules specified in Q15-Q17 below.                                                            |
+| F33 | Extension tools in children  | Let a researcher use an existing parent extension's web-search tool, subject to the role's tool allowlist and Q18's inherited tool ceiling. Tool loading remains to be decided.                                                      |
+
+The accepted scope is F01-F33. These are design requirements, not implementation or acceptance-test results.
+
+## Accepted task and context rules
+
+- **Q14, identity and task history:** Retain the subagent's identity and context across assignments, with a separate execution record and result for each task. A review and its later re-review remain individually inspectable. Follow-up does not replace the earlier result or automatically rerun tasks that consumed it.
+- **Q15, recursive limits:** The entire root task tree shares a concurrency limit and a cumulative creation limit, with an additional maximum depth. Three leads that each delegate four children do not receive independent allowances at every level. Numeric defaults and precise counting boundaries remain to be decided.
+- **Q16, completion:** A task cannot be marked complete until all its descendants have ended, even if its own subagent has returned a report. A backend lead is still pending while its database child is editing. Descendant failure propagation remains to be decided.
+- **Q17, cancellation:** Cancelling a task cancels its entire descendant branch and prevents new descendants from starting. Retain existing records and code artifacts for inspection. Cancelling the backend lead also stops its database and API children.
+- **Q18, tool ceiling:** A descendant's available tools cannot exceed its parent's tool scope. Role definitions and per-call choices can only narrow that scope. A read-only researcher cannot give a child write tools; it must ask an ancestor with the needed tools to arrange the work.
+- **Q19, history snapshot:** Optional history copying takes the parent's complete visible conversation at dispatch, including tool calls and results. Already compacted history uses the existing summary. Later parent messages require explicit communication rather than automatic synchronization. A reviewer therefore receives the code and test logs visible at dispatch, not subsequent parent activity.
+
+These rules define required behavior for later scenario acceptance. They do not establish numeric limits, active-task follow-up handling, scheduling during waits, failure propagation or crash recovery.
 
 ## Upstream capability inventory
 
@@ -66,4 +90,6 @@ The source groups behind this inventory are [public tools and lifecycle wiring](
 - F27 selects one completed upstream branch, not a merge of all upstream branches.
 - F28 writes the sidecar at whole-run settlement. It is not continuous crash-safe checkpointing, and restoring records does not automatically replay the workflow.
 
-Upstream does not provide completed-session follow-ups, parent-history fork, child-created subagents, runtime graph mutation, saved workflow templates, conditional loops, automatic acceptance gates, human approval nodes, model-output schemas, hard usage budgets, cross-run role memory, external-agent backends or periodic scheduling. These are possible additions to discuss, not accepted additions.
+The upstream gaps in completed-session follow-ups, parent-history copying, child-created subagents and extension-tool loading are addressed by accepted additions F30-F33; their detailed semantics remain open.
+
+Other capabilities absent from upstream include runtime graph mutation, saved workflow templates, conditional loops, automatic acceptance gates, human approval nodes, model-output schemas, hard usage budgets, cross-run role memory, external-agent backends and periodic scheduling. These have not been accepted into the rewrite scope.
