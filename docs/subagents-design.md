@@ -17,7 +17,7 @@ The maintainer requested a plain feature inventory before capability selection. 
 
 Q3-Q9 confirmed all upstream capabilities F01-F29 as required. This includes execution modes and result delivery, task control, communication, role and resource configuration, limits and accounting, worktree management, persistence and lifecycle events. Every capability needs real-scenario acceptance coverage.
 
-Retaining a capability does not accept upstream parameter names, default values or known defects. The accepted rules below specify selected behavior; other scheduling details and the form of result delivery remain open.
+Retaining a capability does not accept upstream parameter names, default values or known defects. The accepted rules below specify selected behavior; rules not yet discussed remain open.
 
 ## Accepted additions
 
@@ -28,7 +28,7 @@ Q10-Q13 added the following capabilities to the rewrite. They extend the inspect
 | F30 | Completed-subagent follow-up | Ask a reviewer to check the revised code using its earlier context after its first report is complete. Q25 also requires restoring that context and allowing follow-up after a parent-session restart.                               |
 | F31 | Optional parent-history copy | Start with a fresh context by default, but let the caller explicitly copy the parent's history at dispatch. For example, give a child the earlier design discussion when assigning implementation. Q19 specifies the snapshot below. |
 | F32 | Recursive delegation         | Let a backend lead create database and API subagents. Impose depth and quantity limits, with shared tree limits and descendant lifetime rules specified in Q15-Q17 below.                                                            |
-| F33 | Extension tools in children  | Let a researcher use an existing parent extension's web-search tool, subject to the role's tool allowlist and Q18's inherited tool ceiling. Tool loading remains to be decided.                                                      |
+| F33 | Extension tools in children  | Let a researcher use an existing parent extension's web-search tool, subject to the role's tool allowlist and Q18's inherited tool ceiling. Q45 requires independent initialization in child sessions.                               |
 
 The accepted scope is F01-F33. These are design requirements, not implementation or acceptance-test results.
 
@@ -69,7 +69,17 @@ The accepted scope is F01-F33. These are design requirements, not implementation
 - **Q37, non-Git writes:** Allow the caller to explicitly choose direct writes in a specified non-Git directory, such as a plain document folder. Unisolated writes are not the default.
 - **Q38, message scope:** Agents within the same top-level dispatch can address one another by known ID, including across delegation levels. Upward questions go to the direct parent by default. The main agent relays communication between separate dispatches. A database agent can send its field conventions directly to the API agent in the same dispatch.
 
-These rules define required behavior for later scenario acceptance. Message delivery, configuration resolution, timeout values and outcomes, and recovery when records or artifacts are incomplete still need decisions.
+## Accepted message delivery, configuration and extension state
+
+- **Q39, ordinary messages:** Put a message in the target task's mailbox and deliver it before the next model processing step, without interrupting a running tool. If the API agent is testing when a database message arrives, it receives the message at that next opportunity. For an ended task, retain the message and notify the main agent without automatically starting another task.
+- **Q40, unanswered questions:** Default answer waiting to ten minutes, configurable. On expiry, explicitly report that no answer arrived. The child may continue independent work or report that it cannot complete the assignment; do not invent an answer or automatically fail the whole task. A late reply remains associated with the original question and does not automatically start another task.
+- **Q41, role selection:** Let the dispatcher explicitly select a discovered Markdown role or define one inline. Use a generic role when none is specified. Retain role files and their discovery list, but do not automatically select or switch roles by text similarity. Mentioning a database in a review assignment does not select a database implementation role.
+- **Q42, configuration precedence:** Resolve ordinary values such as model and thinking level in this order: call parameters, role file, project defaults, user defaults, then the parent's current configuration. A call selecting model B overrides a role's model A. Tool scope and quotas remain subject to their agreed ceilings; configuration precedence cannot widen them.
+- **Q43, dependency result delivery:** Deliver upstream final reports and artifact references, including files, branches and commits, without the entire execution log by default. Above a configurable length, provide a clearly marked truncated preview and a reference for reading the full output. Preserve the full result. A downstream implementer can read a researcher's long report in full when needed.
+- **Q44, record recovery:** Save records at task creation, important state transitions and result delivery. If Pi exits while ten tasks are still in progress, restore the usable records and explicitly report damaged or missing parts. Do not present a new session or a different code baseline as a successful restoration.
+- **Q45, extension state:** Initialize same-named extension tools independently in each child session, with temporary content, caches and cancellation state owned by that session. Clearing the parent's web cache must not clear a child's retained content. Initialize only extensions needed for the task, then expose tools within the agreed parent and role limits. The implementation must still verify how third-party extension global state can be isolated.
+
+These rules define required behavior for later scenario acceptance. Execution timeout values and outcomes, cancellation completion, invalid dispatches and missing code artifacts still need decisions, followed by the full scenario acceptance specification.
 
 ## Upstream capability inventory
 
