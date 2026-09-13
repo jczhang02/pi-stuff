@@ -1,6 +1,6 @@
 import type {ExtensionAPI} from '@earendil-works/pi-coding-agent';
 import {Effect} from 'effect';
-import {resolveExa} from '../../../src/pi/exa';
+import {resolveExa} from '../../../src/web/exa-auth';
 
 // Test-only controls/observations. Never substitutes the extension's registration or I/O.
 export default function (pi: ExtensionAPI) {

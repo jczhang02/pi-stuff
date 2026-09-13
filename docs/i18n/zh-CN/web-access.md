@@ -10,7 +10,7 @@ Pi Stuff 提供三个独立工具: `web_search`、`fetch_content` 和 `get_searc
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
-pi -e /absolute/path/to/pi-stuff/src/pi/index.ts
+pi -e /absolute/path/to/pi-stuff/src/index.ts
 ```
 
 将绝对路径替换为你的检出目录. 这些工具名只由一个扩展注册, 避免冲突. 扩展代码使用你的账号权限运行. 已测试目标为 Linux Bun 编译版 Pi `0.85.1`, 其他版本/平台尚未验证. 开发检查还会通过 Bun 启动已安装的 Pi CLI. 两种环境的区别见[质量保证](quality-assurance.md#终端-e2e).

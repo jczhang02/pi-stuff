@@ -1,7 +1,7 @@
 import {expect, test} from 'bun:test';
 import {Effect} from 'effect';
 import {Type} from 'typebox';
-import {registerTool} from '../../src/tool-switches';
+import {registerTool} from '../../src/pi/tool-switches';
 import {readConfiguration} from '../../src/pi/configuration';
 
 test('global switches omit only disabled tools and defaults permit future tools', async () => {

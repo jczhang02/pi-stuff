@@ -1,9 +1,9 @@
 import type {Api, Model} from '@earendil-works/pi-ai';
 import type {ModelRegistry} from '@earendil-works/pi-coding-agent';
 import {Effect, Schema} from 'effect';
-import {WebError} from '../web/errors';
-import type {OpenAI} from '../web/search';
-import type {WebSettings} from '../web/settings';
+import {WebError} from './errors';
+import type {OpenAI} from './search';
+import type {WebSettings} from './settings';
 
 type Registry = Pick<
   ModelRegistry,

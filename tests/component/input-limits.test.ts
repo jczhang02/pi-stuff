@@ -1,6 +1,6 @@
 import {expect, test} from 'bun:test';
 import {Effect} from 'effect';
-import {createWebTools} from '../../src/web';
+import {createWebTools} from '../../src/web/tools';
 
 test('search length is bounded in UTF-16 units, not grapheme clusters', async () => {
   let requests = 0;

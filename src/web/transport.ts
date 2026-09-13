@@ -1,6 +1,6 @@
 import {Effect} from 'effect';
-import {WebError} from '../web/errors';
-import type {Network} from '../web/network';
+import {WebError} from './errors';
+import type {Network} from './network';
 
 // Use the runtime's ordinary DNS, connection and proxy handling.
 // Redirects remain explicit so the capability can enforce its hop/URL limits.

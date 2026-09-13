@@ -1,7 +1,7 @@
 import {expect, test} from 'bun:test';
 import {Effect} from 'effect';
-import {resolveExa} from '../../src/pi/exa';
-import {createWebTools} from '../../src/web';
+import {resolveExa} from '../../src/web/exa-auth';
+import {createWebTools} from '../../src/web/tools';
 import {WebError} from '../../src/web/errors';
 
 const openai = () =>

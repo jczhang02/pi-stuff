@@ -10,7 +10,7 @@ No release is published. From a reviewed checkout, install dependencies with the
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
-pi -e /absolute/path/to/pi-stuff/src/pi/index.ts
+pi -e /absolute/path/to/pi-stuff/src/index.ts
 ```
 
 Replace the absolute path with your checkout. Load only one extension registering these tool names to avoid collisions. Extension code runs with your account's permissions. The tested target is the Linux Bun-compiled Pi `0.85.1`; other versions/platforms are not verified. Development checks also launch the installed Pi CLI through Bun. See [QA](quality-assurance.md#terminal-e2e) for these distinct profiles.

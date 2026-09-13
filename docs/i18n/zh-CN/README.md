@@ -40,6 +40,15 @@ cd pi-stuff
 
 试用审查过的源码扩展, 参照[网页访问](web-access.md#加载开发版扩展). 安装开发依赖和运行仓库检查, 参照[验证说明](CONTRIBUTING.md#验证变更).
 
+## 源码组织
+
+- [src/index.ts](../../../src/index.ts) 读取配置, 向 Pi 注册各项能力.
+- [src/pi/](../../../src/pi/) 管理共用的宿主配置和工具开关策略.
+- [src/web/](../../../src/web/) 管理网页访问, 包含工具, 认证, 网络实现和会话生命周期. 其他能力实现时放在同级目录.
+- [tests/component/](../../../tests/component/) 验证模块行为; [tests/system/](../../../tests/system/) 在真实 Pi 宿主中加载扩展.
+
+Web 宿主注册位于 `src/web/register.ts`, 工具定义位于 `src/web/tools.ts`. 功能专用代码归所属能力管理, 包括使用 Pi API 的适配代码. 改编的 Web 源码在文件内保留上游来源和完整许可声明.
+
 ## 文档
 
 | 文档                                              | 用途                                    |

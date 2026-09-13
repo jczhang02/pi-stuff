@@ -1,6 +1,6 @@
 import {expect, test} from 'bun:test';
 import {Effect} from 'effect';
-import {createWebTools} from '../../src/web';
+import {createWebTools} from '../../src/web/tools';
 
 const openai = () =>
   Effect.succeed({model: 'fixture', codex: false, headers: new Headers()});

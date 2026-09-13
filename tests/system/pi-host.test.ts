@@ -147,7 +147,7 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
         '--model',
         'fixture',
         '-e',
-        resolve('src/pi/index.ts'),
+        resolve('src/index.ts'),
         '-e',
         resolve('tests/system/fixtures/host-controls.ts'),
       ],
