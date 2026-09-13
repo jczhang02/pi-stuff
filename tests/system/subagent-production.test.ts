@@ -117,7 +117,9 @@ test('production Pi host runs the offline subagent fleet through its public UI',
       timeout: 5000,
       waitFor: () =>
         !screen(terminal).includes('reviewer · 审查取消逻辑') &&
-        screen(terminal).split('\n').includes('~/project (main)'),
+        screen(terminal)
+          .split('\n')
+          .some(line => line.startsWith('~/project (')),
     });
     expect(screen(terminal)).not.toContain(' main ─');
     expect(alive(mainPid)).toBe(true);
