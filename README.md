@@ -43,6 +43,8 @@ To try the reviewed source extension, follow [Web access](docs/web-access.md#loa
 
 ## Source layout
 
+The [source-layout rules](docs/agents/engineering.md#source-layout) govern entrypoints and module ownership.
+
 - [index.ts](index.ts) is the sole Pi entrypoint. It loads configuration and registers capabilities directly; Pi's local extension list shows the checkout name.
 - [src/pi/](src/pi/) owns shared host configuration and tool-switch policy.
 - [src/web/](src/web/) owns Web access, including its tools, authentication, transport and session lifecycle. Other capabilities belong in sibling directories when implemented.
