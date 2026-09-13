@@ -137,7 +137,8 @@ toggles expanded tool details. In fullscreen Pi, the mouse wheel scrolls the
 child transcript using Pi’s own scroll step. Page Up/Page Down and Home/End
 also navigate the transcript; configured Pi viewport bindings for pages,
 half-pages, lines, and top/bottom are respected. Scrolling keeps the editor
-draft and Fleet focus intact.
+draft and Fleet focus intact. `Ctrl+End` retains Pi’s editor action of moving
+the cursor to the end of the input line.
 `Ctrl+C` returns to the main editor.
 Esc cancels an active child (or an active compaction); once the child is
 terminal, Esc closes the viewer and returns to the main editor.

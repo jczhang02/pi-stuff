@@ -187,6 +187,29 @@ test('production Pi host runs the offline subagent fleet through its public UI',
       timeout: 3000,
       waitFor: () => screen(terminal).includes('checkpoint 1\n'),
     });
+    const top = screen(terminal).split('\n');
+    const bodyRows = top.findIndex(line => line.includes('explorer ·'));
+    expect(bodyRows).toBeGreaterThan(4);
+    await terminal.press('pagedown');
+    await terminal.text({
+      timeout: 3000,
+      waitFor: () => !screen(terminal).includes('checkpoint 1\n'),
+    });
+    expect(screen(terminal).split('\n').slice(0, 4)).toEqual(
+      top.slice(bodyRows - 4, bodyRows),
+    );
+    await terminal.press('pageup');
+    await terminal.text({
+      timeout: 3000,
+      waitFor: () => screen(terminal).includes('checkpoint 1\n'),
+    });
+    await terminal.press(['ctrl', 'a']);
+    // tuistory 0.11.0 drops Ctrl on End; send the real modified key sequence.
+    terminal.writeRaw('\x1b[1;5F');
+    await terminal.waitIdle();
+    await terminal.type('!');
+    expect(screen(terminal)).toContain('滚动时保留的草稿!');
+    expect(screen(terminal)).toContain('checkpoint 1\n');
     await terminal.press('end');
     await terminal.text({
       timeout: 3000,

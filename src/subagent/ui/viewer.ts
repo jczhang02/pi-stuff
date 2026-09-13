@@ -225,8 +225,8 @@ export async function openViewer(
         handleInput(data: string) {
           if (isKeyRelease(data)) return;
           const scrolling = [
-            ['tui.altScreen.pageUp', Math.max(1, bodyRows - 2)],
-            ['tui.altScreen.pageDown', -Math.max(1, bodyRows - 2)],
+            ['tui.altScreen.pageUp', Math.max(1, bodyRows - 4)],
+            ['tui.altScreen.pageDown', -Math.max(1, bodyRows - 4)],
             ['tui.altScreen.halfPageUp', Math.max(1, Math.floor(bodyRows / 2))],
             [
               'tui.altScreen.halfPageDown',
@@ -269,8 +269,6 @@ export async function openViewer(
             else done(undefined);
           } else if (keys.matches(data, 'app.tools.expand')) {
             view.expanded = !view.expanded;
-          } else if (matchesKey(data, 'ctrl+end')) {
-            view.scroll = 0;
           } else {
             editor.handleInput(data);
           }

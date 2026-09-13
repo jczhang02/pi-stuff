@@ -78,7 +78,15 @@ The compiled-host UI regression expands an actual 80-line `read` result,
 scrolls to its first and last lines in both directions, checks Home/End,
 and asserts that the draft remains intact and the main worker stays alive.
 The wheel assertion was observed failing before the handler was added.
-The final screenshots below were refreshed after restoring the native editor.
+Independent review also found a legacy `Ctrl+End` viewer shortcut that
+shadowed Pi’s editor action. Before its removal, pressing Ctrl+A, Ctrl+End
+and `!` prepended the character and jumped the transcript to its bottom.
+The regression now checks that the character is appended and the top of
+the transcript stays visible. It sends the actual modified-key sequence
+(`CSI 1;5F`), because tuistory 0.11.0 encodes Ctrl+End as plain End through
+`press()`. A page-turn assertion also checks Pi’s four-row overlap.
+The final screenshots below were refreshed
+after restoring the native editor.
 
 ## Actual interface
 
