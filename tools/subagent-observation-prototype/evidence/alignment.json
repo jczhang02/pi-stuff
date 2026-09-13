@@ -1,0 +1,158 @@
+{
+  "columnNumbering": "one-based terminal cells",
+  "results": [
+    {
+      "width": 50,
+      "positions": [
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 36,
+          "output": 46,
+          "timeEnd": 32,
+          "inputEnd": 42,
+          "outputEnd": 50,
+          "width": 50
+        },
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 36,
+          "output": 46,
+          "timeEnd": 32,
+          "inputEnd": 42,
+          "outputEnd": 50,
+          "width": 50
+        },
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 36,
+          "output": 46,
+          "timeEnd": 32,
+          "inputEnd": 42,
+          "outputEnd": 50,
+          "width": 50
+        },
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 36,
+          "output": 46,
+          "timeEnd": 32,
+          "inputEnd": 42,
+          "outputEnd": 50,
+          "width": 50
+        }
+      ],
+      "rows": [
+        "   main      Coordinati…    44s ·  18.4k ·  960",
+        "  reviewer  Inspecting…    37s ·  13.2k ·  620",
+        "   tester    Question: …    29s ·   9.1k ·  410",
+        "   explorer  Trace comp…  1m 1s ·  11.2k ·  530"
+      ]
+    },
+    {
+      "width": 80,
+      "positions": [
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 66,
+          "output": 76,
+          "timeEnd": 62,
+          "inputEnd": 72,
+          "outputEnd": 80,
+          "width": 80
+        },
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 66,
+          "output": 76,
+          "timeEnd": 62,
+          "inputEnd": 72,
+          "outputEnd": 80,
+          "width": 80
+        },
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 66,
+          "output": 76,
+          "timeEnd": 62,
+          "inputEnd": 72,
+          "outputEnd": 80,
+          "width": 80
+        },
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 66,
+          "output": 76,
+          "timeEnd": 62,
+          "inputEnd": 72,
+          "outputEnd": 80,
+          "width": 80
+        }
+      ],
+      "rows": [
+        "   main      Coordinating cancellation review             44s ·  18.4k ·  960",
+        "  reviewer  Inspecting abort propagation                 37s ·  13.2k ·  620",
+        "   tester    Question: include repeated cancellation?     29s ·   9.1k ·  410",
+        "   explorer  Trace complete · 3 entry points confirmed  1m 1s ·  11.2k ·  530"
+      ]
+    },
+    {
+      "width": 140,
+      "positions": [
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 126,
+          "output": 136,
+          "timeEnd": 122,
+          "inputEnd": 132,
+          "outputEnd": 140,
+          "width": 140
+        },
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 126,
+          "output": 136,
+          "timeEnd": 122,
+          "inputEnd": 132,
+          "outputEnd": 140,
+          "width": 140
+        },
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 126,
+          "output": 136,
+          "timeEnd": 122,
+          "inputEnd": 132,
+          "outputEnd": 140,
+          "width": 140
+        },
+        {
+          "name": 5,
+          "activity": 15,
+          "input": 126,
+          "output": 136,
+          "timeEnd": 122,
+          "inputEnd": 132,
+          "outputEnd": 140,
+          "width": 140
+        }
+      ],
+      "rows": [
+        "   main      Coordinating cancellation review                                                                         44s ·  18.4k ·  960",
+        "  reviewer  Inspecting abort propagation                                                                             37s ·  13.2k ·  620",
+        "   tester    Question: include repeated cancellation?                                                                 29s ·   9.1k ·  410",
+        "   explorer  Trace complete · 3 entry points confirmed                                                              1m 1s ·  11.2k ·  530"
+      ]
+    }
+  ]
+}
