@@ -9,7 +9,7 @@ import {
   rm,
 } from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join, resolve} from 'node:path';
+import {basename, join, resolve} from 'node:path';
 import {Schema} from 'effect';
 import {launchTerminal} from 'tuistory';
 
@@ -164,7 +164,7 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
         '--model',
         'fixture',
         '-e',
-        resolve('src/index.ts'),
+        resolve('.'),
         '-e',
         resolve('tests/system/fixtures/host-controls.ts'),
       ],
@@ -187,7 +187,10 @@ test('Pi terminal: fetch/find, reload, new session, switches and invalid configu
       },
     });
     try {
-      await terminal.waitForText('fixture', {timeout: 15000});
+      const startup = await terminal.waitForText('fixture', {timeout: 15000});
+      expect(startup.split('[Extensions]\n')[1]?.split('\n\n')[0]).toContain(
+        basename(resolve('.')),
+      );
       async function invoke(tool: string, args: string) {
         requestedTool = tool;
         argumentsJson = args;

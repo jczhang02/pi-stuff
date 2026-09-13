@@ -6,12 +6,20 @@ Pi Stuff provides three independent tools: `web_search`, `fetch_content` and `ge
 
 ## Load the development extension
 
-No release is published. From a reviewed checkout, install dependencies with the pinned Bun `1.4.0`, then load the source entrypoint:
+No release is published. From a reviewed checkout, install dependencies with the pinned Bun `1.4.0`, then register the local package:
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
-pi -e /absolute/path/to/pi-stuff/src/index.ts
+pi install /absolute/path/to/pi-stuff
 ```
+
+Restart Pi after installation. The local package is added to user settings without copying the checkout. Pi loads the root `index.ts` declared in `package.json`; a checkout named `pi-stuff` appears as `pi-stuff` in the compact Extensions startup list. Renaming the checkout changes this local display name. Use `/reload` after source changes.
+
+For a single run without installing, use `pi -e /absolute/path/to/pi-stuff/index.ts`. The previous `src/index.ts` entry still works, but displays `src`; switch existing direct-entry settings or launch commands to the root entry. Do not load both entries.
+
+Isolated Pi `0.85.1` after installing a local checkout named `pi-stuff`:
+
+![Pi startup listing pi-stuff as the loaded extension](assets/extension-name-pi-0.85.1.png)
 
 Replace the absolute path with your checkout. Load only one extension registering these tool names to avoid collisions. Extension code runs with your account's permissions. The tested target is the Linux Bun-compiled Pi `0.85.1`; other versions/platforms are not verified. Development checks also launch the installed Pi CLI through Bun. See [QA](quality-assurance.md#terminal-e2e) for these distinct profiles.
 
