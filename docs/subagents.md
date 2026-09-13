@@ -164,10 +164,16 @@ runtime limit. Fleet shows its activity and elapsed time. Esc, Fleet `x`,
 until compaction settles, with the draft retained. Compaction preserves the
 task's previous completion/failure state and final result.
 
-Only the upper-right editor border label identifies the input target (`main`
-or the child name and task). The input area, empty cursor, padding, and
+Only child editors have an upper-right border label with the child name and
+task. The main editor has no agent label. The input area, empty cursor, padding, and
 thinking-level border colors use Pi’s native editor. No input placeholder
 or extra prompt glyph is drawn.
+
+The child viewer is not a complete native Pi page. Fullscreen search currently
+searches the underlying parent transcript; autocomplete, semantic prompt jumps,
+working indicators and several rendering settings are not fully integrated.
+See the [native comparison and open defects](subagent-verification.md#comparison-with-native-pi-0851)
+before treating it as equivalent to the main interface.
 
 ## Read the counters and icons
 

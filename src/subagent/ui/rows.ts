@@ -78,11 +78,23 @@ export function renderFleet(
     20,
     Math.max(7, ...rows.map(row => visibleWidth(singleLine(row.name)))),
   );
-  const stats = rows.map(
-    row =>
-      `${duration(row.seconds).padStart(7)} · ${icons.input} ${tokens(row.input).padStart(5)} · ${icons.output} ${tokens(row.output).padStart(5)}`,
+  const values = rows.map(row => ({
+    elapsed: duration(row.seconds),
+    input: tokens(row.input),
+    output: tokens(row.output),
+  }));
+  const children = values.slice(1);
+  const timeWidth = Math.max(7, ...children.map(value => value.elapsed.length));
+  const inputWidth = Math.max(5, ...children.map(value => value.input.length));
+  const outputWidth = Math.max(
+    5,
+    ...children.map(value => value.output.length),
   );
-  const statsWidth = Math.max(...stats.map(visibleWidth));
+  const stats = values.map(
+    value =>
+      `${value.elapsed.padStart(timeWidth)} · ${icons.input} ${value.input.padStart(inputWidth)} · ${icons.output} ${value.output.padStart(outputWidth)}`,
+  );
+  const statsWidth = Math.max(...stats.slice(1).map(visibleWidth));
   const start = Math.max(
     0,
     Math.min((selected ?? 0) - maxRows + 1, rows.length - maxRows),

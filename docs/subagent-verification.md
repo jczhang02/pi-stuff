@@ -62,7 +62,9 @@ The maintainer clarified that only the editor’s upper-right agent label may
 differ from native Pi. The blank-input placeholder and extra prompt glyph
 were removed; the child editor now uses Pi’s thinking-level border color and
 editor settings. A focused comparison against the installed `CustomEditor`
-confirmed unchanged native input rows, hidden-line text and working status.
+confirmed that the label decorator preserves native input rows, hidden-line
+text, and any working indicator already attached to an editor. This tests
+the decorator; the child viewer does not attach Pi’s working indicator.
 
 In the retained real-model Explore conversation on fullscreen compiled Pi,
 one wheel-up event and eight wheel-up events both left the transcript
@@ -87,6 +89,89 @@ the transcript stays visible. It sends the actual modified-key sequence
 `press()`. A page-turn assertion also checks Pi’s four-row overlap.
 The final screenshots below were refreshed
 after restoring the native editor.
+
+## Fleet column measurements
+
+The main editor no longer has an agent label. Child editors retain their
+upper-right name/task label. The host regression checks both states and
+returning to the live parent.
+
+Using the names and counters from the maintainer’s screenshot, the renderer
+reproduced a one-cell error: `450.7k` occupied six cells while the input field
+had a five-cell minimum. Right-aligning the entire statistics string moved
+the shorter row’s time and input icon. Each numeric field now uses a shared
+width across child rows. Names and activity are left-aligned; numbers are
+right-aligned. ANSI sequences do not contribute to display width.
+
+At 140 terminal columns, positions are one-based:
+
+| Field                   | Before: standards / requirements / tooling | After: all three rows |
+| ----------------------- | ------------------------------------------ | --------------------- |
+| Name start              | 5 / 5 / 5                                  | 5                     |
+| Activity start          | 26 / 26 / 26                               | 26                    |
+| `2m 44s` start          | 114 / 114 / 115                            | 114                   |
+| Input icon              | 123 / 123 / 124                            | 123                   |
+| Input value right edge  | 130 / 130 / 130                            | 130                   |
+| Output icon             | 134 / 134 / 134                            | 134                   |
+| Output value right edge | 140 / 140 / 140                            | 140                   |
+
+[Raw renderer measurements](evidence/subagents/fleet-alignment.json) also
+record 50- and 80-column output. The regression was observed failing at all
+three widths before the correction. It covers Chinese names, combining
+characters, ANSI selection colors and larger time/token fields. These are
+terminal-cell measurements using transcribed sample values, not an inference
+of the screenshot’s original terminal width or a new model-usage record.
+
+## Comparison with native Pi 0.85.1
+
+The child page reuses native components inside a custom full-screen overlay;
+it is not another complete Pi InteractiveMode. A separate compiled Pi process
+loaded a copy of the same saved Implement conversation, without extensions or
+credentials, for the native control comparison. Both terminals used 140 × 38
+cells and the dark theme. No model request was made. The credential-free
+baseline had no available model, so its model/context footer values were not
+compared with the authenticated child.
+
+| Area                          | Result and evidence                                                                                                                                                                                                                                         |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Editor appearance             | Native input rows, cursor and padding are reused. Only child editors have the added border label. Existing decorator checks cover empty/multiline input and hidden-line text.                                                                               |
+| Editing and basic navigation  | Real host tests cover retained drafts, native Ctrl+End, mouse wheel, Home/End and four-row page overlap. Selecting or leaving a child preserves the running main worker.                                                                                    |
+| Slash commands and completion | Native `/mo` offers `model`, `scoped-models` and `import`; the child offers no suggestions. Its dispatcher only implements `/help`, `/stats` and `/compact`.                                                                                                |
+| Prompt navigation             | Actual `CSI 1;5A` (Ctrl+Up) jumps to a prior user message in native Pi; it leaves the child viewport unchanged. The child only implements page/half-page/line/top/bottom scrolling.                                                                         |
+| Transcript search             | **Open defect:** `CSI 102;6u` opens the host’s search over the child overlay, but searches the underlying main conversation. `clamp` has 14 matches in the standalone child history and 5 in the parent. This is not child search.                          |
+| Working indicator             | The decorator preserves an attached native indicator, but the child viewer does not attach one. Child progress is shown in Fleet; the native editor’s running indicator is not wired. This is a source finding, not a completed live-indicator parity test. |
+| Host-level controls           | The child does not install Pi’s complete command, autocomplete, model-selection, clipboard-image or extension-shortcut wiring. Native component reuse alone does not supply those controls.                                                                 |
+
+The search mismatch is a host routing boundary. In the installed
+`pi-tui/dist/tui-alt-screen.js`, the constructor installs the viewport input
+listener; `handleViewportInput()` handles search before
+`shouldDeferViewportInputToOverlay()`. Pi’s extension `onTerminalInput()`
+listeners are appended later, so a listener in this viewer cannot simply
+consume that key first. No private-method patch, global keybinding rewrite or
+Pi dependency change was added. Full native interaction acceptance remains
+open, and the PR remains draft while this defect is unresolved.
+
+## What switching actually does
+
+The main and child **AgentSessions** own conversation and execution state.
+An **AgentView** owns presentation state: draft, scroll offset and expanded
+tool details. Fleet selection chooses which view receives focus. It does not
+create another child execution or replace the parent session.
+
+`Subagents.open()` saves the main draft and opens `openViewer()` through
+`ctx.ui.custom()` with `overlay: true`. The overlay binds the selected child’s
+existing session and renders native editor/message/tool components.
+`Transcript` subscribes to SDK events and requests redraws as text and tool
+results arrive. `Fleet.send()` routes input to a pending question reply,
+active steering or continuation according to the selected child’s state.
+Closing the overlay saves its draft, releases view resources and restores the
+main editor. It does not cancel the child; cancellation has a separate action.
+
+This is view switching with independent session ownership and input routing.
+The sessions share one Pi process; a session is not a separate operating-system
+process. A Git worktree isolates files for write-capable tasks and is unrelated
+to which conversation is currently on screen. `switchSession()` is never
+called: Pi’s host session replacement would abort and dispose the old runtime.
 
 ## Actual interface
 

@@ -100,6 +100,7 @@ test('production Pi host runs the offline subagent fleet through its public UI',
 
     // The main continuation is allowed while sibling workers are still held.
     expect(screen(terminal)).toContain('reviewer');
+    expect(screen(terminal)).not.toContain(' main ─');
 
     // First Down focuses main; the second selects the first child.
     await terminal.press('down');
@@ -114,8 +115,11 @@ test('production Pi host runs the offline subagent fleet through its public UI',
     await terminal.press(['ctrl', 'c']);
     await terminal.text({
       timeout: 5000,
-      waitFor: () => screen(terminal).includes(' main ─'),
+      waitFor: () =>
+        !screen(terminal).includes('reviewer · 审查取消逻辑') &&
+        screen(terminal).split('\n').includes('~/project (main)'),
     });
+    expect(screen(terminal)).not.toContain(' main ─');
     expect(alive(mainPid)).toBe(true);
 
     // Ctrl+O expands the selected child transcript; paging and resize use the real screen.

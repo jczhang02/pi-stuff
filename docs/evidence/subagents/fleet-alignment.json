@@ -1,0 +1,213 @@
+{
+  "unit": "one-based terminal cell",
+  "sample": "Names, activities and counters transcribed from the maintainer screenshot; renderer measurements, not live model usage.",
+  "before": [
+    {
+      "width": 80,
+      "rows": [
+        {
+          "text": "   main                 bash                                                   ",
+          "width": 80,
+          "name": 5,
+          "activity": 26,
+          "time": null,
+          "inputIcon": null,
+          "outputIcon": null
+        },
+        {
+          "text": "   review_standards     grep tests/system/pi-hos…   2m 44s ·  450.7k ·   3.5k",
+          "width": 80,
+          "name": 5,
+          "activity": null,
+          "time": 54,
+          "inputIcon": 63,
+          "outputIcon": 74
+        },
+        {
+          "text": "   review_requirements  read CONTRIBUTING.md        2m 44s ·  476.7k ·   3.3k",
+          "width": 80,
+          "name": 5,
+          "activity": 26,
+          "time": 54,
+          "inputIcon": 63,
+          "outputIcon": 74
+        },
+        {
+          "text": "   review_tooling_docs  read bun.lock                2m 44s ·   1.1m ·   3.4k",
+          "width": 80,
+          "name": 5,
+          "activity": 26,
+          "time": 55,
+          "inputIcon": 64,
+          "outputIcon": 74
+        }
+      ]
+    },
+    {
+      "width": 140,
+      "rows": [
+        {
+          "text": "   main                 bash                                                                                                               ",
+          "width": 140,
+          "name": 5,
+          "activity": 26,
+          "time": null,
+          "inputIcon": null,
+          "outputIcon": null
+        },
+        {
+          "text": "   review_standards     grep tests/system/pi-host.test.ts                                                       2m 44s ·  450.7k ·   3.5k",
+          "width": 140,
+          "name": 5,
+          "activity": 26,
+          "time": 114,
+          "inputIcon": 123,
+          "outputIcon": 134
+        },
+        {
+          "text": "   review_requirements  read CONTRIBUTING.md                                                                    2m 44s ·  476.7k ·   3.3k",
+          "width": 140,
+          "name": 5,
+          "activity": 26,
+          "time": 114,
+          "inputIcon": 123,
+          "outputIcon": 134
+        },
+        {
+          "text": "   review_tooling_docs  read bun.lock                                                                            2m 44s ·   1.1m ·   3.4k",
+          "width": 140,
+          "name": 5,
+          "activity": 26,
+          "time": 115,
+          "inputIcon": 124,
+          "outputIcon": 134
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "width": 50,
+      "rows": [
+        {
+          "text": "   main                                          ",
+          "width": 50,
+          "name": 5,
+          "activity": null,
+          "time": null,
+          "inputIcon": null,
+          "outputIcon": null
+        },
+        {
+          "text": "   review_standards   2m 44s ·  450.7k ·   3.5k",
+          "width": 50,
+          "name": 5,
+          "activity": null,
+          "time": 24,
+          "inputIcon": 33,
+          "outputIcon": 44
+        },
+        {
+          "text": "   review_requirem…   2m 44s ·  476.7k ·   3.3k",
+          "width": 50,
+          "name": null,
+          "activity": null,
+          "time": 24,
+          "inputIcon": 33,
+          "outputIcon": 44
+        },
+        {
+          "text": "   review_tooling_…   2m 44s ·    1.1m ·   3.4k",
+          "width": 50,
+          "name": null,
+          "activity": null,
+          "time": 24,
+          "inputIcon": 33,
+          "outputIcon": 44
+        }
+      ]
+    },
+    {
+      "width": 80,
+      "rows": [
+        {
+          "text": "   main                 bash                                                   ",
+          "width": 80,
+          "name": 5,
+          "activity": 26,
+          "time": null,
+          "inputIcon": null,
+          "outputIcon": null
+        },
+        {
+          "text": "   review_standards     grep tests/system/pi-hos…   2m 44s ·  450.7k ·   3.5k",
+          "width": 80,
+          "name": 5,
+          "activity": null,
+          "time": 54,
+          "inputIcon": 63,
+          "outputIcon": 74
+        },
+        {
+          "text": "   review_requirements  read CONTRIBUTING.md        2m 44s ·  476.7k ·   3.3k",
+          "width": 80,
+          "name": 5,
+          "activity": 26,
+          "time": 54,
+          "inputIcon": 63,
+          "outputIcon": 74
+        },
+        {
+          "text": "   review_tooling_docs  read bun.lock               2m 44s ·    1.1m ·   3.4k",
+          "width": 80,
+          "name": 5,
+          "activity": 26,
+          "time": 54,
+          "inputIcon": 63,
+          "outputIcon": 74
+        }
+      ]
+    },
+    {
+      "width": 140,
+      "rows": [
+        {
+          "text": "   main                 bash                                                                                                               ",
+          "width": 140,
+          "name": 5,
+          "activity": 26,
+          "time": null,
+          "inputIcon": null,
+          "outputIcon": null
+        },
+        {
+          "text": "   review_standards     grep tests/system/pi-host.test.ts                                                       2m 44s ·  450.7k ·   3.5k",
+          "width": 140,
+          "name": 5,
+          "activity": 26,
+          "time": 114,
+          "inputIcon": 123,
+          "outputIcon": 134
+        },
+        {
+          "text": "   review_requirements  read CONTRIBUTING.md                                                                    2m 44s ·  476.7k ·   3.3k",
+          "width": 140,
+          "name": 5,
+          "activity": 26,
+          "time": 114,
+          "inputIcon": 123,
+          "outputIcon": 134
+        },
+        {
+          "text": "   review_tooling_docs  read bun.lock                                                                           2m 44s ·    1.1m ·   3.4k",
+          "width": 140,
+          "name": 5,
+          "activity": 26,
+          "time": 114,
+          "inputIcon": 123,
+          "outputIcon": 134
+        }
+      ]
+    }
+  ]
+}

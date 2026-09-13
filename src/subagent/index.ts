@@ -8,7 +8,6 @@ import {truncateToWidth, type TUI} from '@earendil-works/pi-tui';
 import type {ToolSwitches} from '../tool-switches';
 import {SubagentManager} from './runtime';
 import {registerSubagentTools} from './tools';
-import {decorateEditor} from './ui/editor';
 import {Fleet, type AgentView} from './ui/fleet';
 import {mainStatusline} from './ui/statusline';
 import {openViewer} from './ui/viewer';
@@ -74,12 +73,6 @@ class Subagents {
       const editor =
         this.previousEditor?.(tui, theme, keys) ??
         new CustomEditor(tui, theme, keys, {embedWorkingStatus: true});
-      decorateEditor(
-        editor,
-        () =>
-          this.fleet.views().length ? {name: 'main', task: ''} : undefined,
-        () => ctx.ui.theme,
-      );
       const handle = editor.handleInput.bind(editor);
       editor.handleInput = data => {
         const action = this.fleet.select(data, editor.getText() === '', keys);
