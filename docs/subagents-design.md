@@ -35,7 +35,7 @@ The accepted scope is F01-F33. These are design requirements, not implementation
 ## Accepted task and context rules
 
 - **Q14, identity and task history:** Retain the subagent's identity and context across assignments, with a separate execution record and result for each task. A review and its later re-review remain individually inspectable. Follow-up does not replace the earlier result or automatically rerun tasks that consumed it.
-- **Q15, recursive limits:** The entire root task tree shares a concurrency limit and a cumulative creation limit, with an additional maximum depth. Three leads that each delegate four children do not receive independent allowances at every level. Q24 defines the boundary across dispatches; numeric defaults and counting units remain to be decided.
+- **Q15, recursive limits:** The entire root task tree shares a concurrency limit and a cumulative creation limit, with an additional maximum depth. Three leads that each delegate four children do not receive independent allowances at every level. Q24 defines the boundary across dispatches; Q26 sets initial values and counting units.
 - **Q16, completion:** A task cannot be marked complete until all its descendants have ended, even if its own subagent has returned a report. A backend lead is still pending while its database child is editing. Q23 defines how the parent handles descendant failure.
 - **Q17, cancellation:** Cancelling a task cancels its entire descendant branch and prevents new descendants from starting. Retain existing records and code artifacts for inspection. Cancelling the backend lead also stops its database and API children.
 - **Q18, tool ceiling:** A descendant's available tools cannot exceed its parent's tool scope. Role definitions and per-call choices can only narrow that scope. A read-only researcher cannot give a child write tools; it must ask an ancestor with the needed tools to arrange the work.
@@ -50,7 +50,16 @@ The accepted scope is F01-F33. These are design requirements, not implementation
 - **Q24, limits across dispatches:** All dispatches within the same main session share its total concurrency limit. Each top-level dispatch and all its descendants have their own cumulative creation allowance. Dispatching five researchers and then five reviewers cannot bypass the main session's concurrency limit.
 - **Q25, restart recovery:** Restore subagent contexts and task records when reopening the parent session. Completed subagents can receive follow-up tasks. Unfinished tasks are marked interrupted and require explicit continuation by the main agent or user. Already executed write operations are not automatically replayed.
 
-These rules define required behavior for later scenario acceptance. Numeric limits, dependency release after recovery, execution deadlines, code handoff and recovery when records or artifacts are incomplete still need decisions.
+## Accepted limits, dependency scheduling and code handoff
+
+- **Q26, configurable defaults:** Start with eight concurrent subagent tasks per main session, sixty-four cumulative tasks per top-level dispatch including descendants, and a maximum delegation depth of three with the main agent at depth zero. Initial tasks, recursive assignments and follow-ups count toward the task allowance; Pi's internal provider-request retries do not create another task. All three limits are configurable.
+- **Q27, execution clock:** Count time spent in model and tool execution stages toward the task's execution limit. Exclude queueing and explicit waits for descendants or answers. Answer waiting has a separate timeout. A researcher waiting half an hour for an answer does not consume half an hour of execution time.
+- **Q28, ready-task scheduling:** A task can start as soon as its own dependencies are satisfied and an execution slot is available. It does not wait for unrelated tasks in the same batch. API implementation can start after its thirty-second investigation while a five-minute database investigation continues.
+- **Q29, dependency recovery:** Keep the original graph and its failure records after repairing a failed task. The main agent explicitly dispatches subsequent work referring to the new result. Do not automatically release the blocked tasks in the old graph when a replacement investigation succeeds.
+- **Q30, write isolation:** Give each writable subagent task in a Git repository an independent worktree by default. If worktree creation fails, report startup failure rather than writing in the original directory. Two implementation agents retain separate code artifacts when editing concurrently.
+- **Q31, combining code:** When several write tasks produce branches, explicitly assign an integration task to combine them and handle conflicts. Later tasks inherit the integration branch. A task with one upstream code branch inherits that branch directly.
+
+These rules define required behavior for later scenario acceptance. The final state of dependency-blocked tasks, workspace baselines and retention, communication, timeout values and outcomes, and recovery when records or artifacts are incomplete still need decisions.
 
 ## Upstream capability inventory
 
@@ -90,13 +99,13 @@ Source: @arhen/pi-core-subagent 1.3.54 at [de1c878](https://github.com/arhen/pi-
 
 The source groups behind this inventory are [public tools and lifecycle wiring](https://github.com/arhen/pi-extensions/blob/de1c8783c2a39b1cbb0f86b412307193de9774c1/packages/core/pi-core-subagent/src/index.ts), [task schemas](https://github.com/arhen/pi-extensions/blob/de1c8783c2a39b1cbb0f86b412307193de9774c1/packages/core/pi-core-subagent/src/schemas.ts), [graph scheduling](https://github.com/arhen/pi-extensions/blob/de1c8783c2a39b1cbb0f86b412307193de9774c1/packages/core/pi-core-subagent/src/graph.ts), [child communication](https://github.com/arhen/pi-extensions/blob/de1c8783c2a39b1cbb0f86b412307193de9774c1/packages/core/pi-core-subagent/src/child.ts), [role resolution](https://github.com/arhen/pi-extensions/blob/de1c8783c2a39b1cbb0f86b412307193de9774c1/packages/core/pi-core-subagent/src/agentfile.ts), [execution manager](https://github.com/arhen/pi-extensions/blob/de1c8783c2a39b1cbb0f86b412307193de9774c1/packages/core/pi-core-subagent/src/manager.ts), and [worktree operations](https://github.com/arhen/pi-extensions/blob/de1c8783c2a39b1cbb0f86b412307193de9774c1/packages/core/pi-core-subagent/src/worktree.ts).
 
-## Boundaries requiring decisions
+## Upstream boundaries and rewrite decisions
 
 - F10 has a known initialization-time cancellation gap: a later state update can overwrite cancellation and allow execution to continue. A dedicated pause operation is absent; cancellation followed by F11 is only a partial substitute.
 - F11 accepts failed/aborted tasks, not completed-task follow-ups. An explicit replacement model can also be overridden again by a matching role file.
 - F21 disables extensions in the child loader. Loading project rules/skills does not establish extension-tool inheritance.
-- F26 can fall back to editing the original directory when worktree creation fails. Dependencies in node_modules are shared through a symlink rather than isolated. Commits are saved for parent review; automatic merge is not a runtime feature.
-- F27 selects one completed upstream branch, not a merge of all upstream branches.
+- F26 can fall back to editing the original directory when worktree creation fails; Q30 replaces this with startup failure. Dependencies in node_modules are shared through a symlink rather than isolated. Commits are saved for parent review; automatic merge is not an upstream runtime feature.
+- F27 selects one completed upstream branch, not a merge of all upstream branches. Q31 requires an explicit integration task when several branches must be combined.
 - F28 writes the sidecar at whole-run settlement. It is not continuous crash-safe checkpointing, and restoring records does not automatically replay the workflow.
 
 The upstream gaps in completed-session follow-ups, parent-history copying, child-created subagents and extension-tool loading are addressed by accepted additions F30-F33; their detailed semantics remain open.
