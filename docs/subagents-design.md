@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-design.md) · English is normative.
 
-Status: design discussion in [#64](https://github.com/jczhang02/pi-stuff/issues/64). This document records accepted decisions and the upstream capability inventory separately. Inventory entries are candidates for the rewrite, not implemented or accepted product requirements.
+Status: design discussion in [#64](https://github.com/jczhang02/pi-stuff/issues/64). This document records accepted decisions and the upstream capability inventory separately. Capability selection identifies the required features; inventory descriptions do not establish the rewrite's detailed runtime rules or implementation status.
 
 ## Accepted decisions
 
@@ -12,6 +12,12 @@ Status: design discussion in [#64](https://github.com/jczhang02/pi-stuff/issues/
 - Every supported capability needs acceptance in a real usage scenario. Parallel, serial and other supported execution modes each need their own acceptance coverage; one primary scenario cannot stand in for the full feature set.
 
 The maintainer requested a plain feature inventory before capability selection. Domain vocabulary and detailed lifecycle rules remain unsettled. No glossary definitions or architectural trade-offs have been inferred from the inventory.
+
+## Capability selection
+
+Q3 confirmed F01-F05 as required: single-task delegation with separate context, parallel execution, serial execution, dependency-graph execution and automatic delivery of upstream results. Each execution mode and result delivery need real-scenario acceptance coverage.
+
+F06-F29 remain undecided. Retaining a capability does not accept upstream parameter names, default values or known defects. Scheduling details, failure propagation and the form of result delivery will be decided separately.
 
 ## Upstream capability inventory
 
