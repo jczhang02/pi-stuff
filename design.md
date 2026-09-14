@@ -6,7 +6,7 @@ Pi Stuff fits into Pi's interface, theme and interaction conventions, extending 
 
 ## Inspect the current environment
 
-Before producing a TUI concept image, mockup or prototype, inspect the user-selected target, or the current Pi host when none is specified. Check the terminal's font and fallbacks, font size, scaling and colors; Pi's effective theme and UI language; available columns and rows, splits, surrounding editor and statusline, and relevant keybindings.
+Before producing a TUI concept image, mockup or prototype, inspect the user-selected target, or the current Pi host when none is specified. The agent's execution shell and a newly created test PTY are not evidence of the user's target window. Discover the user's terminal application, its configuration and running Pi pane before choosing prototype launch settings; do not substitute default test dimensions or theme for that inspection. Check the terminal's font and fallbacks, font size, scaling and colors; Pi's effective theme and UI language; available columns and rows, splits, surrounding editor and statusline, and relevant keybindings.
 
 Distinguish configured values, live observations and unknowns. Startup window dimensions do not establish the current pane size, and a configured theme does not establish a running session's theme. Record the inspection time, target and sources with the artifact. Earlier measurements and screenshots are evidence of that capture, not a permanent environment profile.
 
