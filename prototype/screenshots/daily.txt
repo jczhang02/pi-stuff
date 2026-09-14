@@ -11,7 +11,7 @@
 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-RTK / Savings                                                                     Global · Daily
+RTK / Usage                                                                       Global · Daily
 
 Daily savings                                                     Global
 

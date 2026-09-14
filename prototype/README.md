@@ -22,14 +22,19 @@ bun run tui run rtk-inline-prototype --host opentui --cols 100 --rows 30 --cwd "
 Type `/rtk` and press Enter. The root list opens one section at a time. Escape
 returns from a detail page to the root, then restores the normal Pi editor.
 
+The root title is `RTK`, with `Settings`, `Usage` and `Diagnostics` entries.
+The root and Settings headers show `✓ v0.45.0`: the check mark denotes runtime
+availability. Runtime details retain the explicit `available` label.
+
 Direct entry points are `/rtk integration`, `/rtk gain` and
-`/rtk diagnostics`. `/rtk refresh` opens Savings and refreshes its data.
+`/rtk diagnostics`. `/rtk refresh` opens Usage and refreshes its data.
+The existing command arguments remain unchanged.
 
 ## Simulated states
 
 Pass one of these flags after the extension path:
 
-- `--rtk-prototype-state loading` keeps Savings in a cancellable loading state.
+- `--rtk-prototype-state loading` keeps Usage in a cancellable loading state.
 - `--rtk-prototype-state empty` shows the first-run state before any rewritten
   commands have been recorded.
 - `--rtk-prototype-state failure` shows a failed `rtk gain` read. Press `r` to
@@ -42,6 +47,7 @@ theme, focus and command dispatch.
 ## Captures
 
 - [Root control center](./screenshots/root.png)
+- [Settings and runtime status](./screenshots/settings.png)
 - [Command completions](./screenshots/command-panel.png)
 - [Savings detail](./screenshots/savings.png)
 - [Daily comparison](./screenshots/daily.png)

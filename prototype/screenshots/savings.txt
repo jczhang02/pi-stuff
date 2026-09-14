@@ -11,7 +11,7 @@
 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-RTK / Savings                                                                  Global · Overview
+RTK / Usage                                                                    Global · Overview
 
 Token savings                                           195,196 commands
 

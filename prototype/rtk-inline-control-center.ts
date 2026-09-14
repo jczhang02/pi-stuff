@@ -49,8 +49,8 @@ const MAX_DATA_COLUMNS = 72;
 const SAMPLE_RTK_PATH = '/opt/mise/installs/rtk/0.45.0/bin/rtk';
 const PAGE_ORDER: readonly Page[] = ['integration', 'savings', 'diagnostics'];
 const PAGE_LABELS: Readonly<Record<Page, string>> = {
-  integration: 'Integration',
-  savings: 'Savings',
+  integration: 'Settings',
+  savings: 'Usage',
   diagnostics: 'Diagnostics',
 };
 const GAIN_VIEWS: readonly GainView[] = [
@@ -470,7 +470,7 @@ class SavingsView implements Component {
       lines.push(
         ...wrapMuted(
           this.theme,
-          'Reading current savings. Esc cancels this refresh and returns to the control center.',
+          'Reading current savings. Esc cancels this refresh and returns to RTK.',
           width,
         ),
       );
@@ -725,7 +725,7 @@ class RtkControlCenter implements Component, Focusable {
       this.theme,
       back,
       requestRender,
-      () => this.notify('RTK integration setting saved.', 'info'),
+      () => this.notify('RTK setting saved.', 'info'),
     );
     this.savings = new SavingsView(
       this.theme,
@@ -795,9 +795,9 @@ class RtkControlCenter implements Component, Focusable {
     const showDetailHint = this.page === 'diagnostics';
     const lines = this.rootSelection
       ? [
-          this.titleLine('RTK control center', 'ready · v0.45.0', innerWidth),
+          this.titleLine('RTK', '✓ v0.45.0', innerWidth),
           '',
-          'Manage Pi Stuff integration and inspect RTK savings.',
+          'Configure RTK and inspect usage.',
           ...this.savings.rootSummary(innerWidth),
           '',
           ...this.sectionList.render(innerWidth),
@@ -864,7 +864,7 @@ class RtkControlCenter implements Component, Focusable {
   }
 
   private detailStatus() {
-    if (this.page === 'integration') return 'available · v0.45.0';
+    if (this.page === 'integration') return '✓ v0.45.0';
     if (this.page === 'savings') return this.savings.titleStatus();
     return 'checked just now';
   }
@@ -921,7 +921,7 @@ export default function rtkInlineControlCenterPrototype(pi: ExtensionAPI) {
     default: 'normal',
   });
   pi.registerCommand('rtk', {
-    description: 'Open RTK integration controls and savings',
+    description: 'Open RTK settings and usage',
     getArgumentCompletions: prefix => {
       const options = ['integration', 'gain', 'diagnostics', 'refresh', 'help'];
       return options

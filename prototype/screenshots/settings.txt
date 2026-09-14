@@ -9,22 +9,22 @@
   rtk-inline-control-center.ts
 
 
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-RTK                                                                                    ✓ v0.45.0
+RTK / Settings                                                                         ✓ v0.45.0
 
-Configure RTK and inspect usage.
-195,196 commands · 3.24B tokens saved · 92.8% reduction
+Runtime                                                        available
+  Version ....................................................... 0.45.0
+  Minimum supported ............................................. 0.23.0
+  Resolved by ..................................................... mise
 
-→ Settings          Rewrite, cleanup, executable
-  Usage             Totals, periods and history
-  Diagnostics       Resolution and configuration
+Behavior
+→ Command rewrite  enabled
+  ANSI cleanup     enabled
+  Executable       automatic
 
-↑↓ Navigate · Enter Open · Esc Close
+  Rewrite supported model-originated Bash commands through RTK.
+
+  ↑↓ Navigate · Enter Change · Esc Back
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 ~/dev/pi-stuff/.worktrees/codex/rtk-control-center-polish (codex/rtk-control-center-polish)
 $0.000 (sub) 0.0%/272k (auto)                                                   gpt-6-astra • medium
