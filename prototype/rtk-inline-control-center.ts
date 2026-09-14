@@ -1,5 +1,5 @@
 /**
- * Throwaway inline RTK control-center prototype for issue #82.
+ * Throwaway inline RTK control-center prototype refined for issue #83.
  *
  * Pi provides the host, theme, focus, lists, text input and notifications.
  * RTK discovery, statistics and persistence are intentionally simulated.
@@ -21,6 +21,7 @@ import {
   SelectList,
   SettingsList,
   truncateToWidth,
+  visibleWidth,
   wrapTextWithAnsi,
   type Component,
   type Focusable,
@@ -31,7 +32,7 @@ import {
 } from '@earendil-works/pi-tui';
 
 type Page = 'integration' | 'savings' | 'diagnostics';
-type Scenario = 'normal' | 'loading' | 'failure';
+type Scenario = 'normal' | 'loading' | 'empty' | 'failure';
 type GainScope = 'Global' | 'Project';
 type GainView =
   | 'Overview'
@@ -44,6 +45,7 @@ type LoadState = 'ready' | 'loading' | 'failure';
 
 const MIN_COLUMNS = 56;
 const MIN_ROWS = 26;
+const MAX_DATA_COLUMNS = 72;
 const SAMPLE_RTK_PATH = '/opt/mise/installs/rtk/0.45.0/bin/rtk';
 const PAGE_ORDER: readonly Page[] = ['integration', 'savings', 'diagnostics'];
 const PAGE_LABELS: Readonly<Record<Page, string>> = {
@@ -59,6 +61,25 @@ const GAIN_VIEWS: readonly GainView[] = [
   'History',
   'Failures',
 ];
+const SAVINGS_SUMMARY = {
+  commands: '195,196',
+  inputTokens: '3.49B',
+  outputTokens: '251.1M',
+  savedTokens: '3.24B',
+  reduction: '92.8%',
+  averageTime: '5.7s',
+} as const;
+
+const PERIOD_LABELS: Readonly<
+  Record<
+    Exclude<GainView, 'Overview' | 'History' | 'Failures'>,
+    readonly [string, string]
+  >
+> = {
+  Daily: ['Today', 'Yesterday'],
+  Weekly: ['This week', 'Last week'],
+  Monthly: ['This month', 'Last month'],
+};
 
 function parsePage(value: string): Page | undefined {
   const normalized = value.trim().toLowerCase();
@@ -69,7 +90,9 @@ function parsePage(value: string): Page | undefined {
 }
 
 function parseScenario(value: boolean | string | undefined): Scenario {
-  if (value === 'loading' || value === 'failure') return value;
+  if (value === 'loading' || value === 'empty' || value === 'failure') {
+    return value;
+  }
   return 'normal';
 }
 
@@ -93,6 +116,51 @@ function wrapMuted(theme: Theme, text: string, width: number): string[] {
   );
 }
 
+function alignEdges(left: string, right: string, width: number): string {
+  const gap = Math.max(2, width - visibleWidth(left) - visibleWidth(right));
+  return truncateToWidth(`${left}${' '.repeat(gap)}${right}`, width, '...');
+}
+
+function alignDataEdges(left: string, right: string, width: number): string {
+  return alignEdges(left, right, Math.min(width, MAX_DATA_COLUMNS));
+}
+
+function dottedRow(
+  theme: Theme,
+  label: string,
+  value: string,
+  width: number,
+): string {
+  const rowWidth = Math.min(width, MAX_DATA_COLUMNS);
+  const left = `  ${theme.fg('muted', label)}`;
+  const gap = Math.max(2, rowWidth - visibleWidth(left) - visibleWidth(value));
+  const leader = gap >= 5 ? ` ${'.'.repeat(gap - 2)} ` : ' '.repeat(gap);
+  return truncateToWidth(
+    `${left}${theme.fg('dim', leader)}${value}`,
+    rowWidth,
+    '...',
+  );
+}
+
+function periodRow(
+  theme: Theme,
+  period: string,
+  commands: string,
+  saved: string,
+  rate: string,
+  width: number,
+  highlighted = false,
+): string {
+  const compact = width < 64;
+  const line = `  ${period.padEnd(compact ? 15 : 22)}${commands.padStart(compact ? 8 : 10)}${saved.padStart(compact ? 10 : 12)}${rate.padStart(compact ? 7 : 9)}`;
+  const fitted = truncateToWidth(
+    line,
+    Math.min(width, MAX_DATA_COLUMNS),
+    '...',
+  );
+  return highlighted ? theme.fg('success', fitted) : fitted;
+}
+
 class ExecutableEditor implements Component {
   private mode: 'choice' | 'input' = 'choice';
   private readonly choices: SelectList;
@@ -101,7 +169,8 @@ class ExecutableEditor implements Component {
 
   constructor(
     private readonly theme: Theme,
-    currentValue: string,
+    currentMode: string,
+    currentPath: string,
     private readonly accept: (value: string) => void,
     cancel: () => void,
     private readonly requestRender: () => void,
@@ -111,18 +180,19 @@ class ExecutableEditor implements Component {
         {
           value: 'automatic',
           label: 'Automatic discovery',
-          description: 'Resolve from PATH, then mise.',
+          description: 'Check PATH, then mise.',
         },
         {
           value: 'custom',
           label: 'Custom executable',
-          description: 'Use an absolute path selected by the user.',
+          description: 'Use an absolute path.',
         },
       ],
       2,
       getSelectListTheme(),
+      {minPrimaryColumnWidth: 22, maxPrimaryColumnWidth: 22},
     );
-    this.choices.setSelectedIndex(currentValue === 'automatic' ? 0 : 1);
+    this.choices.setSelectedIndex(currentMode === 'automatic' ? 0 : 1);
     this.choices.onCancel = cancel;
     this.choices.onSelect = item => {
       if (item.value === 'automatic') {
@@ -139,9 +209,7 @@ class ExecutableEditor implements Component {
       placeholder: '/absolute/path/to/rtk',
       placeholderStyle: text => this.theme.fg('dim', text),
     });
-    this.input.setValue(
-      currentValue === 'automatic' ? SAMPLE_RTK_PATH : currentValue,
-    );
+    this.input.setValue(currentPath);
     this.input.handleInput('\x1b[F');
     this.input.onSubmit = value => this.submitPath(value);
     this.input.onEscape = () => {
@@ -175,6 +243,10 @@ class ExecutableEditor implements Component {
       lines.push('', this.theme.fg('dim', 'Enter save · Esc choices'));
     } else {
       lines.push(...this.choices.render(width));
+      lines.push(
+        '',
+        this.theme.fg('dim', '↑↓ Navigate · Enter Select · Esc Back'),
+      );
     }
     return lines.map(line => truncateToWidth(line, width, '...'));
   }
@@ -200,6 +272,8 @@ class ExecutableEditor implements Component {
 
 class IntegrationView implements Component {
   private readonly settings: SettingsList;
+  private resolvedBy = 'mise';
+  private executablePath = SAMPLE_RTK_PATH;
   editingExecutable = false;
 
   constructor(
@@ -228,7 +302,8 @@ class IntegrationView implements Component {
       {
         id: 'executable',
         label: 'Executable',
-        description: 'Automatic discovery checks PATH first, then mise.',
+        description:
+          'Automatic discovery checks PATH, then mise. Custom paths must be absolute.',
         currentValue: 'automatic',
         submenu: (currentValue, done) => {
           this.editingExecutable = true;
@@ -239,18 +314,34 @@ class IntegrationView implements Component {
           return new ExecutableEditor(
             this.theme,
             currentValue,
-            value => close(value),
+            this.executablePath,
+            value => {
+              if (value === 'automatic') {
+                close(value);
+                return;
+              }
+              this.executablePath = value;
+              close('custom');
+            },
             () => close(),
             requestRender,
           );
         },
       },
     ];
+    const settingsTheme = getSettingsListTheme();
     this.settings = new SettingsList(
       items,
       5,
-      getSettingsListTheme(),
-      (_id, _value) => {
+      {
+        ...settingsTheme,
+        hint: () =>
+          this.theme.fg('dim', '  ↑↓ Navigate · Enter Change · Esc Back'),
+      },
+      (id, value) => {
+        if (id === 'executable') {
+          this.resolvedBy = value === 'automatic' ? 'mise' : 'custom';
+        }
         notifySaved();
         requestRender();
       },
@@ -265,12 +356,21 @@ class IntegrationView implements Component {
   render(width: number) {
     if (this.editingExecutable) return this.settings.render(width);
     const lines = [
-      this.theme.bold('Runtime'),
-      `  Status       ${this.theme.fg('success', 'available')}`,
-      `  Version      0.45.0 ${this.theme.fg('muted', '(minimum 0.23.0)')}`,
-      `  Resolved by  ${this.theme.fg('accent', 'mise')}`,
+      alignDataEdges(
+        this.theme.bold('Runtime'),
+        this.theme.fg('success', 'available'),
+        width,
+      ),
+      dottedRow(this.theme, 'Version', '0.45.0', width),
+      dottedRow(this.theme, 'Minimum supported', '0.23.0', width),
+      dottedRow(
+        this.theme,
+        'Resolved by',
+        this.theme.fg('accent', this.resolvedBy),
+        width,
+      ),
       '',
-      this.theme.bold('Settings'),
+      this.theme.bold('Behavior'),
       ...this.settings.render(width),
     ];
     return lines;
@@ -296,7 +396,8 @@ class SavingsView implements Component {
     private readonly requestRender: () => void,
     private readonly notifyFailure: () => void,
   ) {
-    this.load = scenario === 'normal' ? 'ready' : scenario;
+    this.load =
+      scenario === 'normal' || scenario === 'empty' ? 'ready' : scenario;
     const items: SettingItem[] = [
       {
         id: 'scope',
@@ -311,10 +412,18 @@ class SavingsView implements Component {
         values: [...GAIN_VIEWS],
       },
     ];
+    const settingsTheme = getSettingsListTheme();
     this.settings = new SettingsList(
       items,
       3,
-      getSettingsListTheme(),
+      {
+        ...settingsTheme,
+        hint: () =>
+          this.theme.fg(
+            'dim',
+            `  ↑↓ Navigate · Enter Change · r ${this.load === 'failure' ? 'Retry' : 'Refresh'} · Esc Back`,
+          ),
+      },
       (id, value) => this.changeSetting(id, value),
       onCancel,
     );
@@ -349,31 +458,45 @@ class SavingsView implements Component {
   }
 
   render(width: number) {
-    const lines = [...this.settings.render(width), ''];
+    const lines: string[] = [];
     if (this.load === 'loading') {
-      lines.push(this.theme.fg('accent', 'Loading RTK savings...'));
       lines.push(
-        ...wrapMuted(
-          this.theme,
-          `Reading ${this.scope.toLowerCase()} ${this.view.toLowerCase()} data. Esc cancels and returns.`,
+        alignDataEdges(
+          this.theme.bold('Refreshing savings'),
+          this.theme.fg('accent', 'rtk gain'),
           width,
         ),
       );
-      return lines;
-    }
-    if (this.load === 'failure') {
+      lines.push(
+        ...wrapMuted(
+          this.theme,
+          'Reading current savings. Esc cancels this refresh and returns to the control center.',
+          width,
+        ),
+      );
+    } else if (this.load === 'failure') {
       lines.push(this.theme.fg('error', 'Savings unavailable'));
       lines.push(
         ...wrapMuted(
           this.theme,
-          'rtk gain exceeded the 5 second read timeout. Rewrite remains enabled.',
+          'rtk gain timed out after 5 seconds. Command rewrite remains enabled.',
           width,
         ),
       );
-      lines.push(this.theme.fg('dim', 'Press r to retry.'));
-      return lines;
+    } else if (this.scenario === 'empty') {
+      lines.push(this.theme.bold('No savings recorded'));
+      lines.push(
+        ...wrapMuted(
+          this.theme,
+          'No rewritten commands recorded. Run one, then refresh.',
+          width,
+        ),
+      );
+    } else {
+      lines.push(...this.gainLines(width));
     }
-    lines.push(...this.gainLines());
+
+    lines.push('', this.theme.bold('Display'), ...this.settings.render(width));
     return lines;
   }
 
@@ -387,6 +510,11 @@ class SavingsView implements Component {
     this.notifyFailure();
   }
 
+  titleStatus() {
+    if (this.load === 'loading') return `${this.scope} · refreshing`;
+    return `${this.scope} · ${this.view}`;
+  }
+
   private changeSetting(id: string, value: string) {
     if (id === 'scope' && (value === 'Global' || value === 'Project')) {
       this.scope = value;
@@ -396,47 +524,112 @@ class SavingsView implements Component {
     this.refresh();
   }
 
-  private gainLines(): string[] {
+  private gainLines(width: number): string[] {
     if (this.view === 'History') {
+      if (width < 72) {
+        return [
+          alignDataEdges(
+            this.theme.bold('Recent commands'),
+            this.theme.fg('muted', this.scope),
+            width,
+          ),
+          '',
+          dottedRow(this.theme, '17:51  bun run · fallback', '0%', width),
+          dottedRow(this.theme, '16:42  cargo test', '94%', width),
+          dottedRow(this.theme, '01:13  grep', '65%', width),
+        ];
+      }
       return [
-        this.theme.bold(`${this.scope} · Recent commands`),
+        alignDataEdges(
+          this.theme.bold('Recent commands'),
+          this.theme.fg('muted', this.scope),
+          width,
+        ),
         '',
-        '  17:51  rtk fallback: bun run      0%       0',
-        '  16:42  rtk cargo test            94%     160',
-        '  01:13  rtk grep                  65%     965',
+        this.theme.fg(
+          'muted',
+          '  Time   Command                       Input    Saved    Rate',
+        ),
+        '  17:51  bun run · fallback             18.2k        0      0%',
+        '  16:42  cargo test                       170      160     94%',
+        '  01:13  grep                            1.5k      965     65%',
       ];
     }
     if (this.view === 'Failures') {
       return [
-        this.theme.bold(`${this.scope} · Parse failures`),
+        alignDataEdges(
+          this.theme.bold('Parse failures'),
+          this.theme.fg('muted', this.scope),
+          width,
+        ),
         '',
-        '  Total failures   86,975',
-        `  Recovery rate    ${this.theme.fg('success', '99.3%')}`,
+        dottedRow(this.theme, 'Total', '86,975', width),
+        dottedRow(
+          this.theme,
+          'Recovered',
+          this.theme.fg('success', '86,366  99.3%'),
+          width,
+        ),
+        dottedRow(this.theme, 'Uncompressed fallback', '609  0.7%', width),
         '',
-        '  1,073x  bun run check:fast',
-        '    519x  bun run typecheck',
+        this.theme.bold('Most frequent'),
+        dottedRow(this.theme, 'bun run check:fast', '1,073', width),
+        dottedRow(this.theme, 'bun run typecheck', '519', width),
       ];
     }
     if (this.view !== 'Overview') {
+      const labels = PERIOD_LABELS[this.view];
       return [
-        this.theme.bold(`${this.scope} · ${this.view}`),
+        alignDataEdges(
+          this.theme.bold(`${this.view} savings`),
+          this.theme.fg('muted', this.scope),
+          width,
+        ),
         '',
-        '  Period          Commands      Saved      Rate',
-        '  ───────────────────────────────────────────',
-        `  Current         12,411        184.2M     ${this.theme.fg('success', '91.7%')}`,
-        '  Previous        11,908        176.5M     90.9%',
+        this.theme.fg(
+          'muted',
+          periodRow(this.theme, 'Period', 'Commands', 'Saved', 'Rate', width),
+        ),
+        periodRow(
+          this.theme,
+          labels[0],
+          '12,411',
+          '184.2M',
+          '91.7%',
+          width,
+          true,
+        ),
+        periodRow(this.theme, labels[1], '11,908', '176.5M', '90.9%', width),
+        this.theme.fg(
+          'dim',
+          periodRow(this.theme, 'Change', '+503', '+7.7M', '+0.8pp', width),
+        ),
       ];
     }
     return [
-      this.theme.bold(`${this.scope} savings`),
+      alignDataEdges(
+        this.theme.bold('Token savings'),
+        this.theme.fg('muted', `${SAVINGS_SUMMARY.commands} commands`),
+        width,
+      ),
       '',
-      `  Commands       ${this.theme.bold('195,196')}`,
-      '  Input tokens   3.49B',
-      '  Output tokens  251.1M',
-      `  Tokens saved   ${this.theme.fg('success', '3.24B  92.8%')}`,
-      '  Average time   5.7s',
-      '',
-      this.theme.fg('success', '  ██████████████████████░░  92.8%'),
+      dottedRow(this.theme, 'Before RTK', SAVINGS_SUMMARY.inputTokens, width),
+      dottedRow(this.theme, 'Returned', SAVINGS_SUMMARY.outputTokens, width),
+      dottedRow(
+        this.theme,
+        'Saved',
+        this.theme.fg(
+          'success',
+          `${SAVINGS_SUMMARY.savedTokens}  ${SAVINGS_SUMMARY.reduction}`,
+        ),
+        width,
+      ),
+      dottedRow(
+        this.theme,
+        'Average command',
+        SAVINGS_SUMMARY.averageTime,
+        width,
+      ),
     ];
   }
 }
@@ -446,11 +639,14 @@ class DiagnosticsView implements Component {
 
   render(width: number) {
     return [
-      this.theme.bold('Resolution'),
-      `  Status       ${this.theme.fg('success', 'available')}`,
-      '  Source       mise',
-      '  Version      0.45.0',
-      '  Last probe   just now',
+      alignDataEdges(
+        this.theme.bold('Resolution'),
+        this.theme.fg('success', 'available'),
+        width,
+      ),
+      dottedRow(this.theme, 'Source', this.theme.fg('accent', 'mise'), width),
+      dottedRow(this.theme, 'Version', '0.45.0', width),
+      dottedRow(this.theme, 'Last probe', 'just now', width),
       '',
       this.theme.bold('Executable'),
       ...wrapMuted(this.theme, `  ${SAMPLE_RTK_PATH}`, width),
@@ -460,9 +656,9 @@ class DiagnosticsView implements Component {
       '',
       this.theme.bold('Native RTK config · read only'),
       this.theme.fg('muted', '  $XDG_CONFIG_HOME/rtk/config.toml'),
-      '  tracking.enabled = true',
-      '  display.verbosity = "normal"',
-      '  telemetry.enabled = false',
+      dottedRow(this.theme, 'tracking.enabled', 'true', width),
+      dottedRow(this.theme, 'display.verbosity', '"normal"', width),
+      dottedRow(this.theme, 'telemetry.enabled', 'false', width),
     ];
   }
 
@@ -511,7 +707,7 @@ class RtkControlCenter implements Component, Focusable {
       requestRender,
       () =>
         this.notify(
-          'RTK savings unavailable: rtk gain exceeded the 5 second read timeout. Press r to retry.',
+          'RTK savings unavailable: rtk gain timed out after 5 seconds. Press r to retry.',
           'error',
         ),
     );
@@ -522,7 +718,10 @@ class RtkControlCenter implements Component, Focusable {
       label: PAGE_LABELS[page],
       description: this.sectionDescription(page),
     }));
-    this.sectionList = new SelectList(sections, 3, getSelectListTheme());
+    this.sectionList = new SelectList(sections, 3, getSelectListTheme(), {
+      minPrimaryColumnWidth: 18,
+      maxPrimaryColumnWidth: 18,
+    });
     this.sectionList.onSelect = item => {
       const selectedPage = parsePage(item.value);
       if (selectedPage === undefined) return;
@@ -566,38 +765,30 @@ class RtkControlCenter implements Component, Focusable {
   render(width: number) {
     if (this.isTooSmall()) return this.renderTooSmall(width);
     const innerWidth = Math.max(20, width - 4);
-    const showDetailHint = !(
-      this.page === 'integration' && this.integration.editingExecutable
-    );
+    const showDetailHint = this.page === 'diagnostics';
     const lines = this.rootSelection
       ? [
-          this.titleLine('RTK control center', 'available · 0.45.0'),
+          this.titleLine('RTK control center', 'ready · v0.45.0', innerWidth),
           '',
           'Manage Pi Stuff integration and inspect RTK savings.',
+          ...wrapTextWithAnsi(
+            `${this.theme.fg('muted', `${SAVINGS_SUMMARY.commands} commands · `)}${this.theme.fg('success', `${SAVINGS_SUMMARY.savedTokens} tokens saved · ${SAVINGS_SUMMARY.reduction} reduction`)}`,
+            innerWidth,
+          ),
           '',
           ...this.sectionList.render(innerWidth),
           '',
-          this.theme.fg('dim', '↑↓ select · Enter open · Esc close'),
+          this.theme.fg('dim', '↑↓ Navigate · Enter Open · Esc Close'),
         ]
       : [
-          this.theme.bold(
-            `${this.theme.fg('muted', 'RTK /')} ${PAGE_LABELS[this.page]}`,
+          this.titleLine(
+            `RTK / ${PAGE_LABELS[this.page]}`,
+            this.detailStatus(),
+            innerWidth,
           ),
           '',
           ...this.renderPage(innerWidth),
-          ...(showDetailHint
-            ? [
-                '',
-                this.theme.fg(
-                  'dim',
-                  this.page === 'savings'
-                    ? '↑↓ select · Enter change · r refresh · Esc back'
-                    : this.page === 'integration'
-                      ? '↑↓ select · Enter change · Esc back'
-                      : 'Esc back',
-                ),
-              ]
-            : []),
+          ...(showDetailHint ? ['', this.theme.fg('dim', 'Esc Back')] : []),
         ];
     const border = this.border.render(width)[0] ?? '';
     return [border, ...lines, border];
@@ -639,11 +830,19 @@ class RtkControlCenter implements Component, Focusable {
     ];
   }
 
-  private titleLine(title: string, status: string) {
-    return `${this.theme.bold(this.theme.fg('accent', title))}  ${this.theme.fg(
-      'success',
-      status,
-    )}`;
+  private titleLine(title: string, status: string, width: number) {
+    const left = this.theme.bold(this.theme.fg('accent', title));
+    const right = this.theme.fg('muted', status);
+    if (width < MAX_DATA_COLUMNS) {
+      return `${left}  ${right}`;
+    }
+    return alignEdges(left, right, width);
+  }
+
+  private detailStatus() {
+    if (this.page === 'integration') return 'available · v0.45.0';
+    if (this.page === 'savings') return this.savings.titleStatus();
+    return 'checked just now';
   }
 
   private back() {
@@ -660,11 +859,11 @@ class RtkControlCenter implements Component, Focusable {
   }
 
   private sectionDescription(page: Page) {
-    if (page === 'integration') return 'Settings, executable and runtime state';
+    if (page === 'integration') return 'Rewrite, cleanup, executable';
     if (page === 'savings') {
-      return 'Gain overview, periods, history and failures';
+      return 'Totals, periods and history';
     }
-    return 'Resolution, failures and native RTK config';
+    return 'Resolution and configuration';
   }
 }
 
@@ -693,7 +892,7 @@ async function openControlCenter(
 
 export default function rtkInlineControlCenterPrototype(pi: ExtensionAPI) {
   pi.registerFlag('rtk-prototype-state', {
-    description: 'Prototype state: normal, loading or failure',
+    description: 'Prototype state: normal, loading, empty or failure',
     type: 'string',
     default: 'normal',
   });

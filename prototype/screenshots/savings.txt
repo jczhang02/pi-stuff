@@ -1,3 +1,6 @@
+
+ pi v0.85.1
+ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
  Press ctrl+o to show full startup help and loaded resources.
 
  Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
@@ -6,25 +9,22 @@
   rtk-inline-control-center.ts
 
 
-────────────────────────────────────────────────────────────────────────────────────────────────────
-RTK / Savings
 
+────────────────────────────────────────────────────────────────────────────────────────────────────
+RTK / Savings                                                                  Global · Overview
+
+Token savings                                           195,196 commands
+
+  Before RTK ..................................................... 3.49B
+  Returned ...................................................... 251.1M
+  Saved ................................................... 3.24B  92.8%
+  Average command ................................................. 5.7s
+
+Display
 → Scope  Global
   View   Overview
 
-  Enter/Space to change · Esc to cancel
-
-Global savings
-
-  Commands       195,196
-  Input tokens   3.49B
-  Output tokens  251.1M
-  Tokens saved   3.24B  92.8%
-  Average time   5.7s
-
-  ██████████████████████░░  92.8%
-
-↑↓ select · Enter change · r refresh · Esc back
+  ↑↓ Navigate · Enter Change · r Refresh · Esc Back
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-~/dev/pi-stuff/.worktrees/codex/rtk-inline-control-center-prototype (codex/rtk-inline-control-cen...
+~/dev/pi-stuff/.worktrees/codex/rtk-control-center-polish (codex/rtk-control-center-polish)
 $0.000 (sub) 0.0%/272k (auto)                                                   gpt-6-astra • medium

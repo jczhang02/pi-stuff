@@ -1,9 +1,15 @@
 # Inline RTK control-center prototype
 
-This throwaway prototype evaluates the selected C structure from issue #82. It
-runs as a real Pi extension and replaces the editor area through
+This throwaway prototype refines the selected C structure from issue #82 under
+issue #83. It runs as a real Pi extension and replaces the editor area through
 `ctx.ui.custom`. It does not use an overlay, add a status bar or modify Pi Stuff
 production code.
+
+The visual pass takes limited cues from
+[pi-context-view](https://pi.dev/packages/pi-context-view): compact title and
+status lines, aligned numeric data, restrained semantic color and one help row.
+No source code or assets were copied, and the context-map metaphor was not
+carried into the RTK information architecture.
 
 ## Shared foreground run
 
@@ -24,6 +30,8 @@ Direct entry points are `/rtk integration`, `/rtk gain` and
 Pass one of these flags after the extension path:
 
 - `--rtk-prototype-state loading` keeps Savings in a cancellable loading state.
+- `--rtk-prototype-state empty` shows the first-run state before any rewritten
+  commands have been recorded.
 - `--rtk-prototype-state failure` shows a failed `rtk gain` read. Press `r` to
   retry and observe loading before it fails again.
 
@@ -36,6 +44,8 @@ theme, focus and command dispatch.
 - [Root control center](./screenshots/root.png)
 - [Command completions](./screenshots/command-panel.png)
 - [Savings detail](./screenshots/savings.png)
+- [Daily comparison](./screenshots/daily.png)
+- [Empty savings](./screenshots/empty.png)
 - [Savings failure](./screenshots/failure.png)
 
 Each PNG is rendered from the matching Terminal Control SVG capture. The plain

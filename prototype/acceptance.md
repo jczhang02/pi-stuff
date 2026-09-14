@@ -2,13 +2,15 @@
 
 ## Outcome
 
-The C structure is viable in Pi. `/rtk` replaces the editor area with one root
-list, then opens exactly one detail page. It needs no modal overlay, persistent
-side navigation or extension-owned status bar.
+The refined C structure is viable in Pi. `/rtk` replaces the editor area with
+one root list, then opens exactly one detail page. It needs no modal overlay,
+persistent side navigation or extension-owned status bar.
 
 The structure keeps the first decision small: choose Integration, Savings or
-Diagnostics. Settings and denser statistics appear only after that choice. The
-native Pi footer remains visible because it belongs to the host, not RTK.
+Diagnostics. Settings and denser statistics appear only after that choice. A
+compact title/status line, aligned values and one local help row reduce visual
+noise without changing the interaction model. The native Pi footer remains
+visible because it belongs to the host, not RTK.
 
 ## Environment
 
@@ -33,8 +35,9 @@ captures because the native PNG exporter omitted glyphs in this environment.
    notification into the chat area.
 4. Open Executable, choose Custom, enter `relative/rtk`: the input remains open
    and shows the absolute-path validation error.
-5. Replace it with `/opt/rtk/bin/rtk`: the submenu closes and the value is shown
-   in Integration.
+5. Replace it with `/opt/rtk/bin/rtk`: the submenu closes, Integration reports
+   `Resolved by custom`, and the setting shows `custom` instead of allowing a
+   long absolute path to consume the row.
 6. Press Escape: return to the root. Press Escape again: restore the Pi editor.
    Typing `focus-test` confirms editor focus is restored.
 7. Run `/rtk gain`: Savings opens with the overview metrics.
@@ -53,12 +56,17 @@ captures because the native PNG exporter omitted glyphs in this environment.
     Escape still closes it.
 13. Type `/rtk ` and press Tab: Pi's native completion list presents
     `integration`, `gain`, `diagnostics`, `refresh` and `help`.
-14. At 56 by 26, Integration and the Executable input remain fully operable. At
-    56 by 16, the component shows the minimum-size notice instead of clipping
-    controls.
+14. At 56 by 26, the root, Integration, Executable input, Savings overview and
+    compact period table remain fully operable. At 56 by 16, the component
+    shows the minimum-size notice instead of clipping controls.
 15. With temporary bindings `j`, `k`, `l` and `h` for select down, up, confirm
     and cancel, the root, Integration settings and Executable mode selector all
     follow the remapped keys.
+16. Cycle Savings through Overview, Daily, Weekly, Monthly, History and
+    Failures: each view keeps the same title/status grammar, aligned numeric
+    edge and display controls.
+17. Launch with `--rtk-prototype-state empty`: Savings explains the first-run
+    state and keeps refresh available.
 
 ## Design findings
 
@@ -76,6 +84,21 @@ captures because the native PNG exporter omitted glyphs in this environment.
 - Keep Diagnostics read-only and give it only an Escape hint. Editable native
   RTK configuration would blur ownership between Pi Stuff and RTK.
 - Retain Pi's footer. The RTK surface adds no bottom status content.
+- Borrow only the presentation principles that fit from
+  [pi-context-view](https://pi.dev/packages/pi-context-view): compact
+  title/status rows, dot leaders for label-value scanning, aligned numeric
+  columns, restrained semantic color and a single help row. The context-map
+  block visualization does not fit RTK settings or gain data and is not used.
+- Keep full custom paths inside the editor. The settings row reports the mode as
+  `custom`, avoiding a truncated path that cannot be distinguished from another
+  executable.
+
+## Reference provenance
+
+The visual reference was the public `pi-context-view` package page and its
+published screenshots. This refinement copied no source code, package assets or
+screen layout. It translated only the presentation principles listed above
+into Pi's existing `SelectList`, `SettingsList`, `Input` and theme components.
 
 ## Simulation boundary
 

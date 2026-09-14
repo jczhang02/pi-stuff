@@ -9,22 +9,22 @@
   rtk-inline-control-center.ts
 
 
- Error: RTK savings unavailable: rtk gain exceeded the 5 second read timeout. Press r to retry.
+ Error: RTK savings unavailable: rtk gain timed out after 5 seconds. Press r to retry.
+
+
 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-RTK / Savings
+RTK / Savings                                                                  Global · Overview
 
+Savings unavailable
+rtk gain timed out after 5 seconds. Command rewrite remains enabled.
+
+Display
 → Scope  Global
   View   Overview
 
-  Enter/Space to change · Esc to cancel
-
-Savings unavailable
-rtk gain exceeded the 5 second read timeout. Rewrite remains enabled.
-Press r to retry.
-
-↑↓ select · Enter change · r refresh · Esc back
+  ↑↓ Navigate · Enter Change · r Retry · Esc Back
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-~/dev/pi-stuff/.worktrees/codex/rtk-inline-control-center-prototype (codex/rtk-inline-control-cen...
+~/dev/pi-stuff/.worktrees/codex/rtk-control-center-polish (codex/rtk-control-center-polish)
 $0.000 (sub) 0.0%/272k (auto)                                                   gpt-6-astra • medium

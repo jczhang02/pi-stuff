@@ -15,16 +15,16 @@
 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-RTK control center                                                               ready · v0.45.0
+RTK / Savings                                                                  Global · Overview
 
-Manage Pi Stuff integration and inspect RTK savings.
-195,196 commands · 3.24B tokens saved · 92.8% reduction
+No savings recorded
+No rewritten commands recorded. Run one, then refresh.
 
-→ Integration       Rewrite, cleanup, executable
-  Savings           Totals, periods and history
-  Diagnostics       Resolution and configuration
+Display
+→ Scope  Global
+  View   Overview
 
-↑↓ Navigate · Enter Open · Esc Close
+  ↑↓ Navigate · Enter Change · r Refresh · Esc Back
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 ~/dev/pi-stuff/.worktrees/codex/rtk-control-center-polish (codex/rtk-control-center-polish)
 $0.000 (sub) 0.0%/272k (auto)                                                   gpt-6-astra • medium
