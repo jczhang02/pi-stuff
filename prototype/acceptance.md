@@ -19,8 +19,6 @@ visible because it belongs to the host, not RTK.
 - `@kitlangton/terminal-control` 1.2.1.
 - Pi `ctx.ui.custom` without `overlay: true`.
 - Pi `SelectList`, `SettingsList`, `Input`, `DynamicBorder` and light theme.
-- Capture font stack `JetBrainsMono Nerd Font Mono`, `Symbols Nerd Font Mono`
-  and `LXGW WenKai Mono`, matching the maintainer's Ghostty configuration.
 
 Terminal Control used a 100 by 30 terminal for the normal states, a 56 by 26
 terminal for the minimum supported state and a 50 by 14 terminal for the
@@ -28,8 +26,6 @@ constrained state. The headless terminal palette was initialized to the
 verified Ghostty foreground `#4c4f69` and background `#eff1f5`. The checked-in
 SVG and text files are direct captures. PNG files are rasterized from those SVG
 captures because the native PNG exporter omitted glyphs in this environment.
-Every SVG explicitly records the capture font stack instead of using Terminal
-Control's default list.
 
 ## Verified interaction trace
 

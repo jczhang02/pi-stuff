@@ -16,16 +16,6 @@ Identify the artifact as a prototype in its files and delivery documentation. Ex
 
 Inspect the actual terminal and exercise the interactions being evaluated before delivery. The user must be able to judge the screen and operate it without mentally removing demo elements or imagining missing UI behavior. Record remaining fidelity gaps outside the interface and do not claim exact parity without verification.
 
-## Screenshot evidence
-
-Terminal Control image exports that represent the maintainer's Ghostty setup must use this font stack explicitly:
-
-```sh
---font-family "JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono"
-```
-
-Do not rely on the exporter's default font list. A missing family can silently select another installed font and make the capture differ from the terminal under review. Record the font stack and palette with the evidence when either affects the judgment. This option controls the exported SVG or PNG; the live TUI still uses the font configured by its terminal.
-
 ## Prohibited overlay structures
 
 Pi Stuff must not use either of these multi-section control overlays: a modal with horizontal section tabs across the top, or a modal with persistent side navigation. This rule applies across the repository even when Pi can technically render the structure.

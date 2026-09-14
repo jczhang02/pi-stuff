@@ -26,5 +26,5 @@
   diagnostics
   refresh
   help
-~/dev/pi-stuff/.worktrees/codex/rtk-control-center-polish (codex/rtk-control-center-polish)
+~/dev/pi-stuff/.worktrees/codex/rtk-inline-control-center-prototype (codex/rtk-inline-control-cen...
 $0.000 (sub) 0.0%/272k (auto)                                                   gpt-6-astra • medium
