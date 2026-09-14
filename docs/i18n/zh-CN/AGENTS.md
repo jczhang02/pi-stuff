@@ -37,7 +37,7 @@
 - 源码、测试、依赖或检查的修改与审查：[工程规则](agents/engineering.md)。代码探索或设计提案：[领域规则](agents/domain.md)、已有 `CONTEXT.md` 和相关 `docs/adr/` 记录。明确提出 ADR 冲突，不为缺失文件创建占位。
 - 提出或修改源码布局, 入口或导入边界前, 阅读[源码布局规则](agents/engineering.md#源码布局).
 - 引入或实质重构抽象：选择设计前阅读[抽象消融比较](agents/workflow.md#抽象消融比较)。
-- TUI 概念图、界面草图、原型和界面变更: 产出前阅读[设计规则](design.md).用户要求的 TUI 原型：[prototype-tui 技能](../../../.agents/skills/prototype-tui/SKILL.md)。
+- TUI 概念图、界面草图、原型和界面变更: 产出前阅读[设计规则](design.md). 用户要求的 TUI 原型：[prototype-tui 技能](../../../.agents/skills/prototype-tui/SKILL.md)。
 - 终端 E2E 或交互式 TUI 自动化：[tuistory 技能](../../../.agents/skills/tuistory/SKILL.md)及[终端 E2E](quality-assurance.md#终端-e2e)。测试组织、环境选择或验证/CI 政策：[质量保证](quality-assurance.md)。
 - CI/Actions/规则集/合并门禁的变更或审查、GitHub 文本、仓库文档或 PR 准备：[贡献指南](CONTRIBUTING.md)中的模板、语言、CI 安全和远端设置要求。开启、更新、审查或交接 PR 还需 [PR 证据](agents/pr-evidence.md)及适用证据。
 
