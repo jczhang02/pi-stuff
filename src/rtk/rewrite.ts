@@ -189,8 +189,14 @@ function scan(command: string): ScanResult {
         index++;
         while (index < command.length && command[index] !== '"') {
           if (command[index] === '\\') {
-            value.push(command[index + 1] ?? '');
-            index += 2;
+            const escaped = command[index + 1];
+            if (escaped !== undefined && '$`"\\\n'.includes(escaped)) {
+              if (escaped !== '\n') value.push(escaped);
+              index += 2;
+            } else {
+              value.push('\\');
+              index++;
+            }
             continue;
           }
           if (command[index] === '$' || command[index] === '`') safe = false;
@@ -206,7 +212,7 @@ function scan(command: string): ScanResult {
       }
       if (current === '\\') {
         plain = false;
-        value.push(command[index + 1] ?? '');
+        if (command[index + 1] !== '\n') value.push(command[index + 1] ?? '');
         index += 2;
         if (index > command.length) safe = false;
         continue;

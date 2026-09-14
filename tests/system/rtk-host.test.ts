@@ -368,3 +368,47 @@ esac
   },
   30000,
 );
+
+test('Pi preserves literal backslashes in a double-quoted executable name', async () => {
+  const host = await launchPi();
+  try {
+    const executable = join(host.directory, 'rtk-selected');
+    const literalExecutable = join(host.directory, 'r\\tk');
+    const unquotedExecutable = literalExecutable.replaceAll('\\', '\\\\');
+    const rewriteFile = join(host.directory, 'rewritten-command');
+    await writeFile(literalExecutable, '#!/bin/sh\nprintf LITERAL\n', {
+      mode: 0o700,
+    });
+    await writeFile(
+      rewriteFile,
+      `rtk fixture && "${literalExecutable}" fixture`,
+    );
+    await writeFile(
+      executable,
+      `#!/bin/sh
+case "$1" in
+  --version) printf 'rtk 0.45.0';;
+  rewrite) cat '${rewriteFile}';;
+  fixture) printf COMPACT;;
+  *) exit 2;;
+esac
+`,
+      {mode: 0o700},
+    );
+    await writeFile(
+      join(host.agent, 'pi-stuff.json'),
+      JSON.stringify({rtk: {executable}}),
+    );
+    await host.reload();
+    expect(
+      await host.invoke(
+        'bash',
+        JSON.stringify({
+          command: `printf FIRST && ${unquotedExecutable} fixture`,
+        }),
+      ),
+    ).toBe('COMPACTLITERAL');
+  } finally {
+    await host.close();
+  }
+}, 30000);
