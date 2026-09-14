@@ -26,3 +26,6 @@ A subagent task that ended without starting because a dependency failed.
 
 **Cancelling task**:
 A subagent task whose cancellation has been requested but whose execution has not yet been confirmed stopped.
+
+**Completed subagent task**:
+A task whose subagent has reported the assignment fulfilled and whose descendants have all ended. Completion does not itself establish acceptance by the main agent.

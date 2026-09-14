@@ -11,7 +11,7 @@ Status: design discussion in [#64](https://github.com/jczhang02/pi-stuff/issues/
 - Decide capabilities individually. Tool names, parameters and configuration may be redesigned; upstream compatibility is not a requirement imposed on this design.
 - Every supported capability needs acceptance in a real usage scenario. Parallel, serial and other supported execution modes each need their own acceptance coverage; one primary scenario cannot stand in for the full feature set.
 
-The maintainer requested a plain feature inventory before capability selection. Q14 established the distinction between a subagent and a subagent task; Q32-Q33 clarified skipped tasks and task baselines; Q47 distinguished cancellation in progress from a task that has stopped. These terms are recorded in [the glossary](../CONTEXT.md). The rules below record explicit answers; the inventory alone does not settle runtime semantics.
+The maintainer requested a plain feature inventory before capability selection. Q14 established the distinction between a subagent and a subagent task; Q32-Q33 clarified skipped tasks and task baselines; Q47 distinguished cancellation in progress from a task that has stopped; Q60 distinguished reported completion from acceptance by the main agent. These terms are recorded in [the glossary](../CONTEXT.md). The rules below record explicit answers; the inventory alone does not settle runtime semantics.
 
 ## Capability selection
 
@@ -91,7 +91,16 @@ The accepted scope is F01-F33. These are design requirements, not implementation
 - **Q53, missing workspace recovery:** If a worktree is missing but its saved original commit remains available, recreate the worktree; task execution still requires explicit continuation. If the original commit or necessary context is missing, report that execution cannot be restored and retain other inspectable records. Starting from a different baseline requires explicit selection.
 - **Q54, event listener failures:** Record a lifecycle listener's failure as an extension error while task results and scheduling proceed normally. An extension that fails while logging a task-completion event must not turn that completed task into a failure.
 
-These rules define required behavior for later scenario acceptance. Remaining discussion concerns final report handoff, queued work after an abnormal outcome and session lifetime, followed by the complete feature-by-feature acceptance specification. UI and implementation design remain subsequent stages.
+## Accepted final delivery, session lifetime and authority
+
+- **Q55, final parent report:** If a parent reports before its descendants finish, wait for them and release its execution slot. Once all descendants have ended, resume the parent within the same task to check and consolidate their results before delivering its final report. A database finding that arrives after the backend lead's early report must be considered in the final delivery.
+- **Q56, queued tasks after abnormal outcomes:** After a task fails, is cancelled or times out, do not automatically start the same subagent's remaining queued tasks that were not cancelled with its branch. The caller explicitly continues or cancels them. Unrelated work by other subagents proceeds. A failed login fix therefore does not silently advance to the queued payment fix.
+- **Q57, main-session lifetime:** Before normally switching away from or exiting the current Pi main session, stop its child tasks and save records. Mark unfinished work interrupted for later explicit restoration. Merely ending a main-agent response turn does not exit the session; child tasks may continue in the background.
+- **Q58, management authority:** The main agent manages the whole task tree. A subagent may manage only its own descendant branch. Peers can communicate within the agreed message scope, but cancelling, steering or assigning follow-up to a peer requires an ancestor with management authority. A database agent may alert the API agent to a problem but cannot unilaterally cancel its task.
+- **Q59, default read-only tools:** A default read-only role exposes reading, search and extension tools confirmed to provide read-only capabilities. It does not expose arbitrary shell execution or write-capable extensions. When command execution is needed, such as running tests, an authorized ancestor explicitly arranges the appropriate tool configuration and isolated workspace.
+- **Q60, assignment outcome:** Distinguish a fulfilled assignment from an inability to complete it. Only completed tasks release dependent work. Retain test and review evidence separately; reported completion still requires acceptance by the main agent. Reproducing a failing test can fulfill an investigation assignment, while leaving the required fix unresolved cannot fulfill a repair assignment.
+
+Q3-Q60 record the accepted non-UI scope and behavior. The [acceptance scenarios](subagents-acceptance.md) translate F01-F33 and these rules into observable checks for maintainer confirmation. No product scenario has been executed yet. UI design, implementation interfaces, source structure and isolation mechanisms remain subsequent work; UI exploration may reveal behavior that needs revisiting.
 
 ## Upstream capability inventory
 
@@ -140,6 +149,6 @@ The source groups behind this inventory are [public tools and lifecycle wiring](
 - F27 selects one completed upstream branch, not a merge of all upstream branches. Q31 requires an explicit integration task when several branches must be combined.
 - F28 writes the sidecar at whole-run settlement. It is not continuous crash-safe checkpointing, and restoring records does not automatically replay the workflow.
 
-The upstream gaps in completed-session follow-ups, parent-history copying, child-created subagents and extension-tool loading are addressed by accepted additions F30-F33; their detailed semantics remain open.
+The upstream gaps in completed-session follow-ups, parent-history copying, child-created subagents and extension-tool loading are addressed by accepted additions F30-F33 and the rules above. Their implementation and scenario acceptance remain pending.
 
 Other capabilities absent from upstream include runtime graph mutation, saved workflow templates, conditional loops, automatic acceptance gates, human approval nodes, model-output schemas, hard usage budgets, cross-run role memory, external-agent backends and periodic scheduling. These have not been accepted into the rewrite scope.
