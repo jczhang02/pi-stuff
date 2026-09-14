@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {Effect, Schema} from 'effect';
 import {ConfigurationError, readConfiguration} from './src/pi/configuration';
 import {registerWeb} from './src/web/register';
+import {registerRtk} from './src/rtk/register';
 
 export default async function (pi: ExtensionAPI) {
   const configuration = await Effect.runPromise(
@@ -22,4 +23,5 @@ export default async function (pi: ExtensionAPI) {
     ),
   );
   registerWeb(pi, configuration.web ?? {}, configuration.tools);
+  registerRtk(pi);
 }
