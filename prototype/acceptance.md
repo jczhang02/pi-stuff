@@ -6,7 +6,7 @@ The refined C structure is viable in Pi. `/rtk` replaces the editor area with
 one root list, then opens exactly one detail page. It needs no modal overlay,
 persistent side navigation or extension-owned status bar.
 
-The structure keeps the first decision small: choose Integration, Savings or
+The structure keeps the first decision small: choose Settings, Usage or
 Diagnostics. Settings and denser statistics appear only after that choice. A
 compact title/status line, aligned values and one local help row reduce visual
 noise without changing the interaction model. The native Pi footer remains
@@ -29,18 +29,18 @@ captures because the native PNG exporter omitted glyphs in this environment.
 
 ## Verified interaction trace
 
-1. Type `/rtk`: root list opens with Integration selected.
-2. Press Enter: Integration opens with runtime state and three settings.
+1. Type `/rtk`: the `RTK` root opens with Settings selected and `✓ v0.45.0`.
+2. Press Enter: `RTK / Settings` opens with runtime state and three settings.
 3. Toggle command rewrite: the value changes and Pi writes a success
    notification into the chat area.
 4. Open Executable, choose Custom, enter `relative/rtk`: the input remains open
    and shows the absolute-path validation error.
-5. Replace it with `/opt/rtk/bin/rtk`: the submenu closes, Integration reports
+5. Replace it with `/opt/rtk/bin/rtk`: the submenu closes, Settings reports
    `Resolved by custom`, and the setting shows `custom` instead of allowing a
    long absolute path to consume the row.
 6. Press Escape: return to the root. Press Escape again: restore the Pi editor.
    Typing `focus-test` confirms editor focus is restored.
-7. Run `/rtk gain`: Savings opens with the overview metrics.
+7. Run `/rtk gain`: `RTK / Usage` opens with the overview metrics.
 8. Press `r`: a loading state appears, then returns to ready in the normal
    scenario.
 9. Launch with `--rtk-prototype-state failure`, run `/rtk gain`, then press `r`:
@@ -49,37 +49,37 @@ captures because the native PNG exporter omitted glyphs in this environment.
    closed.
 10. Launch with `--rtk-prototype-state loading`, run `/rtk gain`, then press
     Escape: the pending operation is cancelled and the root is restored.
-    Reopening Savings shows ready data instead of a stale loading state.
+    Reopening Usage shows ready data instead of a stale loading state.
 11. Run `/rtk diagnostics`: resolution, executable, last failure and read-only
     native RTK configuration are shown.
 12. Resize to 50 by 14: the component collapses to a clear minimum-size notice.
     Escape still closes it.
 13. Type `/rtk ` and press Tab: Pi's native completion list presents
     `integration`, `gain`, `diagnostics`, `refresh` and `help`.
-14. At 56 by 26, the root, Integration, Executable input, Savings overview and
+14. At 56 by 26, the root, Settings, Executable input, Usage overview and
     compact period table remain fully operable. At 56 by 16, the component
     shows the minimum-size notice instead of clipping controls.
 15. With temporary bindings `j`, `k`, `l` and `h` for select down, up, confirm
-    and cancel, the root, Integration settings and Executable mode selector all
+    and cancel, the root, Settings and Executable mode selector all
     follow the remapped keys.
-16. Cycle Savings through Overview, Daily, Weekly, Monthly, History and
+16. Cycle Usage through Overview, Daily, Weekly, Monthly, History and
     Failures: each view keeps the same title/status grammar, aligned numeric
     edge and display controls.
 17. Launch with `--rtk-prototype-state empty`: the root reports that no commands
-    have been recorded, Savings explains the same first-run state and refresh
+    have been recorded, Usage explains the same first-run state and refresh
     remains available after returning to the root.
 
 ## Design findings
 
 - Keep the root as a `SelectList`. It communicates hierarchy without inventing
   a new navigation grammar.
-- Keep Integration as a `SettingsList`. The list already supplies selection,
+- Keep Settings as a `SettingsList`. The list already supplies selection,
   descriptions, cycling values and submenu behavior consistent with Pi.
 - Use a second `SelectList` for the Executable mode and a dedicated `Input` only
   for the custom path. Selection inherits Pi keybindings, while inline
   validation keeps an invalid absolute path editable and prevents a false
   save.
-- Keep Savings failure in the page body so retry remains discoverable, and also
+- Keep Usage failure in the page body so retry remains discoverable, and also
   write it through Pi's error notification so the outcome survives closing the
   control center.
 - Keep Diagnostics read-only and give it only an Escape hint. Editable native
