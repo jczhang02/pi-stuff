@@ -6,7 +6,11 @@ Pi Stuff fits into Pi's interface, theme and interaction conventions, extending 
 
 ## Inspect the current environment
 
-Before producing a TUI concept image, mockup or prototype, inspect the user-selected target, or the current Pi host when none is specified. The agent's execution shell and a newly created test PTY are not evidence of the user's target window. Discover the user's terminal application, its configuration and running Pi pane before choosing prototype launch settings; do not substitute default test dimensions or theme for that inspection. Check the terminal's font and fallbacks, font size, scaling and colors; Pi's effective theme and UI language; available columns and rows, splits, surrounding editor and statusline, and relevant keybindings.
+Before creating or launching a prototype terminal, or producing a TUI concept image or mockup, complete this preflight and record its evidence with the artifact:
+
+1. Identify the user's target terminal application and running Pi instance. For a multiplexed terminal, identify its pane and attached client. The agent's execution shell and a newly created test PTY are not this target.
+2. Read the target's configuration from its actual config directory and inspect live state. Record font and fallbacks, font size, scaling and colors; Pi theme and UI language; pane columns and rows, splits, surrounding editor and statusline, and relevant keybindings. On Ghostty/tmux, inspect Ghostty's config and effective settings plus tmux pane/client dimensions; find Pi's config directory from its running environment rather than assuming its default path.
+3. Record each source, timestamp, configured value, live observation and unresolved gap before choosing launch or rendering settings. Do not launch a default-size/default-theme test as a substitute for this preflight. If a required value cannot be observed, record the failed probe and the resulting fidelity limit; never mark it verified.
 
 Distinguish configured values, live observations and unknowns. Startup window dimensions do not establish the current pane size, and a configured theme does not establish a running session's theme. Record the inspection time, target and sources with the artifact. Earlier measurements and screenshots are evidence of that capture, not a permanent environment profile.
 
