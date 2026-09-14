@@ -2,7 +2,7 @@
 
 A runnable state-model probe for questions about **business logic, state transitions, or data shape**. When it includes a product UI, apply [TUI prototype fidelity](../../../design.md#tui-prototype-fidelity); keep scenario drivers and diagnostic inspection outside that interface.
 
-Because it runs with one command using the existing project setup, or by joining its shared Tuistory session, you can hand it to a non-developer (a designer, a PM, a domain expert) and let them feel the model for themselves. So it speaks their language, not the code's.
+Because it runs with one command using the existing project setup, or in a shared Terminal Control session, you can hand it to a non-developer (a designer, a PM, a domain expert) and let them feel the model for themselves. So it speaks their language, not the code's.
 
 ## When this is the right shape
 
@@ -34,7 +34,7 @@ Pick whichever shape best fits the question being asked, _not_ whichever is easi
 
 ### 3. Exercise the model
 
-One runnable entrypoint using the project's existing runtime and TUI setup, with the question-specific logic kept portable. Follow its design document for components, theme and input conventions. Anyone should be able to run it with the supplied command or join the shared Tuistory session.
+One runnable entrypoint using the project's existing runtime and TUI setup, with the question-specific logic kept portable. Follow its design document for components, theme and input conventions. Anyone should be able to run it with the supplied command or use the shared Terminal Control session.
 
 Drive actions through the intended product controls where they exist. Show their results through the product's normal state and feedback presentation. Supply deterministic setup, reset, forced transitions and full internal-state inspection through launch arguments or a separate developer entrypoint. Keep walkthrough steps in the delivery notes; begin each scenario from a known state.
 
@@ -46,7 +46,7 @@ Inspect the resulting behavior in the actual terminal. Product loading indicator
 
 ### 4. Hand it over
 
-Give them the launch command, working directory and Tuistory attachment command, or open the terminal for them. They'll step through the walkthroughs and free-play whenever they get to it; the interesting moments are when they say "wait, that shouldn't be possible" or "huh, I assumed X would be different"; those are the bugs in the _idea_, which is the whole point. If they want new actions or a new scenario, add them. Prototypes evolve.
+Give them the launch command, working directory and Terminal Control session command, or open the foreground session for them. They'll step through the walkthroughs and free-play whenever they get to it; the interesting moments are when they say "wait, that shouldn't be possible" or "huh, I assumed X would be different"; those are the bugs in the _idea_, which is the whole point. If they want new actions or a new scenario, add them. Prototypes evolve.
 
 ### 5. Capture findings and decide whether to adopt
 

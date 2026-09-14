@@ -26,19 +26,19 @@ For alternatives, vary the relevant structure or information hierarchy. Keep eac
 
 ### 3. Drive scenarios outside the screen
 
-Select a candidate through a launch argument such as `--variant=B`, or run candidates in separate named Tuistory sessions. Replay, reset and forced states use launch options or a separate developer driver. Keep the same sample scenario when comparing candidates.
+Select a candidate through a launch argument such as `--variant=B`, or run candidates in separate named Terminal Control sessions. Replay, reset and forced states use launch options or a separate developer driver. Keep the same sample scenario when comparing candidates.
 
 The evaluated screen contains the candidate's product controls only. Prototype switching must not add a toolbar, label, hidden key handler or reserved row to it. Provide commands and scenario instructions in the handoff rather than rendering them in the product terminal.
 
 ### 4. Verify the actual experience
 
-Run and inspect the actual TUI through [Tuistory](../tuistory/SKILL.md). Exercise the chosen scenario and its visible actions, including focus restoration and any normal/loading/waiting/failure/completion states relevant to the design. Inspect the intended theme and terminal sizes; correct rendering failures before handing over the screen.
+Run and inspect the actual TUI through [Terminal Control](../terminal-control/SKILL.md). Exercise the chosen scenario and its visible actions, including focus restoration and any normal/loading/waiting/failure/completion states relevant to the design. Inspect the intended theme and terminal sizes; correct rendering failures before handing over the screen. If the requirement includes a real window, compositor, font rasterization or pointer display, use CUA only with a dedicated display distinct from the host, private session D-Bus and isolated runtime that does not switch the host foreground. When using Xvfb, clear inherited `WAYLAND_DISPLAY`; disable single-instance host-terminal reuse through the private bus/runtime and use an explicit driver endpoint. Verify host focus, pointer and clipboard before, during and after the run. Missing isolation blocks display acceptance; a headless terminal capture remains terminal evidence, not native-display evidence.
 
 Capture actual terminal screenshots after checking the content. Judge the whole screen, including host chrome and empty space. Apply the design document's fidelity criterion; backend simulation is not a reason to leave presentation or interaction defects.
 
 ### 5. Hand it over
 
-Provide the working directory, launch command, Tuistory attachment command and any external scenario or variant controls. Explain simulation and verification limits in those notes. The user should be able to join the terminal and evaluate the product UI immediately.
+Provide the working directory, launch command, Terminal Control session command and any external scenario or variant controls. For a shared live review, use `bun run tui run <name> -- <command>` from startup; `bun run tui start` is a detached session and does not provide a later attach path to an API-launched session. Explain simulation and verification limits in those notes. The user should be able to evaluate the product UI in the shared terminal immediately.
 
 ### 6. Capture findings and retain the artifact
 

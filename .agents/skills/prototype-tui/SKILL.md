@@ -8,7 +8,7 @@ license: MIT
 
 A prototype is **throwaway code that answers a question**. The question decides the shape.
 
-Before either branch, read [TUI prototype fidelity](../../../design.md#tui-prototype-fidelity), the authoritative presentation standard, and the rest of that design document for components, theme and input conventions. Read and use the [tuistory skill](../tuistory/SKILL.md) to run and inspect a shared interactive terminal that the user can join.
+Before either branch, read [TUI prototype fidelity](../../../design.md#tui-prototype-fidelity), the authoritative presentation standard, and the rest of that design document for components, theme and input conventions. Read and use the [Terminal Control skill](../terminal-control/SKILL.md) to run and inspect the terminal. For a shared prototype, start it with `bun run tui run <name> -- <command>` so the user and agent use the same foreground terminal; use the named-session commands to inspect or drive it. Use CUA only when actual display evidence is required and a dedicated display distinct from the host, private session D-Bus and isolated runtime can be verified without switching the host foreground. If that isolation is unavailable, the display requirement remains unverified.
 
 ## Pick a branch
 
@@ -22,7 +22,7 @@ If the branch is ambiguous and the user is unavailable, use the surrounding task
 ## Rules that apply to both
 
 1. **Mark the source and delivery notes.** Locate the prototype code close to where it will be used and identify it in filenames or comments. Keep that identification outside the evaluated interface, as required by the design standard. Follow the project's existing entrypoint convention.
-2. **Trivial to run.** Start either branch with one command using the project's existing runtime or task runner, such as `bun <path>` or `bun run <name>`. A direct entrypoint does not require a new package script. Provide the working directory, launch command and Tuistory attachment command.
+2. **Trivial to run.** Start either branch with one command using the project's existing runtime or task runner, such as `bun <path>` or `bun run <name>`. A direct entrypoint does not require a new package script. Provide the working directory, launch command and Terminal Control session command. Use `bun run tui run <name> -- <command>` when the user should share the live prototype from startup; there is no later attach step for an API-launched session.
 3. **No persistence by default.** State lives in memory. Persistence is the thing the prototype is _checking_, not something it should depend on. If the question explicitly involves a database, hit a scratch DB or a local file with a clear "PROTOTYPE, wipe me" name.
 4. **Keep implementation small.** Use only the execution and error handling needed for the scenario. Skip production infrastructure and a permanent prototype test suite; visual fidelity and working UI interactions remain required. Verify them through the actual terminal.
 5. **Separate product feedback from diagnostics.** Show state changes through the intended product presentation. Inspect internal state and drive scenarios through developer controls outside that interface.
