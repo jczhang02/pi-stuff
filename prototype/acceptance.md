@@ -65,8 +65,9 @@ captures because the native PNG exporter omitted glyphs in this environment.
 16. Cycle Savings through Overview, Daily, Weekly, Monthly, History and
     Failures: each view keeps the same title/status grammar, aligned numeric
     edge and display controls.
-17. Launch with `--rtk-prototype-state empty`: Savings explains the first-run
-    state and keeps refresh available.
+17. Launch with `--rtk-prototype-state empty`: the root reports that no commands
+    have been recorded, Savings explains the same first-run state and refresh
+    remains available after returning to the root.
 
 ## Design findings
 
