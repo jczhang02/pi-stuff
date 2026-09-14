@@ -8,6 +8,7 @@ This English file is authoritative; the [Chinese counterpart](docs/i18n/zh-CN/AG
 - Be concise and direct, explain necessary terms, and omit filler. Keep commits, issues, PR comments and code free of emojis. For non-trivial explanations, give the problem, an example or short trace, the solution and its purpose; distinguish required behavior from optional complexity.
 - Answer informational questions first. Standalone questions stay discussions; during authorized work, answer and continue within scope. Honor explicit discussion or approval checkpoints.
 - Respond to feedback with agreement, partial agreement or disagreement and reasons before describing changes. Explain conflicting evidence, impact and recommendation; distinguish factual errors from preference tradeoffs. Revisit decisions only when new evidence or changed conditions warrant it.
+- When generating UI images or prototypes, inspect the current target application and environment, and match their visual style, UI language and available space. Use realistic task content and layouts; keep explanatory commentary outside the UI. Do not infer design requirements from experimental configurations.
 
 ## Execution and authorization
 
