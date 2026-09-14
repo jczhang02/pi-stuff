@@ -42,6 +42,12 @@ Usage supports Overview, Daily, Weekly, Monthly, History and Failures. Press `r`
 
 Diagnostics is read-only. It shows the resolved executable, probe information, the latest integration rewrite failure in this extension lifecycle and native RTK configuration. Pi Stuff does not edit RTK's configuration, trust decisions, telemetry, hooks or statistics database.
 
+The following [100x30 capture](assets/rtk/usage.png) and [56x26 capture](assets/rtk/usage-narrow.png) show compiled Pi 0.85.1 with native RTK 0.45.0 after `git status` in an isolated fixture repository. The figures belong to that one command, not a general savings benchmark. These are rendered Terminal Control captures, not native desktop screenshots.
+
+The export uses Pi's active dark palette and `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`.
+
+![RTK Usage at 100 columns and 30 rows](assets/rtk/usage.png)
+
 ## What the statistics mean
 
 Usage reports RTK's estimates of tokens in raw and filtered command output. It does not measure provider billing, exact model context, Pi-session-only usage or savings from Pi Stuff's ANSI cleanup. Global statistics can include commands from other applications using the same RTK database. Project uses RTK's current-working-directory scope, not a separate Git-root aggregation.

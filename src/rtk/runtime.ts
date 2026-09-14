@@ -191,6 +191,7 @@ export function isRtkCancellation(error: Error): boolean {
 export class RtkRuntime {
   private currentSettings: RtkSettings;
   private readonly cache = new Map<string, CachedProbe>();
+  private generation = 0;
   private failure: string | undefined;
 
   constructor(settings: RtkSettings = {}) {
@@ -210,6 +211,7 @@ export class RtkRuntime {
   }
 
   invalidate(settings?: RtkSettings): void {
+    this.generation++;
     if (settings !== undefined) this.currentSettings = {...settings};
     this.cache.clear();
     this.failure = undefined;
@@ -221,6 +223,7 @@ export class RtkRuntime {
 
   async probe(cwd: string, signal?: AbortSignal): Promise<RtkProbeResult> {
     ensureNotAborted(signal);
+    const generation = this.generation;
     const key = `${cwd}\u0000${this.currentSettings.executable ?? ''}`;
     const cached = this.cache.get(key);
     if (cached?.kind === 'success') return cached.result;
@@ -246,7 +249,8 @@ export class RtkRuntime {
         }
       }
       ensureNotAborted(signal);
-      this.cache.set(key, {kind: 'success', result});
+      if (generation === this.generation)
+        this.cache.set(key, {kind: 'success', result});
       return result;
     } catch (error) {
       const runtimeError = processError(
@@ -258,7 +262,8 @@ export class RtkRuntime {
           message: 'RTK runtime operation was cancelled.',
         });
       if (isAborted(runtimeError, undefined)) throw runtimeError;
-      this.cache.set(key, {kind: 'failure', error: runtimeError});
+      if (generation === this.generation)
+        this.cache.set(key, {kind: 'failure', error: runtimeError});
       throw runtimeError;
     }
   }

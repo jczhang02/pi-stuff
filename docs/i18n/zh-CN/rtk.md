@@ -42,6 +42,12 @@ Usage 提供 Overview、Daily、Weekly、Monthly、History 和 Failures. `r` 刷
 
 Diagnostics 只读显示已解析的可执行文件、探测信息、本次扩展生命周期最近一次集成 rewrite 故障和 RTK 原生配置. Pi Stuff 不编辑 RTK 配置、信任设置、遥测、hook 或统计数据库.
 
+下方 [100x30 截图](../../assets/rtk/usage.png)和 [56x26 截图](../../assets/rtk/usage-narrow.png)来自编译 Pi 0.85.1 与原生 RTK 0.45.0, 展示隔离 fixture 仓库执行 `git status` 后的结果. 数值只属于这一条命令, 不是通用压缩率基准. 这些是渲染后的 Terminal Control 抓取, 不是原生桌面截图.
+
+导出使用 Pi 当前深色配色, 字体栈为 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`.
+
+![100 列 30 行的 RTK Usage](../../assets/rtk/usage.png)
+
 ## 统计含义
 
 Usage 显示 RTK 对原始和过滤后命令输出 token 的估算, 不表示供应商账单、精确模型上下文、Pi 会话专属用量或 Pi Stuff ANSI 清理收益. Global 可以包含其他应用使用同一 RTK 数据库产生的记录. Project 沿用 RTK 当前工作目录范围, 不单独聚合 Git 根目录.

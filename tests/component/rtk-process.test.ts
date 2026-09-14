@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test';
-import {mkdtemp, rm, writeFile, access} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile, readFile, access} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Effect} from 'effect';
@@ -31,17 +31,29 @@ test('RTK process cancellation kills descendants before delayed side effects', a
     await writeFile(
       script,
       `#!/bin/sh
-printf started > "$1"
 (sleep 1; printf late > "$2") &
-sleep 30
+printf started > "$1"
+wait
 `,
       {mode: 0o700},
     );
+    const control = join(directory, 'control');
+    await Effect.runPromise(
+      runRtkProcess(script, [started, control], directory),
+    );
+    expect(await readFile(control, 'utf8')).toBe('late');
+    const cancelledStarted = join(directory, 'cancelled-started');
     const controller = new AbortController();
     const pending = Effect.runPromise(
-      runRtkProcess(script, [started], directory, controller.signal, 5_000),
+      runRtkProcess(
+        script,
+        [cancelledStarted, late],
+        directory,
+        controller.signal,
+        5_000,
+      ),
     );
-    await waitForFile(started);
+    await waitForFile(cancelledStarted);
     controller.abort();
     await expect(pending).rejects.toBeInstanceOf(RtkProcessError);
     await expect(pending).rejects.toMatchObject({kind: 'aborted'});

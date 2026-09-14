@@ -108,7 +108,7 @@ test('Pi binds every rewritten RTK position without changing command data', asyn
       `#!/bin/sh
 case "$1" in
   --version) printf 'rtk 0.45.0';;
-  rewrite) printf '%s' "$PATH" > '${pathReport}'; printf "rtk fixture && rtk fixture 'rtk'";;
+  rewrite) printf '%s' "$PATH" > '${pathReport}'; printf "rtk fixture && 'rtk' fixture 'rtk'";;
   fixture) if [ "$2" = 'rtk' ] || [ -z "$2" ]; then printf 'ARG_OK\\n'; else printf 'ARG_CHANGED\\n'; fi;;
   *) exit 2;;
 esac
@@ -320,3 +320,51 @@ esac
     await host.close();
   }
 }, 30000);
+
+test.each([
+  ['env FOO=bar', 'rtk'],
+  ["'env' FOO=bar", 'rtk'],
+  ['custom-wrapper', 'rtk'],
+  ['custom-wrapper', "'rtk'"],
+])(
+  'Pi bypasses the whole rewrite when %s hides the %s executable position',
+  async (wrapper, token) => {
+    const host = await launchPi();
+    try {
+      const executable = join(host.directory, 'rtk-wrapped');
+      const marker = join(host.directory, 'selected-command-started');
+      const rewritten = `rtk fixture && ${wrapper} ${token} fixture`;
+      const rewriteFile = join(host.directory, 'rewritten-command');
+      await writeFile(rewriteFile, rewritten);
+      await writeFile(
+        executable,
+        `#!/bin/sh
+case "$1" in
+  --version) printf 'rtk 0.45.0';;
+  rewrite) cat '${rewriteFile}';;
+  fixture) printf STARTED > '${marker}'; printf COMPACT;;
+  *) exit 2;;
+esac
+`,
+        {mode: 0o700},
+      );
+      await writeFile(
+        join(host.agent, 'pi-stuff.json'),
+        JSON.stringify({rtk: {executable}}),
+      );
+      await host.reload();
+      expect(
+        await host.invoke(
+          'bash',
+          JSON.stringify({
+            command: 'printf FIRST && env FOO=bar printf SECOND',
+          }),
+        ),
+      ).toBe('FIRSTSECOND');
+      await expect(readFile(marker, 'utf8')).rejects.toThrow();
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);

@@ -243,6 +243,7 @@ function bindings(command: string): BindingResult {
   const spans: Array<{start: number; end: number}> = [];
   let invocation = false;
   let commandStart = true;
+  let directRtk = false;
   let redirectionTarget = false;
   for (let index = 0; index < result.tokens.length; index++) {
     const token = result.tokens[index];
@@ -251,6 +252,7 @@ function bindings(command: string): BindingResult {
       if (token.unsafe) return {safe: false, invocation, spans};
       if (token.boundary) {
         commandStart = true;
+        directRtk = false;
         redirectionTarget = false;
       } else if (token.redirection) {
         redirectionTarget = true;
@@ -261,7 +263,15 @@ function bindings(command: string): BindingResult {
       redirectionTarget = false;
       continue;
     }
-    if (!commandStart) continue;
+    const rtk =
+      token.value === 'rtk' ||
+      (isAbsolute(token.value) && basename(token.value) === 'rtk');
+    if (!commandStart) {
+      // An unknown wrapper may execute this token. Never accept a partial
+      // binding, but keep literal RTK arguments of a known RTK invocation.
+      if (rtk && !directRtk) return {safe: false, invocation, spans: []};
+      continue;
+    }
     const next = result.tokens[index + 1];
     if (
       token.plain &&
@@ -270,26 +280,15 @@ function bindings(command: string): BindingResult {
       next.redirection
     )
       continue;
-    if (!token.plain) {
-      if (
-        token.value === 'rtk' ||
-        (isAbsolute(token.value) && basename(token.value) === 'rtk')
-      )
-        invocation = true;
-      commandStart = false;
-      continue;
-    }
-    if (isAssignment(token.value)) continue;
-    if (COMMAND_WRAPPERS.has(token.value))
+    if (token.plain && isAssignment(token.value)) continue;
+    if (token.plain && COMMAND_WRAPPERS.has(token.value))
       return {safe: false, invocation, spans: []};
-    if (token.value === '!') continue;
-    if (
-      token.value === 'rtk' ||
-      (isAbsolute(token.value) && basename(token.value) === 'rtk')
-    ) {
+    if (token.plain && token.value === '!') continue;
+    if (rtk) {
       invocation = true;
       spans.push({start: token.start, end: token.end});
     }
+    directRtk = rtk;
     commandStart = false;
   }
   return {safe: result.safe, invocation, spans};
