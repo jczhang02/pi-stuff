@@ -1,0 +1,30 @@
+
+ pi v0.85.1
+ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Extensions]
+  rtk-inline-control-center.ts
+
+
+ Error: RTK savings unavailable: rtk gain exceeded the 5 second read timeout. Press r to retry.
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+RTK / Savings
+
+→ Scope  Global
+  View   Overview
+
+  Enter/Space to change · Esc to cancel
+
+Savings unavailable
+rtk gain exceeded the 5 second read timeout. Rewrite remains enabled.
+Press r to retry.
+
+↑↓ select · Enter change · r refresh · Esc back
+────────────────────────────────────────────────────────────────────────────────────────────────────
+~/dev/pi-stuff/.worktrees/codex/rtk-inline-control-center-prototype (codex/rtk-inline-control-cen...
+$0.000 (sub) 0.0%/272k (auto)                                                   gpt-6-astra • medium

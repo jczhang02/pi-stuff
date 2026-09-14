@@ -1,0 +1,30 @@
+
+ pi v0.85.1
+ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Extensions]
+  rtk-inline-control-center.ts
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+RTK control center  available · 0.45.0
+
+Manage Pi Stuff integration and inspect RTK savings.
+
+→ Integration                     Settings, executable and runtime state
+  Savings                         Gain overview, periods, history and failures
+  Diagnostics                     Resolution, failures and native RTK config
+
+↑↓ select · Enter open · Esc close
+────────────────────────────────────────────────────────────────────────────────────────────────────
+~/dev/pi-stuff/.worktrees/codex/rtk-inline-control-center-prototype (codex/rtk-inline-control-cen...
+$0.000 (sub) 0.0%/272k (auto)                                                   gpt-6-astra • medium

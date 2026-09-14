@@ -1,0 +1,30 @@
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Extensions]
+  rtk-inline-control-center.ts
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+RTK / Savings
+
+→ Scope  Global
+  View   Overview
+
+  Enter/Space to change · Esc to cancel
+
+Global savings
+
+  Commands       195,196
+  Input tokens   3.49B
+  Output tokens  251.1M
+  Tokens saved   3.24B  92.8%
+  Average time   5.7s
+
+  ██████████████████████░░  92.8%
+
+↑↓ select · Enter change · r refresh · Esc back
+────────────────────────────────────────────────────────────────────────────────────────────────────
+~/dev/pi-stuff/.worktrees/codex/rtk-inline-control-center-prototype (codex/rtk-inline-control-cen...
+$0.000 (sub) 0.0%/272k (auto)                                                   gpt-6-astra • medium
