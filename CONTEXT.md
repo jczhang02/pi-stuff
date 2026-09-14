@@ -18,14 +18,17 @@ A delegate with its own identity and conversation context, retained across succe
 **Subagent task**:
 One assignment to a subagent, with its own execution record and result. A follow-up is a new task for the same subagent.
 
+**Subagent workspace**:
+The working area retained for a subagent across assignments. Each task has its own starting baseline and result references within that continuing workspace.
+
 **Subagent task baseline**:
 The code state from which a subagent task begins, before that task adds its own changes.
 
 **Skipped task**:
-A subagent task that ended without starting because a dependency failed.
+A subagent task that ended without starting because a settled dependency did not provide an eligible completed result.
 
 **Cancelling task**:
 A subagent task whose cancellation has been requested but whose execution has not yet been confirmed stopped.
 
 **Completed subagent task**:
-A task whose subagent has reported the assignment fulfilled and whose descendants have all ended. Completion does not itself establish acceptance by the main agent.
+A settled task whose subagent explicitly reports the assignment fulfilled and whose delegated descendants have ended. Normal execution termination alone is insufficient, and reported completion does not establish main-agent acceptance.
