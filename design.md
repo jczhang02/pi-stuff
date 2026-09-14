@@ -16,6 +16,12 @@ Identify the artifact as a prototype in its files and delivery documentation. Ex
 
 Inspect the actual terminal and exercise the interactions being evaluated before delivery. The user must be able to judge the screen and operate it without mentally removing demo elements or imagining missing UI behavior. Record remaining fidelity gaps outside the interface and do not claim exact parity without verification.
 
+## Prohibited overlay structures
+
+Pi Stuff must not use either of these multi-section control overlays: a modal with horizontal section tabs across the top, or a modal with persistent side navigation. This rule applies across the repository even when Pi can technically render the structure.
+
+A feature that needs comparable multi-section navigation must use another structure and follow the applicable real-component prototype process before that structure is accepted. Rejecting these overlays does not approve the drilldown prototype or any other replacement.
+
 ## Information and state
 
 Make the current operation, key result and available next action easy to identify. Choose the layout and supporting detail with the feature.
