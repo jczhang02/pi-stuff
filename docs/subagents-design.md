@@ -13,6 +13,10 @@ Status: source-reviewed design proposal in [#64](https://github.com/jczhang02/pi
 
 The maintainer requested a plain feature inventory before capability selection. Q14 established the distinction between a subagent and a subagent task; Q32-Q33 clarified skipped tasks and task baselines; Q47 distinguished cancellation in progress from a task that has stopped; Q60 distinguished reported completion from acceptance by the main agent. These terms are recorded in [the glossary](../CONTEXT.md). The rules below are the consolidated review proposal. Their original answers and changes are traceable through the decision review; inventory alone does not settle runtime semantics.
 
+## Accepted tool entry point
+
+After reviewing [pico §8.5](https://github.com/earendil-works/pi/blob/ceea48f5d5d12fd7915dfefba2835ccd55f23bb9/packages/agent/docs/pico/pico-v3.md#85-subagents), the maintainer selected one model-facing tool named `subagent`, with a `command` field selecting the operation. This fixes the entry-point shape; the command set and parameters remain for interface design. Ordinary messages, steering, follow-up assignments, waiting and cancellation retain their distinct behavior and applicable authority. A single tool does not require a single implementation module or adopting pico's background-cancellation policy.
+
 ## Capability selection
 
 Q3-Q9 confirmed all upstream capabilities F01-F29 as required. This includes execution modes and result delivery, task control, communication, role and resource configuration, limits and accounting, worktree management, persistence and lifecycle events. Every capability needs real-scenario acceptance coverage.
