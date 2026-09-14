@@ -23,3 +23,6 @@ The code state from which a subagent task begins, before that task adds its own 
 
 **Skipped task**:
 A subagent task that ended without starting because a dependency failed.
+
+**Cancelling task**:
+A subagent task whose cancellation has been requested but whose execution has not yet been confirmed stopped.
