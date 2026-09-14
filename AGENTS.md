@@ -37,6 +37,6 @@ Before each applicable operation, read its reference with a file-reading tool an
 - Source, test, dependency or check changes/review: `docs/agents/engineering.md`. Code exploration/design proposals: `docs/agents/domain.md`, existing `CONTEXT.md` and relevant `docs/adr/` records. Raise ADR conflicts; do not create missing-file placeholders.
 - Before proposing or changing source layout, entrypoints or import boundaries, read `docs/agents/engineering.md#source-layout`.
 - Introducing or materially refactoring abstractions: `docs/agents/workflow.md#abstraction-ablation` before choosing the design.
-- TUI design/interface changes: `design.md`. User-requested TUI prototypes: `.agents/skills/prototype-tui/SKILL.md`.
+- TUI concept images, mockups, prototypes and interface changes: read `design.md` before producing the artifact. User-requested TUI prototypes: `.agents/skills/prototype-tui/SKILL.md`.
 - Terminal E2E/interactive TUI automation: `.agents/skills/tuistory/SKILL.md` and `docs/quality-assurance.md#terminal-e2e`. Test organization, environment selection or verification/CI policy: `docs/quality-assurance.md`.
 - CI/Actions/ruleset/merge-gate changes or review, GitHub prose, repository documentation or PR preparation: `CONTRIBUTING.md` for templates, language, CI security and remote settings. PR opening/update/review/handoff also requires `docs/agents/pr-evidence.md` and applicable evidence.

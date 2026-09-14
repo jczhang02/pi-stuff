@@ -4,6 +4,16 @@
 
 Pi Stuff fits into Pi's interface, theme and interaction conventions, extending them when a feature needs it. These are shared design rules for future features; they do not describe an implemented Pi Stuff interface. The [agent instructions](AGENTS.md#detailed-procedures) define when to create a TUI prototype and which skill to use.
 
+## Inspect the current environment
+
+Before producing a TUI concept image, mockup or prototype, inspect the user-selected target, or the current Pi host when none is specified. Check the terminal's font and fallbacks, font size, scaling and colors; Pi's effective theme and UI language; available columns and rows, splits, surrounding editor and statusline, and relevant keybindings.
+
+Distinguish configured values, live observations and unknowns. Startup window dimensions do not establish the current pane size, and a configured theme does not establish a running session's theme. Record the inspection time, target and sources with the artifact. Earlier measurements and screenshots are evidence of that capture, not a permanent environment profile.
+
+Keep product UI in English, independently of Chinese discussion and delivery notes. Use real Pi components and rendered terminal captures to evaluate font metrics and layout; an AI-generated image alone cannot verify fidelity to the host. Simulated data and execution do not justify substituting an arbitrary display environment.
+
+Recheck affected values before capture if the window, pane, scaling or theme changes. Runnable prototypes must respond to current dimensions and host-supported theme changes. Static images record the captured state. Compare the final rendering with the inspected target and report material unknowns or differences outside the product UI before visual evaluation.
+
 ## TUI prototype fidelity
 
 A TUI prototype presents the intended product interface directly. For the scenario being evaluated, its layout, spacing, copy, states and interactions must match the intended real interface. This standard applies while exploring a design; it does not require a completed product specification first.
