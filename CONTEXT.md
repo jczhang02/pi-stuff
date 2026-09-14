@@ -31,4 +31,4 @@ A subagent task that ended without starting because a settled dependency did not
 A subagent task whose cancellation has been requested but whose execution has not yet been confirmed stopped.
 
 **Completed subagent task**:
-A settled task whose subagent explicitly reports the assignment fulfilled and whose delegated descendants have ended. Normal execution termination alone is insufficient, and reported completion does not establish main-agent acceptance.
+A settled task whose subagent explicitly reports the assignment fulfilled and whose delegated descendants have ended. Normal execution termination alone is insufficient, and reported completion does not establish main-agent acceptance; dependency-result eligibility is specified in [Q60](docs/subagents-design.md#final-delivery-session-lifetime-and-authority).
