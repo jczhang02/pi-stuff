@@ -51,5 +51,16 @@ theme, focus and command dispatch.
 Each PNG is rendered from the matching Terminal Control SVG capture. The plain
 text screen capture is retained beside it for exact inspection.
 
+Use the maintainer's Ghostty font stack for every image export. Do not rely on
+Terminal Control's default font list:
+
+```sh
+capture_font="JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono"
+bun run tui save rtk-inline-prototype --format svg --format txt \
+  --out prototype/screenshots/root --hide-cursor \
+  --font-family "$capture_font"
+magick prototype/screenshots/root.svg prototype/screenshots/root.png
+```
+
 See [acceptance.md](./acceptance.md) for the interaction trace, findings and
 simulation boundary.
