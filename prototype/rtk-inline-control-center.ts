@@ -515,6 +515,33 @@ class SavingsView implements Component {
     return `${this.scope} · ${this.view}`;
   }
 
+  rootSummary(width: number) {
+    if (this.scenario === 'empty') {
+      return wrapMuted(
+        this.theme,
+        'No rewritten commands recorded yet.',
+        width,
+      );
+    }
+    if (this.load === 'loading') {
+      return wrapMuted(
+        this.theme,
+        'Savings refresh pending · command rewrite remains enabled.',
+        width,
+      );
+    }
+    if (this.load === 'failure') {
+      return wrapTextWithAnsi(
+        `${this.theme.fg('error', 'Savings unavailable')} ${this.theme.fg('muted', '· command rewrite remains enabled')}`,
+        width,
+      );
+    }
+    return wrapTextWithAnsi(
+      `${this.theme.fg('muted', `${SAVINGS_SUMMARY.commands} commands · `)}${this.theme.fg('success', `${SAVINGS_SUMMARY.savedTokens} tokens saved · ${SAVINGS_SUMMARY.reduction} reduction`)}`,
+      width,
+    );
+  }
+
   private changeSetting(id: string, value: string) {
     if (id === 'scope' && (value === 'Global' || value === 'Project')) {
       this.scope = value;
@@ -684,7 +711,7 @@ class RtkControlCenter implements Component, Focusable {
       message: string,
       type?: 'info' | 'warning' | 'error',
     ) => void,
-    private readonly scenario: Scenario,
+    scenario: Scenario,
     initialPage: Page | undefined,
   ) {
     this.page = initialPage ?? 'integration';
@@ -771,7 +798,7 @@ class RtkControlCenter implements Component, Focusable {
           this.titleLine('RTK control center', 'ready · v0.45.0', innerWidth),
           '',
           'Manage Pi Stuff integration and inspect RTK savings.',
-          ...this.rootSummary(innerWidth),
+          ...this.savings.rootSummary(innerWidth),
           '',
           ...this.sectionList.render(innerWidth),
           '',
@@ -834,33 +861,6 @@ class RtkControlCenter implements Component, Focusable {
       return `${left}  ${right}`;
     }
     return alignEdges(left, right, width);
-  }
-
-  private rootSummary(width: number) {
-    if (this.scenario === 'empty') {
-      return wrapMuted(
-        this.theme,
-        'No rewritten commands recorded yet.',
-        width,
-      );
-    }
-    if (this.scenario === 'loading') {
-      return wrapMuted(
-        this.theme,
-        'Savings refresh pending · command rewrite remains enabled.',
-        width,
-      );
-    }
-    if (this.scenario === 'failure') {
-      return wrapTextWithAnsi(
-        `${this.theme.fg('error', 'Savings unavailable')} ${this.theme.fg('muted', '· command rewrite remains enabled')}`,
-        width,
-      );
-    }
-    return wrapTextWithAnsi(
-      `${this.theme.fg('muted', `${SAVINGS_SUMMARY.commands} commands · `)}${this.theme.fg('success', `${SAVINGS_SUMMARY.savedTokens} tokens saved · ${SAVINGS_SUMMARY.reduction} reduction`)}`,
-      width,
-    );
   }
 
   private detailStatus() {
