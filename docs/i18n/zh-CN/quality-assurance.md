@@ -31,18 +31,24 @@
 
 ## 终端 E2E
 
-终端 E2E 使用 `tuistory` 驱动终端, 使用 Bun test 运行测试. 开发依赖版本固定在 `package.json`. 编程测试使用其 `launchTerminal` API; 交互式检查通过 `bun run tui` 使用 CLI. 使用前阅读 [tuistory skill](../../../.agents/skills/tuistory/SKILL.md). 运行 `bun run tui --help` 查看 CLI 参考, API 细节以已安装包的文档和类型声明为准. 只有本地资料无法回答当前问题时才查阅匹配的上游文档, 并复用已经有效的上下文而不是重复查询. 使用仓库依赖, 不调用全局安装或临时拉取的版本.
+终端 E2E 使用 Terminal Control 驱动终端, 使用 Bun test 运行测试. 开发依赖版本固定在 `package.json`. 编程测试使用 `TerminalControl.make()` 和 `terminal.launch()`; 交互式检查通过 `bun run tui` 使用 CLI. 使用前阅读 [Terminal Control skill](../../../.agents/skills/terminal-control/SKILL.md). 运行 `bun run tui --help` 查看 CLI 参考, API 细节以已安装包的文档和类型声明为准. 只有本地资料无法回答当前问题时才查阅匹配的已发布文档, 并复用已经有效的上下文而不是重复查询. 使用仓库依赖, 不调用全局安装或临时拉取的版本.
+
+客户端先解析明确传入的 `binaryPath`, 再解析 `TERMCTRL_BINARY` 环境覆盖. 默认使用仓库已安装的 binary, 不设置未经审查的覆盖; 需要确定性 native driver 的系统测试应明确传入固定的 `binaryPath`.
 
 测试聚焦自有的用户可见行为:
 
 - 为每个测试隔离工作目录、设置目录和会话目录. 对 Pi 设置 `PI_CODING_AGENT_DIR`, 关闭无关扩展、skill 及其他自动加载资源. 同时控制测试运行器的环境: 子进程选项可能继承或合并父进程变量.
-- 在明确超时内等待特征状态. tuistory 0.11.0 的 `text()` 和 `waitForText()` 包含滚动历史, 匹配可能来自旧输出. 断言可见画面时, 使用 `text({waitFor, timeout})` 的条件回调读取 `getTerminalData()`, 取 `lines` 的最后 `rows` 行, 拼接每行各 span 的文本. 检查完整的相关文本, 包括出现的中文和 emoji, 并为每个操作检查不同的结果. 布局属于要求时, 在对应界面打开期间调整终端尺寸.
-- 在 teardown 中停止测试自己启动的进程, 限时等待退出, 并始终关闭终端; 断言或等待退出失败时也要清理. 失败时保留有用的屏幕输出, 让非预期失败传递给测试运行器. 不关闭其他 session 共享的 CLI 终端.
+- 在明确超时内等待可见状态. `session.screen.waitForText(text, {timeoutMs})` 作用于可见终端; `screen.text`, `screen.frame` 和 `screen.capture` 使用 `settleMs`、`deadlineMs` 等稳定抓取选项. 问题涉及保留输出或滚动历史时使用 `session.logs`. 检查完整的相关文本, 包括出现的中文和 emoji, 并为每个操作检查不同的结果. 布局属于要求时, 在对应界面打开期间调整终端尺寸.
+- 对支持的输入使用类型化键盘和鼠标方法. 已发布的 `Key` 类型不包含修饰箭头, `MouseEvent` 不包含滚轮输入. 这些精确协议通过 `session.keyboard.write(Uint8Array)` 经由小型明确适配器发送, 并验证适配器的实际字节. 不用虚构的类型变体掩盖协议缺口.
+- 停止测试自己启动的进程, 并在嵌套 `finally` 中始终关闭资源: 先 `await session.stop()`, 再 `await terminal.close()`, 包括断言或等待退出失败时. 失败时保留有用的屏幕输出, 让非预期失败传递给测试运行器. 不关闭其他 session 共享的 CLI 终端.
+- CUA 仅在验收需要真实显示时使用. 每个 driver 和 terminal 都必须运行在与宿主分离的专用显示、私有 session D-Bus 和隔离运行时中, 且不得切换主机前台. 使用 Xvfb 时清除继承的 `WAYLAND_DISPLAY`; 通过私有总线/运行时关闭单实例宿主终端复用, 并使用明确的 driver endpoint. 在运行前、运行中和运行后验证宿主焦点、指针位置和剪贴板. 无法建立隔离时阻断显示验收; 不使用主机显示, 也不把无头 Terminal Control 输出当作真实显示证据.
 - 只添加实际用例需要的初始化与生命周期辅助函数. 复用框架的输入、画面读取和等待 API, 不另建终端测试封装层.
 
-`bun test tests/system/pi-host.test.ts` 使用 Bun 启动已安装的 Pi 0.85.1 CLI, 隔离设置并连接确定性本地模型. 设置 `PI_TEST_HOST=/absolute/path/to/pi` 可用同一套件验证维护者的编译宿主; 可执行文件缺失会失败, 不跳过验收. fixture 发出真实模型工具调用并加载未修改的入口. 覆盖抓取、分页/find、隐藏保留正文不落盘、reload/新会话清缓存、全局/宿主独立工具选择、无效配置恢复, 以及 Esc 取消执行中和排队的抓取. CI 使用默认离线环境, 不调用在线后端; 在线账号检查单独授权并记录证据.
+`bun test tests/system/pi-host.test.ts` 使用 Bun 启动已安装的 Pi 0.85.1 CLI, 分别运行 regular 和 fullscreen TUI 模式, 隔离设置并连接确定性本地模型. 设置 `PI_TEST_HOST=/absolute/path/to/pi` 可用同一套件验证维护者的编译宿主; 可执行文件缺失会失败, 不跳过验收. fixture 发出真实模型工具调用并加载未修改的入口. 覆盖抓取、分页/find、隐藏保留正文不落盘、reload/新会话清缓存、全局/宿主独立工具选择、无效配置恢复, 以及 Esc 取消执行中和排队的抓取. CI 使用默认离线环境, 不调用在线后端; 在线账号检查单独授权并记录证据.
 
-[选型试验](https://github.com/jczhang02/pi-stuff/issues/29) 在 Linux、Bun 1.4.0 和真实 Pi 0.85.1 中使用临时对话框扩展. Tuistory 0.11.0 通过了完整中文/emoji 文本、选择、Escape 取消、对话框打开时调整尺寸, 以及预期的缺失文本超时检查. 对照的 `@microsoft/tui-test@0.1.0-beta.3` locator 对屏幕转储中可见的文本等待超时, 原因未诊断. 这些结果支持工具选型. 该历史试验不代表产品验收. 当前网页能力验证及剩余后端/运行时限制记录在 [PR #46](https://github.com/jczhang02/pi-stuff/pull/46), 不声称支持其他操作系统.
+[Terminal Control 评估](https://github.com/jczhang02/pi-stuff/issues/72) 使用 Bun 1.4.0 和真实 Pi 0.85.1. 在未打开桌面窗口的情况下, 它通过了 fullscreen 启动、编辑器输入、中文 `waitForText`、鼠标拖选/复制界面、原始 SGR 滚轮输入及调整到 80x25, 并生成了 text、frame 和 SVG 产物. 嵌套 PTY 探针还显示已发布的 `run` 命令会原样转发修饰箭头、滚轮和拖选字节. 类型化 API 仍不包含修饰箭头和滚轮, 本候选的剪贴板字节也未独立断言, 因此这些场景仍是明确的适配器或证据边界. CLI 的 `run` 模式从启动起就在前台共享; 没有连接到 API 启动会话的后续 attach 路径. 这些调研证据不等于产品验收; 当前迁移验证记录在 [#74](https://github.com/jczhang02/pi-stuff/issues/74). 1.2.1 的前台 `run` 跟随外层终端的尺寸变化和 `SIGWINCH`, 不应用 CLI `resize`. API 和后台 `start` 会话支持编程调整尺寸. [Fullscreen fixture 截图](../../assets/terminal-control/pi-fullscreen.png) 展示 Terminal Control 中的滚动、中文输入和拖选复制提示, 并非原生显示截图.
+
+[#71](https://github.com/jczhang02/pi-stuff/issues/71) 记录的 Linux Xvfb/Mutter/Ghostty 结果只覆盖该设置下的宿主 X11 焦点. 它不建立通用焦点保证或 Wayland 支持.
 
 ## 执行策略
 

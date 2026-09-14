@@ -10,7 +10,6 @@
   "endOfLine": "lf",
   "ignorePatterns": [
     ".agents/skills/thermo-nuclear-code-quality-review/SKILL.md",
-    ".agents/skills/tuistory/SKILL.md",
     ".beads/**",
     ".worktrees/**",
     "node_modules/**",

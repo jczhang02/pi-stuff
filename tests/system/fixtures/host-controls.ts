@@ -1,4 +1,6 @@
 import type {ExtensionAPI} from '@earendil-works/pi-coding-agent';
+import {writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
 import {Effect} from 'effect';
 import {resolveExa} from '../../../src/web/exa-auth';
 
@@ -35,6 +37,23 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.notify(
         `HOST_SELECTION:${pi.getActiveTools().toSorted().join(',')}`,
         'info',
+      );
+    },
+  });
+  pi.registerCommand('host-reload', {
+    description:
+      'Offline acceptance fixture: reload and emit a completion marker',
+    handler: async (label, ctx) => {
+      const completed = join(ctx.cwd, 'reload-ready');
+      await ctx.reload();
+      // Reload invalidates ctx. A private fixture file acknowledges completion
+      // without using stale UI or matching a previous "Reloaded" notification.
+      await Effect.runPromise(
+        Effect.tryPromise({
+          try: () => writeFile(completed, label),
+          catch: cause =>
+            new Error('Could not acknowledge fixture reload', {cause}),
+        }),
       );
     },
   });
