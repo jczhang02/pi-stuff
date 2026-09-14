@@ -9,13 +9,14 @@
 
 import type {AgentMessage} from '@earendil-works/pi-agent-core';
 import type {ImageContent, TextContent} from '@earendil-works/pi-ai';
+import {Schema} from 'effect';
 import type {
   AgentSession,
   AgentSessionEvent,
 } from '@earendil-works/pi-coding-agent';
 import {
   createPrototypeSession,
-  inspectionPathFor,
+  type ChildSessionFactory,
   resetPrototypeResponse,
   type AskParent,
   type NotifyParent,
@@ -78,6 +79,7 @@ interface PendingQuestion {
 
 const GRAPH_CONCURRENCY = 3;
 const QUESTION_TIMEOUT_MS = 600_000;
+const INSPECTION_ARGS = Schema.Struct({path: Schema.String});
 
 export type PrototypeFleetErrorCode =
   | 'unknown_task'
@@ -171,6 +173,7 @@ export class PrototypeFleet implements FleetController {
   private readonly cwd: string;
   private readonly agentDir: string;
   private readonly scenario: string;
+  private readonly childSessionFactory: ChildSessionFactory;
   private started = false;
   private stopped = false;
   private stopPromise: Promise<void> | undefined;
@@ -187,12 +190,14 @@ export class PrototypeFleet implements FleetController {
     scenario: string,
     changed: () => void,
     notify: ParentNotice,
+    childSessionFactory: ChildSessionFactory = createPrototypeSession,
   ) {
     this.cwd = cwd;
     this.agentDir = agentDir;
     this.scenario = scenario;
     this.changedCallback = changed;
     this.notifyCallback = notify;
+    this.childSessionFactory = childSessionFactory;
     this.prepareScenario();
   }
 
@@ -495,7 +500,7 @@ export class PrototypeFleet implements FleetController {
       holder = await this.ensureHolder(task);
       holder.activeTask = task;
       holder.setActiveTask(task.id);
-      if (resetResponse)
+      if (resetResponse && holder.provider)
         resetPrototypeResponse(
           holder.provider,
           task.agentName,
@@ -540,7 +545,7 @@ export class PrototypeFleet implements FleetController {
         level === 'error' ? 'error' : 'info',
       );
     };
-    const created = await createPrototypeSession(
+    const created = await this.childSessionFactory(
       this.cwd,
       this.agentDir,
       task.agentName,
@@ -584,8 +589,9 @@ export class PrototypeFleet implements FleetController {
           ? 'Inspect cancellation'
           : event.toolName;
       const text =
-        event.toolName === 'inspect_cancellation'
-          ? `Reading ${inspectionPathFor(task.agentName, this.scenario)}`
+        event.toolName === 'inspect_cancellation' &&
+        Schema.is(INSPECTION_ARGS)(event.args)
+          ? `Reading ${event.args.path}`
           : 'Running operation.';
       task.activity.push({id: event.toolCallId, title, text});
       if (task.activity.length > 8) task.activity.shift();
@@ -608,8 +614,7 @@ export class PrototypeFleet implements FleetController {
             ...activity,
             text: event.isError
               ? resultText || `Failed: ${event.toolName}`
-              : resultText ||
-                `Read ${inspectionPathFor(task.agentName, this.scenario)}`,
+              : resultText || `Completed ${event.toolName}.`,
           };
         }
       }
@@ -623,8 +628,10 @@ export class PrototypeFleet implements FleetController {
       task.outputTokens += message.usage.output;
       const text = messageText(message);
       if (message.stopReason === 'stop' && text) task.result = text;
-      if (message.stopReason === 'error')
-        task.error = message.errorMessage ?? 'The model returned an error.';
+      task.error =
+        message.stopReason === 'error'
+          ? (message.errorMessage ?? 'The model returned an error.')
+          : undefined;
       this.render();
     }
     if (event.type === 'agent_end' && !event.willRetry) this.render();
@@ -828,6 +835,14 @@ export async function createPrototypeFleet(
   scenario: string,
   changed: () => void,
   notify: ParentNotice,
+  childSessionFactory: ChildSessionFactory = createPrototypeSession,
 ): Promise<PrototypeFleet> {
-  return new PrototypeFleet(cwd, agentDir, scenario, changed, notify);
+  return new PrototypeFleet(
+    cwd,
+    agentDir,
+    scenario,
+    changed,
+    notify,
+    childSessionFactory,
+  );
 }

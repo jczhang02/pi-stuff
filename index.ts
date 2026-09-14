@@ -14,6 +14,9 @@ import {registerWeb} from './src/web/register';
 import {createPrototypeFleet} from './src/subagents/prototype-runtime';
 import {FleetTree} from './src/subagents/prototype-tree';
 import {MainEditor} from './src/subagents/prototype-editor';
+import {registerPrototypeControl} from './src/subagents/prototype-control';
+import type {FleetController} from './src/subagents/prototype-model';
+import type {ChildSessionFactory} from './src/subagents/prototype-provider';
 
 // Throwaway host composition, used only by tools/subagent-prototype.ts.
 export function createSubagentPrototype(
@@ -21,14 +24,13 @@ export function createSubagentPrototype(
   scenario: string,
   agentDir: string,
   cleanup: () => Promise<void>,
+  createSession?: ChildSessionFactory,
 ): ExtensionFactory {
   return pi => {
     let tree: FleetTree | undefined;
     let stop: (() => Promise<void>) | undefined;
-    pi.registerShortcut('alt+a', {
-      description: 'Focus the subagent tree',
-      handler: async () => tree?.enter(),
-    });
+    let currentFleet: FleetController | undefined;
+    if (scenario === 'live') registerPrototypeControl(pi, () => currentFleet);
     pi.registerCommand('agents', {
       description: 'Inspect and control subagent tasks',
       handler: async () => tree?.enter(),
@@ -40,6 +42,7 @@ export function createSubagentPrototype(
         const editor = new MainEditor(tui, theme, keybindings, {
           embedWorkingStatus: true,
         });
+        editor.onFleetEntry = () => tree?.enter();
         mainInput = editor;
         return editor;
       });
@@ -49,7 +52,9 @@ export function createSubagentPrototype(
         scenario,
         () => terminal?.requestRender(),
         (message, kind) => ctx.ui.notify(message, kind),
+        createSession,
       );
+      currentFleet = fleet;
       stop = () => fleet.stop();
       ctx.ui.setFooter((tui, theme, footerData) => {
         terminal = tui;
@@ -70,7 +75,8 @@ export function createSubagentPrototype(
         container.addChild(tree);
         return container;
       });
-      ctx.ui.setEditorText('Also review cancellation during startup.');
+      if (scenario !== 'live')
+        ctx.ui.setEditorText('Also review cancellation during startup.');
       fleet.start();
     });
     pi.on('session_shutdown', async event => {

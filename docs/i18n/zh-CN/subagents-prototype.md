@@ -10,22 +10,33 @@
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
-bun run tui run subagent-tree -- bun tools/subagent-prototype.ts collaboration
+bun run tui run subagent-tree -- bun tools/subagent-prototype.ts
 ```
 
 前台命令拥有共享终端. 可从另一个 shell 使用 `bun run tui show subagent-tree` 查看同一会话, 通过 `bun run tui send subagent-tree ...` 操作. 使用 Pi 的普通退出操作离开. 外部停止命令为 `bun run tui stop subagent-tree`, 不要停止其他任务的会话.
 
+默认 `live` 模式读取 Pi 已配置的模型并复用现有认证, 启动真实的主代理和子代理调用. 也可追加 `live provider/model` 明确指定已配置的模型, 例如:
+
+```sh
+bun run tui run subagent-tree -- bun tools/subagent-prototype.ts live openai-codex/gpt-6-astra
+```
+
+模型不存在或认证失败时显示错误, live 不回退到预设回复. 主代理仍可使用 Pi 原生模型操作; 新创建的子代理采用主代理当时的模型和 thinking level. 已有子代理续聊时保留原模型.
+
 启动参数在产品界面外选择场景:
 
-| 参数            | 观察场景                                                                |
-| --------------- | ----------------------------------------------------------------------- |
-| `collaboration` | 两个调查并行执行, 完成后启动依赖它们的审查. 在调查工具运行时发送 steer. |
-| `question`      | 子代理缺少信息, 父代理将问题转交用户, 在树内答复.                       |
-| `followup`      | 初次任务快速完成. 给保留的 reviewer 交办新任务, 查看两次结果.           |
-| `cancel`        | 取消一个仍有活动下级的父任务, 观察下级工具停止前的取消过程.             |
-| `failure`       | 查看失败的调查及无法启动的下游审查.                                     |
+| 参数            | 观察场景                                                                   |
+| --------------- | -------------------------------------------------------------------------- |
+| `live` (默认)   | 真实主代理和子代理检查附带的示例文件, 结果, 耗时和 token 计数来自实际执行. |
+| `collaboration` | 两个调查并行执行, 完成后启动依赖它们的审查. 在调查工具运行时发送 steer.    |
+| `question`      | 子代理缺少信息, 父代理将问题转交用户, 在树内答复.                          |
+| `followup`      | 初次任务快速完成. 给保留的 reviewer 交办新任务, 查看两次结果.              |
+| `cancel`        | 取消一个仍有活动下级的父任务, 观察下级工具停止前的取消过程.                |
+| `failure`       | 查看失败的调查及无法启动的下游审查.                                        |
 
-使用 `alt+a` 进入树, 保留主编辑器草稿. 方向键选择, 展开和收起节点, Enter 打开选中的操作. 输入框内 Enter 换行, `ctrl+enter` 发送. Escape 返回树, 再按一次返回主编辑器. Page Up/Down 滚动展开记录. 也可以通过 `/agents` 命令进入.
+在主编辑器的导航边界按上下键进入 FleetView. 原生光标移动, 自动折行, 历史导航和补全优先. 例如在单行草稿末尾按 Down 进入树; Up 先移动到行首或浏览已有历史. 进入和返回保留同一份草稿及光标. 不再注册 Alt+A.
+
+树内方向键选择, 展开和收起节点, Enter 打开选中的操作. 在 main 行按 Up 或 Enter 返回主编辑器. 输入框内 Enter 换行, `ctrl+enter` 发送. Escape 返回树, 再按一次返回主编辑器. Page Up/Down 滚动展开记录. 也可以通过 `/agents` 命令进入.
 
 快速试用可启动 `question`, 展开 lifecycle 的 Reply to question, 答复后等待完成, 再选择 New task. 使用 `collaboration` 时, 在前 30 秒发送 steer. 再打开一份 steer 草稿, 等任务完成后发送, 应显示拒绝并保留可见草稿. 在 `cancel` 中, 趁 lifecycle 和 probe 活动时取消 lifecycle, packages 应继续独立执行. 不同场景之间重新启动.
 
@@ -33,9 +44,11 @@ bun run tui run subagent-tree -- bun tools/subagent-prototype.ts collaboration
 
 宿主为 Bun 下的 Pi 0.85.1 `InteractiveMode`, 使用原生 `CustomEditor` 和 `FooterComponent`. 树占用 statusline 下方的正常底栏布局空间. 选择子任务不会切换主会话. 每个输入框明确操作和目标, 返回时恢复同一个主编辑器实例.
 
-子代理使用真实 Pi `AgentSession`, 执行本地工具. Steer, 问答, 续聊和取消经过这些会话. 本地确定性 provider 决定后续回复和工具调用. 初始主对话和模型 token 计数属于场景数据, 不代表远程模型的实际消耗. 原型不调用线上模型, 界面中的结论只针对附带的示例文件.
+子代理使用真实 Pi `AgentSession`, 执行本地工具. Steer, 问答, 续聊和取消经过这些会话. live 主代理通过一个 `subagent` 工具查看结果并调用相同的任务操作. 主代理和子代理共享 Pi 原生模型运行时及内存设置, 结果与用量来自选定的远程模型. 本次限定范围的实验关闭重试和自动压缩, 结论只针对附带的示例文件.
 
-启动器创建隔离临时工作区和 agent 目录. 子代理上下文保存在内存中. 正常退出时停止子代理并删除临时文件. 崩溃或强制终止可能在系统临时目录中留下 `pi-subagent-PROTOTYPE-*` 目录. 重新启动会创建新场景.
+明确指定的五种离线场景使用本地确定性 provider. 回复, 初始主对话和模型计数属于场景数据, 不代表远程用量. 固定时序便于测试任务完成前的 steer 或等待中的问答.
+
+启动器创建隔离临时工作区和 agent 目录. live 读取已有 Pi 模型配置并通过原 agent 目录使用原生认证, 不向临时工作区复制凭据. 原生 OAuth 刷新可能更新 Pi 已有认证存储. 扩展, skills, context files 和内置工作区工具均关闭. 子代理可检查三份附带文件, 向父代理提问和发送更新. 上下文保存在内存中. 正常退出时停止子代理并删除临时文件. 崩溃或强制终止可能在系统临时目录中留下 `pi-subagent-PROTOTYPE-*` 目录. 重新启动会创建新场景.
 
 这是限定范围的 UI 实验. 它不构成生产级持久化/恢复, 任意依赖图派发, 写入隔离, 权限继承, provider 兼容性或完整 F01-F33 重写的验收.
 
@@ -67,8 +80,14 @@ bun run tui save subagent-tree --format png --out /tmp/subagent-tree.png \
 
 真实终端检查覆盖活动展开, steer 从 pending 到 consumed, 迟到 steer 被拒绝且草稿仍可见, 问题答复, 独立续聊记录, 实际停止前的取消状态, 下游跳过, 失败显示和 16 行窄屏输入. 独立审查还验证了 ask_parent 期间取消或 steer, 以及父模型循环结束但下级仍运行时拒绝 steer. 仓库既有离线测试 55 项通过. 本实验分支不增加永久原型测试套件.
 
+live 修订使用已认证的 `openai-codex/gpt-6-astra` 验收: 两个调查完成, 实际报告交给依赖它们的 reviewer, 主代理再通过工具读取建议. 树内续聊保留旧报告, 提出真实模型生成的问题, 接收答复, 消费 steer 并交付新结果. 独立本地 provider 检查复现并验证了模型临时错误后的恢复, 重试耗尽, 顺序提问和等待期间取消. Activity 标签改为反映实际工具参数.
+
+独立私有 tmux 3.6a 会话通过了方向键入口, 多行/折行移动, 历史, 补全和光标恢复验证. 在 `extended-keys always` 和 `extended-keys-format csi-u` 下, Ctrl+Enter 成功答复子代理问题并完成任务. 指定不存在的 live 模型会明确报错退出, 不回退到固定场景. 验证后已停止所有自建会话和私有 tmux server.
+
 使用上述字体栈生成的真实 Terminal Control 截图:
 
+- [真实模型主对话与方向键入口, 150 列 50 行](../../assets/subagents-prototype/live.png).
+- [内联展开真实子代理结果, 150 列 50 行](../../assets/subagents-prototype/live-tree.png).
 - [Steer 输入框, 150 列 50 行](../../assets/subagents-prototype/steer.png).
 - [问题答复, 150 列 50 行](../../assets/subagents-prototype/reply.png).
 - [长续聊草稿, 80 列 25 行](../../assets/subagents-prototype/narrow.png).

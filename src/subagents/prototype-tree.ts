@@ -309,7 +309,7 @@ export class FleetTree implements Component, Focusable {
       lines.push(this.theme.fg('text', alignRight(text, right, width)));
     }
     if (lines.length > 0)
-      lines.push(this.theme.fg('dim', 'alt+a inspect agents'));
+      lines.push(this.theme.fg('dim', '↑↓ at editor edge inspect agents'));
     return lines;
   }
 
@@ -610,6 +610,11 @@ export class FleetTree implements Component, Focusable {
       0,
       nodes.findIndex(node => node.key === this.selectedKey),
     );
+    if (direction === -1 && current === 0) {
+      this.focused = false;
+      this.back();
+      return;
+    }
     const next =
       nodes[Math.min(nodes.length - 1, Math.max(0, current + direction))];
     if (next === undefined) return;
@@ -626,6 +631,11 @@ export class FleetTree implements Component, Focusable {
     );
     if (node === undefined) return;
     if (node.kind === 'agent') {
+      if (node.agent.name === 'main') {
+        this.focused = false;
+        this.back();
+        return;
+      }
       if (this.expandedAgents.delete(node.agent.name)) {
         this.tui.requestRender();
         return;

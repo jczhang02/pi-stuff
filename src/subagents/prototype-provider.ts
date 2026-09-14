@@ -51,9 +51,19 @@ export type NotifyParent = (
 
 export interface PrototypeSession {
   readonly session: AgentSession;
-  readonly provider: FauxProviderHandle;
+  readonly provider?: FauxProviderHandle;
   readonly setActiveTask: (taskId: string) => void;
 }
+
+export type ChildSessionFactory = (
+  cwd: string,
+  agentDir: string,
+  agentName: string,
+  taskId: string,
+  scenario: string,
+  askParent: AskParent,
+  notifyParent: NotifyParent,
+) => Promise<PrototypeSession>;
 
 const INSPECT_PARAMETERS = Type.Object({path: Type.String()});
 const ASK_PARAMETERS = Type.Object({question: Type.String()});
@@ -285,7 +295,7 @@ function delayWithAbort(
   });
 }
 
-function inspectTool(cwd: string, scenario: string, delayMs: number) {
+function inspectTool(cwd: string, delayMs: number) {
   return {
     name: 'inspect_cancellation',
     label: 'Inspect cancellation',
@@ -308,7 +318,7 @@ function inspectTool(cwd: string, scenario: string, delayMs: number) {
         'cancellation.test.ts',
         'packages.md',
       ]);
-      if (scenario === 'failure' || !allowed.has(params.path))
+      if (!allowed.has(params.path))
         throw new Error(`File is unavailable: ${params.path}`);
       const content = await Effect.runPromise(
         Effect.tryPromise({
@@ -335,6 +345,7 @@ function askTool(getTaskId: () => string, askParent: AskParent) {
     label: 'Ask parent',
     description: 'Ask the parent one focused question and wait for its answer.',
     promptSnippet: 'Ask the parent when required information is missing.',
+    executionMode: 'sequential',
     parameters: ASK_PARAMETERS,
     async execute(
       _toolCallId,
@@ -373,6 +384,25 @@ function notifyTool(getTaskId: () => string, notifyParent: NotifyParent) {
       };
     },
   } satisfies ToolDefinition<typeof NOTIFY_PARAMETERS, NotifyDetails>;
+}
+
+type PrototypeTool =
+  | ReturnType<typeof inspectTool>
+  | ReturnType<typeof askTool>
+  | ReturnType<typeof notifyTool>;
+
+export function createPrototypeTools(
+  cwd: string,
+  delayMs: number,
+  getTaskId: () => string,
+  askParent: AskParent,
+  notifyParent: NotifyParent,
+): PrototypeTool[] {
+  return [
+    inspectTool(cwd, delayMs),
+    askTool(getTaskId, askParent),
+    notifyTool(getTaskId, notifyParent),
+  ];
 }
 
 function fixtureDelay(scenario: string, agentName: string): number {
@@ -432,11 +462,13 @@ export async function createPrototypeSession(
 
   const model = provider.getModel();
   if (!model) throw new Error('The local provider did not expose a model.');
-  const tools = [
-    inspectTool(cwd, scenario, fixtureDelay(scenario, agentName)),
-    askTool(() => activeTaskId, askParent),
-    notifyTool(() => activeTaskId, notifyParent),
-  ];
+  const tools = createPrototypeTools(
+    cwd,
+    fixtureDelay(scenario, agentName),
+    () => activeTaskId,
+    askParent,
+    notifyParent,
+  );
   const created = await createAgentSession({
     cwd,
     agentDir,
