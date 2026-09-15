@@ -44,7 +44,11 @@ Use Pi's active theme and semantic colors for text, selection, borders, success,
 
 ## Keyboard and focus
 
-Prefer Pi's existing components and interaction patterns. Follow its navigation, submit, back and cancel conventions, including user-configured keybindings where applicable. When a panel closes, restore focus to the input or invoking control. Extend the controls only where the feature needs an interaction Pi does not already provide.
+Prefer Pi's existing components and interaction patterns. Preserve configurable selection and submit bindings where applicable. Esc is the fixed back/exit key for Pi Stuff panels, including size notices and nested editors; do not replace it with a remapped cancel binding such as Ctrl+G. When a panel closes, restore focus to the input or invoking control.
+
+Feature shortcuts must be directly usable on a 60% keyboard. Do not assign PageUp, PageDown, Home, End or function-row keys to feature actions. Use ordinary keys such as `[` and `]` for previous/next page, and show the actual supported keys in local help. Reuse Pi's native selection navigation without changing the host's global bindings.
+
+Keep a panel's dimensions and control positions stable when switching pages, loading data or paging through results. Long reports use a bounded content area with pagination and a visible page position; they must not enlarge the dialog as more records arrive. Resizing the terminal may change the content budget. Wrapping and pagination must preserve access to retained text, while clearly distinguishing any upstream truncation or explicit report-size limit.
 
 ## Narrow terminals
 
