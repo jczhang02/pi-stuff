@@ -18,7 +18,7 @@ export function registerPrototypeControl(
     name: 'subagent',
     label: 'Subagent',
     description:
-      'Inspect assigned subagents and their actual results, or steer, answer, follow up and cancel tasks. Use list to obtain current task and question identifiers before acting. Follow-up requires a completed agent. This workspace already has two investigations and a dependent reviewer.',
+      'Inspect assigned subagents and their actual results, or steer, answer, follow up and cancel tasks. Use list to obtain internal task and question identifiers before acting, and check available actions. Refer to agents by name and task description in user-facing text; never expose internal task identifiers. Follow-up requires a completed agent. This workspace already has two investigations and a dependent reviewer.',
     parameters: Type.Object({
       action: StringEnum([
         'list',
@@ -70,9 +70,32 @@ export function registerPrototypeControl(
           summary: agents
             .map(agent => {
               const task = agent.tasks.at(-1);
-              return `${agent.name} · ${task?.id ?? '-'} · ${task?.status ?? 'idle'}`;
+              const state = task?.actions.includes('reply')
+                ? 'needs reply'
+                : (task?.status ?? 'idle');
+              return `${agent.name} · ${state}`;
             })
             .join('\n'),
+          expanded: agents
+            .map(agent =>
+              [
+                agent.name,
+                ...agent.tasks.map((task, index) =>
+                  [
+                    `${index === agent.tasks.length - 1 ? 'Current' : 'Previous'} · ${task.description}`,
+                    task.detail,
+                    task.model,
+                    task.question
+                      ? `Question: ${task.question.text}\nAnswer: ${task.question.answer ?? 'No answer received.'}`
+                      : '',
+                    task.result ?? task.progress,
+                  ]
+                    .filter(Boolean)
+                    .join('\n'),
+                ),
+              ].join('\n'),
+            )
+            .join('\n\n'),
         },
       };
     },
@@ -90,9 +113,11 @@ export function registerPrototypeControl(
       return new Text(
         theme.fg(
           context.isError ? 'error' : 'text',
-          options.expanded || context.isError
+          context.isError
             ? fullText
-            : (result.details?.summary ?? fullText),
+            : options.expanded
+              ? (result.details?.expanded ?? '')
+              : (result.details?.summary ?? ''),
         ),
         0,
         0,

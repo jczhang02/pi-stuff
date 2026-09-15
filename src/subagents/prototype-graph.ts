@@ -7,6 +7,7 @@ export function applyUpstream(
   task: string,
   needs: readonly string[],
   outputs: ReadonlyMap<string, string>,
+  names?: ReadonlyMap<string, string>,
 ): string {
   if (needs.length === 0) {
     return task.includes('{previous}')
@@ -17,7 +18,8 @@ export function applyUpstream(
   const first = outputs.get(needs[0] ?? '') ?? '';
   const body = task.replace(/\{previous\}/g, () => first);
   const blocks = needs.map(
-    need => `## Output of ${need}\n${outputs.get(need) ?? '(no output)'}`,
+    need =>
+      `## Output of ${names?.get(need) ?? need}\n${outputs.get(need) ?? '(no output)'}`,
   );
   return `${blocks.join('\n\n')}\n\n---\n\n${body}`;
 }

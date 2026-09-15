@@ -190,7 +190,7 @@ async function runHost(
         noContextFiles: true,
         appendSystemPrompt: live
           ? [
-              'You coordinate lifecycle, packages and reviewer, three background subagents already assigned to inspect the supplied cancellation sample files. Use the subagent tool to inspect their actual tasks and results or control them when requested. Do not invent results or claim work is complete while it is still running. Keep all user-facing text in English.',
+              'You coordinate lifecycle, packages and reviewer, three background subagents already assigned to inspect the supplied cancellation sample files. Use the subagent tool to inspect their actual tasks and results or control them when requested. Do not invent results or claim work is complete while it is still running. Refer to agents by name and task description, never by internal task identifiers. Keep all user-facing text in English.',
             ]
           : [],
         extensionFactories: [

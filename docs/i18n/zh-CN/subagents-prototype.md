@@ -36,9 +36,24 @@ bun run tui run subagent-tree -- bun tools/subagent-prototype.ts live openai-cod
 
 在主编辑器的导航边界按上下键进入 FleetView. 原生光标移动, 自动折行, 历史导航和补全优先. 例如在单行草稿末尾按 Down 进入树; Up 先移动到行首或浏览已有历史. 进入和返回保留同一份草稿及光标. 不再注册 Alt+A.
 
-树内方向键选择, 展开和收起节点, Enter 打开选中的操作. 在 main 行按 Up 或 Enter 返回主编辑器. 输入框内 Enter 换行, `ctrl+enter` 发送. Escape 返回树, 再按一次返回主编辑器. Page Up/Down 滚动展开记录. 也可以通过 `/agents` 命令进入.
+进入 FleetView 时恢复选中行, 不自动展开详情. 任务编号仅用于内部寻址, 人看的界面使用 agent 名称和任务描述. Agent 选中效果只改变 icon. 当前任务排在旧记录之前; 从树中提交续聊后打开新记录, 后台更新不抢走当前阅读焦点.
 
-快速试用可启动 `question`, 展开 lifecycle 的 Reply to question, 答复后等待完成, 再选择 New task. 使用 `collaboration` 时, 在前 30 秒发送 steer. 再打开一份 steer 草稿, 等任务完成后发送, 应显示拒绝并保留可见草稿. 在 `cancel` 中, 趁 lifecycle 和 probe 活动时取消 lifecycle, packages 应继续独立执行. 不同场景之间重新启动.
+| 按键                             | 操作                                                   |
+| -------------------------------- | ------------------------------------------------------ |
+| Up / Down                        | 选择前后可见节点. 在 main 上按 Up 返回主编辑器.        |
+| Tab / Shift+Tab                  | 跨过展开记录, 在 agent 之间跳转.                       |
+| Right                            | 展开当前节点; 已展开时进入第一个子节点.                |
+| Left                             | 收起当前节点, 或回到父节点.                            |
+| Enter                            | 打开记录或操作; 在 main 上返回主编辑器.                |
+| `r` / `s` / `f`                  | 对当前 agent 答复, steer 或续聊, 仅在该操作可用时生效. |
+| Escape                           | 保留草稿并离开输入框, 再按一次离开 FleetView.          |
+| `[` / `]` 或 Ctrl+Page Up / Down | 滚动 FleetView 记录. 普通 Page Up / Down 仍滚动主对话. |
+
+输入框使用 Pi 的原生规则: Enter 发送, Shift+Enter 或 Ctrl+J 换行, 粘贴的多行文本保持完整. Ctrl+Enter 仍可发送. 操作已过期或无效时, 保留草稿并显示原因. 也可通过 `/agents` 命令进入.
+
+树导航同时接受 Pi 的选择键配置和显示的方向键. 输入框提示显示实际配置的提交与换行键.
+
+快速试用可启动 `question`, 选中 lifecycle 后按 `r`, 用 Enter 答复, 完成后按 `f` 续聊. 使用 `collaboration` 时, 在前 30 秒发送 steer. 再打开一份 steer 草稿, 等任务完成后发送, 应显示拒绝并保留可见草稿. 在 `cancel` 中, 趁 lifecycle 和 probe 活动时取消 lifecycle, packages 应继续独立执行. 不同场景之间重新启动.
 
 ## 实际运行内容
 
@@ -62,9 +77,13 @@ bun run tui run subagent-tree -- bun tools/subagent-prototype.ts live openai-cod
 
 保留的 [MIT 声明](../../../src/subagents/LICENSE.arhen) 包括原 fork 归属, 源码注释标明适配来源. 不加载原 widget, overlay, sidecar 持久化和工作树管理器. 整体引入 manager 会带入这些职责及其过早更新 aborted 状态的行为. 较小的适配保留本次要操作的能力, 并区分取消请求与实际停止. 完成后续聊和按任务归属管理下级属于对原包的扩展.
 
+任务状态和可用操作来自同一份 runtime 快照. `Needs reply` 与 `Waiting dependencies` 分开显示, 尚未开始的任务没有执行时长. 完成显示 `Done`, 失败, 跳过和取消都有明确状态. 展开任务可见当前操作, 实际模型, 简短的公开文本进展及问答记录. Activity 使用最近的工具, Steering 区分 pending, consumed 和 unprocessed. Token 计数在 Pi 提供完整消息用量时更新.
+
+树导航使用一份按节点 key 索引的展开集合和一个子节点构造入口. 单一 composer 状态持有已绑定的操作, 编辑器和返回位置. 无状态的任务展示放在 `prototype-task-view.ts`, 负责紧凑行和展开行的格式, 不管理导航或执行. 这消除了审查中发现的重复展开和编辑器状态路径.
+
 ## 终端证据
 
-目标视口为 150 列 50 行, 窄终端为 80 列 25 行. Pi 使用 light 主题, 启动器在隔离终端内设置已检查的 Ghostty 默认前景, 背景和光标颜色. 截图必须显式设置字体栈:
+实际检查的用户终端为 122 列 74 行, 另验证 150 列 50 行及 80 列 25 行的窄终端. Pi 使用 light 主题, 启动器在隔离终端内设置已检查的 Ghostty 默认前景, 背景和光标颜色. 截图必须显式设置字体栈:
 
 ```sh
 bun run tui save subagent-tree --format png --out /tmp/subagent-tree.png \
@@ -78,16 +97,18 @@ bun run tui save subagent-tree --format png --out /tmp/subagent-tree.png \
 
 选定的树可以在 Pi 正常底栏空间中工作, 任务操作无需 overlay 或替换会话. 在 80 列 25 行下, 长输入框保留 agent, 操作, 目标, 光标和发送/返回提示, 其他树行暂时离开视口. Escape 恢复树导航, 返回 main 后保留草稿和光标. Pi 0.85.1 的失焦编辑器仍绘制软件光标, 小型 MainEditor 适配只在失焦时去除它.
 
+本轮 UI 修订在 122 列 74 行, 150 列 50 行和 80 列 25 行中验证, 覆盖折叠入口, 直接答复/steer/续聊, agent 跳转, 父子节点导航, 原生提交与换行, 草稿保留和问答记录. 检查发现普通 Page Up 会被 Pi 的全屏主对话滚动器消费, 已使用 `[` 和 `]` 滚动树内记录.
+
 真实终端检查覆盖活动展开, steer 从 pending 到 consumed, 迟到 steer 被拒绝且草稿仍可见, 问题答复, 独立续聊记录, 实际停止前的取消状态, 下游跳过, 失败显示和 16 行窄屏输入. 独立审查还验证了 ask_parent 期间取消或 steer, 以及父模型循环结束但下级仍运行时拒绝 steer. 仓库既有离线测试 55 项通过. 本实验分支不增加永久原型测试套件.
 
 live 修订使用已认证的 `openai-codex/gpt-6-astra` 验收: 两个调查完成, 实际报告交给依赖它们的 reviewer, 主代理再通过工具读取建议. 树内续聊保留旧报告, 提出真实模型生成的问题, 接收答复, 消费 steer 并交付新结果. 独立本地 provider 检查复现并验证了模型临时错误后的恢复, 重试耗尽, 顺序提问和等待期间取消. Activity 标签改为反映实际工具参数.
 
-独立私有 tmux 3.6a 会话通过了方向键入口, 多行/折行移动, 历史, 补全和光标恢复验证. 在 `extended-keys always` 和 `extended-keys-format csi-u` 下, Ctrl+Enter 成功答复子代理问题并完成任务. 指定不存在的 live 模型会明确报错退出, 不回退到固定场景. 验证后已停止所有自建会话和私有 tmux server.
+独立私有 tmux 3.6a 会话通过了方向键入口, 多行/折行移动, 历史, 补全和光标恢复验证. 在 `extended-keys always` 和 `extended-keys-format csi-u` 下, Ctrl+Enter 成功答复子代理问题并完成任务. 当前修订还在关闭 extended keys 的私有 tmux 中通过 Ctrl+J 和反斜杠+Enter 换行验证, 再开启 extended keys 验证 Ctrl+Enter. 指定不存在的 live 模型会明确报错退出, 不回退到固定场景. 验证后已停止所有自建会话和私有 tmux server.
 
 使用上述字体栈生成的真实 Terminal Control 截图:
 
 - [真实模型主对话与方向键入口, 150 列 50 行](../../assets/subagents-prototype/live.png).
 - [内联展开真实子代理结果, 150 列 50 行](../../assets/subagents-prototype/live-tree.png).
 - [Steer 输入框, 150 列 50 行](../../assets/subagents-prototype/steer.png).
-- [问题答复, 150 列 50 行](../../assets/subagents-prototype/reply.png).
+- [问题答复, 122 列 74 行](../../assets/subagents-prototype/reply.png).
 - [长续聊草稿, 80 列 25 行](../../assets/subagents-prototype/narrow.png).

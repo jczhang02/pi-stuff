@@ -30,6 +30,7 @@ import type {
   FleetTask,
   Question,
   Steering,
+  TaskAction,
   TaskStatus,
 } from './prototype-model';
 
@@ -43,13 +44,14 @@ interface MutableTask {
   status: TaskStatus;
   startedAt: number | undefined;
   endedAt: number | undefined;
-  createdAt: number;
   outputTokens: number;
   activity: Activity[];
   steering: Steering[];
   question: Question | undefined;
   result: string | undefined;
   detail: string;
+  progress: string;
+  model: string;
   parentTaskId: string | undefined;
   needs: readonly string[];
   settled: Promise<void> | undefined;
@@ -142,12 +144,32 @@ function isFailedDependency(status: TaskStatus): boolean {
   return status === 'cancelled' || status === 'failed' || status === 'skipped';
 }
 
-function displayTask(task: MutableTask): FleetTask {
-  const end = task.endedAt ?? Date.now();
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((end - (task.startedAt ?? task.createdAt)) / 1000),
+function canSteer(task: MutableTask, holder: ChildHolder | undefined): boolean {
+  return (
+    holder?.activeTask === task &&
+    (task.status === 'running' ||
+      (task.status === 'waiting' && task.startedAt !== undefined)) &&
+    !task.awaitingDescendants
   );
+}
+
+function canFollowUp(agent: AgentRecord, task: MutableTask): boolean {
+  return (
+    agent.tasks.at(-1) === task &&
+    task.status === 'completed' &&
+    agent.holder?.session.isIdle === true
+  );
+}
+
+function displayTask(
+  task: MutableTask,
+  actions: readonly TaskAction[],
+): FleetTask {
+  const end = task.endedAt ?? Date.now();
+  const elapsedSeconds =
+    task.startedAt === undefined
+      ? 0
+      : Math.max(0, Math.floor((end - task.startedAt) / 1000));
   return {
     id: task.id,
     description: task.description,
@@ -160,6 +182,9 @@ function displayTask(task: MutableTask): FleetTask {
     question: task.question,
     result: task.result,
     detail: task.detail,
+    progress: task.progress,
+    model: task.model,
+    actions,
     parentTaskId: task.parentTaskId,
   };
 }
@@ -204,7 +229,16 @@ export class PrototypeFleet implements FleetController {
   agents(): readonly FleetAgent[] {
     return [...this.agentsByName.values()].map(agent => ({
       name: agent.name,
-      tasks: agent.tasks.map(displayTask),
+      tasks: agent.tasks.map(task => {
+        const actions: TaskAction[] = [];
+        if (this.pendingQuestions.has(task.id) && task.status === 'waiting')
+          actions.push('reply');
+        if (canSteer(task, agent.holder)) actions.push('steer');
+        if (canFollowUp(agent, task)) actions.push('followUp');
+        if (!isTerminal(task.status) && task.status !== 'cancelling')
+          actions.push('cancel');
+        return displayTask(task, actions);
+      }),
     }));
   }
 
@@ -231,20 +265,15 @@ export class PrototypeFleet implements FleetController {
   steer(taskId: string, text: string): void {
     const task = this.tasksById.get(taskId);
     if (!task)
-      throw new PrototypeFleetError('unknown_task', `Unknown task ${taskId}.`);
+      throw new PrototypeFleetError(
+        'unknown_task',
+        'The selected task no longer exists.',
+      );
     const holder = this.agentsByName.get(task.agentName)?.holder;
-    const activeStatus =
-      task.status === 'running' ||
-      (task.status === 'waiting' && task.startedAt !== undefined);
-    if (
-      !holder ||
-      holder.activeTask !== task ||
-      !activeStatus ||
-      task.awaitingDescendants
-    ) {
+    if (!holder || !canSteer(task, holder)) {
       throw new PrototypeFleetError(
         'task_not_active',
-        `Task ${taskId} is not accepting steering.`,
+        `${task.agentName} is no longer accepting steering for this task.`,
       );
     }
     const steering: Steering = {text, state: 'pending'};
@@ -255,7 +284,7 @@ export class PrototypeFleet implements FleetController {
       const index = task.steering.indexOf(steering);
       if (index >= 0) task.steering[index] = {text, state: 'unprocessed'};
       this.notice(
-        `Steering could not be delivered to ${taskId}: ${errorMessage(error)}`,
+        `Steering could not be delivered to ${task.agentName}: ${errorMessage(error)}`,
         'error',
       );
       this.render();
@@ -265,7 +294,10 @@ export class PrototypeFleet implements FleetController {
   reply(taskId: string, questionId: string, text: string): void {
     const task = this.tasksById.get(taskId);
     if (!task)
-      throw new PrototypeFleetError('unknown_task', `Unknown task ${taskId}.`);
+      throw new PrototypeFleetError(
+        'unknown_task',
+        'The selected task no longer exists.',
+      );
     const pending = this.pendingQuestions.get(taskId);
     if (
       !task ||
@@ -275,7 +307,7 @@ export class PrototypeFleet implements FleetController {
     ) {
       throw new PrototypeFleetError(
         'stale_question',
-        `The question for ${taskId} is no longer waiting.`,
+        `${task.agentName} is no longer waiting for this answer.`,
       );
     }
     task.question = {...task.question, answer: text};
@@ -289,13 +321,7 @@ export class PrototypeFleet implements FleetController {
     const agent = this.agentsByName.get(agentName);
     const previous = agent?.tasks.at(-1);
     const holder = agent?.holder;
-    if (
-      !agent ||
-      !previous ||
-      previous.status !== 'completed' ||
-      !holder ||
-      !holder.session.isIdle
-    ) {
+    if (!agent || !previous || !holder || !canFollowUp(agent, previous)) {
       throw new PrototypeFleetError(
         'no_completed_task',
         `No completed idle task is available for ${agentName}.`,
@@ -311,16 +337,20 @@ export class PrototypeFleet implements FleetController {
   cancel(taskId: string): void {
     const task = this.tasksById.get(taskId);
     if (!task) {
-      throw new PrototypeFleetError('unknown_task', `Unknown task ${taskId}.`);
+      throw new PrototypeFleetError(
+        'unknown_task',
+        'The selected task no longer exists.',
+      );
     }
     if (isTerminal(task.status)) {
       throw new PrototypeFleetError(
         'task_not_active',
-        `Task ${taskId} has already stopped.`,
+        `${task.agentName} has already stopped this task.`,
       );
     }
     const branch = this.branchTasks(task);
     for (const branchTask of branch) this.requestCancellation(branchTask);
+    this.notice(`Cancellation requested for ${task.agentName}.`, 'info');
     this.render();
   }
 
@@ -378,13 +408,17 @@ export class PrototypeFleet implements FleetController {
       status: needs.length > 0 ? 'waiting' : 'queued',
       startedAt: undefined,
       endedAt: undefined,
-      createdAt: Date.now(),
       outputTokens: 0,
       activity: [],
       steering: [],
       question: undefined,
       result: undefined,
-      detail: needs.length > 0 ? `Waiting for ${needs.join(', ')}.` : 'Queued.',
+      detail:
+        needs.length > 0
+          ? `Waiting for ${needs.map(id => this.tasksById.get(id)?.agentName ?? 'another agent').join(', ')}.`
+          : 'Queued.',
+      progress: '',
+      model: '',
       parentTaskId,
       needs,
       settled: undefined,
@@ -424,6 +458,11 @@ export class PrototypeFleet implements FleetController {
           continue;
         }
         const dependencies = this.needs.get(taskId) ?? [];
+        const waitingFor = dependencies
+          .filter(id => this.tasksById.get(id)?.status !== 'completed')
+          .map(id => this.tasksById.get(id)?.agentName ?? 'another agent');
+        if (waitingFor.length > 0)
+          task.detail = `Waiting for ${waitingFor.join(', ')}.`;
         const failed = dependencies.find(dependency =>
           isFailedDependency(
             this.tasksById.get(dependency)?.status ?? 'failed',
@@ -431,7 +470,10 @@ export class PrototypeFleet implements FleetController {
         );
         if (failed) {
           pending.delete(taskId);
-          this.markSkipped(task, `Dependency ${failed} did not complete.`);
+          this.markSkipped(
+            task,
+            `${this.tasksById.get(failed)?.agentName ?? 'An upstream agent'} did not complete.`,
+          );
           continue;
         }
         if (
@@ -447,6 +489,12 @@ export class PrototypeFleet implements FleetController {
           task.prompt,
           dependencies,
           outputs,
+          new Map(
+            dependencies.map(id => [
+              id,
+              this.tasksById.get(id)?.agentName ?? 'another agent',
+            ]),
+          ),
         );
         const execution = this.launchTask(task, effectivePrompt, false).then(
           () => {
@@ -483,6 +531,7 @@ export class PrototypeFleet implements FleetController {
   ): Promise<void> {
     if (task.settled || isTerminal(task.status)) return Promise.resolve();
     task.status = 'running';
+    task.prompt = prompt;
     task.startedAt = Date.now();
     task.detail = 'Starting Pi session.';
     const execution = this.driveTask(task, prompt, resetResponse);
@@ -500,6 +549,11 @@ export class PrototypeFleet implements FleetController {
       holder = await this.ensureHolder(task);
       holder.activeTask = task;
       holder.setActiveTask(task.id);
+      const model = holder.session.model;
+      task.model =
+        model && !holder.provider
+          ? `${model.provider}/${model.id} · ${holder.session.thinkingLevel}`
+          : '';
       if (resetResponse && holder.provider)
         resetPrototypeResponse(
           holder.provider,
@@ -541,7 +595,7 @@ export class PrototypeFleet implements FleetController {
       this.waitForParent(taskId, question, signal);
     const notifyParent: NotifyParent = (taskId, message, level) => {
       this.notice(
-        `[${taskId}] ${message}`,
+        `${this.tasksById.get(taskId)?.agentName ?? agent.name}: ${message}`,
         level === 'error' ? 'error' : 'info',
       );
     };
@@ -570,6 +624,21 @@ export class PrototypeFleet implements FleetController {
 
   private onSessionEvent(holder: ChildHolder, event: AgentSessionEvent): void {
     const task = holder.activeTask;
+    if (event.type === 'message_start' && event.message.role === 'assistant') {
+      task.progress = '';
+      if (task.status === 'running') task.detail = 'Thinking...';
+      this.render();
+    }
+    if (event.type === 'message_update' && event.message.role === 'assistant') {
+      task.progress = messageText(event.message).slice(-1200);
+      if (task.status === 'running' && task.progress)
+        task.detail = 'Writing response...';
+      this.render();
+    }
+    if (event.type === 'auto_retry_start') {
+      if (task.status === 'running') task.detail = 'Retrying model request...';
+      this.render();
+    }
     if (event.type === 'message_start' && event.message.role === 'user') {
       const text = messageText(event.message);
       const index = task.steering.findIndex(
@@ -595,11 +664,10 @@ export class PrototypeFleet implements FleetController {
           : 'Running operation.';
       task.activity.push({id: event.toolCallId, title, text});
       if (task.activity.length > 8) task.activity.shift();
-      task.detail = title;
+      if (task.status === 'running') task.detail = text;
       this.render();
     }
     if (event.type === 'tool_execution_update') {
-      task.detail = `Working in ${task.agentName}.`;
       this.render();
     }
     if (event.type === 'tool_execution_end') {
@@ -618,15 +686,17 @@ export class PrototypeFleet implements FleetController {
           };
         }
       }
-      task.detail = event.isError
-        ? `Failed: ${event.toolName}`
-        : 'Waiting for the next model turn.';
+      if (task.status === 'running')
+        task.detail = event.isError
+          ? `Tool failed: ${event.toolName}`
+          : 'Thinking...';
       this.render();
     }
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       const message = event.message;
       task.outputTokens += message.usage.output;
       const text = messageText(message);
+      task.progress = text.slice(-1200);
       if (message.stopReason === 'stop' && text) task.result = text;
       task.error =
         message.stopReason === 'error'
@@ -645,7 +715,12 @@ export class PrototypeFleet implements FleetController {
         .slice(1)
         .map(descendant => descendant.settled)
         .filter((settled): settled is Promise<void> => settled !== undefined);
-      if (waits.length > 0) await Promise.all(waits);
+      if (waits.length > 0) {
+        if (task.status === 'running')
+          task.detail = 'Waiting for child tasks to stop.';
+        this.render();
+        await Promise.all(waits);
+      }
     } finally {
       task.awaitingDescendants = false;
     }
@@ -738,7 +813,7 @@ export class PrototypeFleet implements FleetController {
         .abort()
         .catch((error: Error) =>
           this.notice(
-            `Cancellation could not stop ${task.id}: ${errorMessage(error)}`,
+            `Cancellation could not stop ${task.agentName}: ${errorMessage(error)}`,
             'error',
           ),
         );
@@ -753,6 +828,10 @@ export class PrototypeFleet implements FleetController {
     task.detail = 'Completed.';
     if (!task.result)
       task.result = 'The subagent completed without a final report.';
+    this.notice(
+      `${task.agentName} finished. Report available in FleetView.`,
+      'info',
+    );
     this.render();
   }
 
@@ -762,6 +841,10 @@ export class PrototypeFleet implements FleetController {
     task.status = 'cancelled';
     task.endedAt = Date.now();
     task.detail = 'Cancelled after active work stopped.';
+    this.notice(
+      `${task.agentName} cancelled. Active work has stopped.`,
+      'info',
+    );
     this.render();
   }
 

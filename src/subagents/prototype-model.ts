@@ -26,6 +26,8 @@ export interface Question {
   readonly answer: string | undefined;
 }
 
+export type TaskAction = 'steer' | 'reply' | 'followUp' | 'cancel';
+
 export interface FleetTask {
   readonly id: string;
   readonly description: string;
@@ -38,6 +40,9 @@ export interface FleetTask {
   readonly question: Question | undefined;
   readonly result: string | undefined;
   readonly detail: string;
+  readonly progress: string;
+  readonly model: string;
+  readonly actions: readonly TaskAction[];
   readonly parentTaskId: string | undefined;
 }
 

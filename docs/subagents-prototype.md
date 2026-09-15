@@ -36,9 +36,24 @@ The launch argument chooses a scenario outside the product UI:
 
 Use Up/Down at the main editor's navigation boundary to enter FleetView. Native cursor movement, wrapped lines, history and autocomplete take precedence. For example, Down at the end of a one-line draft enters the tree; Up first moves to the line start or browses available history. Entry and return preserve the same draft and cursor. Alt+A is not registered.
 
-Inside the tree, arrows select, expand and collapse nodes; Enter opens a selected action. Up from the main row or Enter on that row returns to the main editor. Inside a composer, Enter inserts a newline and `ctrl+enter` sends. Escape returns to the tree, then to the main editor. Page Up/Down scroll expanded records. The `/agents` command is an alternative entry point.
+Entering FleetView restores the selected row without opening its details. Task numbers are internal routing keys; the human UI uses agent names and task descriptions. Agent selection changes only its icon. The current task appears before previous records; a follow-up sent from the tree opens its new record, while background updates leave the reading focus alone.
 
-For a quick walkthrough, start `question`, expand lifecycle's Reply to question node, answer, then select New task after completion. Use `collaboration` to send a steer during the first 30 seconds. Leave another steer draft open until the task completes and submit it: the rejection must leave the draft visible. In `cancel`, cancel lifecycle while it and probe are active; packages continues independently. Restart between scenarios.
+| Key                              | Action                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------- |
+| Up / Down                        | Select the previous or next visible node. Up from main returns to its editor.       |
+| Tab / Shift+Tab                  | Jump between agents, skipping expanded records.                                     |
+| Right                            | Expand the selected node, or enter its first child when already open.               |
+| Left                             | Collapse the selected node, or return to its parent.                                |
+| Enter                            | Open a record or action. On main, return to its editor.                             |
+| `r` / `s` / `f`                  | Reply, steer or follow up with the selected agent when that action is available.    |
+| Escape                           | Leave the composer with its draft retained, then leave FleetView.                   |
+| `[` / `]` or Ctrl+Page Up / Down | Scroll FleetView records. Plain Page Up / Down still scrolls the main conversation. |
+
+Composers use Pi's normal input rules: Enter sends, Shift+Enter or Ctrl+J inserts a newline, and pasted multiline text stays together. Ctrl+Enter remains a send alias. Sending a stale or invalid action retains its draft and displays the reason. The `/agents` command is an alternative entry point.
+
+Tree navigation accepts Pi's selection bindings alongside the displayed arrow keys. Composer hints show the configured submit and newline keys.
+
+For a quick walkthrough, start `question`, select lifecycle and press `r`, answer with Enter, then press `f` after completion. Use `collaboration` to send a steer during the first 30 seconds. Leave another steer draft open until the task completes and submit it: the rejection must leave the draft visible. In `cancel`, cancel lifecycle while it and probe are active; packages continues independently. Restart between scenarios.
 
 ## What runs
 
@@ -62,9 +77,13 @@ The execution adaptation comes from [@arhen/pi-core-subagent 1.3.54](https://git
 
 The retained [MIT notice](../src/subagents/LICENSE.arhen) includes the upstream fork attribution. Source comments identify adapted files. The original widget, overlays, sidecar persistence and worktree manager are not loaded. Importing the entire manager would also import those responsibilities and its early aborted-state update. The smaller adaptation keeps the exercised behavior in the prototype while distinguishing cancellation requests from stopped execution. Completed-agent follow-up and task-owned descendants extend the original package.
 
+Task state and available actions come from one runtime snapshot. `Needs reply` is distinct from `Waiting dependencies`, and a task with no start time has no execution duration. Completed tasks show `Done`; failures, skipped work and cancellation remain explicit. Expanded tasks show the current operation, actual model, a short public-text progress preview and the question/answer record. Activity uses the most recent tool. Steering records distinguish pending, consumed and unprocessed messages. Token counts update when Pi reports completed-message usage.
+
+Tree navigation uses one keyed expansion set and one child-node builder. A single composer state owns the captured action, editor and return location. Stateless task presentation lives in `prototype-task-view.ts`; it formats the compact and expanded rows without owning navigation or execution. This removes the duplicate expansion and editor-state paths found during review.
+
 ## Terminal evidence
 
-The intended viewport is 150 columns by 50 rows, with an 80 by 25 narrow case. Pi uses its light theme, and the launcher sets the inspected Ghostty default foreground/background/cursor colors in the isolated terminal. Capture exports must use:
+The inspected user terminal is 122 columns by 74 rows. Verification also covers 150 by 50 and an 80 by 25 narrow case. Pi uses its light theme, and the launcher sets the inspected Ghostty default foreground/background/cursor colors in the isolated terminal. Capture exports must use:
 
 ```sh
 bun run tui save subagent-tree --format png --out /tmp/subagent-tree.png \
@@ -78,16 +97,18 @@ Headless Terminal Control captures verify rendered cells and keyboard behavior. 
 
 The selected tree works in normal Pi footer space. Task controls do not need an overlay or session replacement. At 80 by 25, an active long composer keeps the agent, operation, target, caret and send/return hints visible while other tree rows leave the viewport. Escape restores tree navigation, and returning to main retains its draft and cursor. Pi 0.85.1's inactive editor still paints a software cursor; the small MainEditor adapter removes that cursor only while unfocused.
 
+The UI revision was checked at 122 by 74, 150 by 50 and 80 by 25. It covered collapsed entry, direct reply/steer/follow-up, agent jumps, parent/child navigation, native submission/newlines, retained drafts and question/answer records. Plain Page Up was found to be consumed by Pi's fullscreen conversation scroller; `[` and `]` now scroll the tree records.
+
 Real terminal checks covered activity expansion, steering pending then consumed, rejected late steering with a visible retained draft, question replies, separate follow-up records, cancellation before actual stop, dependent skipping, failure display and a 16-line narrow composer. Independent reviews also exercised cancellation during ask_parent, steering during that wait, and rejection after the parent's model loop ends while descendants continue. The repository's existing offline suite passed 55 tests. This throwaway branch adds no permanent prototype test suite.
 
 The live revision was exercised with authenticated `openai-codex/gpt-6-astra`: both investigations completed, their actual reports reached the dependent reviewer, and the main agent read its recommendation through the tool. A tree follow-up kept the earlier report, asked a real model-generated question, received a reply, consumed a steering message and delivered a new result. Independent local-provider checks reproduced and verified recovery after a transient model error, retry exhaustion, sequential questions and cancellation while waiting. Activity labels now reflect actual tool arguments.
 
-Independent tests in private tmux 3.6a sessions passed arrow entry, wrapped/multiline movement, history, autocomplete and cursor restoration. With `extended-keys always` and `extended-keys-format csi-u`, Ctrl+Enter answered a child question and the task completed. An unknown live model exited with an explicit error and no fixture fallback. All owned sessions and private tmux servers were stopped after verification.
+Independent tests in private tmux 3.6a sessions passed arrow entry, wrapped/multiline movement, history, autocomplete and cursor restoration. With `extended-keys always` and `extended-keys-format csi-u`, Ctrl+Enter answered a child question and the task completed. The current revision also passed Ctrl+J and backslash+Enter in private tmux with extended keys disabled, then Ctrl+Enter with extended keys enabled. An unknown live model exited with an explicit error and no fixture fallback. All owned sessions and private tmux servers were stopped after verification.
 
 Actual Terminal Control captures, using the font stack above:
 
 - [Live main conversation and arrow entry, 150 by 50](assets/subagents-prototype/live.png).
 - [Live child result expanded inline, 150 by 50](assets/subagents-prototype/live-tree.png).
 - [Steer composer, 150 by 50](assets/subagents-prototype/steer.png).
-- [Question reply, 150 by 50](assets/subagents-prototype/reply.png).
+- [Question reply, 122 by 74](assets/subagents-prototype/reply.png).
 - [Long follow-up draft, 80 by 25](assets/subagents-prototype/narrow.png).
