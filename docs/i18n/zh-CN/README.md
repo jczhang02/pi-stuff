@@ -14,7 +14,9 @@
 
 当前检出包含开发版网页扩展: 独立的搜索、抓页和保留内容工具, 共用工具开关, 以及宿主管理的 OpenAI/Codex/Exa 认证. Exa 提供搜索与认证, 不提供聊天模型. 尚未发布版本. 源码加载、设置、凭据和限制见[网页访问](web-access.md).
 
-已测试目标是 Linux Bun 编译版 Pi `0.85.1`. 技术栈为 TypeScript、Bun `1.4.0` 和 Effect v4 (`4.0.0-rc.112`), 纯算法保留为普通函数. 其他平台/宿主版本尚未验证. 除网页访问外, 下方能力仍是产品方向, 不是已实现功能.
+[RTK 集成](rtk.md)提供受支持的 Bash 改写、独立的最终结果 ANSI 清理, 以及包含设置、原生用量和诊断的内联 `/rtk` 面板. 它能发现 mise 管理的安装, 不修改 PATH, 保留 Pi 内置 Bash 执行.
+
+已测试目标是 Linux Bun 编译版 Pi `0.85.1`. 技术栈为 TypeScript、Bun `1.4.0` 和 Effect v4 (`4.0.0-rc.112`), 纯算法保留为普通函数. 其他平台/宿主版本尚未验证. 除网页访问和 RTK 集成外, 下方能力仍是产品方向, 不是已实现功能.
 
 ## 项目目标
 
@@ -47,27 +49,29 @@ cd pi-stuff
 - [index.ts](../../../index.ts) 是唯一的 Pi 入口, 直接读取配置并注册各项能力; Pi 的本地扩展列表显示检出目录名.
 - [src/pi/](../../../src/pi/) 管理共用的宿主配置和工具开关策略.
 - [src/web/](../../../src/web/) 管理网页访问, 包含工具, 认证, 网络实现和会话生命周期. 其他能力实现时放在同级目录.
+- [src/rtk/](../../../src/rtk/) 管理 RTK 发现、命令改写、最终结果清理和内联面板.
 - [tests/component/](../../../tests/component/) 验证模块行为; [tests/system/](../../../tests/system/) 在真实 Pi 宿主中加载扩展.
 
 Web 宿主注册位于 `src/web/register.ts`, 工具定义位于 `src/web/tools.ts`. 功能专用代码归所属能力管理, 包括使用 Pi API 的适配代码. 改编的 Web 源码在文件内保留上游来源和完整许可声明.
 
 ## 文档
 
-| 文档                                              | 用途                                    |
-| ------------------------------------------------- | --------------------------------------- |
-| [网页访问](web-access.md)                         | 加载、设置、凭据、工具与限制            |
-| [贡献指南](CONTRIBUTING.md)                       | Issue、聚焦的变更、验证与 PR            |
-| [代理指令](AGENTS.md)                             | 代理写作与 Git 工作流要求的中文阅读参考 |
-| [TUI 设计](design.md)                             | Pi 主题、交互、窄终端和操作反馈         |
-| [任务工作流](agents/workflow.md)                  | PR 范围、前置依赖、回退、Git 与工作树   |
-| [Issue 跟踪流程](agents/issue-tracker.md)         | GitHub 与 Beads 的分工、同步和公开更新  |
-| [Beads 设置](agents/beads.md)                     | 本地数据库、共享工作树、技能与认证      |
-| [分流标签](agents/triage-labels.md)               | 将任务分配到信息收集、代理或人工处理    |
-| [领域文档规则](agents/domain.md)                  | 领域术语与架构决策的阅读要求            |
-| [TypeScript/Bun 决策](adr/0001-typescript-bun.md) | 产品与仓库检查共用的工具链              |
-| [Effect 与质量决策](adr/0002-effect-quality.md)   | 框架、严格检查与结构审查                |
-| [工程规则](agents/engineering.md)                 | 类型、边界、格式与审查义务              |
-| [质量保证](quality-assurance.md)                  | 四类 QA 活动、五级测试与执行策略        |
+| 文档                                              | 用途                                     |
+| ------------------------------------------------- | ---------------------------------------- |
+| [网页访问](web-access.md)                         | 加载、设置、凭据、工具与限制             |
+| [RTK 集成](rtk.md)                                | Rewrite、ANSI 清理、设置、原生统计与恢复 |
+| [贡献指南](CONTRIBUTING.md)                       | Issue、聚焦的变更、验证与 PR             |
+| [代理指令](AGENTS.md)                             | 代理写作与 Git 工作流要求的中文阅读参考  |
+| [TUI 设计](design.md)                             | Pi 主题、交互、窄终端和操作反馈          |
+| [任务工作流](agents/workflow.md)                  | PR 范围、前置依赖、回退、Git 与工作树    |
+| [Issue 跟踪流程](agents/issue-tracker.md)         | GitHub 与 Beads 的分工、同步和公开更新   |
+| [Beads 设置](agents/beads.md)                     | 本地数据库、共享工作树、技能与认证       |
+| [分流标签](agents/triage-labels.md)               | 将任务分配到信息收集、代理或人工处理     |
+| [领域文档规则](agents/domain.md)                  | 领域术语与架构决策的阅读要求             |
+| [TypeScript/Bun 决策](adr/0001-typescript-bun.md) | 产品与仓库检查共用的工具链               |
+| [Effect 与质量决策](adr/0002-effect-quality.md)   | 框架、严格检查与结构审查                 |
+| [工程规则](agents/engineering.md)                 | 类型、边界、格式与审查义务               |
+| [质量保证](quality-assurance.md)                  | 四类 QA 活动、五级测试与执行策略         |
 
 以英文版为准。面向人的文档提供互链的中英版本，中文版本放在 `docs/i18n/zh-CN/`，在同一 PR 中同步更新。GitHub 上新增或实质性更新的面向人的内容采用英文在前、中文在后的双语形式；代理指令和技能仅保留英文，对话使用中文。适用范围、例外和 Markdown 指引见[语言与呈现](CONTRIBUTING.md#语言与呈现)。`docs/` 下的历史文档保留中文对照并明确标识其历史性质；不批量改写历史讨论和机器生成元数据。
 

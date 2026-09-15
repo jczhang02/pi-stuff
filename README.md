@@ -15,7 +15,9 @@ Focused interface, work, context, and integration capabilities for the native
 
 This checkout contains a development web extension with independent search, page-fetch and retained-content tools, shared tool switches, and host-managed OpenAI/Codex/Exa authentication. Exa supplies search and authentication, not chat models. No release is published. See [Web access](docs/web-access.md) for source loading, configuration, credentials and limits.
 
-The tested target is Linux Bun-compiled Pi `0.85.1`. The stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Other platforms/host versions are unverified. Beyond web access, the capabilities below describe product direction, not implemented features.
+[RTK integration](docs/rtk.md) adds supported Bash rewriting, independent final-result ANSI cleanup and an inline `/rtk` panel for settings, native usage and diagnostics. It resolves mise-managed installations without changing PATH and retains Pi's built-in Bash execution.
+
+The tested target is Linux Bun-compiled Pi `0.85.1`. The stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Other platforms/host versions are unverified. Beyond Web access and RTK integration, the capabilities below describe product direction, not implemented features.
 
 ## About
 
@@ -48,27 +50,29 @@ The [source-layout rules](docs/agents/engineering.md#source-layout) govern entry
 - [index.ts](index.ts) is the sole Pi entrypoint. It loads configuration and registers capabilities directly; Pi's local extension list shows the checkout name.
 - [src/pi/](src/pi/) owns shared host configuration and tool-switch policy.
 - [src/web/](src/web/) owns Web access, including its tools, authentication, transport and session lifecycle. Other capabilities belong in sibling directories when implemented.
+- [src/rtk/](src/rtk/) owns RTK discovery, command rewriting, final-result cleanup and the inline panel.
 - [tests/component/](tests/component/) exercises module behavior; [tests/system/](tests/system/) loads the extension in the real Pi host.
 
 Web host registration lives in `src/web/register.ts`; tool definitions live in `src/web/tools.ts`. Feature-specific code stays with its owning capability, including adapters that use Pi APIs. Adapted Web source carries its upstream provenance and full license notice inline.
 
 ## Documentation
 
-| Document                                                       | Purpose                                                     |
-| -------------------------------------------------------------- | ----------------------------------------------------------- |
-| [Web access](docs/web-access.md)                               | Loading, settings, credentials, tools and limits            |
-| [Contributing](CONTRIBUTING.md)                                | Issues, focused changes, verification, and pull requests    |
-| [Agent instructions](AGENTS.md)                                | Agent writing and Git workflow requirements                 |
-| [TUI design](design.md)                                        | Pi themes, controls, narrow terminals and feedback          |
-| [Task workflow](docs/agents/workflow.md)                       | PR scope, prerequisites, rollback, Git and worktrees        |
-| [Issue tracker workflow](docs/agents/issue-tracker.md)         | GitHub and Beads responsibilities, sync, and public updates |
-| [Beads setup](docs/agents/beads.md)                            | Local database, shared worktrees, skill, and authentication |
-| [Triage labels](docs/agents/triage-labels.md)                  | Routing tasks to information gathering, agents, or humans   |
-| [Domain documentation rules](docs/agents/domain.md)            | Reading domain terms and architecture decisions             |
-| [TypeScript/Bun decision](docs/adr/0001-typescript-bun.md)     | Shared product and repository-check toolchain               |
-| [Effect and quality decision](docs/adr/0002-effect-quality.md) | Framework, strict checks, and structural review             |
-| [Engineering rules](docs/agents/engineering.md)                | Types, boundaries, formatting, and review obligations       |
-| [Quality assurance](docs/quality-assurance.md)                 | Four QA activities, five test levels and execution policy   |
+| Document                                                       | Purpose                                                         |
+| -------------------------------------------------------------- | --------------------------------------------------------------- |
+| [Web access](docs/web-access.md)                               | Loading, settings, credentials, tools and limits                |
+| [RTK integration](docs/rtk.md)                                 | Rewrite, ANSI cleanup, settings, native statistics and recovery |
+| [Contributing](CONTRIBUTING.md)                                | Issues, focused changes, verification, and pull requests        |
+| [Agent instructions](AGENTS.md)                                | Agent writing and Git workflow requirements                     |
+| [TUI design](design.md)                                        | Pi themes, controls, narrow terminals and feedback              |
+| [Task workflow](docs/agents/workflow.md)                       | PR scope, prerequisites, rollback, Git and worktrees            |
+| [Issue tracker workflow](docs/agents/issue-tracker.md)         | GitHub and Beads responsibilities, sync, and public updates     |
+| [Beads setup](docs/agents/beads.md)                            | Local database, shared worktrees, skill, and authentication     |
+| [Triage labels](docs/agents/triage-labels.md)                  | Routing tasks to information gathering, agents, or humans       |
+| [Domain documentation rules](docs/agents/domain.md)            | Reading domain terms and architecture decisions                 |
+| [TypeScript/Bun decision](docs/adr/0001-typescript-bun.md)     | Shared product and repository-check toolchain                   |
+| [Effect and quality decision](docs/adr/0002-effect-quality.md) | Framework, strict checks, and structural review                 |
+| [Engineering rules](docs/agents/engineering.md)                | Types, boundaries, formatting, and review obligations           |
+| [Quality assurance](docs/quality-assurance.md)                 | Four QA activities, five test levels and execution policy       |
 
 English is normative. Human docs have linked English/Chinese counterparts, with Chinese versions under `docs/i18n/zh-CN/`, updated in the same PR. New or substantively updated human-facing GitHub prose is English first, Chinese second; agent instructions and skills remain English-only, and conversation is in Chinese. See [language and presentation](CONTRIBUTING.md#language-and-presentation) for scope, exceptions, and Markdown guidance. Historical documents under `docs/` retain Chinese counterparts and remain clearly marked; do not bulk-rewrite historical discussions or machine-generated metadata.
 

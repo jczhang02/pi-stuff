@@ -42,9 +42,17 @@ Distinguish loading, no data, no matching results and failure where applicable. 
 
 Use Pi's active theme and semantic colors for text, selection, borders, success, warnings and errors. A custom component uses the theme Pi supplies to it. Communicate status in words as well as color, so the user can understand a failure without identifying its color.
 
+Verify both built-in light and dark themes. A narrowly scoped contrast correction may adjust a demonstrated low-contrast built-in color within the feature, without mutating Pi's global theme or replacing custom palette values. Record the tested palette/background and retain semantic hue and text labels.
+
 ## Keyboard and focus
 
-Prefer Pi's existing components and interaction patterns. Follow its navigation, submit, back and cancel conventions, including user-configured keybindings where applicable. When a panel closes, restore focus to the input or invoking control. Extend the controls only where the feature needs an interaction Pi does not already provide.
+Prefer Pi's existing components and interaction patterns. Preserve configurable selection and submit bindings where applicable. Esc is the fixed back/exit key for Pi Stuff panels, including size notices and nested editors; do not replace it with a remapped cancel binding such as Ctrl+G. When a panel closes, restore focus to the input or invoking control.
+
+Feature shortcuts must be directly usable on a 60% keyboard. Do not assign PageUp, PageDown, Home, End or function-row keys to feature actions. Use ordinary keys such as `[` and `]` for previous/next page, and show the actual supported keys in local help. Reuse Pi's native selection navigation without changing the host's global bindings.
+
+Keep dimensions and control positions stable within a page during loading, refresh, saving and pagination. Different page types may use different heights: compact short menus and settings instead of padding them to a report's height. Reserve only the space needed for that page's transient feedback and wrapped descriptions. Long reports use a bounded content area with pagination and a visible page position; they must not enlarge the dialog as more records arrive. Resizing the terminal may change the content budget. Wrapping and pagination must preserve access to retained text, while clearly distinguishing any upstream truncation or explicit report-size limit.
+
+Paged tables retain their title and column headers on every page. When a report has different sections, keep each page's section and column meanings visible. Parse external reports into the fields the interface presents; do not substitute a raw CLI dump for a structured view.
 
 ## Narrow terminals
 
