@@ -1,0 +1,50 @@
+
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 with low effort · API Usage Billing
+  ▝▝ ▝▝    /tmp/claude-ui-research/workspace
+
+⚠ Safe mode: all customizations are disabled (CLAUDE.md, skills, plugins, hooks, MCP, agents, and more)
+  Restart without --safe-mode to re-enable
+
+❯ Investigate lifecycle.ts and report cancellation behavior.
+
+  Read 1 file
+
+❯ Check startup races too.
+  ⎿  Interrupted · What should Claude do instead?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Explore › Compare package behavior
+   2m 49s · 1.2k tokens · 1 tool · Sonnet 4.6
+
+   Progress
+   › Read(packages.ts)
+
+   Prompt
+   Investigate packages.ts and compare package behavior.
+
+   ← to go back · Esc/Enter/Space to close · x to stop · f to foreground
