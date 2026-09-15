@@ -257,18 +257,16 @@ export class UsageView implements Component {
         },
       ];
     }
-    const controls = [
-      '',
-      this.theme.bold('Display'),
-      ...this.settings.render(width),
-    ];
+    const settingsLines = this.settings.render(width);
+    const keyboardHint = settingsLines.at(-1) ?? '';
+    const settingsBody = settingsLines.slice(0, -1);
     const reportLines = this.pager.renderSections(
       sections,
       width,
-      RTK_BODY_ROWS - controls.length,
+      RTK_BODY_ROWS - settingsBody.length - 1,
       this.theme,
     );
-    return [...reportLines, ...controls];
+    return [...settingsBody, ...reportLines, keyboardHint];
   }
 
   invalidate(): void {

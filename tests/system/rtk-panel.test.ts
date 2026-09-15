@@ -2,6 +2,7 @@ import {test, expect} from 'bun:test';
 import {launchPi} from './fixtures/pi-terminal';
 import {access, writeFile, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {expectUsageLayout} from './rtk-usage-helpers';
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -326,6 +327,11 @@ esac
       timeoutMs: 3000,
     });
     const loadingScreen = await host.terminal.screen.text();
+    expectUsageLayout(
+      loadingScreen,
+      'Refreshing usage',
+      'Global statistics or this working directory.',
+    );
     expect(panelHeight(loadingScreen, 'RTK / Usage')).toBe(22);
     const loadingFooter = panelLineOffset(
       loadingScreen,
@@ -337,6 +343,11 @@ esac
       timeoutMs: 5000,
     });
     const readyScreen = await host.terminal.screen.text();
+    expectUsageLayout(
+      readyScreen,
+      'Total commands',
+      'Global statistics or this working directory.',
+    );
     expect(panelHeight(readyScreen, 'RTK / Usage')).toBe(22);
     const readyFooter = panelLineOffset(
       readyScreen,
@@ -345,9 +356,13 @@ esac
     );
     expect(readyFooter).toBe(loadingFooter);
     await host.terminal.resize({cols: 56, rows: 26});
-    expect(panelHeight(await host.terminal.screen.text(), 'RTK / Usage')).toBe(
-      22,
+    const narrowUsageScreen = await host.terminal.screen.text();
+    expectUsageLayout(
+      narrowUsageScreen,
+      'Total commands',
+      'Global statistics or this working directory.',
     );
+    expect(panelHeight(narrowUsageScreen, 'RTK / Usage')).toBe(22);
 
     await host.terminal.keyboard.press('Escape');
     await host.terminal.screen.waitForText('Configure RTK and inspect usage.', {

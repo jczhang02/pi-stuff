@@ -21,7 +21,7 @@ import type {RtkSettings} from './settings';
 import type {RtkRuntime} from './runtime';
 import {ExecutableEditor} from './executable-editor';
 import {UsageView} from './usage';
-import {dataRow, fillRows, RTK_BODY_ROWS} from './display';
+import {dataRow, fillRows, readablePanelLines, RTK_BODY_ROWS} from './display';
 import {DiagnosticsView} from './diagnostics';
 
 type Page = 'Settings' | 'Usage' | 'Diagnostics';
@@ -253,17 +253,20 @@ class RtkPanel implements Component, Focusable {
     const border = this.border.render(width)[0] ?? '';
     const inner = Math.max(12, width - 4);
     if (this.tooSmall())
-      return [
-        border,
-        this.theme.fg('warning', 'RTK needs more room'),
-        ...wrapTextWithAnsi(
-          'Resize to at least 56 columns and 26 rows.',
-          inner,
-        ),
-        '',
-        'Esc close',
-        border,
-      ];
+      return readablePanelLines(
+        [
+          border,
+          this.theme.fg('warning', 'RTK needs more room'),
+          ...wrapTextWithAnsi(
+            'Resize to at least 56 columns and 26 rows.',
+            inner,
+          ),
+          '',
+          'Esc close',
+          border,
+        ],
+        this.theme,
+      );
     const title = this.theme.bold(
       this.theme.fg('accent', this.page ? `RTK / ${this.page}` : 'RTK'),
     );
@@ -288,14 +291,17 @@ class RtkPanel implements Component, Focusable {
           : this.page === 'Usage'
             ? this.usage.render(inner)
             : this.diagnostics.render(inner);
-    return [
-      border,
-      `${title}${' '.repeat(gap)}${this.theme.fg('muted', this.status)}`,
-      '',
-      ...fillRows(lines.slice(0, -1), RTK_BODY_ROWS - 1),
-      lines.at(-1) ?? '',
-      border,
-    ];
+    return readablePanelLines(
+      [
+        border,
+        `${title}${' '.repeat(gap)}${this.theme.fg('muted', this.status)}`,
+        '',
+        ...fillRows(lines.slice(0, -1), RTK_BODY_ROWS - 1),
+        lines.at(-1) ?? '',
+        border,
+      ],
+      this.theme,
+    );
   }
 
   private settingsLines(width: number): string[] {

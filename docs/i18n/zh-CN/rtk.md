@@ -44,7 +44,9 @@ Diagnostics 只读显示已解析的可执行文件、探测信息、本次扩�
 
 Daily、Weekly、Monthly 和 History 每页保留表头. Failures 按最近记录和命令频次分区, 翻页时保留所属分区的标题及列名. 主题强调色区分表头、节省量和回退结果, 每种状态仍有文字标识.
 
-下方 [100x30 截图](../../assets/rtk/usage.png)和 [56x26 截图](../../assets/rtk/usage-narrow.png)来自编译 Pi 0.85.1 与原生 RTK 0.45.0, 展示隔离 fixture 仓库执行十次 `git status` 后的结果. 数值只属于本次样本, 不是通用压缩率基准. 这些是渲染后的 Terminal Control 抓取, 不是原生桌面截图.
+Scope 和 View 放在报告上方, 保留当前设置项说明. 分页在数据下方, 快捷键提示固定在底部. 对 Pi 0.85.1 内置 light 主题, RTK 在面板内加深原有强调色、成功色、警告色和弱化文字, 改善浅色背景对比度. 修正不修改全局设置或进入模型的输出. 深色主题及带来源元数据的自定义主题保持不变; 256 色终端使用对应的较深色阶. Pi 无法区分缺少来源元数据且名为 `light` 的内存主题与内置主题, 这种主题中匹配原前景色序列的部分也会被修正.
+
+下方历史 [100x30 截图](../../assets/rtk/usage.png)和 [56x26 截图](../../assets/rtk/usage-narrow.png)来自编译 Pi 0.85.1 与原生 RTK 0.45.0, 展示隔离 fixture 仓库执行十次 `git status` 后的结果. 它们早于顶部选择区布局, 新版见[修改前后证据](rtk-review-evidence.md#顶部选择区与浅色对比度). 数值只属于本次样本, 不是通用压缩率基准. 这些是渲染后的 Terminal Control 抓取, 不是原生桌面截图.
 
 导出使用 Pi 当前深色配色, 字体栈为 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`.
 

@@ -1,113 +1,16 @@
 import {expect, test} from 'bun:test';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import type {Frame} from '@kitlangton/terminal-control';
 import {launchPi} from './fixtures/pi-terminal';
-
-function reportBody(screen: string): string {
-  const lines = screen.split(/\r?\n/u);
-  const title = lines.findIndex(line => line.includes('RTK / Usage'));
-  const page = lines.findIndex(
-    (line, index) => index > title && /Page \d+\/\d+/u.test(line),
-  );
-  return title < 0 || page < 0 ? '' : lines.slice(title + 1, page).join('\n');
-}
-
-function pageNumber(screen: string) {
-  const match = /Page (\d+)\/(\d+)/u.exec(screen);
-  if (match === null || match[1] === undefined || match[2] === undefined)
-    throw new Error('The Usage report did not render a page marker.');
-  return {current: Number(match[1]), total: Number(match[2])};
-}
-
-async function collectReportPages(
-  terminal: Awaited<ReturnType<typeof launchPi>>['terminal'],
-): Promise<string[]> {
-  const pages: string[] = [];
-  for (;;) {
-    const screen = await terminal.screen.text();
-    pages.push(reportBody(screen));
-    const page = pageNumber(screen);
-    if (page.current >= page.total) return pages;
-    await terminal.keyboard.type(']');
-    await terminal.screen.waitForText(
-      new RegExp(`Page ${page.current + 1}\\/\\d+`, 'u'),
-      {timeoutMs: 5000},
-    );
-  }
-}
-
-async function goToFirstReportPage(
-  terminal: Awaited<ReturnType<typeof launchPi>>['terminal'],
-): Promise<void> {
-  const page = pageNumber(await terminal.screen.text());
-  if (page.current === 1) return;
-  await terminal.keyboard.type('['.repeat(page.current - 1));
-  await terminal.screen.waitForText(/Page 1\/\d+/u, {timeoutMs: 5000});
-}
-
-function reportContent(pages: readonly string[]): string {
-  return pages
-    .map(page =>
-      page
-        .split(/\r?\n/u)
-        .filter(line => {
-          const value = line.trim();
-          return (
-            value !== 'Recent commands' &&
-            !/^Time\s+Command\s+Saved\s+Rate$/u.test(value) &&
-            !value.startsWith('Parse failures · ') &&
-            !/^Global · \d+ failures · /u.test(value) &&
-            !/^Time\s+Fallback\s+Command$/u.test(value) &&
-            !/^Command\s+Count$/u.test(value)
-          );
-        })
-        .join('\n'),
-    )
-    .join('\n');
-}
-
-function panelHeight(frame: Frame): number {
-  const rows = new Map<number, string>();
-  for (const cell of frame.cells)
-    rows.set(cell.y, `${rows.get(cell.y) ?? ''}${cell.text}`);
-  const titleRow = [...rows.entries()].find(([, text]) =>
-    text.includes('RTK / Usage'),
-  )?.[0];
-  if (titleRow === undefined) throw new Error('The Usage title is missing.');
-  const borderRows = [...rows.entries()]
-    .filter(
-      ([row, text]) =>
-        row !== titleRow &&
-        /^─+$/u.test(text.trim()) &&
-        text.trim().length >= Math.min(frame.cols, 20),
-    )
-    .map(([row]) => row);
-  const top = borderRows.filter(row => row < titleRow).at(-1);
-  const bottom = borderRows.find(row => row > titleRow);
-  if (top === undefined || bottom === undefined)
-    throw new Error('The Usage panel borders are missing.');
-  return bottom - top + 1;
-}
-
-function foregroundFor(frame: Frame, value: string): string {
-  const rows = new Map<number, Frame['cells']>();
-  for (const cell of frame.cells)
-    rows.set(cell.y, [...(rows.get(cell.y) ?? []), cell]);
-  for (const cells of rows.values()) {
-    cells.sort((left, right) => left.x - right.x);
-    const text = cells.map(cell => cell.text).join('');
-    const start = text.indexOf(value);
-    if (start < 0) continue;
-    let offset = 0;
-    for (const cell of cells) {
-      if (start >= offset && start < offset + cell.text.length)
-        return JSON.stringify(cell.foreground);
-      offset += cell.text.length;
-    }
-  }
-  throw new Error(`The Usage report does not contain ${value}.`);
-}
+import {
+  collectReportPages,
+  expectUsageLayout,
+  foregroundFor,
+  goToFirstReportPage,
+  pageNumber,
+  panelHeight,
+  reportContent,
+} from './rtk-usage-helpers';
 
 test('Usage renders the native RTK JSON summary', async () => {
   const host = await launchPi();
@@ -136,6 +39,11 @@ esac
     await host.terminal.screen.waitForText('RTK / Usage', {timeoutMs: 5000});
     await host.terminal.screen.waitForText('Total commands', {timeoutMs: 5000});
     const screen = await host.terminal.screen.text();
+    expectUsageLayout(
+      screen,
+      'Total commands',
+      'Global statistics or this working directory.',
+    );
     expect(screen).toContain('37');
     expect(screen).toContain('7.3k');
     expect(screen).toContain('Before RTK');
@@ -147,7 +55,13 @@ esac
     await host.terminal.screen.waitForText('Estimated output tokens', {
       timeoutMs: 5000,
     });
-    expect(await host.terminal.screen.text()).toContain('billing');
+    const narrow = await host.terminal.screen.text();
+    expectUsageLayout(
+      narrow,
+      'Estimated output tokens',
+      'Global statistics or this working directory.',
+    );
+    expect(narrow).toContain('billing');
   } finally {
     await host.close();
   }
@@ -193,7 +107,10 @@ esac
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Daily savings', {timeoutMs: 5000});
     let screen = await host.terminal.screen.text();
-    expect(screen).toContain('Page 1/2');
+    expectUsageLayout(screen, 'Daily savings', 'Native RTK gain report.');
+    const firstPage = pageNumber(screen);
+    expect(firstPage.current).toBe(1);
+    expect(firstPage.total).toBeGreaterThan(1);
     expect(screen).toContain('2026-09-01');
     expect(screen).toContain('Daily savings');
     expect(screen).toContain('Date');
@@ -213,24 +130,26 @@ esac
     expect(screen).toContain('Rate');
     expect(screen).not.toContain('No Daily data');
     await host.terminal.keyboard.type('[');
-    await host.terminal.screen.waitForText('Page 1/2', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText(/Page 1\/\d+/u, {timeoutMs: 5000});
     await host.terminal.resize({cols: 56, rows: 26});
-    await host.terminal.screen.waitForText('Page 1/2', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText(/Page 1\/\d+/u, {timeoutMs: 5000});
     const narrow = await host.terminal.screen.text();
+    expectUsageLayout(narrow, 'Daily savings', 'Native RTK gain report.');
     expect(panelHeight(await host.terminal.screen.frame())).toBe(22);
-    expect(narrow).toContain('Page 1/2');
+    expect(pageNumber(narrow).current).toBe(1);
+    expect(pageNumber(narrow).total).toBeGreaterThan(1);
     expect(narrow).toContain('Rate');
     expect(narrow).toContain('r Refresh');
     expect(narrow).toContain('Esc Back');
     expect(narrow).toContain('2026-09-01');
     await host.terminal.keyboard.type(']');
-    await host.terminal.screen.waitForText('Page 2/2', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText(/Page 2\/\d+/u, {timeoutMs: 5000});
     const lastPage = await host.terminal.screen.text();
     expect(lastPage).toContain('2026-09-15');
     expect(lastPage).toContain('55.2%');
     expect(lastPage).not.toContain('2026-09-01');
     await host.terminal.keyboard.type('[');
-    await host.terminal.screen.waitForText('Page 1/2', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText(/Page 1\/\d+/u, {timeoutMs: 5000});
   } finally {
     await host.close();
   }
@@ -312,6 +231,11 @@ esac
     for (const table of tables) {
       await host.terminal.keyboard.press('Enter');
       await host.terminal.screen.waitForText(table.heading, {timeoutMs: 5000});
+      expectUsageLayout(
+        await host.terminal.screen.text(),
+        table.heading,
+        'Native RTK gain report.',
+      );
       const pages = await collectReportPages(host.terminal);
       expect(pages.length).toBeGreaterThan(1);
       for (const page of pages) {
@@ -363,6 +287,11 @@ esac
       timeoutMs: 5000,
     });
     const screen = await host.terminal.screen.text();
+    expectUsageLayout(
+      screen,
+      'Usage report unsupported',
+      'Native RTK gain report.',
+    );
     expect(screen).toContain('unsupported JSON usage report');
     expect(screen).not.toContain('No daily usage recorded');
   } finally {
@@ -412,9 +341,13 @@ esac
     await host.terminal.screen.waitForText('Usage report unsupported', {
       timeoutMs: 5000,
     });
-    expect(await host.terminal.screen.text()).toContain(
-      'unsupported history report',
+    let screen = await host.terminal.screen.text();
+    expectUsageLayout(
+      screen,
+      'Usage report unsupported',
+      'Native RTK gain report.',
     );
+    expect(screen).toContain('unsupported history report');
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Refreshing usage', {
       timeoutMs: 5000,
@@ -422,9 +355,13 @@ esac
     await host.terminal.screen.waitForText('Usage report unsupported', {
       timeoutMs: 5000,
     });
-    expect(await host.terminal.screen.text()).toContain(
-      'unsupported parse-failure report',
+    screen = await host.terminal.screen.text();
+    expectUsageLayout(
+      screen,
+      'Usage report unsupported',
+      'Native RTK gain report.',
     );
+    expect(screen).toContain('unsupported parse-failure report');
   } finally {
     await host.close();
   }
@@ -484,6 +421,7 @@ esac
       await host.terminal.screen.waitForText(expected, {timeoutMs: 5000});
     }
     let screen = await host.terminal.screen.text();
+    expectUsageLayout(screen, 'Recent commands', 'Native RTK gain report.');
     expect(screen).toContain('09-15 11:04');
     expect(screen).toContain('git status');
     expect(screen).toContain('1.2k');
@@ -502,6 +440,11 @@ esac
     await host.terminal.resize({cols: 56, rows: 26});
     await goToFirstReportPage(host.terminal);
     const narrowFirstScreen = await host.terminal.screen.text();
+    expectUsageLayout(
+      narrowFirstScreen,
+      'Recent commands',
+      'Native RTK gain report.',
+    );
     expect(panelHeight(await host.terminal.screen.frame())).toBe(22);
     const narrowPages = await collectReportPages(host.terminal);
     const narrowFirst = narrowPages[0] ?? '';
@@ -584,6 +527,11 @@ esac
       await host.terminal.keyboard.press('Enter');
       await host.terminal.screen.waitForText(expected, {timeoutMs: 5000});
     }
+    expectUsageLayout(
+      await host.terminal.screen.text(),
+      'Parse failures · Recent failures',
+      'Native RTK gain report.',
+    );
     const pages = await collectReportPages(host.terminal);
     expect(pages.length).toBeGreaterThan(1);
     const firstPage = pages[0] ?? '';
@@ -600,6 +548,7 @@ esac
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Total commands', {timeoutMs: 5000});
     const screen = await host.terminal.screen.text();
+    expectUsageLayout(screen, 'Total commands', 'Native RTK gain report.');
     expect(screen).toContain('Scope  Project');
   } finally {
     await host.close();
@@ -652,6 +601,11 @@ esac
       await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Parse failures', {timeoutMs: 5000});
     const screen = await host.terminal.screen.text();
+    expectUsageLayout(
+      screen,
+      'Parse failures · Recent failures',
+      'Native RTK gain report.',
+    );
     expect(screen).toContain('Parse failures · Recent failures');
     expect(screen).toContain('Global · 1 failures · 0% recovered');
     expect(screen).toContain('Failed');
@@ -702,6 +656,11 @@ esac
       timeoutMs: 5000,
     });
     const screen = await host.terminal.screen.text();
+    expectUsageLayout(
+      screen,
+      'No parse failures recorded',
+      'Native RTK gain report.',
+    );
     expect(screen).toContain(
       'Global RTK reports no parser or fallback failures.',
     );
@@ -767,10 +726,14 @@ esac
     });
     const firstScreen = await host.terminal.screen.text();
     const firstFrame = await host.terminal.screen.frame();
+    expectUsageLayout(
+      firstScreen,
+      'Parse failures · Recent failures',
+      'Native RTK gain report.',
+    );
     expect(panelHeight(firstFrame)).toBe(22);
     expect(firstScreen).toContain('Parse failures · Recent failures');
     expect(firstScreen).toContain('Global · 15 failures · 60% recovered');
-    expect(firstScreen).toContain('Display');
     expect(firstScreen).toContain('r Refresh');
     expect(firstScreen).toContain('Esc Back');
     expect(firstScreen).not.toContain('PageDown');
@@ -841,6 +804,11 @@ esac
     }
     await host.terminal.resize({cols: 56, rows: 26});
     await host.terminal.screen.waitForText('Page 1/', {timeoutMs: 5000});
+    expectUsageLayout(
+      await host.terminal.screen.text(),
+      'Parse failures · Recent failures',
+      'Native RTK gain report.',
+    );
     const pages = await collectReportPages(host.terminal);
     expect(pages.length).toBeGreaterThan(1);
     for (const page of pages)
@@ -892,6 +860,11 @@ esac
     await host.terminal.screen.waitForText('Refreshing usage', {
       timeoutMs: 5000,
     });
+    expectUsageLayout(
+      await host.terminal.screen.text(),
+      'Refreshing usage',
+      'Native RTK gain report.',
+    );
     await host.terminal.keyboard.press('Escape');
     await host.terminal.screen.waitForText('Configure RTK and inspect usage', {
       timeoutMs: 5000,

@@ -44,7 +44,9 @@ Diagnostics is read-only. It shows the resolved executable, probe information, t
 
 Daily, Weekly, Monthly and History keep their table headers on every page. Failures groups parsed recent records and command frequencies, retaining each section's headings as it pages. Theme accents distinguish headers, savings and fallback outcomes; text labels still identify every status.
 
-The following [100x30 capture](assets/rtk/usage.png) and [56x26 capture](assets/rtk/usage-narrow.png) show compiled Pi 0.85.1 with native RTK 0.45.0 after ten `git status` executions in an isolated fixture repository. The figures belong to this sample, not a general savings benchmark. These are rendered Terminal Control captures, not native desktop screenshots.
+Scope and View appear above the report, with their selected-setting description. Pagination stays below the data and keyboard help stays at the bottom. In Pi 0.85.1's built-in light theme, RTK locally darkens the original accent, success, warning and dim foregrounds for readable light-background contrast. The correction affects only rendered RTK panels, not global settings or model-bound output. Dark themes and custom themes with source metadata remain unchanged; 256-color terminals use corresponding darker palette entries. Pi cannot distinguish an in-memory theme named `light` without source metadata from its built-in theme; matching foreground sequences in such a theme receive the same correction.
+
+The following historical [100x30 capture](assets/rtk/usage.png) and [56x26 capture](assets/rtk/usage-narrow.png) show compiled Pi 0.85.1 with native RTK 0.45.0 after ten `git status` executions in an isolated fixture repository. They predate the top-controls layout; see [current before/after evidence](rtk-review-evidence.md#top-controls-and-light-theme-contrast). The figures belong to this sample, not a general savings benchmark. These are rendered Terminal Control captures, not native desktop screenshots.
 
 The export uses Pi's active dark palette and `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`.
 

@@ -42,6 +42,8 @@ Distinguish loading, no data, no matching results and failure where applicable. 
 
 Use Pi's active theme and semantic colors for text, selection, borders, success, warnings and errors. A custom component uses the theme Pi supplies to it. Communicate status in words as well as color, so the user can understand a failure without identifying its color.
 
+Verify both built-in light and dark themes. A narrowly scoped contrast correction may adjust a demonstrated low-contrast built-in color within the feature, without mutating Pi's global theme or replacing custom palette values. Record the tested palette/background and retain semantic hue and text labels.
+
 ## Keyboard and focus
 
 Prefer Pi's existing components and interaction patterns. Preserve configurable selection and submit bindings where applicable. Esc is the fixed back/exit key for Pi Stuff panels, including size notices and nested editors; do not replace it with a remapped cancel binding such as Ctrl+G. When a panel closes, restore focus to the input or invoking control.

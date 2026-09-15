@@ -6,7 +6,25 @@ The UI repair after `99b7edf59aec91a692742e5e7ae9d3f055b97bd7` addresses the fiv
 
 Environment: Linux, compiled Pi 0.85.1, Bun 1.4.0, RTK 0.45.0, Pi dark palette, and `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. PNGs are Terminal Control exports from real Pi sessions, not desktop-window screenshots or redrawn mockups. Configuration, HOME and statistics were isolated. In the previous repair, History used actual native RTK records; failure and delayed-error cases used controlled process fixtures. The follow-up data sources are specified below. A still image does not prove a keypress; the reproduction traces below describe the observed interaction.
 
-## Structured reports and sticky headers
+## Top controls and light-theme contrast
+
+Before images below use `9771ed0`; after images use the subsequent top-controls repair. Each pair has the same 100x30 viewport, dataset, font and white terminal background. Scope/View now precede the report; the selected-setting description remains available, pagination follows the data and keyboard help stays at the bottom. Removing the Display heading frees two report rows without changing the 22-row panel.
+
+The local built-in light correction raises accent/success/warning contrast against white from 4.34/4.32/4.33 to 6.40/6.36/6.15. Dim text rises from 4.54 to 5.25. All corrected colors also exceed 4.5 against #f8f8f8. This is measured palette contrast, not a claim about arbitrary terminal backgrounds, font rasterization or custom themes. Dark themes and custom themes with source metadata are unchanged. An in-memory theme named `light` without source metadata cannot be distinguished from the built-in; matching foreground sequences also receive the correction. The final Pi capture batch covers 15 light and 15 dark Usage states, including narrow pages, all 22 rows high.
+
+| Daily before                                              | Daily after                                             |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| ![Daily before](assets/rtk/review/light-daily-before.png) | ![Daily after](assets/rtk/review/light-daily-after.png) |
+
+| Failures before                                                 | Failures after                                                |
+| --------------------------------------------------------------- | ------------------------------------------------------------- |
+| ![Failures before](assets/rtk/review/light-failures-before.png) | ![Failures after](assets/rtk/review/light-failures-after.png) |
+
+![Light narrow layout](assets/rtk/review/light-narrow-after.png)
+
+![Dark theme with top controls](assets/rtk/review/dark-top-controls-after.png)
+
+## Previous repair: structured reports and sticky headers
 
 The follow-up after `4040b986add263aa1cbb9c90c77513becc901ba6` keeps the title and column headers on every Daily, Weekly, Monthly and History page. Failures now decodes the native report into summary, recent records and top-command counts. Each section repeats its own header. Accent headings, green savings/recovery, red failed fallback and muted timestamps distinguish meanings without relying on color alone.
 
