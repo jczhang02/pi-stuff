@@ -5,7 +5,15 @@ import {
   visibleWidth,
   wrapTextWithAnsi,
 } from '@earendil-works/pi-tui';
-import type {FleetTask} from './prototype-model';
+import type {FleetAgent, FleetTask} from './prototype-model';
+
+export interface FleetColumns {
+  readonly width: number;
+  readonly name: number;
+  readonly status: number;
+  readonly elapsed: number;
+  readonly tokens: number;
+}
 
 export function oneLine(text: string): string {
   return text
@@ -66,7 +74,7 @@ function statusText(theme: Theme, task: FleetTask): string {
   return color === undefined ? '' : theme.fg(color, label);
 }
 
-export function alignRight(left: string, right: string, width: number): string {
+function alignRight(left: string, right: string, width: number): string {
   if (right.length === 0 || width < 60)
     return truncateToWidth(left, width, '...');
   const rightWidth = visibleWidth(right);
@@ -97,16 +105,72 @@ export function appendWrapped(
   }
 }
 
-export function taskStats(theme: Theme, task: FleetTask): string {
-  const status = statusText(theme, task);
+/** Measure the whole snapshot so expansion does not move the shared columns. */
+export function fleetColumns(
+  theme: Theme,
+  agents: readonly FleetAgent[],
+  width: number,
+): FleetColumns {
+  let name = 0;
+  let status = 0;
+  let elapsed = 0;
+  let tokens = 0;
+  for (const agent of agents) {
+    name = Math.max(name, visibleWidth(oneLine(agent.name)));
+    for (const task of agent.tasks) {
+      status = Math.max(status, visibleWidth(statusText(theme, task)));
+      elapsed = Math.max(
+        elapsed,
+        visibleWidth(formatElapsed(task.elapsedSeconds)),
+      );
+      tokens = Math.max(tokens, visibleWidth(formatTokens(task.outputTokens)));
+    }
+  }
+  return {
+    width,
+    name: Math.min(name, Math.floor(width / 4)),
+    status,
+    elapsed,
+    tokens,
+  };
+}
+
+export function agentRow(
+  theme: Theme,
+  columns: FleetColumns,
+  agent: FleetAgent,
+  icon: string,
+  toggle = '  ',
+): string {
+  const name = truncateToWidth(oneLine(agent.name), columns.name, '...');
+  const task = agent.tasks.at(-1);
+  if (agent.name === 'main' || task === undefined)
+    return theme.fg('text', `${icon} ${name}`);
+  const padding = ' '.repeat(columns.name - visibleWidth(name));
+  const left = `${icon} ${name}${padding}  ${toggle}${oneLine(task.description || 'No task')}`;
+  return taskRow(theme, columns, left, task);
+}
+
+export function taskRow(
+  theme: Theme,
+  columns: FleetColumns,
+  left: string,
+  task: FleetTask,
+): string {
+  const label = statusText(theme, task);
+  const status = label + ' '.repeat(columns.status - visibleWidth(label));
   const waitingOnDependencies =
     task.status === 'queued' ||
     (task.status === 'waiting' && !task.actions.includes('reply'));
-  if (waitingOnDependencies) return status;
-  const metrics = `${formatElapsed(task.elapsedSeconds)} · ↓ ${formatTokens(task.outputTokens)} tokens`;
-  return status.length === 0
-    ? theme.fg('accent', metrics)
-    : `${status}  ${theme.fg('accent', metrics)}`;
+  const elapsed = formatElapsed(task.elapsedSeconds).padStart(columns.elapsed);
+  const tokens = formatTokens(task.outputTokens).padStart(columns.tokens);
+  const metrics = `${elapsed} · ↓ ${tokens} tokens`;
+  const right = `${status}${columns.status > 0 ? '  ' : ''}${
+    waitingOnDependencies
+      ? ' '.repeat(visibleWidth(metrics))
+      : theme.fg('accent', metrics)
+  }`;
+  return theme.fg('text', alignRight(left, right, columns.width));
 }
 
 export function appendTaskSummary(

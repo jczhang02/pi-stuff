@@ -79,6 +79,8 @@ The retained [MIT notice](../src/subagents/LICENSE.arhen) includes the upstream 
 
 Task state and available actions come from one runtime snapshot. `Needs reply` is distinct from `Waiting dependencies`, and a task with no start time has no execution duration. Completed tasks show `Done`; failures, skipped work and cancellation remain explicit. Expanded tasks show the current operation, actual model, a short public-text progress preview and the question/answer record. Activity uses the most recent tool. Steering records distinguish pending, consumed and unprocessed messages. Token counts update when Pi reports completed-message usage.
 
+FleetView measures column widths across the snapshot, including retained tasks. Agent names and descriptions share their starting columns; state labels align on the left, elapsed time and token values on the right. The downward arrows and `tokens` suffixes also line up. A fixed slot before the description holds the expansion marker, so entering or expanding the tree does not move the description. Long names use at most a quarter of the terminal width, and descriptions truncate to leave room for the shared statistics. Main remains icon and name only.
+
 Tree navigation uses one keyed expansion set and one child-node builder. A single composer state owns the captured action, editor and return location. Stateless task presentation lives in `prototype-task-view.ts`; it formats the compact and expanded rows without owning navigation or execution. This removes the duplicate expansion and editor-state paths found during review.
 
 ## Terminal evidence
@@ -105,7 +107,15 @@ The live revision was exercised with authenticated `openai-codex/gpt-6-astra`: b
 
 Independent tests in private tmux 3.6a sessions passed arrow entry, wrapped/multiline movement, history, autocomplete and cursor restoration. With `extended-keys always` and `extended-keys-format csi-u`, Ctrl+Enter answered a child question and the task completed. The current revision also passed Ctrl+J and backslash+Enter in private tmux with extended keys disabled, then Ctrl+Enter with extended keys enabled. An unknown live model exited with an explicit error and no fixture fallback. All owned sessions and private tmux servers were stopped after verification.
 
-Actual Terminal Control captures, using the font stack above:
+The column-alignment fix was checked in real Pi with local providers at 122 by 74, 150 by 50 and 80 by 25. Terminal-cell assertions verified description starts, state starts, arrow positions and the right edge across agent and retained-task rows, including mixed reply/dependency/completed states. Independent rendering checks covered long and CJK names, seconds/minutes, different token magnitudes and compact/expanded column stability. The prior authenticated-model and tmux checks above remain evidence for the unchanged runtime and input paths; this layout fix did not repeat remote model calls.
+
+Current alignment captures, using the font stack above:
+
+- [Compact FleetView, 122 by 74](assets/subagents-prototype/alignment.png).
+- [Current and previous tasks, 150 by 50](assets/subagents-prototype/alignment-tree.png).
+- [Mixed states in a narrow terminal, 80 by 25](assets/subagents-prototype/alignment-narrow.png).
+
+Earlier interaction captures below predate the column-alignment fix:
 
 - [Live main conversation and arrow entry, 150 by 50](assets/subagents-prototype/live.png).
 - [Live child result expanded inline, 150 by 50](assets/subagents-prototype/live-tree.png).

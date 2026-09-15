@@ -79,6 +79,8 @@ bun run tui run subagent-tree -- bun tools/subagent-prototype.ts live openai-cod
 
 任务状态和可用操作来自同一份 runtime 快照. `Needs reply` 与 `Waiting dependencies` 分开显示, 尚未开始的任务没有执行时长. 完成显示 `Done`, 失败, 跳过和取消都有明确状态. 展开任务可见当前操作, 实际模型, 简短的公开文本进展及问答记录. Activity 使用最近的工具, Steering 区分 pending, consumed 和 unprocessed. Token 计数在 Pi 提供完整消息用量时更新.
 
+FleetView 根据整份快照计算列宽, 包括保留的旧任务. Agent 名称和描述各自从同一列开始, 状态文字靠左对齐, 耗时和 token 数值靠右对齐. 向下箭头和 `tokens` 后缀也分别对齐. 描述前保留固定的展开标记位置, 进入或展开树时描述不会移动. 长名称最多占终端宽度的四分之一, 描述根据统计列剩余空间截断. Main 仍只有 icon 和名称.
+
 树导航使用一份按节点 key 索引的展开集合和一个子节点构造入口. 单一 composer 状态持有已绑定的操作, 编辑器和返回位置. 无状态的任务展示放在 `prototype-task-view.ts`, 负责紧凑行和展开行的格式, 不管理导航或执行. 这消除了审查中发现的重复展开和编辑器状态路径.
 
 ## 终端证据
@@ -105,7 +107,15 @@ live 修订使用已认证的 `openai-codex/gpt-6-astra` 验收: 两个调查完
 
 独立私有 tmux 3.6a 会话通过了方向键入口, 多行/折行移动, 历史, 补全和光标恢复验证. 在 `extended-keys always` 和 `extended-keys-format csi-u` 下, Ctrl+Enter 成功答复子代理问题并完成任务. 当前修订还在关闭 extended keys 的私有 tmux 中通过 Ctrl+J 和反斜杠+Enter 换行验证, 再开启 extended keys 验证 Ctrl+Enter. 指定不存在的 live 模型会明确报错退出, 不回退到固定场景. 验证后已停止所有自建会话和私有 tmux server.
 
-使用上述字体栈生成的真实 Terminal Control 截图:
+列对齐修复在真实 Pi 配合本地 provider 的 122 列 74 行, 150 列 50 行和 80 列 25 行终端中检查. 终端单元格断言验证了 agent 与旧任务行的描述起点, 状态起点, 箭头位置和右边缘, 包含待答复/等待依赖/已完成混合状态. 独立渲染检查覆盖长名称, CJK 名称, 秒/分钟, 不同量级 token 及紧凑/展开列位置稳定性. 上述已认证模型和 tmux 检查继续作为未改动执行与输入路径的证据; 本轮布局修复没有重复远程模型调用.
+
+使用上述字体栈生成的当前列对齐截图:
+
+- [紧凑 FleetView, 122 列 74 行](../../assets/subagents-prototype/alignment.png).
+- [当前与旧任务, 150 列 50 行](../../assets/subagents-prototype/alignment-tree.png).
+- [窄终端混合状态, 80 列 25 行](../../assets/subagents-prototype/alignment-narrow.png).
+
+以下交互截图来自列对齐修复之前:
 
 - [真实模型主对话与方向键入口, 150 列 50 行](../../assets/subagents-prototype/live.png).
 - [内联展开真实子代理结果, 150 列 50 行](../../assets/subagents-prototype/live-tree.png).

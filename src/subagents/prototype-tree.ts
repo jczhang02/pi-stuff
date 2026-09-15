@@ -21,11 +21,13 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui';
 import {
-  alignRight,
+  agentRow,
   appendTaskSummary,
   appendWrapped,
   oneLine,
-  taskStats,
+  fleetColumns,
+  taskRow,
+  type FleetColumns,
 } from './prototype-task-view';
 import type {
   Activity,
@@ -233,16 +235,17 @@ export class FleetTree implements Component, Focusable {
     if (this.composer) this.composer.editor.focused = this.focused;
     const agents = this.fleetAgents();
     this.reconcileSelection(agents);
+    const columns = fleetColumns(this.theme, agents, width);
     this.selectedLine = 0;
     this.selectedAgentLine = 0;
     this.composerStart = 0;
     this.composerEnd = 0;
     if (!this.focused)
-      return this.boundCompact(this.renderCompact(agents, width));
+      return this.boundCompact(this.renderCompact(agents, columns));
 
     const lines: string[] = [this.theme.fg('dim', this.helpText(agents))];
     for (const node of this.navigationNodes(agents))
-      this.renderNode(node, width, lines);
+      this.renderNode(node, columns, lines);
     if (agents.length === 1 && agents[0]?.name === 'main')
       lines.push(this.theme.fg('muted', 'No subagents have been assigned.'));
     return this.boundLines(lines, width).map(line =>
@@ -256,17 +259,12 @@ export class FleetTree implements Component, Focusable {
 
   private renderCompact(
     agents: readonly FleetAgent[],
-    width: number,
+    columns: FleetColumns,
   ): string[] {
     const lines: string[] = [];
     for (const agent of agents) {
-      const task = latestTask(agent);
       const icon = this.agentIcon(agent.name === this.selectedAgentName);
-      let label = `${icon} ${agent.name}`;
-      if (task !== undefined)
-        label += `  ${oneLine(task.description || 'No task')}`;
-      const right = task === undefined ? '' : taskStats(this.theme, task);
-      lines.push(this.theme.fg('text', alignRight(label, right, width)));
+      lines.push(agentRow(this.theme, columns, agent, icon));
     }
     if (lines.length > 0)
       lines.push(this.theme.fg('dim', '↑↓ at editor edge inspect agents'));
@@ -282,23 +280,16 @@ export class FleetTree implements Component, Focusable {
     ];
   }
 
-  private renderNode(node: Node, width: number, lines: string[]): void {
+  private renderNode(node: Node, columns: FleetColumns, lines: string[]): void {
+    const {width} = columns;
     if (node.kind === 'agent') {
       if (node.key === this.selectedKey) this.selectedLine = lines.length;
       if (node.agent.name === this.selectedAgentName)
         this.selectedAgentLine = lines.length;
-      const task = latestTask(node.agent);
       const expanded = this.expanded.has(node.key);
       const icon = this.agentIcon(node.agent.name === this.selectedAgentName);
-      let left = `${icon} ${this.theme.fg('text', node.agent.name)}`;
-      if (node.agent.name !== 'main' && task !== undefined)
-        left += `  ${oneLine(task.description || 'No task')}`;
-      if (expanded && node.agent.tasks.length > 0)
-        left += ` ${this.theme.fg('muted', '▾')}`;
-      else if (node.agent.tasks.length > 0)
-        left += ` ${this.theme.fg('muted', '▸')}`;
-      const right = task === undefined ? '' : taskStats(this.theme, task);
-      lines.push(alignRight(left, right, width));
+      const toggle = this.theme.fg('muted', expanded ? '▾ ' : '▸ ');
+      lines.push(agentRow(this.theme, columns, node.agent, icon, toggle));
       return;
     }
 
@@ -310,8 +301,8 @@ export class FleetTree implements Component, Focusable {
       const expanded = this.expanded.has(node.key);
       const toggle = expanded ? '▾' : '▸';
       const age = latestTask(node.agent) === node.task ? 'Current' : 'Previous';
-      const text = `${prefix}${pointer}${toggle} ${age} · ${oneLine(node.task.description || 'No task')}`;
-      lines.push(alignRight(text, taskStats(this.theme, node.task), width));
+      const text = `${prefix}${pointer}${toggle} ${age.padEnd(8)} · ${oneLine(node.task.description || 'No task')}`;
+      lines.push(taskRow(this.theme, columns, text, node.task));
       if (expanded)
         appendTaskSummary(
           lines,
