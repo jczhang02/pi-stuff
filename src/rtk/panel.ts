@@ -7,6 +7,8 @@ import {
 import {
   SelectList,
   SettingsList,
+  Key,
+  matchesKey,
   visibleWidth,
   wrapTextWithAnsi,
   type Component,
@@ -19,7 +21,7 @@ import type {RtkSettings} from './settings';
 import type {RtkRuntime} from './runtime';
 import {ExecutableEditor} from './executable-editor';
 import {UsageView} from './usage';
-import {dataRow} from './display';
+import {dataRow, fillRows, RTK_BODY_ROWS} from './display';
 import {DiagnosticsView} from './diagnostics';
 
 type Page = 'Settings' | 'Usage' | 'Diagnostics';
@@ -59,7 +61,6 @@ class RtkPanel implements Component, Focusable {
       () => this.back(),
       () => tui.requestRender(),
       message => notify(message, 'error'),
-      () => tui.terminal.rows - 10,
     );
     this.usage = new UsageView(
       theme,
@@ -68,7 +69,6 @@ class RtkPanel implements Component, Focusable {
       () => this.back(),
       () => tui.requestRender(),
       message => notify(message, 'error'),
-      () => tui.terminal.rows - 10,
     );
     this.border = new DynamicBorder(text => theme.fg('borderAccent', text));
     this.sections = new SelectList(
@@ -94,6 +94,8 @@ class RtkPanel implements Component, Focusable {
       {minPrimaryColumnWidth: 18, maxPrimaryColumnWidth: 18},
     );
     this.sections.onSelect = item => {
+      this.usage.cancelPending();
+      this.diagnostics.cancelPending();
       if (
         item.value === 'Settings' ||
         item.value === 'Usage' ||
@@ -229,17 +231,21 @@ class RtkPanel implements Component, Focusable {
   }
 
   handleInput(data: string) {
-    if (this.tooSmall()) {
-      if (this.keys.matches(data, 'tui.select.cancel')) this.done();
-    } else if (this.saving) {
-      if (this.keys.matches(data, 'tui.select.cancel')) this.back();
-    } else if (this.page === undefined) {
+    if (matchesKey(data, Key.escape)) {
+      if (this.tooSmall() || this.page === undefined) this.done();
+      else if (this.editor) this.editor.handleInput(data);
+      else this.back();
+      this.tui.requestRender();
+      return;
+    }
+    if (this.keys.matches(data, 'tui.select.cancel')) return;
+    if (this.tooSmall() || this.saving) return;
+    if (this.page === undefined) {
       if (data === 'r') void this.usage.refresh();
       else this.sections.handleInput(data);
     } else if (this.page === 'Settings') this.settings.handleInput(data);
     else if (this.page === 'Usage') this.usage.handleInput(data);
     else if (this.page === 'Diagnostics') this.diagnostics.handleInput(data);
-    else if (this.keys.matches(data, 'tui.select.cancel')) this.back();
     this.tui.requestRender();
   }
 
@@ -271,45 +277,14 @@ class RtkPanel implements Component, Focusable {
             'Configure RTK and inspect usage.',
             '',
             this.theme.fg('muted', this.usage.titleStatus()),
-            ...this.usage.rootSummary(inner),
+            ...fillRows(this.usage.rootSummary(inner), 2),
             '',
             ...this.sections.render(inner),
             '',
             this.theme.fg('dim', '↑↓ Navigate · Enter Open · Esc Close'),
           ]
         : this.page === 'Settings'
-          ? this.editor
-            ? this.settings.render(inner)
-            : [
-                this.theme.bold('Runtime'),
-                dataRow(
-                  this.theme,
-                  'Status',
-                  this.runtimeInfo ? 'available' : this.status,
-                  inner,
-                ),
-                ...(this.runtimeInfo
-                  ? [
-                      dataRow(
-                        this.theme,
-                        'Version',
-                        this.runtimeInfo.version,
-                        inner,
-                      ),
-                      dataRow(
-                        this.theme,
-                        'Resolved by',
-                        this.runtimeInfo.source,
-                        inner,
-                      ),
-                    ]
-                  : []),
-                '',
-                this.theme.bold('Behavior'),
-                ...this.settings.render(inner),
-                ...(this.saving ? ['Saving settings...'] : []),
-                ...wrapTextWithAnsi(this.error, inner),
-              ]
+          ? this.settingsLines(inner)
           : this.page === 'Usage'
             ? this.usage.render(inner)
             : this.diagnostics.render(inner);
@@ -317,8 +292,41 @@ class RtkPanel implements Component, Focusable {
       border,
       `${title}${' '.repeat(gap)}${this.theme.fg('muted', this.status)}`,
       '',
-      ...lines,
+      ...fillRows(lines.slice(0, -1), RTK_BODY_ROWS - 1),
+      lines.at(-1) ?? '',
       border,
+    ];
+  }
+
+  private settingsLines(width: number): string[] {
+    const settings = this.settings.render(width);
+    if (this.editor) return settings;
+    return [
+      this.theme.bold('Runtime'),
+      dataRow(
+        this.theme,
+        'Status',
+        this.runtimeInfo ? 'available' : this.status,
+        width,
+      ),
+      dataRow(this.theme, 'Version', this.runtimeInfo?.version ?? '-', width),
+      dataRow(
+        this.theme,
+        'Resolved by',
+        this.runtimeInfo?.source ?? '-',
+        width,
+      ),
+      '',
+      this.theme.bold('Behavior'),
+      ...settings.slice(0, -1),
+      ...fillRows(
+        wrapTextWithAnsi(
+          this.saving ? 'Saving settings...' : this.error,
+          width,
+        ).slice(0, 3),
+        3,
+      ),
+      settings.at(-1) ?? '',
     ];
   }
 

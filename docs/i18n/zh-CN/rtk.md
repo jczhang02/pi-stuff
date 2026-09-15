@@ -28,7 +28,7 @@ Pi Stuff 使用 RTK 改写支持的模型 Bash 命令并过滤输出, 另行清�
 
 ## 面板
 
-`/rtk` 打开 Settings、Usage 和 Diagnostics 的内联列表, 使用 Pi 主题、列表和选择键. Escape 从详情返回列表, 再返回编辑器. RTK 扩展不增加底部状态栏. 版本旁的对勾表示可执行探测成功, 运行详情保留文字状态.
+`/rtk` 打开 Settings、Usage 和 Diagnostics 的内联列表, 使用 Pi 主题、列表和选择键. 固定 Esc 从详情返回列表, 再返回编辑器, 即使 Pi 的取消键已被重映射也不变. Ctrl+G 不是 RTK 返回或退出快捷键. RTK 扩展不增加底部状态栏. 版本旁的对勾表示可执行探测成功, 运行详情保留文字状态.
 
 直接命令及补全:
 
@@ -38,11 +38,11 @@ Pi Stuff 使用 RTK 改写支持的模型 Bash 命令并过滤输出, 另行清�
 - `/rtk refresh`: 打开 Usage 并读取当前统计.
 - `/rtk help`: 命令帮助.
 
-Usage 提供 Overview、Daily、Weekly、Monthly、History 和 Failures. `r` 刷新或重试. 返回会取消临时查询, 查询失败不关闭 rewrite. 窄布局支持 56 列 26 行; 更小终端显示尺寸提示并保留退出动作.
+Usage 提供 Overview、Daily、Weekly、Monthly、History 和 Failures. `r` 刷新或重试, `[` 上一页, `]` 下一页. 切换视图和加载状态时面板保持稳定高度, 长内容在内部换行和分页. PageUp/PageDown 不是 RTK 快捷键. 离开页面会取消临时查询, 包括从根页摘要进入 Settings; 查询失败不关闭 rewrite. 窄布局支持 56 列 26 行; 更小终端显示尺寸提示, 按 Esc 退出.
 
 Diagnostics 只读显示已解析的可执行文件、探测信息、本次扩展生命周期最近一次集成 rewrite 故障和 RTK 原生配置. Pi Stuff 不编辑 RTK 配置、信任设置、遥测、hook 或统计数据库.
 
-下方 [100x30 截图](../../assets/rtk/usage.png)和 [56x26 截图](../../assets/rtk/usage-narrow.png)来自编译 Pi 0.85.1 与原生 RTK 0.45.0, 展示隔离 fixture 仓库执行 `git status` 后的结果. 数值只属于这一条命令, 不是通用压缩率基准. 这些是渲染后的 Terminal Control 抓取, 不是原生桌面截图.
+下方 [100x30 截图](../../assets/rtk/usage.png)和 [56x26 截图](../../assets/rtk/usage-narrow.png)来自编译 Pi 0.85.1 与原生 RTK 0.45.0, 展示隔离 fixture 仓库执行十次 `git status` 后的结果. 数值只属于本次样本, 不是通用压缩率基准. 这些是渲染后的 Terminal Control 抓取, 不是原生桌面截图.
 
 导出使用 Pi 当前深色配色, 字体栈为 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`.
 
@@ -52,7 +52,7 @@ Diagnostics 只读显示已解析的可执行文件、探测信息、本次扩�
 
 Usage 显示 RTK 对原始和过滤后命令输出 token 的估算, 不表示供应商账单、精确模型上下文、Pi 会话专属用量或 Pi Stuff ANSI 清理收益. Global 可以包含其他应用使用同一 RTK 数据库产生的记录. Project 沿用 RTK 当前工作目录范围, 不单独聚合 Git 根目录.
 
-RTK 0.45.0 支持摘要和日/周/月 JSON. History 的 JSON 模式没有历史列表, 因此 Pi Stuff 读取原生文本历史; 该接口只提供最近记录, 命令名也可能已被截断. Failures 是全局文本报告, 面板不能暗示它已按项目过滤. 这些是原生解析/fallback 故障, 与 rewrite 准备错误和普通命令失败不同. 未识别格式会报告失败, 不显示成零统计.
+RTK 0.45.0 支持摘要和日/周/月 JSON. History 的 JSON 模式没有历史列表, 因此 Pi Stuff 读取原生文本历史; 该接口只提供最近记录, 命令名也可能已被截断, 本地分页无法恢复 RTK 没有提供的文本. Failures 是全局文本报告, 面板不能暗示它已按项目过滤. 保留的每行完整换行显示, 报告上限为 120 行, 超出时明确显示截断标记. 这些是原生解析/fallback 故障, 与 rewrite 准备错误和普通命令失败不同. 未识别格式会报告失败, 不显示成零统计.
 
 ## 执行与恢复边界
 

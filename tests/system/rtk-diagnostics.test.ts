@@ -52,12 +52,14 @@ esac
     );
     expect(screen).not.toContain('\x1b[31m');
 
-    await host.terminal.keyboard.sequence(
-      Array.from({length: 40}, () => 'ArrowDown' as const),
-    );
+    await host.terminal.screen.waitForText('Page 1/', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('PageDown');
+    await host.terminal.screen.waitForText('Page 1/', {timeoutMs: 3000});
+    await host.terminal.keyboard.type(']'.repeat(20));
     await host.terminal.screen.waitForText('config_tail', {timeoutMs: 3000});
     screen = await host.terminal.screen.text();
     expect(screen).toContain('config_tail = "visible after scrolling"');
+    expect(screen).toContain('[ Previous');
   } finally {
     await host.close();
   }

@@ -1,7 +1,7 @@
 import type {Theme} from '@earendil-works/pi-coding-agent';
 import {getSettingsListTheme} from '@earendil-works/pi-coding-agent';
 import {isRtkCancellation, type RtkRuntime} from './runtime';
-import {dataRow} from './display';
+import {dataRow, ReportPager, RTK_BODY_ROWS} from './display';
 import {
   boundedReportLines,
   clean,
@@ -22,11 +22,8 @@ import {
   type PeriodRow,
 } from './report';
 import {
-  Key,
-  truncateToWidth,
   visibleWidth,
   wrapTextWithAnsi,
-  matchesKey,
   SettingsList,
   type Component,
   type SettingItem,
@@ -51,7 +48,7 @@ export class UsageView implements Component {
   private pending: AbortController | undefined;
   private requestNumber = 0;
   private savedScope: UsageScope | undefined;
-  private failureOffset = 0;
+  private readonly pager = new ReportPager();
   private readonly settings: SettingsList;
 
   constructor(
@@ -61,13 +58,12 @@ export class UsageView implements Component {
     private readonly onCancel: () => void,
     private readonly requestRender: () => void,
     private readonly notifyError: (message: string) => void,
-    private readonly availableRows: () => number,
   ) {
     const items: SettingItem[] = [
       {
         id: 'scope',
         label: 'Scope',
-        description: 'Global RTK statistics or the current working directory.',
+        description: 'Global statistics or this working directory.',
         currentValue: this.scope,
         values: ['Global', 'Project'],
       },
@@ -97,6 +93,7 @@ export class UsageView implements Component {
 
   refresh(): Promise<void> {
     this.cancelPending();
+    this.pager.reset();
     const requestNumber = ++this.requestNumber;
     const controller = new AbortController();
     this.pending = controller;
@@ -192,7 +189,10 @@ export class UsageView implements Component {
       void this.refresh();
       return;
     }
-    if (this.view === 'Failures' && this.scrollFailures(data)) return;
+    if (this.pager.handleInput(data)) {
+      this.requestRender();
+      return;
+    }
     this.settings.handleInput(data);
   }
 
@@ -220,8 +220,20 @@ export class UsageView implements Component {
     } else {
       lines.push(this.theme.fg('muted', 'No native RTK usage report loaded.'));
     }
-    lines.push('', this.theme.bold('Display'), ...this.settings.render(width));
-    return lines;
+    const controls = [
+      '',
+      this.theme.bold('Display'),
+      ...this.settings.render(width),
+    ];
+    return [
+      ...this.pager.render(
+        lines,
+        width,
+        RTK_BODY_ROWS - controls.length,
+        this.theme,
+      ),
+      ...controls,
+    ];
   }
 
   invalidate(): void {
@@ -283,8 +295,7 @@ export class UsageView implements Component {
     if (!this.isCurrent(requestNumber, controller)) return;
     this.state = outcome.state;
     this.snapshot = outcome.state === 'ready' ? outcome.snapshot : undefined;
-    if (outcome.state === 'ready' && outcome.snapshot.kind === 'failures')
-      this.failureOffset = 0;
+    this.pager.reset();
     this.errorMessage =
       outcome.state === 'unsupported' || outcome.state === 'failure'
         ? outcome.message
@@ -293,38 +304,6 @@ export class UsageView implements Component {
     if (outcome.state === 'unsupported' || outcome.state === 'failure')
       this.notifyError(outcome.message);
     this.requestRender();
-  }
-
-  private scrollFailures(data: string): boolean {
-    const snapshot = this.snapshot;
-    if (snapshot?.kind !== 'failures') return false;
-    const report = snapshot.failuresText;
-    const lineCount = boundedReportLines(report).length;
-    const visibleRows = this.reportRows();
-    const maxOffset = Math.max(0, lineCount - visibleRows);
-    if (maxOffset === 0) return false;
-    if (
-      matchesKey(data, Key.pageUp) ||
-      matchesKey(data, Key.ctrl('u')) ||
-      matchesKey(data, Key.leftbracket)
-    ) {
-      this.failureOffset = Math.max(0, this.failureOffset - visibleRows);
-      this.requestRender();
-      return true;
-    }
-    if (
-      matchesKey(data, Key.pageDown) ||
-      matchesKey(data, Key.ctrl('d')) ||
-      matchesKey(data, Key.rightbracket)
-    ) {
-      this.failureOffset = Math.min(
-        maxOffset,
-        this.failureOffset + visibleRows,
-      );
-      this.requestRender();
-      return true;
-    }
-    return false;
   }
 
   private changeSetting(id: string, value: string): void {
@@ -344,7 +323,6 @@ export class UsageView implements Component {
       if (nextView === 'Failures' && this.view !== 'Failures') {
         this.savedScope = this.scope;
         this.scope = 'Global';
-        this.failureOffset = 0;
         this.settings.updateValue('scope', 'Global');
       } else if (this.view === 'Failures' && nextView !== 'Failures') {
         this.scope = this.savedScope ?? 'Global';
@@ -396,13 +374,13 @@ export class UsageView implements Component {
       ),
       dataRow(
         this.theme,
-        'Input tokens',
+        'Before RTK',
         formatTokens(summary.total_input),
         width,
       ),
       dataRow(
         this.theme,
-        'Output tokens',
+        'After RTK',
         formatTokens(summary.total_output),
         width,
       ),
@@ -425,7 +403,7 @@ export class UsageView implements Component {
       ...wrapTextWithAnsi(
         this.theme.fg(
           'dim',
-          'Estimated RTK token savings only; excludes ANSI-cleanup savings, billing, and Pi usage.',
+          'Estimated output tokens. Excludes ANSI cleanup, billing and Pi session usage.',
         ),
         width,
       ),
@@ -449,24 +427,20 @@ export class UsageView implements Component {
     );
     const labelHeader =
       view === 'Daily' ? 'Date' : view === 'Weekly' ? 'Week' : 'Month';
-    const visiblePeriods = periods.slice(-this.reportRows());
-    const title =
-      visiblePeriods.length === periods.length
-        ? `${view} savings`
-        : `${view} savings (showing ${visiblePeriods.length} of ${periods.length})`;
     const lines = [
-      this.theme.bold(title),
+      this.theme.bold(`${view} savings`),
       this.theme.fg(
         'muted',
         `${prefix}${labelHeader.padEnd(labelWidth)}${separator}${rightHeader}`,
       ),
     ];
-    for (const period of visiblePeriods) {
+    for (const period of periods) {
       const right = `${formatCount(period.commands).padStart(8)}  ${formatTokens(period.saved_tokens).padStart(7)}  ${formatPercent(period.savings_pct).padStart(6)}`;
-      const label = truncateToWidth(period.label, labelWidth, '...').padEnd(
-        labelWidth,
-      );
-      lines.push(`${prefix}${label}${separator}${right}`);
+      const labels = wrapTextWithAnsi(period.label, labelWidth);
+      for (const [index, label] of labels.entries())
+        lines.push(
+          `${prefix}${label.padEnd(labelWidth)}${separator}${index === 0 ? right : ''}`,
+        );
     }
     return lines;
   }
@@ -475,7 +449,11 @@ export class UsageView implements Component {
     entries: readonly HistoryEntry[],
     width: number,
   ): string[] {
-    const prefix = `  ${'Time'.padEnd(21)}`;
+    const timeWidth = Math.max(
+      4,
+      ...entries.map(entry => visibleWidth(entry.time)),
+    );
+    const prefix = `  ${'Time'.padEnd(timeWidth)}  `;
     const separator = '  ';
     const rightHeader = `${'Saved'.padStart(7)}  ${'Rate'.padStart(6)}`;
     const commandWidth = Math.max(
@@ -485,21 +463,16 @@ export class UsageView implements Component {
         visibleWidth(rightHeader) -
         visibleWidth(separator),
     );
-    const visibleEntries = entries.slice(0, this.reportRows());
-    const title =
-      visibleEntries.length === entries.length
-        ? 'Recent commands'
-        : `Recent commands (showing ${visibleEntries.length} of ${entries.length})`;
     const lines = [
-      this.theme.bold(title),
+      this.theme.bold('Recent commands'),
       this.theme.fg(
         'muted',
         `${prefix}${'Command'.padEnd(commandWidth)}${separator}${rightHeader}`,
       ),
     ];
-    for (const entry of visibleEntries) {
+    for (const entry of entries) {
       const right = `${entry.saved.padStart(7)}  ${formatPercent(entry.rate).padStart(6)}`;
-      const prefix = `  ${entry.time.padEnd(21)}`;
+      const prefix = `  ${entry.time.padEnd(timeWidth)}  `;
       const separator = '  ';
       const entryCommandWidth = Math.max(
         1,
@@ -508,52 +481,31 @@ export class UsageView implements Component {
           visibleWidth(right) -
           visibleWidth(separator),
       );
-      const command = truncateToWidth(
-        entry.command,
-        entryCommandWidth,
-        '...',
-      ).padEnd(entryCommandWidth);
-      lines.push(`${prefix}${command}${separator}${right}`);
+      const commandLines = wrapTextWithAnsi(entry.command, entryCommandWidth);
+      for (const [index, command] of commandLines.entries())
+        lines.push(
+          `${index === 0 ? prefix : ' '.repeat(visibleWidth(prefix))}${command}${' '.repeat(Math.max(0, entryCommandWidth - visibleWidth(command)))}${separator}${index === 0 ? right : ''}`,
+        );
     }
     return lines;
   }
 
   private failureLines(text: string, width: number): string[] {
-    const reportLines = boundedReportLines(text);
-    const visibleRows = this.reportRows();
-    const maxOffset = Math.max(0, reportLines.length - visibleRows);
-    this.failureOffset = Math.min(this.failureOffset, maxOffset);
-    const window = reportLines.slice(
-      this.failureOffset,
-      this.failureOffset + visibleRows,
-    );
-    const indicators: string[] = [];
-    if (this.failureOffset > 0)
-      indicators.push(
-        this.theme.fg('dim', '  ↑ PageUp for earlier report lines · [ also'),
-      );
-    if (this.failureOffset < maxOffset)
-      indicators.push(
-        this.theme.fg('dim', '  ↓ PageDown for later report lines · ] also'),
-      );
     return [
       this.theme.bold('Parse failures'),
       this.theme.fg('muted', 'Global · native RTK report · scope fixed'),
-      ...indicators,
-      ...window.map(line =>
-        truncateToWidth(this.theme.fg('muted', `  ${line}`), width, '...'),
+      ...boundedReportLines(text).flatMap(line =>
+        wrapTextWithAnsi(this.theme.fg('muted', line), width - 2).map(
+          part => `  ${part}`,
+        ),
       ),
     ];
-  }
-
-  private reportRows(): number {
-    return Math.max(1, Math.floor(this.availableRows()) - 8);
   }
 
   private clearSnapshot(): void {
     this.snapshot = undefined;
     this.state = 'idle';
     this.errorMessage = '';
-    this.failureOffset = 0;
+    this.pager.reset();
   }
 }

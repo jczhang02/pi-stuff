@@ -2,6 +2,8 @@ import {getSelectListTheme, type Theme} from '@earendil-works/pi-coding-agent';
 import {
   Input,
   SelectList,
+  Key,
+  matchesKey,
   wrapTextWithAnsi,
   type Component,
 } from '@earendil-works/pi-tui';
@@ -102,7 +104,14 @@ export class ExecutableEditor implements Component {
   }
 
   handleInput(data: string) {
-    if (this.mode === 'input') this.input.handleInput(data);
+    if (matchesKey(data, Key.escape)) {
+      this.dispose();
+      if (this.mode === 'input') {
+        this.mode = 'choice';
+        this.input.focused = false;
+        this.error = '';
+      } else this.done();
+    } else if (this.mode === 'input') this.input.handleInput(data);
     else this.choices.handleInput(data);
     this.requestRender();
   }

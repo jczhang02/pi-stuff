@@ -3,6 +3,15 @@ import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
+function reportBody(screen: string): string {
+  const lines = screen.split(/\r?\n/u);
+  const title = lines.findIndex(line => line.includes('RTK / Usage'));
+  const page = lines.findIndex(
+    (line, index) => index > title && /Page \d+\/\d+/u.test(line),
+  );
+  return title < 0 || page < 0 ? '' : lines.slice(title + 1, page).join('\n');
+}
+
 test('Usage renders the native RTK JSON summary', async () => {
   const host = await launchPi();
   try {
@@ -32,9 +41,13 @@ esac
     const screen = await host.terminal.screen.text();
     expect(screen).toContain('37');
     expect(screen).toContain('7.3k');
+    expect(screen).toContain('Before RTK');
+    expect(screen).toContain('After RTK');
+    expect(screen).not.toContain('Input tokens');
+    expect(screen).not.toContain('Output tokens');
     expect(screen).not.toContain('No report loaded.');
     await host.terminal.resize({cols: 56, rows: 26});
-    await host.terminal.screen.waitForText('ANSI-cleanup savings', {
+    await host.terminal.screen.waitForText('Estimated output tokens', {
       timeoutMs: 5000,
     });
     expect(await host.terminal.screen.text()).toContain('billing');
@@ -82,19 +95,34 @@ esac
     await host.terminal.keyboard.press('ArrowDown');
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Daily savings', {timeoutMs: 5000});
-    const screen = await host.terminal.screen.text();
-    expect(screen).toContain('2026-09-15');
+    let screen = await host.terminal.screen.text();
+    expect(screen).toContain('Page 1/2');
+    expect(screen).toContain('2026-09-01');
+    expect(screen).not.toContain('2026-09-15');
+    await host.terminal.keyboard.type(']');
+    await host.terminal.screen.waitForText('2026-09-15', {timeoutMs: 5000});
+    screen = await host.terminal.screen.text();
     expect(screen).toContain('22');
     expect(screen).toContain('5.3k');
     expect(screen).not.toContain('No Daily data');
+    await host.terminal.keyboard.type('[');
+    await host.terminal.screen.waitForText('Page 1/2', {timeoutMs: 5000});
     await host.terminal.resize({cols: 56, rows: 26});
-    await host.terminal.screen.waitForText('55.2%', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('Page 1/2', {timeoutMs: 5000});
     const narrow = await host.terminal.screen.text();
-    expect(narrow).toContain('showing 8 of 12');
+    expect(narrow).toContain('Page 1/2');
     expect(narrow).toContain('Rate');
     expect(narrow).toContain('r Refresh');
     expect(narrow).toContain('Esc Back');
-    expect(narrow).not.toContain('2026-09-01');
+    expect(narrow).toContain('2026-09-01');
+    await host.terminal.keyboard.type(']');
+    await host.terminal.screen.waitForText('Page 2/2', {timeoutMs: 5000});
+    const lastPage = await host.terminal.screen.text();
+    expect(lastPage).toContain('2026-09-15');
+    expect(lastPage).toContain('55.2%');
+    expect(lastPage).not.toContain('2026-09-01');
+    await host.terminal.keyboard.type('[');
+    await host.terminal.screen.waitForText('Page 1/2', {timeoutMs: 5000});
   } finally {
     await host.close();
   }
@@ -206,6 +234,7 @@ test('Usage renders native history text with only fields RTK provides', async ()
   const host = await launchPi();
   try {
     const executable = join(host.directory, 'rtk-history-fixture');
+    const longCommand = `history-last-command-${'x'.repeat(120)}`;
     await writeFile(
       executable,
       `#!/bin/sh
@@ -216,11 +245,12 @@ case "$1" in
       --history)
         printf '%s\n' 'RTK Token Savings (Global Scope)' 'Recent Commands' '──────────────────────────────────────────────────────────'
         printf '%s\n' '09-15 11:04 ▲ git status -83% (1.2k)' '09-15 10:41 ■ bun test -42% (540)' '09-15 10:20 ▲ this-command-name-is-intentionally-long-to-test-column-preservation -91% (2.7k)'
-        i=10
+        i=6
         while [ "$i" -ge 1 ]; do
           printf '09-15 10:%02d ▲ command-%02d -60%% (%dk)\n' "$i" "$i" "$((i * 100))"
           i=$((i - 1))
         done
+        printf '%s\n' '09-15 09:59 ▲ ${longCommand} -99% (9.9k)'
         ;;
       --daily|--weekly|--monthly)
         printf '%s' '{"summary":{"total_commands":3,"total_input":3000,"total_output":1500,"total_saved":1500,"avg_savings_pct":50.0,"total_time_ms":3000,"avg_time_ms":1000},"daily":[{"date":"2026-09-15","commands":3,"input_tokens":3000,"output_tokens":1500,"saved_tokens":1500,"savings_pct":50.0,"total_time_ms":3000,"avg_time_ms":1000}],"weekly":[{"week_start":"2026-09-15","week_end":"2026-09-21","commands":3,"input_tokens":3000,"output_tokens":1500,"saved_tokens":1500,"savings_pct":50.0,"total_time_ms":3000,"avg_time_ms":1000}],"monthly":[{"month":"2026-09","commands":3,"input_tokens":3000,"output_tokens":1500,"saved_tokens":1500,"savings_pct":50.0,"total_time_ms":3000,"avg_time_ms":1000}]}'
@@ -259,15 +289,42 @@ esac
     expect(screen).toContain('1.2k');
     expect(screen).toContain('83%');
     expect(screen).not.toContain('Input tokens');
+    expect(screen).toContain('Page 1/2');
+    await host.terminal.keyboard.type(']');
+    await host.terminal.screen.waitForText('Page 2/2', {timeoutMs: 5000});
+    const lastPage = await host.terminal.screen.text();
+    expect(lastPage).toContain('9.9k');
+    expect(
+      reportBody(lastPage).replace(/\s+/gu, '').replace('9.9k99%', ''),
+    ).toContain(longCommand);
     await host.terminal.resize({cols: 56, rows: 26});
-    await host.terminal.screen.waitForText('91%', {timeoutMs: 5000});
-    const narrow = await host.terminal.screen.text();
-    expect(narrow).toContain('showing 8 of 10');
-    expect(narrow).toContain('Rate');
-    expect(narrow).toContain('r Refresh');
-    expect(narrow).toContain('Esc Back');
-    expect(narrow).toContain('command-10');
-    expect(narrow).not.toContain('command-03');
+    for (let index = 0; index < 20; index++)
+      await host.terminal.keyboard.type('[');
+    await host.terminal.screen.waitForText('Page 1/', {timeoutMs: 5000});
+    const narrowFirst = await host.terminal.screen.text();
+    expect(narrowFirst).toContain('Rate');
+    expect(narrowFirst).toContain('r Refresh');
+    expect(narrowFirst).toContain('Esc Back');
+    for (let index = 0; index < 20; index++)
+      await host.terminal.keyboard.type(']');
+    await host.terminal.screen.waitUntil(
+      screen => {
+        const page = /Page (\d+)\/(\d+)/u.exec(screen.text);
+        return page?.[1] === page?.[2];
+      },
+      {timeoutMs: 5000},
+    );
+    const narrowLast = await host.terminal.screen.text();
+    expect(narrowLast).toContain('Page ');
+    await host.terminal.keyboard.type('[');
+    await host.terminal.screen.waitForText('Page 2/', {timeoutMs: 5000});
+    const narrowMiddle = await host.terminal.screen.text();
+    expect(narrowMiddle).toContain('9.9k');
+    expect(
+      `${reportBody(narrowMiddle)}${reportBody(narrowLast)}`
+        .replace(/\s+/gu, '')
+        .replace('9.9k99%', ''),
+    ).toContain(longCommand);
   } finally {
     await host.close();
   }
@@ -392,8 +449,18 @@ esac
     for (let index = 0; index < 5; index++)
       await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Parse failures', {timeoutMs: 5000});
-    const screen = await host.terminal.screen.text();
+    let screen = await host.terminal.screen.text();
     expect(screen).toContain('Total failures: 1');
+    expect(screen).toContain('Page 1/2');
+    expect(screen).not.toContain('rg "No parse failures recorded." src');
+    await host.terminal.keyboard.type(']');
+    await host.terminal.screen.waitForText(
+      'rg "No parse failures recorded." src',
+      {
+        timeoutMs: 5000,
+      },
+    );
+    screen = await host.terminal.screen.text();
     expect(screen).toContain('rg "No parse failures recorded." src');
     expect(screen).not.toContain('No parse failures recorded\n');
   } finally {
@@ -453,6 +520,7 @@ test('Usage bounds a long failures report and keeps controls visible when resize
   const host = await launchPi();
   try {
     const executable = join(host.directory, 'rtk-long-failures-fixture');
+    const longFailureTail = 'x'.repeat(260);
     await writeFile(
       executable,
       `#!/bin/sh
@@ -461,7 +529,7 @@ case "$1" in
   gain)
     case "$2:$3" in
       --failures:*|*:--failures)
-        printf '%s\\n' 'RTK Parse Failures' '════════════════════════════════════════════════════════════' 'Total failures: 15' 'Recent Failures (last 10)' '  01 [ok] command-01' '  02 [ok] command-02' '  03 [ok] command-03' '  04 [ok] command-04' '  05 [ok] command-05' '  06 [ok] command-06' '  07 [ok] command-07' '  08 [ok] command-08' '  09 [ok] command-09' '  10 [ok] command-10' '  11 [ok] command-11' '  12 [ok] command-12' '  13 [ok] command-13' '  14 [ok] command-14' '  15 [ok] command-15'
+        printf '%s\\n' 'RTK Parse Failures' '════════════════════════════════════════════════════════════' 'Total failures: 15' 'Recent Failures (last 10)' '  01 [ok] command-01' '  02 [ok] command-02' '  03 [ok] command-03' '  04 [ok] command-04' '  05 [ok] command-05' '  06 [ok] command-06' '  07 [ok] command-07' '  08 [ok] command-08' '  09 [ok] command-09' '  10 [ok] command-10' '  11 [ok] command-11' '  12 [ok] command-12' '  13 [ok] command-13' '  14 [ok] command-14' '  15 [ok] command-15 reason-${longFailureTail} TAIL_REASON'
         ;;
       --daily:*|--weekly:*|--monthly:*|*:--daily|*:--weekly|*:--monthly)
         printf '%s' '{"summary":{"total_commands":15,"total_input":15000,"total_output":6000,"total_saved":9000,"avg_savings_pct":60.0,"total_time_ms":15000,"avg_time_ms":1000},"daily":[{"date":"2026-09-15","commands":15,"input_tokens":15000,"output_tokens":6000,"saved_tokens":9000,"savings_pct":60.0,"total_time_ms":15000,"avg_time_ms":1000}],"weekly":[{"week_start":"2026-09-15","week_end":"2026-09-21","commands":15,"input_tokens":15000,"output_tokens":6000,"saved_tokens":9000,"savings_pct":60.0,"total_time_ms":15000,"avg_time_ms":1000}],"monthly":[{"month":"2026-09","commands":15,"input_tokens":15000,"output_tokens":6000,"saved_tokens":9000,"savings_pct":60.0,"total_time_ms":15000,"avg_time_ms":1000}]}'
@@ -499,7 +567,7 @@ esac
       await host.terminal.screen.waitForText(expected, {timeoutMs: 5000});
     }
     await host.terminal.resize({cols: 56, rows: 26});
-    await host.terminal.screen.waitForText('PageDown for later report lines', {
+    await host.terminal.screen.waitForText('Page 1/', {
       timeoutMs: 5000,
     });
     let screen = await host.terminal.screen.text();
@@ -507,13 +575,81 @@ esac
     expect(screen).toContain('r Refresh');
     expect(screen).toContain('Esc Back');
     expect(screen).not.toContain('command-15');
+    expect(screen).not.toContain('PageDown');
 
-    await host.terminal.keyboard.type(']');
-    await host.terminal.screen.waitForText('command-09', {timeoutMs: 5000});
-    await host.terminal.keyboard.type(']');
+    await host.terminal.keyboard.type('[');
+    await host.terminal.screen.waitForText('Page 1/', {timeoutMs: 5000});
+    await host.terminal.keyboard.type(']'.repeat(10));
+    await host.terminal.screen.waitForText('TAIL_REASON', {timeoutMs: 5000});
+    const lastFailurePage = await host.terminal.screen.text();
+    screen = lastFailurePage;
+    expect(screen).toContain('TAIL_REASON');
+    expect(screen).toContain('Page ');
+    expect(screen).toContain('[ Previous');
+    await host.terminal.keyboard.type('[');
     await host.terminal.screen.waitForText('command-15', {timeoutMs: 5000});
-    screen = await host.terminal.screen.text();
-    expect(screen).toContain('PageUp for earlier report lines');
+    const commandPage = await host.terminal.screen.text();
+    expect(commandPage).toContain('command-15');
+    expect(
+      `${reportBody(commandPage)}${reportBody(lastFailurePage)}`.replace(
+        /\s+/gu,
+        '',
+      ),
+    ).toContain(`command-15reason-${longFailureTail}TAIL_REASON`);
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Usage pages failures in native report order at both boundaries', async () => {
+  const host = await launchPi();
+  try {
+    const executable = join(host.directory, 'rtk-paged-failures-fixture');
+    await writeFile(
+      executable,
+      `#!/bin/sh
+case "$1" in
+  --version) printf 'rtk 0.45.0' ;;
+  gain)
+    case "$2:$3" in
+      --failures:*|*:--failures)
+        printf '%s\\n' 'RTK Parse Failures' 'first failure' 'second failure' 'third failure' 'fourth failure' 'fifth failure' 'sixth failure' 'seventh failure' 'eighth failure' 'ninth failure' 'tenth failure' 'last failure marker'
+        ;;
+      *) printf '%s' '{"summary":{"total_commands":1,"total_input":100,"total_output":50,"total_saved":50,"avg_savings_pct":50.0,"total_time_ms":100,"avg_time_ms":100}}' ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
+`,
+      {mode: 0o700},
+    );
+    await writeFile(
+      join(host.agent, 'pi-stuff.json'),
+      JSON.stringify({rtk: {executable}}),
+    );
+    await host.reload();
+
+    await host.command('/rtk gain');
+    await host.terminal.screen.waitForText('Total commands', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('ArrowDown');
+    for (let index = 0; index < 5; index++)
+      await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('Parse failures', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.screen.waitForText('Page 1/', {timeoutMs: 5000});
+    const firstPage = await host.terminal.screen.text();
+    expect(firstPage).toContain('first failure');
+    expect(firstPage).not.toContain('last failure marker');
+    await host.terminal.keyboard.type(']');
+    await host.terminal.screen.waitForText('last failure marker', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.type(']');
+    const lastPage = await host.terminal.screen.text();
+    expect(lastPage).toContain('last failure marker');
+    await host.terminal.keyboard.type('[');
+    await host.terminal.screen.waitForText('first failure', {timeoutMs: 5000});
   } finally {
     await host.close();
   }

@@ -1,13 +1,12 @@
 import type {Theme} from '@earendil-works/pi-coding-agent';
 import {
-  getKeybindings,
   matchesKey,
   truncateToWidth,
   type Component,
   wrapTextWithAnsi,
 } from '@earendil-works/pi-tui';
 import {stripVTControlCharacters} from 'node:util';
-import {dataRow} from './display';
+import {dataRow, ReportPager, RTK_BODY_ROWS} from './display';
 import {
   isRtkCancellation,
   type RtkProbeResult,
@@ -45,7 +44,7 @@ export class DiagnosticsView implements Component {
   private errorMessage = '';
   private pending: AbortController | undefined;
   private stateBeforeLoading: DiagnosticsState = 'idle';
-  private scrollOffset = 0;
+  private readonly pager = new ReportPager();
 
   constructor(
     private readonly theme: Theme,
@@ -54,7 +53,6 @@ export class DiagnosticsView implements Component {
     private readonly onCancel: () => void,
     private readonly requestRender: () => void,
     private readonly notifyError: (message: string) => void,
-    private readonly availableRows: () => number,
   ) {}
 
   refresh(): Promise<void> {
@@ -64,7 +62,7 @@ export class DiagnosticsView implements Component {
     this.pending = controller;
     this.stateBeforeLoading = this.state;
     this.state = 'loading';
-    this.scrollOffset = 0;
+    this.pager.reset();
     this.requestRender();
     return this.load(controller, integrationFailure);
   }
@@ -80,8 +78,7 @@ export class DiagnosticsView implements Component {
   }
 
   handleInput(data: string): void {
-    const keys = getKeybindings();
-    if (keys.matches(data, 'tui.select.cancel')) {
+    if (matchesKey(data, 'escape')) {
       this.cancelPending();
       this.onCancel();
       return;
@@ -90,49 +87,20 @@ export class DiagnosticsView implements Component {
       void this.refresh();
       return;
     }
-    if (keys.matches(data, 'tui.altScreen.top') || matchesKey(data, 'home')) {
-      this.scrollOffset = 0;
-      this.requestRender();
-      return;
-    }
-    if (keys.matches(data, 'tui.altScreen.bottom') || matchesKey(data, 'end')) {
-      this.scrollOffset = Number.MAX_SAFE_INTEGER;
-      this.requestRender();
-      return;
-    }
-    const pageSize = Math.max(1, Math.floor(this.availableRows()) - 1);
-    if (keys.matches(data, 'tui.select.up')) {
-      this.scrollOffset = Math.max(0, this.scrollOffset - 1);
-      this.requestRender();
-      return;
-    }
-    if (keys.matches(data, 'tui.select.down')) {
-      this.scrollOffset += 1;
-      this.requestRender();
-      return;
-    }
-    if (keys.matches(data, 'tui.select.pageUp')) {
-      this.scrollOffset = Math.max(0, this.scrollOffset - pageSize);
-      this.requestRender();
-      return;
-    }
-    if (keys.matches(data, 'tui.select.pageDown')) {
-      this.scrollOffset += pageSize;
-      this.requestRender();
-    }
+    if (this.pager.handleInput(data)) this.requestRender();
   }
 
   render(width: number): string[] {
     const safeWidth = Math.max(1, Math.floor(width));
-    const body = this.bodyLines(safeWidth);
-    const available = Math.max(2, Math.floor(this.availableRows()));
-    const bodyRows = Math.max(1, available - 1);
-    const maxOffset = Math.max(0, body.length - bodyRows);
-    this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxOffset));
-    const visible = body.slice(this.scrollOffset, this.scrollOffset + bodyRows);
-    while (visible.length < bodyRows) visible.push('');
-    const footer = this.footer(safeWidth, maxOffset > 0);
-    return [...visible, footer].map(line => truncateToWidth(line, safeWidth));
+    return [
+      ...this.pager.render(
+        this.bodyLines(safeWidth),
+        safeWidth,
+        RTK_BODY_ROWS - 1,
+        this.theme,
+      ),
+      this.theme.fg('dim', 'r Refresh · Esc Back'),
+    ];
   }
 
   invalidate(): void {}
@@ -301,12 +269,5 @@ export class DiagnosticsView implements Component {
       (line, index) =>
         truncateToWidth(`${index === 0 ? prefix : continuation}${line}`, width),
     );
-  }
-
-  private footer(width: number, scrollable: boolean): string {
-    const text = scrollable
-      ? '↑↓ Scroll · PgUp/PgDn Page · r Refresh · Esc Back'
-      : 'r Refresh · Esc Back';
-    return truncateToWidth(this.theme.fg('dim', text), width);
   }
 }

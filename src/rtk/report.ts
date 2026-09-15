@@ -103,7 +103,6 @@ export const PERIOD_FIELDS: Readonly<
 };
 
 const MAX_REPORT_LINES = 120;
-const MAX_REPORT_LINE_LENGTH = 240;
 const EMPTY_FAILURE_REPORT = 'No parse failures recorded.';
 const EMPTY_FAILURE_DETAIL =
   "This means all commands parsed successfully (or fallback hasn't triggered yet).";
@@ -221,10 +220,9 @@ export function parseFailures(text: string): 'empty' | string | undefined {
 }
 
 export function boundedReportLines(text: string): string[] {
-  const lines = text.split(/\r?\n/u).slice(0, MAX_REPORT_LINES);
-  const bounded = lines.map(line => line.slice(0, MAX_REPORT_LINE_LENGTH));
-  if (text.split(/\r?\n/u).length > MAX_REPORT_LINES)
-    bounded.push('[report truncated]');
+  const lines = text.split(/\r?\n/u);
+  const bounded = lines.slice(0, MAX_REPORT_LINES);
+  if (lines.length > MAX_REPORT_LINES) bounded.push('[report truncated]');
   return bounded;
 }
 
