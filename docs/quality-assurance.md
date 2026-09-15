@@ -50,6 +50,12 @@ The [Terminal Control evaluation](https://github.com/jczhang02/pi-stuff/issues/7
 
 The Linux Xvfb/Mutter/Ghostty result recorded in [#71](https://github.com/jczhang02/pi-stuff/issues/71) covers host X11 focus for that setup only. It does not establish a universal focus guarantee or Wayland support.
 
+### RTK integration
+
+`bun test tests/system/rtk-*.test.ts` uses the same isolated Pi fixture with actual model tool calls, native Bash, local executable fixtures and temporary configuration. It covers rewrite binding and failure handling, cancellation without replay, final-result ANSI cleanup and metadata, Pi's retained long output, settings persistence/conflicts and the inline panel. Component tests exercise atomic configuration storage and bounded helper processes. `PI_TEST_HOST` selects the compiled-host profile for these tests too.
+
+Native RTK acceptance is separate from those deterministic fixtures. The verified Linux profile uses compiled Pi 0.85.1, Bun 1.4.0, mise 2026.7.18 and RTK 0.45.0. Give the isolated fixture read-only access to the installed RTK and its mise version pin through `PI_TEST_MISE_INSTALLS` and `PI_TEST_MISE_CONFIG`. Keep RTK's database, XDG directories and mise cache/state temporary. The acceptance trace runs `git status` in a temporary repository, checks compact model-bound output, opens all six native Usage views, and resizes the panel to 56x26 and 45x20. This verifies native formats and discovery without reading the maintainer's statistics or changing their settings. See [RTK integration](rtk.md) for the data boundaries and recovery procedure.
+
 ## Execution policy
 
 Keep PR evidence small and relevant. A small suite may run in full. Selective execution or sharding needs measured cost or scope evidence; do not introduce it speculatively. Provide a manual full entry backed by the real suite when a suite exists. Add scheduled or nightly execution only when real cost or selective PR runs justify it; no automatic scheduler is introduced by this baseline.

@@ -1,6 +1,7 @@
 import {Effect, Schema} from 'effect';
 import {ToolSwitches} from './tool-switches';
 import {WebSettings} from '../web/settings';
+import {RtkSettings} from '../rtk/settings';
 
 export class ConfigurationError extends Schema.TaggedError<ConfigurationError>()(
   'ConfigurationError',
@@ -12,6 +13,7 @@ export class ConfigurationError extends Schema.TaggedError<ConfigurationError>()
 const Configuration = Schema.Struct({
   tools: Schema.optional(ToolSwitches),
   web: Schema.optional(WebSettings),
+  rtk: Schema.optional(RtkSettings),
 });
 
 export function readConfiguration(

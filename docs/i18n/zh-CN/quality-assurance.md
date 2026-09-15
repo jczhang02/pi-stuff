@@ -50,6 +50,12 @@
 
 [#71](https://github.com/jczhang02/pi-stuff/issues/71) 记录的 Linux Xvfb/Mutter/Ghostty 结果只覆盖该设置下的宿主 X11 焦点. 它不建立通用焦点保证或 Wayland 支持.
 
+### RTK 集成
+
+`bun test tests/system/rtk-*.test.ts` 复用隔离 Pi fixture, 使用真实模型工具调用、原生 Bash、本地可执行 fixture 和临时配置. 覆盖 rewrite 绑定与故障处理、取消且不重跑、最终结果 ANSI 清理与元数据、Pi 长输出保留文件、设置持久化与冲突, 以及内联面板. 组件测试验证原子配置存储和有界辅助进程. 这些测试同样通过 `PI_TEST_HOST` 选择编译宿主.
+
+原生 RTK 验收与确定性 fixture 分开. 已验证的 Linux 环境为编译 Pi 0.85.1、Bun 1.4.0、mise 2026.7.18 和 RTK 0.45.0. 通过 `PI_TEST_MISE_INSTALLS` 和 `PI_TEST_MISE_CONFIG` 为隔离 fixture 提供已安装 RTK 及 mise 版本配置的只读访问, RTK 数据库、XDG 目录和 mise 缓存/状态仍使用临时路径. 验收在临时仓库执行 `git status`, 检查送往模型的压缩输出, 打开全部六个原生 Usage 视图, 再调整到 56x26 和 45x20. 这验证了原生格式与发现行为, 不读取维护者统计或修改其设置. 数据边界和恢复方法见 [RTK 集成](rtk.md).
+
 ## 执行策略
 
 让 PR 证据保持小而相关. 小型套件可以完整运行. 只有测得成本或范围证据支持时才选择性执行或分片, 不要臆测引入. 套件存在后提供由真实套件支持的手动完整入口. 只有实际成本或选择性 PR 运行足以说明需要时才增加定时或 nightly 运行; 本基线不引入自动调度器.
