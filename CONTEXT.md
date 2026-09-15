@@ -11,3 +11,24 @@ Pi Stuff's capability for searching the web, reading public page text, and consu
 
 **Tool switch**:
 An independent setting for whether a Pi Stuff tool is available for direct model calls. It is an entry-point setting, not a prohibition on every internal use of the underlying capability.
+
+**Subagent**:
+A delegate with its own identity and conversation context, retained across successive assignments.
+
+**Subagent task**:
+One assignment to a subagent, with its own execution record and result. A follow-up is a new task for the same subagent.
+
+**Subagent workspace**:
+The working area retained for a subagent across assignments. Each task has its own starting baseline and result references within that continuing workspace.
+
+**Subagent task baseline**:
+The code state from which a subagent task begins, before that task adds its own changes.
+
+**Skipped task**:
+A subagent task that ended without starting because a settled dependency did not provide an eligible completed result.
+
+**Cancelling task**:
+A subagent task whose cancellation has been requested but whose execution has not yet been confirmed stopped.
+
+**Completed subagent task**:
+A settled task whose subagent explicitly reports the assignment fulfilled and whose delegated descendants have ended. Normal execution termination alone is insufficient, and reported completion does not establish main-agent acceptance; dependency-result eligibility is specified in [Q60](docs/subagents-design.md#final-delivery-session-lifetime-and-authority).

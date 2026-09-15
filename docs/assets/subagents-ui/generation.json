@@ -1,0 +1,43 @@
+{
+  "kind": "generated-ui-concepts",
+  "date": "2026-09-14",
+  "mode": "built-in image_gen",
+  "useCase": "ui-mockup",
+  "runtimeEvidence": false,
+  "prompts": [
+    {
+      "asset": "chat",
+      "prompt": "Use case: ui-mockup\nAsset type: high-fidelity terminal UI concept, landscape 1536x1024.\nPrimary request: Draw one polished, legible, native text-terminal interface for a Pi coding agent with subagents, in Simplified Chinese. This is an original design proposal. The main conversation remains primary. No web dashboard, no sidebar, no GUI cards, no icons, no mouse buttons, no window chrome, no fake computer photograph. Flat terminal text, aligned monospace CJK font, thin text dividers. Generous readable line spacing, large text, charcoal #252a32 background, warm-white foreground, desaturated cyan for titles, amber for waiting, green only for completed. Color never replaces words. Main conversation at top, a compact subagent tool block in middle, persistent answer-needed notice below, host editor and status line at bottom. Don't include extra invented prose or numeric percentages.\nAll data below is fictional design-example content, but do not put demo/prototype labels inside the terminal.\nExact visible content, in order, with spacious grouping:\nTop small muted: pi  |  ~/work/auth-service  |  codex/login-fix\nUser message on a subtle flat tinted horizontal strip:\n修复登录态偶发失效, 先并行调查, 再实现和审查.\nAssistant:\nAPI 和数据库调查已启动. 实现任务等待两份结论, 审查随后开始.\nThen a single flat tool-output region (no nested cards), title cyan:\nsubagent   登录态修复\nColumns: 任务       代理       状态          当前情况\nT1         api        执行中        查找刷新令牌调用链\nT2         db         等待回答      需要确认兼容范围\nT3         worker     等待依赖      T1 + T2\nT4         reviewer   等待依赖      T3\nBelow table: 1 个执行中  /  1 个等待回答  /  2 个等待依赖\nSmall muted: 查看任务列表\nThen white/amber persistent main-chat notice, no modal:\nT2 · db 需要确认\n旧客户端是否也必须保留 7 天登录有效期?\n主代理请你确认后, 将答复交给 T2.\nAt bottom a thin cyan divider and host input prompt:\n> 需要兼容旧客户端, 不延长有效期.\nBelow lower divider footer:\n发送给: 主代理                              后台任务继续运行\n~/work/auth-service                          模型与用量沿用 Pi 状态栏\nComposition: crisp realistic text terminal occupying whole image with modest internal padding. Prioritize accurate Chinese and easy scan. No product logos, percentages, progress bars, gradients, rounded cards, charts or status dots. Fit all text comfortably, no cropping.",
+      "edit": {
+        "useCase": "text-localization",
+        "prompt": "Use case: text-localization. Edit this generated terminal concept while preserving its exact layout, Chinese text, font, background, dimensions and all other content. Make only these consistency/copy corrections: (1) in the T3 row replace agent name 'worker' with 'lead', same monospace column alignment; (2) recolor only T1 status '执行中' from green to the existing cyan title color, so green is reserved for delivered results; (3) replace bottom-right footer '模型与用量沿用 Pi 状态栏' with realistic example status text 'gpt-5.5  |  ↑12.4k ↓2.1k', the same muted font, right aligned without overlap. Keep '后台任务继续运行' and all other text unchanged. No extra GUI elements or explanations.",
+        "sourceOutput": "exec-b8809e2d-a576-4e68-9746-a4e67dc4da1b.png"
+      }
+    },
+    {
+      "asset": "inspector",
+      "prompt": "Use case: ui-mockup\nAsset type: high-fidelity terminal task inspector concept, landscape 1536x1024.\nPrimary request: Original Pi subagent TUI task-inspection screen in Simplified Chinese, native fixed-grid monospace CJK text. Same charcoal #252a32 terminal background, warm-white text, muted cyan headings, amber waiting, soft green completed. Flat text UI, not a browser dashboard. No window chrome, icons, badges, rounded cards, shadows or decorative graphs. Whole screen at readable large scale with a compact project line, then a task list above a selected-task detail area, then contextual action row and preserved host editor. Do not show a permanent sidebar.\nExact content:\npi  |  ~/work/auth-service\n任务列表 · 登录态修复\n任务        代理            状态              当前情况\nT1          api             已交付            调查报告\nT2          db              已交付            兼容范围已确认\nT3          lead            等待下级          等待 T3.2\n  T3.1      api-worker      已交付            API 修改已保存\n> T3.2      integrator      执行中            运行登录回归测试\nT4          reviewer        等待依赖          T3\nUse a single muted flat highlight strip across selected T3.2 row, indentation clearly indicates T3.1 and T3.2 owned by T3. Thin divider.\nT3.2 · integrator · 合并修改并验证\n概况     记录     成果     配置\nHighlight 概况 with underline, not pills.\n父任务    T3 · lead\n输入成果  T3.1 · 固定提交 8e41ac2\n当前工具  bash: bun test auth\n最近更新  已合并 API 修改, 正在检查旧客户端续期\n交付状态  尚未交付\nThin divider.\n操作: 查看完整记录    纠正当前任务    取消此任务及下级\n返回主对话\nThin editor separator.\n主对话草稿\n> 最后请保留旧客户端的回归用例.\nBottom muted footer:\n关闭列表后保留草稿, 后台任务继续运行.\nConstraints: T3 isn't completed while child runs; input artifact is a fixed commit. The interface has contextual plain-text actions, don't invent keyboard shortcut bindings. No percentages or decorative control symbols. Text should dominate, aligned logical columns, no clipped text. No prototype label inside terminal."
+    },
+    {
+      "asset": "interventions",
+      "prompt": "Use case: ui-mockup\nAsset type: four-scene terminal interaction storyboard, square 2048x2048, designed for readable inspection.\nPrimary request: Show four sequentially numbered SCENARIO EXAMPLES, NOT simultaneous live windows, in a 2x2 grid, each containing an original small Pi native TUI screen. Clear outer Chinese captions above each terminal identify the scenario. Outer background warm off-white, modest spacing, sober typography; inside each terminal flat charcoal #252a32, large monospace CJK warm-white text, cyan headings, amber unresolved states. No device mockup, no window traffic lights, no icons, no glossy web cards. These are concept scenes from the same login-fix example at different moments. Render each panel's exact brief text faithfully and legibly with ample whitespace.\nOuter top title: 需要介入时, 操作必须指向具体任务\nOuter subtitle: 界面概念图 · 四个独立场景\n\nTop-left outer caption: 1. 回答问题\nInside terminal:\nT2 · db · 等待回答\n旧客户端也要保留 7 天有效期吗?\n答复目标: T2 / Q1\n> 是, 兼容旧客户端, 不延长有效期.\n发送答复\n返回任务列表\nBottom muted note: 回复留在原问题下.\n\nTop-right outer caption: 2. 纠正当前任务\nInside terminal:\nT4 · reviewer · 执行中\n当前工具: read auth/session.ts\n纠正目标: T4\n> 也检查刷新令牌的竞争条件.\n已接纳, 等待本轮工具结束.\n尚未处理\nBottom muted note: 仍是 T4, 不创建新任务.\n\nBottom-left outer caption: 3. 取消整个分支\nInside terminal:\nT3 · lead · 取消中\nT3.2 的测试进程仍在运行.\n已阻止这个分支启动新任务.\n已有文件保留, 尚未确认停妥.\n查看运行记录\n返回任务列表\nBottom muted note: 正在取消不等于已经停止.\n\nBottom-right outer caption: 4. 向同一代理续聊\nInside terminal:\nT4 · reviewer · 已交付\n第一次审查报告仍可查看.\n向 reviewer 交办新任务:\n> 代码已修改, 请带着原上下文复查.\n创建 T5, 复用 reviewer.\n旧 T4 报告保持不变.\nBottom muted note: 新任务单独记录, 不重开 T4.\n\nAll text concise as specified. Avoid any progress percentages, invented success checkmarks, command names or key combinations. Four scenes equal readable sizes; no decorative arrows linking independent examples. Text should be crisp, not handwriting. Don't add extra explanations inside frames."
+    }
+  ],
+  "outputs": [
+    {
+      "asset": "chat",
+      "file": "chat.png",
+      "generatedOutput": "exec-8ac75266-3966-4b41-86b3-5304ced42f24.png"
+    },
+    {
+      "asset": "inspector",
+      "file": "inspector.png",
+      "generatedOutput": "exec-8c18dde3-80bc-4842-895d-8a7f48c0a591.png"
+    },
+    {
+      "asset": "interventions",
+      "file": "interventions.png",
+      "generatedOutput": "exec-baeeeb4c-138c-4b1c-8c8d-61da96322e16.png"
+    }
+  ]
+}
