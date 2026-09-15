@@ -73,6 +73,9 @@ Pi Stuff does not modify terminal settings.
 Those HTML fields do not set the TUI background. Truecolor is the primary target;
 256-color terminals use Pi's approximation and can look different.
 
+The [verification record](themes-verification.md) includes native captures and
+compiled-host export requirements.
+
 ## Palette sources and mapping
 
 These are Pi Stuff mappings of official palettes, not official ports endorsed
