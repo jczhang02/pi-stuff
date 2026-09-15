@@ -29,6 +29,10 @@ type CachedProbe =
   | {kind: 'success'; result: RtkProbeResult}
   | {kind: 'failure'; error: RtkRuntimeError};
 
+interface RtkExecutionResult extends RtkProcessResult {
+  path: string;
+}
+
 const VERSION = /\brtk(?:\s+|\/)(\d+(?:\.\d+)+(?:[-+][A-Za-z0-9.-]+)?)/i;
 
 function processError(error: Error): RtkRuntimeError {
@@ -272,12 +276,12 @@ export class RtkRuntime {
     args: string[],
     cwd: string,
     signal?: AbortSignal,
-  ): Promise<RtkProcessResult> {
+  ): Promise<RtkExecutionResult> {
     const resolved = await this.probe(cwd, signal);
     try {
       const result = await runProcess(resolved.path, args, cwd, signal);
       ensureNotAborted(signal);
-      return result;
+      return {...result, path: resolved.path};
     } catch (error) {
       const runtimeError = processError(
         error instanceof Error ? error : new Error('RTK process failed.'),

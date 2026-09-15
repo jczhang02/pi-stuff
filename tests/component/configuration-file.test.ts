@@ -1,4 +1,5 @@
 import {expect, test} from 'bun:test';
+import {watch, writeFileSync} from 'node:fs';
 import {
   mkdtemp,
   readFile,
@@ -50,6 +51,36 @@ test('RTK concurrent-save lock leaves disk and active settings unchanged', async
     expect(await readFile(path, 'utf8')).toBe('{}');
     expect(await readFile(`${path}.lock`, 'utf8')).toBe('another owner');
     expect(file.value.rtk).toBeUndefined();
+  } finally {
+    await rm(directory, {recursive: true, force: true});
+  }
+});
+
+test('RTK rejects an external edit made while its replacement is staged', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'pi-configuration-'));
+  const path = join(directory, 'pi-stuff.json');
+  try {
+    await writeFile(path, '{}');
+    const file = await Effect.runPromise(ConfigurationFile.load(path));
+    const external = '{"tools":{"web_search":false}}';
+    let edited = false;
+    const writer = watch(directory, (_event, filename) => {
+      if (!edited && filename?.endsWith('.tmp')) {
+        edited = true;
+        writeFileSync(path, external);
+      }
+    });
+    try {
+      await expect(
+        Effect.runPromise(file.saveRtk({ansi: false})),
+      ).rejects.toThrow('Settings changed on disk');
+      expect(edited).toBe(true);
+      expect(await readFile(path, 'utf8')).toBe(external);
+      expect(file.value.rtk).toBeUndefined();
+      expect(await readdir(directory)).toEqual(['pi-stuff.json']);
+    } finally {
+      writer.close();
+    }
   } finally {
     await rm(directory, {recursive: true, force: true});
   }

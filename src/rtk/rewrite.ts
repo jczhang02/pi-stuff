@@ -347,7 +347,6 @@ export async function rewriteCommand(
   if (hasRtkInvocation(command)) return undefined;
   if (!isSafeShellCommand(command)) return undefined;
   try {
-    const resolved = await runtime.probe(cwd, signal);
     const result = await runtime.execute(['rewrite', command], cwd, signal);
     if (result.code === 1 || result.code === 2) return undefined;
     if (result.code !== 0 && result.code !== 3) {
@@ -365,7 +364,7 @@ export async function rewriteCommand(
       return undefined;
     }
     if (rewritten === command) return undefined;
-    const bound = bindRtkExecutable(rewritten, resolved.path);
+    const bound = bindRtkExecutable(rewritten, result.path);
     if (!bound) {
       runtime.recordFailure('RTK rewrite returned an unsafe command.');
       return undefined;

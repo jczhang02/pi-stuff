@@ -1,4 +1,5 @@
 import {expect, test} from 'bun:test';
+import {spawnSync} from 'node:child_process';
 import {
   access,
   constants,
@@ -11,6 +12,7 @@ import {
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {RtkRuntime} from '../../src/rtk/runtime';
+import {rewriteCommand} from '../../src/rtk/rewrite';
 import {launchPi} from './fixtures/pi-terminal';
 
 async function waitForFile(path: string, timeoutMs = 1000): Promise<void> {
@@ -117,6 +119,61 @@ exit 0
     expect(await readFile(marker, 'utf8')).toBe('not-called');
   } finally {
     await host.close();
+  }
+}, 30000);
+
+test('rewrite keeps one executable snapshot during a concurrent update', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-rewrite-race-'));
+  try {
+    const oldExecutable = join(directory, 'rtk-old');
+    const newExecutable = join(directory, 'rtk-new');
+    const probeStarted = join(directory, 'old-probe-started');
+    await writeFile(
+      oldExecutable,
+      `#!/bin/sh
+case "$1" in
+  --version)
+    : > ${shellQuote(probeStarted)}
+    sleep 0.2
+    printf 'rtk 0.45.0';;
+  rewrite) printf 'rtk old-command';;
+  old-command) printf 'OLD_OK';;
+  *) printf 'OLD_CANNOT_RUN_NEW'; exit 2;;
+esac
+`,
+      {mode: 0o700},
+    );
+    await writeFile(
+      newExecutable,
+      `#!/bin/sh
+case "$1" in
+  --version) printf 'rtk 0.46.0';;
+  rewrite) printf 'rtk new-command';;
+  new-command) printf 'NEW_OK';;
+  *) printf 'NEW_CANNOT_RUN_OLD'; exit 2;;
+esac
+`,
+      {mode: 0o700},
+    );
+
+    const runtime = new RtkRuntime({executable: oldExecutable});
+    const pending = rewriteCommand(runtime, 'git status', directory);
+    await waitForFile(probeStarted);
+    runtime.update({executable: newExecutable});
+
+    const rewritten = await pending;
+    expect(rewritten).toBe(`${shellQuote(oldExecutable)} old-command`);
+    const result = spawnSync('/bin/bash', ['-c', rewritten ?? ''], {
+      cwd: directory,
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('OLD_OK');
+    expect(await rewriteCommand(runtime, 'git status', directory)).toBe(
+      `${shellQuote(newExecutable)} new-command`,
+    );
+  } finally {
+    await rm(directory, {recursive: true, force: true});
   }
 }, 30000);
 

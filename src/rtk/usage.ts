@@ -5,28 +5,21 @@ import {dataRow} from './display';
 import {
   boundedReportLines,
   clean,
-  decodeGainReport,
+  decodeUsageReport,
   formatCount,
   formatDuration,
   formatPercent,
   formatTokens,
   GAIN_VIEWS,
-  PERIOD_FIELDS,
-  parseFailures,
-  parseHistory,
-  periodLabel,
-  periodName,
   reportArgs,
-  type DayStats,
   type HistoryEntry,
-  type MonthStats,
   type PeriodView,
   type Summary,
   type UsageScope,
+  type UsageLoadOutcome,
+  type UsageSnapshot,
   type UsageViewKind,
-  type WeekStats,
-  validPeriod,
-  validSummary,
+  type PeriodRow,
 } from './report';
 import {
   Key,
@@ -40,23 +33,6 @@ import {
 } from '@earendil-works/pi-tui';
 
 export type {UsageScope, UsageViewKind} from './report';
-
-type UsageSnapshot =
-  | {readonly kind: 'summary'; readonly summary: Summary}
-  | {
-      readonly kind: 'period';
-      readonly view: PeriodView;
-      readonly summary: Summary;
-      readonly periods: readonly (DayStats | WeekStats | MonthStats)[];
-    }
-  | {readonly kind: 'history'; readonly history: readonly HistoryEntry[]}
-  | {readonly kind: 'failures'; readonly failuresText: string};
-
-type LoadOutcome =
-  | {readonly state: 'ready'; readonly snapshot: UsageSnapshot}
-  | {readonly state: 'empty'}
-  | {readonly state: 'unsupported'; readonly message: string}
-  | {readonly state: 'failure'; readonly message: string};
 
 type LoadState =
   | 'idle'
@@ -256,7 +232,6 @@ export class UsageView implements Component {
     requestNumber: number,
     controller: AbortController,
   ): Promise<void> {
-    let outcome: LoadOutcome | undefined;
     try {
       const result = await this.runtime.execute(
         reportArgs(this.view, this.scope),
@@ -264,120 +239,28 @@ export class UsageView implements Component {
         controller.signal,
       );
       if (!this.isCurrent(requestNumber, controller)) return;
-      const stdout = clean(result.stdout);
-      const stderr = clean(result.stderr);
-      if (result.code !== 0) {
-        outcome = {
-          state: 'failure',
-          message: `RTK ${this.view.toLowerCase()} read failed${stderr.trim() === '' ? '.' : `: ${stderr.trim().replace(/\s+/gu, ' ').slice(0, 200)}`}`,
-        };
-        return;
-      }
-      if (this.view === 'History') {
-        const parsed = parseHistory(stdout);
-        if (parsed === 'empty') {
-          outcome = {state: 'empty'};
-          return;
-        }
-        if (parsed === undefined) {
-          outcome = {
-            state: 'unsupported',
-            message: 'RTK returned an unsupported history report.',
-          };
-          return;
-        }
-        outcome = {
-          state: 'ready',
-          snapshot: {kind: 'history', history: parsed},
-        };
-        return;
-      }
-      if (this.view === 'Failures') {
-        const parsed = parseFailures(stdout);
-        if (parsed === 'empty') {
-          outcome = {state: 'empty'};
-          return;
-        }
-        if (parsed === undefined) {
-          outcome = {
-            state: 'unsupported',
-            message: 'RTK returned an unsupported parse-failure report.',
-          };
-          return;
-        }
-        outcome = {
-          state: 'ready',
-          snapshot: {kind: 'failures', failuresText: parsed},
-        };
-        return;
-      }
-      const report = await decodeGainReport(stdout);
+      const outcome: UsageLoadOutcome = await decodeUsageReport(
+        this.view,
+        result.stdout,
+        result.stderr,
+        result.code,
+      );
       if (!this.isCurrent(requestNumber, controller)) return;
-      if (report === undefined || !validSummary(report.summary)) {
-        outcome = {
-          state: 'unsupported',
-          message: 'RTK returned an unsupported JSON usage report.',
-        };
-        return;
-      }
-      const period = periodName(this.view);
-      const periods =
-        period === undefined ? undefined : report[PERIOD_FIELDS[period]];
-      if (period !== undefined && periods === undefined) {
-        outcome = {
-          state: 'unsupported',
-          message: `RTK did not provide a native ${this.view.toLowerCase()} JSON report.`,
-        };
-        return;
-      }
-      if (periods !== undefined && periods.some(stats => !validPeriod(stats))) {
-        outcome = {
-          state: 'unsupported',
-          message: `RTK returned malformed ${this.view.toLowerCase()} statistics.`,
-        };
-        return;
-      }
-      if (
-        (periods !== undefined && periods.length === 0) ||
-        (period === undefined && report.summary.total_commands === 0)
-      ) {
-        outcome = {state: 'empty'};
-        return;
-      }
-      if (period === undefined) {
-        outcome = {
-          state: 'ready',
-          snapshot: {kind: 'summary', summary: report.summary},
-        };
-      } else if (periods !== undefined) {
-        outcome = {
-          state: 'ready',
-          snapshot: {
-            kind: 'period',
-            view: period,
-            summary: report.summary,
-            periods,
-          },
-        };
-      } else {
-        outcome = {
-          state: 'unsupported',
-          message: `RTK did not provide a native ${this.view.toLowerCase()} JSON report.`,
-        };
-        return;
-      }
+      this.applyOutcome(outcome, requestNumber, controller);
     } catch (error) {
       if (!this.isCurrent(requestNumber, controller)) return;
       if (error instanceof Error && isRtkCancellation(error)) return;
-      outcome = {
-        state: 'failure',
-        message: clean(
-          error instanceof Error ? error.message : 'RTK usage read failed.',
-        ),
-      };
-    } finally {
-      if (outcome !== undefined)
-        this.applyOutcome(outcome, requestNumber, controller);
+      this.applyOutcome(
+        {
+          state: 'failure',
+          message:
+            error instanceof Error
+              ? clean(error.message)
+              : 'RTK usage read failed.',
+        },
+        requestNumber,
+        controller,
+      );
     }
   }
 
@@ -393,7 +276,7 @@ export class UsageView implements Component {
   }
 
   private applyOutcome(
-    outcome: LoadOutcome,
+    outcome: UsageLoadOutcome,
     requestNumber: number,
     controller: AbortController,
   ): void {
@@ -551,7 +434,7 @@ export class UsageView implements Component {
 
   private periodLines(
     view: PeriodView,
-    periods: readonly (DayStats | WeekStats | MonthStats)[],
+    periods: readonly PeriodRow[],
     width: number,
   ): string[] {
     const prefix = '  ';
@@ -580,11 +463,9 @@ export class UsageView implements Component {
     ];
     for (const period of visiblePeriods) {
       const right = `${formatCount(period.commands).padStart(8)}  ${formatTokens(period.saved_tokens).padStart(7)}  ${formatPercent(period.savings_pct).padStart(6)}`;
-      const label = truncateToWidth(
-        periodLabel(view, period),
+      const label = truncateToWidth(period.label, labelWidth, '...').padEnd(
         labelWidth,
-        '...',
-      ).padEnd(labelWidth);
+      );
       lines.push(`${prefix}${label}${separator}${right}`);
     }
     return lines;

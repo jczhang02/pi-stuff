@@ -348,6 +348,107 @@ esac
   }
 }, 30000);
 
+test('Usage does not treat a command containing the empty marker as empty', async () => {
+  const host = await launchPi();
+  try {
+    const executable = join(host.directory, 'rtk-failures-marker-fixture');
+    await writeFile(
+      executable,
+      `#!/bin/sh
+case "$1" in
+  --version) printf 'rtk 0.45.0' ;;
+  gain)
+    case "$2:$3" in
+      --failures:*|*:--failures)
+        printf '%s' 'RTK Parse Failures
+════════════════════════════════════════════════════════════
+
+Total failures: 1
+Recovery rate: 0.0%
+
+Recent Failures (last 10)
+  2026-09-15T11:04 [FAIL] rg "No parse failures recorded." src
+'
+        ;;
+      *)
+        printf '%s' '{"summary":{"total_commands":1,"total_input":100,"total_output":50,"total_saved":50,"avg_savings_pct":50.0,"total_time_ms":100,"avg_time_ms":100}}'
+        ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
+`,
+      {mode: 0o700},
+    );
+    await writeFile(
+      join(host.agent, 'pi-stuff.json'),
+      JSON.stringify({rtk: {executable}}),
+    );
+    await host.reload();
+
+    await host.command('/rtk gain');
+    await host.terminal.screen.waitForText('Total commands', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('ArrowDown');
+    for (let index = 0; index < 5; index++)
+      await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('Parse failures', {timeoutMs: 5000});
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('Total failures: 1');
+    expect(screen).toContain('rg "No parse failures recorded." src');
+    expect(screen).not.toContain('No parse failures recorded\n');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Usage recognizes the native empty parse-failure report', async () => {
+  const host = await launchPi();
+  try {
+    const executable = join(host.directory, 'rtk-empty-failures-fixture');
+    await writeFile(
+      executable,
+      `#!/bin/sh
+case "$1" in
+  --version) printf 'rtk 0.45.0' ;;
+  gain)
+    case "$2:$3" in
+      --failures:*|*:--failures)
+        printf '%s\n' 'No parse failures recorded.' "This means all commands parsed successfully (or fallback hasn't triggered yet)."
+        ;;
+      *)
+        printf '%s' '{"summary":{"total_commands":1,"total_input":100,"total_output":50,"total_saved":50,"avg_savings_pct":50.0,"total_time_ms":100,"avg_time_ms":100}}'
+        ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
+`,
+      {mode: 0o700},
+    );
+    await writeFile(
+      join(host.agent, 'pi-stuff.json'),
+      JSON.stringify({rtk: {executable}}),
+    );
+    await host.reload();
+
+    await host.command('/rtk gain');
+    await host.terminal.screen.waitForText('Total commands', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('ArrowDown');
+    for (let index = 0; index < 5; index++)
+      await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('No parse failures recorded', {
+      timeoutMs: 5000,
+    });
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain(
+      'Global RTK reports no parser or fallback failures.',
+    );
+    expect(screen).not.toContain('Usage report unsupported');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
 test('Usage bounds a long failures report and keeps controls visible when resized', async () => {
   const host = await launchPi();
   try {

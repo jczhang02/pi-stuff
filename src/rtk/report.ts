@@ -11,39 +11,36 @@ export type UsageViewKind =
   | 'Failures';
 export type PeriodView = 'Daily' | 'Weekly' | 'Monthly';
 
-export type PeriodStats = {
-  commands: number;
-  input_tokens: number;
-  output_tokens: number;
-  saved_tokens: number;
-  savings_pct: number;
-  total_time_ms: number;
-  avg_time_ms: number;
-};
-
-export type DayStats = PeriodStats & {date: string};
-export type WeekStats = PeriodStats & {week_start: string; week_end: string};
-export type MonthStats = PeriodStats & {month: string};
+const NonNegativeNumberSchema = Schema.Finite.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+);
+const PercentageSchema = NonNegativeNumberSchema.pipe(
+  Schema.check(Schema.isLessThanOrEqualTo(100)),
+);
 
 const PeriodStatsSchema = Schema.Struct({
-  commands: Schema.Int,
-  input_tokens: Schema.Int,
-  output_tokens: Schema.Int,
-  saved_tokens: Schema.Int,
-  savings_pct: Schema.Number,
-  total_time_ms: Schema.Int,
-  avg_time_ms: Schema.Int,
+  commands: Schema.Natural,
+  input_tokens: Schema.Natural,
+  output_tokens: Schema.Natural,
+  saved_tokens: Schema.Natural,
+  savings_pct: PercentageSchema,
+  total_time_ms: Schema.Natural,
+  avg_time_ms: Schema.Natural,
 });
 
+export type PeriodStats = typeof PeriodStatsSchema.Type;
+
 const SummarySchema = Schema.Struct({
-  total_commands: Schema.Int,
-  total_input: Schema.Int,
-  total_output: Schema.Int,
-  total_saved: Schema.Int,
-  avg_savings_pct: Schema.Number,
-  total_time_ms: Schema.Int,
-  avg_time_ms: Schema.Int,
+  total_commands: Schema.Natural,
+  total_input: Schema.Natural,
+  total_output: Schema.Natural,
+  total_saved: Schema.Natural,
+  avg_savings_pct: PercentageSchema,
+  total_time_ms: Schema.Natural,
+  avg_time_ms: Schema.Natural,
 });
+
+export type Summary = typeof SummarySchema.Type;
 
 const DayStatsSchema = Schema.Struct({
   date: Schema.String,
@@ -61,6 +58,17 @@ const MonthStatsSchema = Schema.Struct({
   ...PeriodStatsSchema.fields,
 });
 
+export type DayStats = typeof DayStatsSchema.Type;
+export type WeekStats = typeof WeekStatsSchema.Type;
+export type MonthStats = typeof MonthStatsSchema.Type;
+
+const PeriodRowSchema = Schema.Struct({
+  label: Schema.String,
+  ...PeriodStatsSchema.fields,
+});
+
+export type PeriodRow = typeof PeriodRowSchema.Type;
+
 const GainReportSchema = Schema.Struct({
   summary: SummarySchema,
   daily: Schema.optional(Schema.Array(DayStatsSchema)),
@@ -68,7 +76,6 @@ const GainReportSchema = Schema.Struct({
   monthly: Schema.optional(Schema.Array(MonthStatsSchema)),
 });
 
-export type Summary = typeof SummarySchema.Type;
 export type GainReport = typeof GainReportSchema.Type;
 
 export interface HistoryEntry {
@@ -97,39 +104,29 @@ export const PERIOD_FIELDS: Readonly<
 
 const MAX_REPORT_LINES = 120;
 const MAX_REPORT_LINE_LENGTH = 240;
+const EMPTY_FAILURE_REPORT = 'No parse failures recorded.';
+const EMPTY_FAILURE_DETAIL =
+  "This means all commands parsed successfully (or fallback hasn't triggered yet).";
+
+export type UsageSnapshot =
+  | {readonly kind: 'summary'; readonly summary: Summary}
+  | {
+      readonly kind: 'period';
+      readonly view: PeriodView;
+      readonly summary: Summary;
+      readonly periods: readonly PeriodRow[];
+    }
+  | {readonly kind: 'history'; readonly history: readonly HistoryEntry[]}
+  | {readonly kind: 'failures'; readonly failuresText: string};
+
+export type UsageLoadOutcome =
+  | {readonly state: 'ready'; readonly snapshot: UsageSnapshot}
+  | {readonly state: 'empty'}
+  | {readonly state: 'unsupported'; readonly message: string}
+  | {readonly state: 'failure'; readonly message: string};
 
 export function clean(text: string): string {
   return stripVTControlCharacters(text);
-}
-
-function finiteNonNegative(value: number): boolean {
-  return Number.isFinite(value) && value >= 0;
-}
-
-export function validPeriod(stats: PeriodStats): boolean {
-  return (
-    finiteNonNegative(stats.commands) &&
-    finiteNonNegative(stats.input_tokens) &&
-    finiteNonNegative(stats.output_tokens) &&
-    finiteNonNegative(stats.saved_tokens) &&
-    finiteNonNegative(stats.savings_pct) &&
-    stats.savings_pct <= 100 &&
-    finiteNonNegative(stats.total_time_ms) &&
-    finiteNonNegative(stats.avg_time_ms)
-  );
-}
-
-export function validSummary(summary: Summary): boolean {
-  return (
-    finiteNonNegative(summary.total_commands) &&
-    finiteNonNegative(summary.total_input) &&
-    finiteNonNegative(summary.total_output) &&
-    finiteNonNegative(summary.total_saved) &&
-    finiteNonNegative(summary.avg_savings_pct) &&
-    summary.avg_savings_pct <= 100 &&
-    finiteNonNegative(summary.total_time_ms) &&
-    finiteNonNegative(summary.avg_time_ms)
-  );
 }
 
 export function formatCount(value: number): string {
@@ -171,17 +168,6 @@ export function periodName(view: UsageViewKind): PeriodView | undefined {
     : undefined;
 }
 
-export function periodLabel(
-  view: PeriodView,
-  value: DayStats | WeekStats | MonthStats,
-): string {
-  if (view === 'Daily' && 'date' in value) return clean(value.date);
-  if (view === 'Weekly' && 'week_start' in value)
-    return `${clean(value.week_start)} - ${clean(value.week_end)}`;
-  if ('month' in value) return clean(value.month);
-  return 'Unknown period';
-}
-
 export function parseHistory(
   text: string,
 ): readonly HistoryEntry[] | 'empty' | undefined {
@@ -217,9 +203,21 @@ export function parseHistory(
 }
 
 export function parseFailures(text: string): 'empty' | string | undefined {
-  if (/No parse failures recorded\./u.test(text)) return 'empty';
-  if (!/RTK Parse Failures/u.test(text)) return undefined;
-  return text.trim();
+  const cleaned = clean(text);
+  const lines = cleaned.split(/\r?\n/u);
+  const nonEmptyLines = lines
+    .map(line => line.trim())
+    .filter(line => line !== '');
+  if (
+    (nonEmptyLines.length === 1 && nonEmptyLines[0] === EMPTY_FAILURE_REPORT) ||
+    (nonEmptyLines.length === 2 &&
+      nonEmptyLines[0] === EMPTY_FAILURE_REPORT &&
+      nonEmptyLines[1] === EMPTY_FAILURE_DETAIL)
+  )
+    return 'empty';
+  if (!lines.some(line => line.trim() === 'RTK Parse Failures'))
+    return undefined;
+  return cleaned.trim();
 }
 
 export function boundedReportLines(text: string): string[] {
@@ -249,6 +247,106 @@ export async function decodeGainReport(
   text: string,
 ): Promise<GainReport | undefined> {
   return Effect.runPromise(
-    Schema.decodeUnknownEffect(Schema.fromJsonString(GainReportSchema))(text),
+    Schema.decodeUnknownEffect(Schema.fromJsonString(GainReportSchema))(
+      clean(text),
+    ),
   ).catch(() => undefined);
+}
+
+function normalizedPeriodRows(
+  report: GainReport,
+  view: PeriodView,
+): readonly PeriodRow[] | undefined {
+  switch (view) {
+    case 'Daily':
+      return report.daily?.map(({date, ...stats}) => ({
+        label: clean(date),
+        ...stats,
+      }));
+    case 'Weekly':
+      return report.weekly?.map(({week_start, week_end, ...stats}) => ({
+        label: `${clean(week_start)} - ${clean(week_end)}`,
+        ...stats,
+      }));
+    case 'Monthly':
+      return report.monthly?.map(({month, ...stats}) => ({
+        label: clean(month),
+        ...stats,
+      }));
+  }
+}
+
+function reportFailure(view: UsageViewKind, stderr: string): UsageLoadOutcome {
+  const detail = stderr.trim();
+  return {
+    state: 'failure',
+    message: `RTK ${view.toLowerCase()} read failed${detail === '' ? '.' : `: ${detail.replace(/\s+/gu, ' ').slice(0, 200)}`}`,
+  };
+}
+
+export async function decodeUsageReport(
+  view: UsageViewKind,
+  stdout: string,
+  stderr: string,
+  code: number,
+): Promise<UsageLoadOutcome> {
+  const output = clean(stdout);
+  const error = clean(stderr);
+  if (code !== 0) return reportFailure(view, error);
+
+  if (view === 'History') {
+    const history = parseHistory(output);
+    if (history === 'empty') return {state: 'empty'};
+    if (history === undefined)
+      return {
+        state: 'unsupported',
+        message: 'RTK returned an unsupported history report.',
+      };
+    return {state: 'ready', snapshot: {kind: 'history', history}};
+  }
+
+  if (view === 'Failures') {
+    const failures = parseFailures(output);
+    if (failures === 'empty') return {state: 'empty'};
+    if (failures === undefined)
+      return {
+        state: 'unsupported',
+        message: 'RTK returned an unsupported parse-failure report.',
+      };
+    return {
+      state: 'ready',
+      snapshot: {kind: 'failures', failuresText: failures},
+    };
+  }
+
+  const report = await decodeGainReport(output);
+  if (report === undefined)
+    return {
+      state: 'unsupported',
+      message: 'RTK returned an unsupported JSON usage report.',
+    };
+
+  const period = periodName(view);
+  if (period === undefined) {
+    return report.summary.total_commands === 0
+      ? {state: 'empty'}
+      : {state: 'ready', snapshot: {kind: 'summary', summary: report.summary}};
+  }
+
+  const periods = normalizedPeriodRows(report, period);
+  if (periods === undefined)
+    return {
+      state: 'unsupported',
+      message: `RTK did not provide a native ${view.toLowerCase()} JSON report.`,
+    };
+  if (periods.length === 0) return {state: 'empty'};
+  return {
+    state: 'ready',
+    snapshot: {
+      kind: 'period',
+      view: period,
+      summary: report.summary,
+      periods,
+    },
+  };
 }

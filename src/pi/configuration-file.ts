@@ -82,13 +82,6 @@ export class ConfigurationFile {
         const temporary = `${this.target}.${randomUUID()}.tmp`;
         let staged = false;
         try {
-          const current = await Effect.runPromise(readText(this.path));
-          const target = await Effect.runPromise(writeTarget(this.path));
-          if (current !== this.text || target !== this.target)
-            throw new ConfigurationError({
-              message:
-                'Settings changed on disk. Nothing saved. /reload before retrying.',
-            });
           const next = `${JSON.stringify({...this.value, rtk: settings}, null, 2)}\n`;
           const file = await open(temporary, 'wx', 0o600);
           staged = true;
@@ -98,6 +91,15 @@ export class ConfigurationFile {
           } finally {
             await file.close();
           }
+          // Check after staging so edits during write/fsync are not overwritten.
+          // The lock serializes Pi Stuff saves, not non-cooperating editors.
+          const current = await Effect.runPromise(readText(this.path));
+          const target = await Effect.runPromise(writeTarget(this.path));
+          if (current !== this.text || target !== this.target)
+            throw new ConfigurationError({
+              message:
+                'Settings changed on disk. Nothing saved. /reload before retrying.',
+            });
           await rename(temporary, this.target);
           staged = false;
           this.text = next;
