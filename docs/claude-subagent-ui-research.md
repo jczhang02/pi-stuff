@@ -23,7 +23,7 @@ The [official overview](https://code.claude.com/docs/en/agents) distinguishes th
 | Arrangement                      | Concrete use                                                           | Relationship to the UI in this report                         |
 | -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------- |
 | Ordinary subagent                | Ask a researcher to inspect cancellation code and return findings      | Delegated work inside the current parent session              |
-| Forked subagent                  | Delegate a side investigation with the conversation's existing context | Another way to create an in-session subagent                  |
+| In-session forked subagent       | Delegate a side investigation with the conversation's existing context | Another way to create an in-session subagent                  |
 | Agent team                       | A lead coordinates teammates through messages and shared tasks         | A separate experimental coordination mode                     |
 | Background session in Agent View | Independently run a bug fix, a review and an investigation             | A separate full conversation, managed through `claude agents` |
 
@@ -107,7 +107,7 @@ Returning to main required selecting the `main` row and pressing Enter. A sequen
 
 | Context                           | Action              | Observed result                                       |
 | --------------------------------- | ------------------- | ----------------------------------------------------- |
-| Main input with background agents | Down, then arrows   | Enter and move within list focus                      |
+| Main input with background agents | Down, then arrows   | Down entered list focus; arrows moved the focus       |
 | Child row focused, main viewed    | Enter               | Open the child transcript and address input to it     |
 | List focus                        | Esc                 | Return keyboard focus to input, preserve viewed agent |
 | Working child input               | Esc                 | Interrupt the child                                   |
@@ -170,6 +170,8 @@ The [2.1.232 changelog](https://code.claude.com/docs/en/changelog) also changed 
 **Documented.** [Agent teams](https://code.claude.com/docs/en/agent-teams) offer in-process switching or separate tmux/iTerm2 panes. In-process mode uses teammate selection and direct messaging; split-pane mode gives teammates their own terminal panes. Teams add shared coordination beyond an ordinary delegated result. They are experimental and disabled by default. Their pane controls are not proof that an extension can split Pi's internal conversation renderer.
 
 **Documented.** [Agent View](https://code.claude.com/docs/en/agent-view) groups independent background sessions by attention/state. Space opens a peek for activity, a pending question or a result; Enter attaches the full session; Left on empty input detaches. Subagents are not top-level rows there. This research did not run that mode.
+
+Its [manager controls](https://code.claude.com/docs/en/agent-view#organize-the-list) also include Ctrl+T to pin, Ctrl+S to change grouping, Shift+Up/Down to reorder, and Ctrl+X to stop; a second Ctrl+X within two seconds deletes the entry, with conditional worktree cleanup but retained transcripts. `Ready for review` groups sessions with open PRs, while `Completed` also includes failed and stopped sessions. A group heading therefore does not establish an individual session's exact state.
 
 **Inference.** Its useful idea is that the compact summary changes with the reason for attention: current activity while working, the precise question when blocked, and a result when done. Pi can evaluate that idea without adopting its cross-session manager or peek UI. A user's unanswered question deserves more than a generic waiting label.
 
