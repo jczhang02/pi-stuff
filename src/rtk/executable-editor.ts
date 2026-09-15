@@ -4,7 +4,7 @@ import {
   SelectList,
   Key,
   matchesKey,
-  wrapTextWithAnsi,
+  truncateToWidth,
   type Component,
 } from '@earendil-works/pi-tui';
 import {stripVTControlCharacters} from 'node:util';
@@ -122,10 +122,13 @@ export class ExecutableEditor implements Component {
       ...(this.mode === 'input'
         ? ['Enter an absolute RTK path.', ...this.input.render(width)]
         : this.choices.render(width)),
-      ...(this.pending
-        ? [this.theme.fg('muted', 'Validating and saving...')]
-        : []),
-      ...wrapTextWithAnsi(this.error, width).slice(0, 3),
+      // Keep one feedback row. The existing Pi notification retains full errors.
+      truncateToWidth(
+        this.pending
+          ? this.theme.fg('muted', 'Validating and saving...')
+          : this.theme.fg('error', this.error.replace(/\s+/gu, ' ')),
+        width,
+      ),
       '',
       this.theme.fg(
         'dim',

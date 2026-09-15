@@ -38,7 +38,7 @@ Pi Stuff 使用 RTK 改写支持的模型 Bash 命令并过滤输出, 另行清�
 - `/rtk refresh`: 打开 Usage 并读取当前统计.
 - `/rtk help`: 命令帮助.
 
-Usage 提供 Overview、Daily、Weekly、Monthly、History 和 Failures. `r` 刷新或重试, `[` 上一页, `]` 下一页. 切换视图和加载状态时面板保持稳定高度, 长内容在内部换行和分页. PageUp/PageDown 不是 RTK 快捷键. 离开页面会取消临时查询, 包括从根页摘要进入 Settings; 查询失败不关闭 rewrite. 窄布局支持 56 列 26 行; 更小终端显示尺寸提示, 按 Esc 退出.
+Usage 提供 Overview、Daily、Weekly、Monthly、History 和 Failures. `r` 刷新或重试, `[` 上一页, `]` 下一页. Usage 和 Diagnostics 在加载与分页时保持 22 行, 长内容在内部换行和分页. 根菜单、Settings 和路径编辑器使用紧凑高度, 不再填充到 22 行; 摘要、说明和反馈保留必要位置, 稳定同页更新. 单行错误预览的完整内容仍在 Pi 原有通知中显示. PageUp/PageDown 不是 RTK 快捷键. 离开页面会取消临时查询, 包括从根页摘要进入 Settings; 查询失败不关闭 rewrite. 窄布局支持 56 列 26 行; 更小终端显示尺寸提示, 按 Esc 退出.
 
 Diagnostics 只读显示已解析的可执行文件、探测信息、本次扩展生命周期最近一次集成 rewrite 故障和 RTK 原生配置. Pi Stuff 不编辑 RTK 配置、信任设置、遥测、hook 或统计数据库.
 

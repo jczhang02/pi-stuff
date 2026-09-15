@@ -38,7 +38,7 @@ Direct commands and their completions are:
 - `/rtk refresh`: open Usage and read current statistics.
 - `/rtk help`: command help.
 
-Usage supports Overview, Daily, Weekly, Monthly, History and Failures. Press `r` to refresh or retry, `[` for the previous report page and `]` for the next. The panel keeps a stable height across views and loading states; long retained content wraps and pages within it. PageUp/PageDown are not RTK shortcuts. Leaving a view cancels its temporary query, including leaving the root summary for Settings. A failed query does not disable rewriting. Narrow layouts support 56 columns by 26 rows; smaller terminals show a size notice with Esc exit.
+Usage supports Overview, Daily, Weekly, Monthly, History and Failures. Press `r` to refresh or retry, `[` for the previous report page and `]` for the next. Usage and Diagnostics keep a 22-row report panel through loading and pagination; long retained content wraps and pages within it. The root menu, Settings and executable editor use compact heights instead of being padded to 22 rows. Their summary, description and feedback slots keep same-page updates stable. Single-line error previews retain full details in Pi's existing notification. PageUp/PageDown are not RTK shortcuts. Leaving a view cancels its temporary query, including leaving the root summary for Settings. A failed query does not disable rewriting. Narrow layouts support 56 columns by 26 rows; smaller terminals show a size notice with Esc exit.
 
 Diagnostics is read-only. It shows the resolved executable, probe information, the latest integration rewrite failure in this extension lifecycle and native RTK configuration. Pi Stuff does not edit RTK's configuration, trust decisions, telemetry, hooks or statistics database.
 

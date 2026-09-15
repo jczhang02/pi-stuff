@@ -10,6 +10,7 @@ import {
   Key,
   matchesKey,
   visibleWidth,
+  truncateToWidth,
   wrapTextWithAnsi,
   type Component,
   type Focusable,
@@ -21,10 +22,16 @@ import type {RtkSettings} from './settings';
 import type {RtkRuntime} from './runtime';
 import {ExecutableEditor} from './executable-editor';
 import {UsageView} from './usage';
-import {dataRow, fillRows, readablePanelLines, RTK_BODY_ROWS} from './display';
+import {dataRow, fillRows, readablePanelLines} from './display';
 import {DiagnosticsView} from './diagnostics';
 
 type Page = 'Settings' | 'Usage' | 'Diagnostics';
+
+const SETTINGS_DESCRIPTIONS = {
+  rewrite: 'Rewrite supported model-originated Bash commands through RTK.',
+  ansi: 'Remove terminal control sequences from final tool results.',
+  executable: 'Automatic discovery or a validated absolute path.',
+};
 
 class RtkPanel implements Component, Focusable {
   focused = false;
@@ -112,8 +119,7 @@ class RtkPanel implements Component, Focusable {
         {
           id: 'rewrite',
           label: 'Command rewrite',
-          description:
-            'Rewrite supported model-originated Bash commands through RTK.',
+          description: SETTINGS_DESCRIPTIONS.rewrite,
           currentValue:
             runtime.settings.rewrite === false ? 'disabled' : 'enabled',
           values: ['enabled', 'disabled'],
@@ -121,8 +127,7 @@ class RtkPanel implements Component, Focusable {
         {
           id: 'ansi',
           label: 'ANSI cleanup',
-          description:
-            'Remove terminal control sequences from final tool results.',
+          description: SETTINGS_DESCRIPTIONS.ansi,
           currentValue:
             runtime.settings.ansi === false ? 'disabled' : 'enabled',
           values: ['enabled', 'disabled'],
@@ -130,7 +135,7 @@ class RtkPanel implements Component, Focusable {
         {
           id: 'executable',
           label: 'Executable',
-          description: 'Automatic discovery or a validated absolute path.',
+          description: SETTINGS_DESCRIPTIONS.executable,
           currentValue:
             runtime.settings.executable === undefined ? 'automatic' : 'custom',
           submenu: (_value, close) => {
@@ -296,8 +301,7 @@ class RtkPanel implements Component, Focusable {
         border,
         `${title}${' '.repeat(gap)}${this.theme.fg('muted', this.status)}`,
         '',
-        ...fillRows(lines.slice(0, -1), RTK_BODY_ROWS - 1),
-        lines.at(-1) ?? '',
+        ...lines,
         border,
       ],
       this.theme,
@@ -307,6 +311,13 @@ class RtkPanel implements Component, Focusable {
   private settingsLines(width: number): string[] {
     const settings = this.settings.render(width);
     if (this.editor) return settings;
+    // Match native SettingsList's description width; reserve only its longest
+    // description so selection does not move the feedback or keyboard hint.
+    const descriptionRows = Math.max(
+      ...Object.values(SETTINGS_DESCRIPTIONS).map(
+        text => wrapTextWithAnsi(text, width - 4).length,
+      ),
+    );
     return [
       this.theme.bold('Runtime'),
       dataRow(
@@ -324,13 +335,10 @@ class RtkPanel implements Component, Focusable {
       ),
       '',
       this.theme.bold('Behavior'),
-      ...settings.slice(0, -1),
-      ...fillRows(
-        wrapTextWithAnsi(
-          this.saving ? 'Saving settings...' : this.error,
-          width,
-        ).slice(0, 3),
-        3,
+      ...fillRows(settings.slice(0, -1), 5 + descriptionRows),
+      truncateToWidth(
+        this.saving ? 'Saving settings...' : this.error.replace(/\s+/gu, ' '),
+        width,
       ),
       settings.at(-1) ?? '',
     ];

@@ -246,7 +246,7 @@ esac
   }
 }, 30000);
 
-test('RTK keeps a fixed panel height while loading and across views', async () => {
+test('RTK keeps short pages compact and each page stable during loading', async () => {
   const host = await launchPi();
   try {
     const executable = join(host.directory, 'rtk-layout-fixture');
@@ -274,7 +274,9 @@ esac
     });
     await host.terminal.screen.waitForText('refreshing', {timeoutMs: 3000});
     const rootLoadingScreen = await host.terminal.screen.text();
-    expect(panelHeight(rootLoadingScreen, 'RTK')).toBe(22);
+    const rootHeight = panelHeight(rootLoadingScreen, 'RTK');
+    expect(rootHeight).toBeGreaterThan(0);
+    expect(rootHeight).toBeLessThanOrEqual(16);
     const rootLoadingFooter = panelLineOffset(
       rootLoadingScreen,
       'RTK',
@@ -294,7 +296,9 @@ esac
     });
     await host.terminal.screen.waitForText('checking', {timeoutMs: 3000});
     const settingsPendingScreen = await host.terminal.screen.text();
-    expect(panelHeight(settingsPendingScreen, 'RTK / Settings')).toBe(22);
+    const settingsHeight = panelHeight(settingsPendingScreen, 'RTK / Settings');
+    expect(settingsHeight).toBeGreaterThan(rootHeight);
+    expect(settingsHeight).toBeLessThan(22);
     const settingsControl = panelLineOffset(
       settingsPendingScreen,
       'RTK / Settings',
@@ -303,7 +307,9 @@ esac
     expect(settingsControl).toBeGreaterThan(0);
     await host.terminal.screen.waitForText('0.45.0', {timeoutMs: 5000});
     const settingsReadyScreen = await host.terminal.screen.text();
-    expect(panelHeight(settingsReadyScreen, 'RTK / Settings')).toBe(22);
+    expect(panelHeight(settingsReadyScreen, 'RTK / Settings')).toBe(
+      settingsHeight,
+    );
     expect(
       panelLineOffset(settingsReadyScreen, 'RTK / Settings', 'Command rewrite'),
     ).toBe(settingsControl);
@@ -314,7 +320,7 @@ esac
     });
     await host.terminal.screen.waitForText('3 commands', {timeoutMs: 5000});
     const rootReadyScreen = await host.terminal.screen.text();
-    expect(panelHeight(rootReadyScreen, 'RTK')).toBe(22);
+    expect(panelHeight(rootReadyScreen, 'RTK')).toBe(rootHeight);
     expect(
       panelLineOffset(rootReadyScreen, 'RTK', 'Enter Open · Esc Close'),
     ).toBe(rootLoadingFooter);
@@ -386,6 +392,10 @@ test('Settings refuses an external edit without changing the active ANSI policy'
   try {
     await host.command('/rtk integration');
     await host.terminal.screen.waitForText('RTK / Settings', {timeoutMs: 3000});
+    await host.terminal.resize({cols: 56, rows: 26});
+    const before = await host.terminal.screen.text();
+    const height = panelHeight(before, 'RTK / Settings');
+    const footer = panelLineOffset(before, 'RTK / Settings', 'Esc Back');
     const external = '{"rtk":{"rewrite":false}}';
     await writeFile(join(host.agent, 'pi-stuff.json'), external);
     await host.terminal.keyboard.press('ArrowDown');
@@ -393,6 +403,15 @@ test('Settings refuses an external edit without changing the active ANSI policy'
     await host.terminal.screen.waitForText('Settings changed on disk.', {
       timeoutMs: 3000,
     });
+    const failed = await host.terminal.screen.text();
+    expect(panelHeight(failed, 'RTK / Settings')).toBe(height);
+    expect(panelLineOffset(failed, 'RTK / Settings', 'Esc Back')).toBe(footer);
+    await host.terminal.keyboard.press('ArrowDown');
+    const shorterDescription = await host.terminal.screen.text();
+    expect(panelHeight(shorterDescription, 'RTK / Settings')).toBe(height);
+    expect(
+      panelLineOffset(shorterDescription, 'RTK / Settings', 'Esc Back'),
+    ).toBe(footer);
     expect(await readFile(join(host.agent, 'pi-stuff.json'), 'utf8')).toBe(
       external,
     );
@@ -441,6 +460,29 @@ test('Executable editor validates and persists an absolute RTK path', async () =
     await host.terminal.screen.waitForText('Enter an absolute RTK path.', {
       timeoutMs: 3000,
     });
+    await host.terminal.resize({cols: 56, rows: 26});
+    const editorHeight = panelHeight(
+      await host.terminal.screen.text(),
+      'RTK / Settings',
+    );
+    expect(editorHeight).toBeLessThanOrEqual(12);
+    const invalid = join(host.directory, 'invalid-rtk');
+    await writeFile(invalid, '#!/bin/sh\nsleep 1\nexit 1\n', {mode: 0o700});
+    await host.terminal.keyboard.type(invalid);
+    await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('Validating and saving...', {
+      timeoutMs: 3000,
+    });
+    expect(
+      panelHeight(await host.terminal.screen.text(), 'RTK / Settings'),
+    ).toBe(editorHeight);
+    await host.terminal.screen.waitForText('did not report', {
+      timeoutMs: 3000,
+    });
+    expect(
+      panelHeight(await host.terminal.screen.text(), 'RTK / Settings'),
+    ).toBe(editorHeight);
+    await host.terminal.keyboard.press('Control+U');
     await host.terminal.keyboard.type(executable);
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('RTK setting saved.', {

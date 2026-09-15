@@ -6,6 +6,18 @@
 
 环境: Linux, 编译版 Pi 0.85.1, Bun 1.4.0, RTK 0.45.0, Pi 深色主题, 字体为 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. 图片由真实 Pi 会话通过 Terminal Control 导出, 不是桌面窗口截图或重绘稿. 配置、HOME 和统计均隔离. 上轮修复的 History 使用实际 RTK 记录, 失败报告和延迟错误使用受控进程 fixture. 本轮数据来源另列于下方. 静态截图不能单独证明按键效果, 下文同时记录实际操作结果.
 
+## 短页面收紧
+
+`ab0f97f` 后的修正移除了所有页面统一 22 行的下限. 编译 Pi 取图中, 根菜单为 15 行, Settings 在 100 列下为 18 行、56 列下为 19 行, Usage 和 Diagnostics 仍采用 22 行报表预算. 路径编辑使用紧凑页面与一个固定反馈行. 根页摘要和 Settings 说明只预留同页更新所需空间, 完整错误仍在 Pi 通知中显示.
+
+最终取图覆盖根页、Settings、Usage, 内置浅深主题与 100x30、56x26 两种尺寸, 共 12 个状态. 配置和统计均为隔离 fixture. 首轮窄屏导出捕获了 resize 前旧帧的裁剪结果; 最终取图等待重排后的标题/版本出现再导出. 字体栈同上, 浅色使用白底, 深色使用 Pi 深色背景. 下方所有页面均为 22 行的描述属于历史版本, 不代表当前短页布局.
+
+![浅色紧凑根页](../../assets/rtk/review/compact-root-light.png)
+
+![深色窄屏紧凑根页](../../assets/rtk/review/compact-root-dark-narrow.png)
+
+![浅色窄屏设置页与换行说明](../../assets/rtk/review/compact-settings-light-narrow.png)
+
 ## 顶部选择区与浅色对比度
 
 下方修改前截图对应 `9771ed0`, 修改后截图对应其后的顶部选择区修复. 每组使用相同的 100x30 尺寸、数据、字体和白色终端背景. Scope/View 移至报告上方, 当前设置项说明仍可见, 分页在数据下方, 快捷键帮助固定在底部. 移除 Display 标题后, 同样的 22 行面板增加两行报告空间.

@@ -6,6 +6,18 @@ The UI repair after `99b7edf59aec91a692742e5e7ae9d3f055b97bd7` addresses the fiv
 
 Environment: Linux, compiled Pi 0.85.1, Bun 1.4.0, RTK 0.45.0, Pi dark palette, and `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. PNGs are Terminal Control exports from real Pi sessions, not desktop-window screenshots or redrawn mockups. Configuration, HOME and statistics were isolated. In the previous repair, History used actual native RTK records; failure and delayed-error cases used controlled process fixtures. The follow-up data sources are specified below. A still image does not prove a keypress; the reproduction traces below describe the observed interaction.
 
+## Compact short pages
+
+The follow-up after `ab0f97f` removes the shared 22-row minimum. In the compiled Pi capture, the root menu is 15 rows, Settings is 18 rows at 100 columns and 19 at 56 columns, while Usage and Diagnostics retain their 22-row report budget. Executable editing uses a compact page with one fixed feedback row. Root summary and Settings description slots reserve only the space needed for same-page updates. Full errors remain in Pi notifications.
+
+The final batch covers root, Settings and Usage in both built-in themes at 100x30 and 56x26, 12 states. Configuration and statistics are isolated fixtures. The first narrow export captured the cropped pre-resize frame; the final batch waits for the reflowed title/version before export. These terminal captures use the font stack above, with white background for light and Pi's dark background otherwise. Earlier all-pages-22-row claims below describe historical revisions, not the current short-page layout.
+
+![Compact root, light](assets/rtk/review/compact-root-light.png)
+
+![Compact root, dark narrow](assets/rtk/review/compact-root-dark-narrow.png)
+
+![Settings with wrapped description, light narrow](assets/rtk/review/compact-settings-light-narrow.png)
+
 ## Top controls and light-theme contrast
 
 Before images below use `9771ed0`; after images use the subsequent top-controls repair. Each pair has the same 100x30 viewport, dataset, font and white terminal background. Scope/View now precede the report; the selected-setting description remains available, pagination follows the data and keyboard help stays at the bottom. Removing the Display heading frees two report rows without changing the 22-row panel.
