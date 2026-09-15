@@ -336,10 +336,7 @@ class RtkPanel implements Component, Focusable {
       '',
       this.theme.bold('Behavior'),
       ...fillRows(settings.slice(0, -1), 5 + descriptionRows),
-      truncateToWidth(
-        this.saving ? 'Saving settings...' : this.error.replace(/\s+/gu, ' '),
-        width,
-      ),
+      truncateToWidth(this.error.replace(/\s+/gu, ' '), width),
       settings.at(-1) ?? '',
     ];
   }
