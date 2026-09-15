@@ -42,6 +42,8 @@ Usage 提供 Overview、Daily、Weekly、Monthly、History 和 Failures. `r` 刷
 
 Diagnostics 只读显示已解析的可执行文件、探测信息、本次扩展生命周期最近一次集成 rewrite 故障和 RTK 原生配置. Pi Stuff 不编辑 RTK 配置、信任设置、遥测、hook 或统计数据库.
 
+Daily、Weekly、Monthly 和 History 每页保留表头. Failures 按最近记录和命令频次分区, 翻页时保留所属分区的标题及列名. 主题强调色区分表头、节省量和回退结果, 每种状态仍有文字标识.
+
 下方 [100x30 截图](../../assets/rtk/usage.png)和 [56x26 截图](../../assets/rtk/usage-narrow.png)来自编译 Pi 0.85.1 与原生 RTK 0.45.0, 展示隔离 fixture 仓库执行十次 `git status` 后的结果. 数值只属于本次样本, 不是通用压缩率基准. 这些是渲染后的 Terminal Control 抓取, 不是原生桌面截图.
 
 导出使用 Pi 当前深色配色, 字体栈为 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`.
@@ -52,7 +54,9 @@ Diagnostics 只读显示已解析的可执行文件、探测信息、本次扩�
 
 Usage 显示 RTK 对原始和过滤后命令输出 token 的估算, 不表示供应商账单、精确模型上下文、Pi 会话专属用量或 Pi Stuff ANSI 清理收益. Global 可以包含其他应用使用同一 RTK 数据库产生的记录. Project 沿用 RTK 当前工作目录范围, 不单独聚合 Git 根目录.
 
-RTK 0.45.0 支持摘要和日/周/月 JSON. History 的 JSON 模式没有历史列表, 因此 Pi Stuff 读取原生文本历史; 该接口只提供最近记录, 命令名也可能已被截断, 本地分页无法恢复 RTK 没有提供的文本. Failures 是全局文本报告, 面板不能暗示它已按项目过滤. 保留的每行完整换行显示, 报告上限为 120 行, 超出时明确显示截断标记. 这些是原生解析/fallback 故障, 与 rewrite 准备错误和普通命令失败不同. 未识别格式会报告失败, 不显示成零统计.
+RTK 0.45.0 支持摘要和日/周/月 JSON. History 的 JSON 模式没有历史列表, 因此 Pi Stuff 读取原生文本历史; 该接口只提供最近记录, 命令名也可能已被截断, 本地分页无法恢复 RTK 没有提供的文本.
+
+Failures 始终为全局文本报告, 即使指定 `--format json` 也一样. Pi Stuff 解析总次数、回退恢复率、最多十条高频命令和十条最近记录. `Recovered` 表示 RTK 回退成功, 不代表解析成功; `Failed` 表示回退失败. RTK 不输出错误原因, 命令也可能先被缩短, 面板无法恢复这些信息. 多行命令仍归属其原记录. 集成只读取命令输出, 不读取 RTK 数据库. 无法识别或字段无效时显示 unsupported, 不伪装成零统计. [RTK 0.45.0 报告实现](https://github.com/rtk-ai/rtk/blob/b34be37caf3796b69a50952a28e60e32b5daad43/src/analytics/gain.rs#L695-L739).
 
 ## 执行与恢复边界
 

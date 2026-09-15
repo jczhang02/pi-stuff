@@ -1,6 +1,7 @@
 import {expect, test} from 'bun:test';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import type {Frame} from '@kitlangton/terminal-control';
 import {launchPi} from './fixtures/pi-terminal';
 
 function reportBody(screen: string): string {
@@ -10,6 +11,102 @@ function reportBody(screen: string): string {
     (line, index) => index > title && /Page \d+\/\d+/u.test(line),
   );
   return title < 0 || page < 0 ? '' : lines.slice(title + 1, page).join('\n');
+}
+
+function pageNumber(screen: string) {
+  const match = /Page (\d+)\/(\d+)/u.exec(screen);
+  if (match === null || match[1] === undefined || match[2] === undefined)
+    throw new Error('The Usage report did not render a page marker.');
+  return {current: Number(match[1]), total: Number(match[2])};
+}
+
+async function collectReportPages(
+  terminal: Awaited<ReturnType<typeof launchPi>>['terminal'],
+): Promise<string[]> {
+  const pages: string[] = [];
+  for (;;) {
+    const screen = await terminal.screen.text();
+    pages.push(reportBody(screen));
+    const page = pageNumber(screen);
+    if (page.current >= page.total) return pages;
+    await terminal.keyboard.type(']');
+    await terminal.screen.waitForText(
+      new RegExp(`Page ${page.current + 1}\\/\\d+`, 'u'),
+      {timeoutMs: 5000},
+    );
+  }
+}
+
+async function goToFirstReportPage(
+  terminal: Awaited<ReturnType<typeof launchPi>>['terminal'],
+): Promise<void> {
+  const page = pageNumber(await terminal.screen.text());
+  if (page.current === 1) return;
+  await terminal.keyboard.type('['.repeat(page.current - 1));
+  await terminal.screen.waitForText(/Page 1\/\d+/u, {timeoutMs: 5000});
+}
+
+function reportContent(pages: readonly string[]): string {
+  return pages
+    .map(page =>
+      page
+        .split(/\r?\n/u)
+        .filter(line => {
+          const value = line.trim();
+          return (
+            value !== 'Recent commands' &&
+            !/^Time\s+Command\s+Saved\s+Rate$/u.test(value) &&
+            !value.startsWith('Parse failures · ') &&
+            !/^Global · \d+ failures · /u.test(value) &&
+            !/^Time\s+Fallback\s+Command$/u.test(value) &&
+            !/^Command\s+Count$/u.test(value)
+          );
+        })
+        .join('\n'),
+    )
+    .join('\n');
+}
+
+function panelHeight(frame: Frame): number {
+  const rows = new Map<number, string>();
+  for (const cell of frame.cells)
+    rows.set(cell.y, `${rows.get(cell.y) ?? ''}${cell.text}`);
+  const titleRow = [...rows.entries()].find(([, text]) =>
+    text.includes('RTK / Usage'),
+  )?.[0];
+  if (titleRow === undefined) throw new Error('The Usage title is missing.');
+  const borderRows = [...rows.entries()]
+    .filter(
+      ([row, text]) =>
+        row !== titleRow &&
+        /^─+$/u.test(text.trim()) &&
+        text.trim().length >= Math.min(frame.cols, 20),
+    )
+    .map(([row]) => row);
+  const top = borderRows.filter(row => row < titleRow).at(-1);
+  const bottom = borderRows.find(row => row > titleRow);
+  if (top === undefined || bottom === undefined)
+    throw new Error('The Usage panel borders are missing.');
+  return bottom - top + 1;
+}
+
+function foregroundFor(frame: Frame, value: string): string {
+  const rows = new Map<number, Frame['cells']>();
+  for (const cell of frame.cells)
+    rows.set(cell.y, [...(rows.get(cell.y) ?? []), cell]);
+  for (const cells of rows.values()) {
+    cells.sort((left, right) => left.x - right.x);
+    const text = cells.map(cell => cell.text).join('');
+    const start = text.indexOf(value);
+    if (start < 0) continue;
+    let offset = 0;
+    for (const cell of cells) {
+      if (start >= offset && start < offset + cell.text.length)
+        return JSON.stringify(cell.foreground);
+      offset += cell.text.length;
+    }
+  }
+  throw new Error(`The Usage report does not contain ${value}.`);
 }
 
 test('Usage renders the native RTK JSON summary', async () => {
@@ -98,18 +195,29 @@ esac
     let screen = await host.terminal.screen.text();
     expect(screen).toContain('Page 1/2');
     expect(screen).toContain('2026-09-01');
+    expect(screen).toContain('Daily savings');
+    expect(screen).toContain('Date');
+    expect(screen).toContain('Commands');
+    expect(screen).toContain('Saved');
+    expect(screen).toContain('Rate');
     expect(screen).not.toContain('2026-09-15');
     await host.terminal.keyboard.type(']');
     await host.terminal.screen.waitForText('2026-09-15', {timeoutMs: 5000});
     screen = await host.terminal.screen.text();
     expect(screen).toContain('22');
     expect(screen).toContain('5.3k');
+    expect(screen).toContain('Daily savings');
+    expect(screen).toContain('Date');
+    expect(screen).toContain('Commands');
+    expect(screen).toContain('Saved');
+    expect(screen).toContain('Rate');
     expect(screen).not.toContain('No Daily data');
     await host.terminal.keyboard.type('[');
     await host.terminal.screen.waitForText('Page 1/2', {timeoutMs: 5000});
     await host.terminal.resize({cols: 56, rows: 26});
     await host.terminal.screen.waitForText('Page 1/2', {timeoutMs: 5000});
     const narrow = await host.terminal.screen.text();
+    expect(panelHeight(await host.terminal.screen.frame())).toBe(22);
     expect(narrow).toContain('Page 1/2');
     expect(narrow).toContain('Rate');
     expect(narrow).toContain('r Refresh');
@@ -123,6 +231,98 @@ esac
     expect(lastPage).not.toContain('2026-09-01');
     await host.terminal.keyboard.type('[');
     await host.terminal.screen.waitForText('Page 1/2', {timeoutMs: 5000});
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Usage repeats table headers on every page for all native report tables', async () => {
+  const host = await launchPi();
+  try {
+    const executable = join(host.directory, 'rtk-table-header-fixture');
+    const periodStats = Array.from({length: 12}, (_, index) => ({
+      commands: index + 1,
+      input_tokens: (index + 1) * 100,
+      output_tokens: (index + 1) * 50,
+      saved_tokens: (index + 1) * 50,
+      savings_pct: 50,
+      total_time_ms: (index + 1) * 100,
+      avg_time_ms: 100,
+    }));
+    const report = JSON.stringify({
+      summary: {
+        total_commands: 78,
+        total_input: 7800,
+        total_output: 3900,
+        total_saved: 3900,
+        avg_savings_pct: 50,
+        total_time_ms: 7800,
+        avg_time_ms: 100,
+      },
+      daily: periodStats.map((stats, index) => ({
+        date: `2026-09-${String(index + 1).padStart(2, '0')}`,
+        ...stats,
+      })),
+      weekly: periodStats.map((stats, index) => ({
+        week_start: `2026-09-${String(index + 1).padStart(2, '0')}`,
+        week_end: `2026-09-${String(index + 7).padStart(2, '0')}`,
+        ...stats,
+      })),
+      monthly: periodStats.map((stats, index) => ({
+        month: `2026-${String(index + 1).padStart(2, '0')}`,
+        ...stats,
+      })),
+    });
+    const historyRows = Array.from(
+      {length: 10},
+      (_, index) =>
+        `09-15 11:${String(14 - index).padStart(2, '0')} ▲ history-command-${index + 1}-${'x'.repeat(90)} -50% (${index + 1}00)`,
+    );
+    await writeFile(
+      executable,
+      `#!/bin/sh
+case "$1" in
+  --version) printf 'rtk 0.45.0' ;;
+  gain)
+    case "$2:$3" in
+      *--history*) printf '%s\\n' 'Recent Commands' ${historyRows.map(row => `'${row}'`).join(' ')} ;;
+      *) printf '%s' '${report}' ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
+`,
+      {mode: 0o700},
+    );
+    await writeFile(
+      join(host.agent, 'pi-stuff.json'),
+      JSON.stringify({rtk: {executable}}),
+    );
+    await host.reload();
+
+    await host.command('/rtk gain');
+    await host.terminal.screen.waitForText('Total commands', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('ArrowDown');
+    const tables = [
+      {view: 'Daily', heading: 'Daily savings', label: 'Date'},
+      {view: 'Weekly', heading: 'Weekly savings', label: 'Week'},
+      {view: 'Monthly', heading: 'Monthly savings', label: 'Month'},
+      {view: 'History', heading: 'Recent commands', label: 'Time'},
+    ];
+    for (const table of tables) {
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText(table.heading, {timeoutMs: 5000});
+      const pages = await collectReportPages(host.terminal);
+      expect(pages.length).toBeGreaterThan(1);
+      for (const page of pages) {
+        expect(page).toContain(table.heading);
+        expect(page).toContain(table.label);
+        if (table.view !== 'History') expect(page).toContain('Commands');
+        expect(page).toContain('Saved');
+        expect(page).toContain('Rate');
+      }
+      expect(panelHeight(await host.terminal.screen.frame())).toBe(22);
+    }
   } finally {
     await host.close();
   }
@@ -283,48 +483,36 @@ esac
       await host.terminal.keyboard.press('Enter');
       await host.terminal.screen.waitForText(expected, {timeoutMs: 5000});
     }
-    const screen = await host.terminal.screen.text();
+    let screen = await host.terminal.screen.text();
     expect(screen).toContain('09-15 11:04');
     expect(screen).toContain('git status');
     expect(screen).toContain('1.2k');
     expect(screen).toContain('83%');
     expect(screen).not.toContain('Input tokens');
-    expect(screen).toContain('Page 1/2');
-    await host.terminal.keyboard.type(']');
-    await host.terminal.screen.waitForText('Page 2/2', {timeoutMs: 5000});
-    const lastPage = await host.terminal.screen.text();
-    expect(lastPage).toContain('9.9k');
+    expect(screen).toContain('Recent commands');
+    expect(screen).toContain('Time');
+    expect(screen).toContain('Command');
+    expect(screen).toContain('Saved');
+    expect(screen).toContain('Rate');
+    const pages = await collectReportPages(host.terminal);
+    expect(pages.length).toBeGreaterThan(1);
     expect(
-      reportBody(lastPage).replace(/\s+/gu, '').replace('9.9k99%', ''),
+      reportContent(pages).replace(/\s+/gu, '').replace('9.9k99%', ''),
     ).toContain(longCommand);
     await host.terminal.resize({cols: 56, rows: 26});
-    for (let index = 0; index < 20; index++)
-      await host.terminal.keyboard.type('[');
-    await host.terminal.screen.waitForText('Page 1/', {timeoutMs: 5000});
-    const narrowFirst = await host.terminal.screen.text();
+    await goToFirstReportPage(host.terminal);
+    const narrowFirstScreen = await host.terminal.screen.text();
+    expect(panelHeight(await host.terminal.screen.frame())).toBe(22);
+    const narrowPages = await collectReportPages(host.terminal);
+    const narrowFirst = narrowPages[0] ?? '';
     expect(narrowFirst).toContain('Rate');
-    expect(narrowFirst).toContain('r Refresh');
-    expect(narrowFirst).toContain('Esc Back');
-    for (let index = 0; index < 20; index++)
-      await host.terminal.keyboard.type(']');
-    await host.terminal.screen.waitUntil(
-      screen => {
-        const page = /Page (\d+)\/(\d+)/u.exec(screen.text);
-        return page?.[1] === page?.[2];
-      },
-      {timeoutMs: 5000},
-    );
-    const narrowLast = await host.terminal.screen.text();
-    expect(narrowLast).toContain('Page ');
-    await host.terminal.keyboard.type('[');
-    await host.terminal.screen.waitForText('Page 2/', {timeoutMs: 5000});
-    const narrowMiddle = await host.terminal.screen.text();
-    expect(narrowMiddle).toContain('9.9k');
+    expect(narrowFirstScreen).toContain('r Refresh');
+    expect(narrowFirstScreen).toContain('Esc Back');
+    expect(narrowFirstScreen).toContain('Page 1/');
     expect(
-      `${reportBody(narrowMiddle)}${reportBody(narrowLast)}`
-        .replace(/\s+/gu, '')
-        .replace('9.9k99%', ''),
+      reportContent(narrowPages).replace(/\s+/gu, '').replace('9.9k99%', ''),
     ).toContain(longCommand);
+    expect(narrowPages.join('')).toContain('9.9k');
   } finally {
     await host.close();
   }
@@ -348,7 +536,12 @@ case "$1" in
 Total failures: 4
 Recovery rate: 75.0%
 
+Top Commands (by frequency)
+────────────────────────────────────────────────────────────
+     4x  git status
+
 Recent Failures (last 10)
+────────────────────────────────────────────────────────────
   2026-09-15T11:04 [ok] git status
 '
         ;;
@@ -391,14 +584,22 @@ esac
       await host.terminal.keyboard.press('Enter');
       await host.terminal.screen.waitForText(expected, {timeoutMs: 5000});
     }
-    let screen = await host.terminal.screen.text();
-    expect(screen).toContain('Global · native RTK report · scope fixed');
-    expect(screen).toContain('Total failures: 4');
-    expect(screen).not.toContain('Scope  Project');
+    const pages = await collectReportPages(host.terminal);
+    expect(pages.length).toBeGreaterThan(1);
+    const firstPage = pages[0] ?? '';
+    const lastPage = pages.at(-1) ?? '';
+    expect(firstPage).toContain('Parse failures · Recent failures');
+    expect(firstPage).toContain('Global · 4 failures · 75% recovered');
+    expect(firstPage).toContain('Recovered');
+    expect(lastPage).toContain('Parse failures · Top commands');
+    expect(lastPage).toContain('4');
+    expect(pages.join('\n')).not.toContain('RTK Parse Failures');
+    expect(pages.join('\n')).not.toContain('Total failures: 4');
+    expect(pages.join('\n')).not.toContain('═');
 
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Total commands', {timeoutMs: 5000});
-    screen = await host.terminal.screen.text();
+    const screen = await host.terminal.screen.text();
     expect(screen).toContain('Scope  Project');
   } finally {
     await host.close();
@@ -424,6 +625,7 @@ Total failures: 1
 Recovery rate: 0.0%
 
 Recent Failures (last 10)
+────────────────────────────────────────────────────────────
   2026-09-15T11:04 [FAIL] rg "No parse failures recorded." src
 '
         ;;
@@ -449,20 +651,13 @@ esac
     for (let index = 0; index < 5; index++)
       await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Parse failures', {timeoutMs: 5000});
-    let screen = await host.terminal.screen.text();
-    expect(screen).toContain('Total failures: 1');
-    expect(screen).toContain('Page 1/2');
-    expect(screen).not.toContain('rg "No parse failures recorded." src');
-    await host.terminal.keyboard.type(']');
-    await host.terminal.screen.waitForText(
-      'rg "No parse failures recorded." src',
-      {
-        timeoutMs: 5000,
-      },
-    );
-    screen = await host.terminal.screen.text();
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('Parse failures · Recent failures');
+    expect(screen).toContain('Global · 1 failures · 0% recovered');
+    expect(screen).toContain('Failed');
     expect(screen).toContain('rg "No parse failures recorded." src');
     expect(screen).not.toContain('No parse failures recorded\n');
+    expect(screen).not.toContain('RTK Parse Failures');
   } finally {
     await host.close();
   }
@@ -516,11 +711,11 @@ esac
   }
 }, 30000);
 
-test('Usage bounds a long failures report and keeps controls visible when resized', async () => {
+test('Usage renders structured native failures, preserves tails, and keeps semantic colors', async () => {
   const host = await launchPi();
   try {
     const executable = join(host.directory, 'rtk-long-failures-fixture');
-    const longFailureTail = 'x'.repeat(260);
+    const payloadTail = 'FAILURE_PAYLOAD_TAIL';
     await writeFile(
       executable,
       `#!/bin/sh
@@ -529,11 +724,11 @@ case "$1" in
   gain)
     case "$2:$3" in
       --failures:*|*:--failures)
-        printf '%s\\n' 'RTK Parse Failures' '════════════════════════════════════════════════════════════' 'Total failures: 15' 'Recent Failures (last 10)' '  01 [ok] command-01' '  02 [ok] command-02' '  03 [ok] command-03' '  04 [ok] command-04' '  05 [ok] command-05' '  06 [ok] command-06' '  07 [ok] command-07' '  08 [ok] command-08' '  09 [ok] command-09' '  10 [ok] command-10' '  11 [ok] command-11' '  12 [ok] command-12' '  13 [ok] command-13' '  14 [ok] command-14' '  15 [ok] command-15 reason-${longFailureTail} TAIL_REASON'
+        printf '%s\\n' 'RTK Parse Failures' '════════════════════════════════════════════════════════════' '' 'Total failures:    15' 'Recovery rate:     60.0%' '' 'Top Commands (by frequency)' '────────────────────────────────────────────────────────────' '     3x  git status' '     3x  /bin/true' '     1x  rtk unsupported --flag' '     1x  custom-multiline-command' 'reason: first line' 'rea...' '     1x  command-with-a-deliberately-long-name-that-nati...' '     1x  command-15' '     1x  command-14' '     1x  command-13' '     1x  command-12' '     1x  command-11' '' 'Recent Failures (last 10)' '────────────────────────────────────────────────────────────' '  2026-09-15T10:14 [ok] command-15' '  2026-09-15T10:13 [FAIL] command-14' '  2026-09-15T10:12 [ok] command-13' '  2026-09-15T10:11 [FAIL] command-12' '  2026-09-15T10:10 [ok] command-11' '  2026-09-15T10:09 [FAIL] command-with-a-deliberately-long-name...' '  2026-09-15T10:08 [ok] custom-multiline-command' 'reason: firs...' '  2026-09-15T10:07 [FAIL] git status' '  2026-09-15T10:06 [ok] git status' '  2026-09-15T10:05 [FAIL] rtk unsupported --flag ${payloadTail}'
         ;;
       --daily:*|--weekly:*|--monthly:*|*:--daily|*:--weekly|*:--monthly)
         printf '%s' '{"summary":{"total_commands":15,"total_input":15000,"total_output":6000,"total_saved":9000,"avg_savings_pct":60.0,"total_time_ms":15000,"avg_time_ms":1000},"daily":[{"date":"2026-09-15","commands":15,"input_tokens":15000,"output_tokens":6000,"saved_tokens":9000,"savings_pct":60.0,"total_time_ms":15000,"avg_time_ms":1000}],"weekly":[{"week_start":"2026-09-15","week_end":"2026-09-21","commands":15,"input_tokens":15000,"output_tokens":6000,"saved_tokens":9000,"savings_pct":60.0,"total_time_ms":15000,"avg_time_ms":1000}],"monthly":[{"month":"2026-09","commands":15,"input_tokens":15000,"output_tokens":6000,"saved_tokens":9000,"savings_pct":60.0,"total_time_ms":15000,"avg_time_ms":1000}]}'
-        ;;
+      ;;
       --history:*|*:--history)
         printf '%s\\n' 'Recent Commands' '09-15 11:04 ▲ command-01 -60% (600)'
         ;;
@@ -570,32 +765,33 @@ esac
     await host.terminal.screen.waitForText('Page 1/', {
       timeoutMs: 5000,
     });
-    let screen = await host.terminal.screen.text();
-    expect(screen).toContain('Display');
-    expect(screen).toContain('r Refresh');
-    expect(screen).toContain('Esc Back');
-    expect(screen).not.toContain('command-15');
-    expect(screen).not.toContain('PageDown');
+    const firstScreen = await host.terminal.screen.text();
+    const firstFrame = await host.terminal.screen.frame();
+    expect(panelHeight(firstFrame)).toBe(22);
+    expect(firstScreen).toContain('Parse failures · Recent failures');
+    expect(firstScreen).toContain('Global · 15 failures · 60% recovered');
+    expect(firstScreen).toContain('Display');
+    expect(firstScreen).toContain('r Refresh');
+    expect(firstScreen).toContain('Esc Back');
+    expect(firstScreen).not.toContain('PageDown');
+    expect(foregroundFor(firstFrame, 'Recovered')).not.toBe(
+      foregroundFor(firstFrame, 'Failed'),
+    );
 
-    await host.terminal.keyboard.type('[');
-    await host.terminal.screen.waitForText('Page 1/', {timeoutMs: 5000});
-    await host.terminal.keyboard.type(']'.repeat(10));
-    await host.terminal.screen.waitForText('TAIL_REASON', {timeoutMs: 5000});
-    const lastFailurePage = await host.terminal.screen.text();
-    screen = lastFailurePage;
-    expect(screen).toContain('TAIL_REASON');
-    expect(screen).toContain('Page ');
-    expect(screen).toContain('[ Previous');
-    await host.terminal.keyboard.type('[');
-    await host.terminal.screen.waitForText('command-15', {timeoutMs: 5000});
-    const commandPage = await host.terminal.screen.text();
-    expect(commandPage).toContain('command-15');
+    const pages = await collectReportPages(host.terminal);
+    expect(pages.length).toBeGreaterThan(2);
+    for (const page of pages) expect(page).toContain('Parse failures · ');
     expect(
-      `${reportBody(commandPage)}${reportBody(lastFailurePage)}`.replace(
-        /\s+/gu,
-        '',
-      ),
-    ).toContain(`command-15reason-${longFailureTail}TAIL_REASON`);
+      pages.some(page => page.includes('Parse failures · Top commands')),
+    ).toBe(true);
+    const content = reportContent(pages);
+    const normalizedContent = content.replace(/\s+/gu, '');
+    expect(normalizedContent).toContain(payloadTail);
+    expect(normalizedContent).toContain(
+      'command-with-a-deliberately-long-name...',
+    );
+    expect(content).not.toContain('RTK Parse Failures');
+    expect(content).not.toContain('Total failures:    15');
   } finally {
     await host.close();
   }
@@ -613,9 +809,10 @@ case "$1" in
   gain)
     case "$2:$3" in
       --failures:*|*:--failures)
-        printf '%s\\n' 'RTK Parse Failures' 'first failure' 'second failure' 'third failure' 'fourth failure' 'fifth failure' 'sixth failure' 'seventh failure' 'eighth failure' 'ninth failure' 'tenth failure' 'last failure marker'
+        printf '%s\\n' 'RTK Parse Failures' '════════════════════════════════════════════════════════════' '' 'Total failures:    10' 'Recovery rate:     50.0%' '' 'Recent Failures (last 10)' '────────────────────────────────────────────────────────────' '  2026-09-15T10:01 [FAIL] first failure' '  2026-09-15T10:02 [ok] second failure' '  2026-09-15T10:03 [FAIL] third failure' '  2026-09-15T10:04 [ok] fourth failure' '  2026-09-15T10:05 [FAIL] fifth failure' '  2026-09-15T10:06 [ok] sixth failure' '  2026-09-15T10:07 [FAIL] seventh failure' '  2026-09-15T10:08 [ok] eighth failure' '  2026-09-15T10:09 [FAIL] ninth failure' '  2026-09-15T10:10 [ok] last failure marker'
         ;;
-      *) printf '%s' '{"summary":{"total_commands":1,"total_input":100,"total_output":50,"total_saved":50,"avg_savings_pct":50.0,"total_time_ms":100,"avg_time_ms":100}}' ;;
+      --history:*) printf '%s' 'No tracking data yet.' ;;
+      *) printf '%s' '{"summary":{"total_commands":1,"total_input":100,"total_output":50,"total_saved":50,"avg_savings_pct":50.0,"total_time_ms":100,"avg_time_ms":100},"daily":[],"weekly":[],"monthly":[]}' ;;
     esac
     ;;
   *) exit 2 ;;
@@ -632,24 +829,29 @@ esac
     await host.command('/rtk gain');
     await host.terminal.screen.waitForText('Total commands', {timeoutMs: 5000});
     await host.terminal.keyboard.press('ArrowDown');
-    for (let index = 0; index < 5; index++)
+    for (const expected of [
+      'No daily usage recorded',
+      'No weekly usage recorded',
+      'No monthly usage recorded',
+      'No recent commands recorded',
+      'Parse failures',
+    ]) {
       await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Parse failures', {
-      timeoutMs: 5000,
-    });
+      await host.terminal.screen.waitForText(expected, {timeoutMs: 5000});
+    }
+    await host.terminal.resize({cols: 56, rows: 26});
     await host.terminal.screen.waitForText('Page 1/', {timeoutMs: 5000});
-    const firstPage = await host.terminal.screen.text();
-    expect(firstPage).toContain('first failure');
-    expect(firstPage).not.toContain('last failure marker');
-    await host.terminal.keyboard.type(']');
-    await host.terminal.screen.waitForText('last failure marker', {
-      timeoutMs: 5000,
-    });
-    await host.terminal.keyboard.type(']');
-    const lastPage = await host.terminal.screen.text();
-    expect(lastPage).toContain('last failure marker');
-    await host.terminal.keyboard.type('[');
-    await host.terminal.screen.waitForText('first failure', {timeoutMs: 5000});
+    const pages = await collectReportPages(host.terminal);
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages)
+      expect(page).toContain('Parse failures · Recent failures');
+    const content = reportContent(pages);
+    expect(content).toContain('first failure');
+    expect(content).toContain('last failure marker');
+    expect(content.indexOf('first failure')).toBeLessThan(
+      content.indexOf('last failure marker'),
+    );
+    await goToFirstReportPage(host.terminal);
   } finally {
     await host.close();
   }

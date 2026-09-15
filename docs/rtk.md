@@ -42,6 +42,8 @@ Usage supports Overview, Daily, Weekly, Monthly, History and Failures. Press `r`
 
 Diagnostics is read-only. It shows the resolved executable, probe information, the latest integration rewrite failure in this extension lifecycle and native RTK configuration. Pi Stuff does not edit RTK's configuration, trust decisions, telemetry, hooks or statistics database.
 
+Daily, Weekly, Monthly and History keep their table headers on every page. Failures groups parsed recent records and command frequencies, retaining each section's headings as it pages. Theme accents distinguish headers, savings and fallback outcomes; text labels still identify every status.
+
 The following [100x30 capture](assets/rtk/usage.png) and [56x26 capture](assets/rtk/usage-narrow.png) show compiled Pi 0.85.1 with native RTK 0.45.0 after ten `git status` executions in an isolated fixture repository. The figures belong to this sample, not a general savings benchmark. These are rendered Terminal Control captures, not native desktop screenshots.
 
 The export uses Pi's active dark palette and `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`.
@@ -52,7 +54,9 @@ The export uses Pi's active dark palette and `JetBrainsMono Nerd Font Mono, Symb
 
 Usage reports RTK's estimates of tokens in raw and filtered command output. It does not measure provider billing, exact model context, Pi-session-only usage or savings from Pi Stuff's ANSI cleanup. Global statistics can include commands from other applications using the same RTK database. Project uses RTK's current-working-directory scope, not a separate Git-root aggregation.
 
-RTK 0.45.0 exports summary and daily/weekly/monthly data as JSON. Its History JSON mode contains no history list, so Pi Stuff reads the native text history. That interface provides only recent entries and can already truncate command names; local pagination cannot recover text RTK omitted. The Failures report is text and global; the panel must not imply it is project-filtered. It wraps complete retained lines, with a 120-line report limit and an explicit truncation marker. These are native parse/fallback failures, distinct from rewrite-preparation errors and ordinary command failures. Unrecognized report formats are reported as failures rather than zero statistics.
+RTK 0.45.0 exports summary and daily/weekly/monthly data as JSON. Its History JSON mode contains no history list, so Pi Stuff reads the native text history. That interface provides only recent entries and can already truncate command names; local pagination cannot recover text RTK omitted.
+
+Failures is a global text report even with `--format json`. Pi Stuff parses its total, fallback recovery rate, up to ten frequent commands and ten recent records. `Recovered` means RTK's fallback succeeded; it does not mean parsing succeeded. `Failed` means fallback failed. RTK omits error reasons and shortens commands before printing, so the panel cannot recover them. Multiline command text remains part of its record. The integration reads only the command output, never RTK's database. Unrecognized or invalid reports are shown as unsupported, not as zero statistics. [RTK 0.45.0 report implementation](https://github.com/rtk-ai/rtk/blob/b34be37caf3796b69a50952a28e60e32b5daad43/src/analytics/gain.rs#L695-L739).
 
 ## Execution and recovery boundaries
 

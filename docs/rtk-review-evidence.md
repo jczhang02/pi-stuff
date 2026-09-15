@@ -4,9 +4,27 @@
 
 The UI repair after `99b7edf59aec91a692742e5e7ae9d3f055b97bd7` addresses the five findings below. The original captures are retained as before-state evidence, not accepted designs.
 
-Environment: Linux, compiled Pi 0.85.1, Bun 1.4.0, RTK 0.45.0, Pi dark palette, and `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. PNGs are Terminal Control exports from real Pi sessions, not desktop-window screenshots or redrawn mockups. Configuration, HOME and statistics were isolated. History uses actual native RTK records; failure and delayed-error cases use controlled process fixtures. A still image does not prove a keypress; the reproduction traces below describe the observed interaction.
+Environment: Linux, compiled Pi 0.85.1, Bun 1.4.0, RTK 0.45.0, Pi dark palette, and `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. PNGs are Terminal Control exports from real Pi sessions, not desktop-window screenshots or redrawn mockups. Configuration, HOME and statistics were isolated. In the previous repair, History used actual native RTK records; failure and delayed-error cases used controlled process fixtures. The follow-up data sources are specified below. A still image does not prove a keypress; the reproduction traces below describe the observed interaction.
 
-## Repaired behavior
+## Structured reports and sticky headers
+
+The follow-up after `4040b986add263aa1cbb9c90c77513becc901ba6` keeps the title and column headers on every Daily, Weekly, Monthly and History page. Failures now decodes the native report into summary, recent records and top-command counts. Each section repeats its own header. Accent headings, green savings/recovery, red failed fallback and muted timestamps distinguish meanings without relying on color alone.
+
+The final compiled-Pi run checked 15 captured states at 100x30 and 56x26, all with a 22-row panel. Period/History data came from controlled fixtures. Failures replayed byte-for-byte RTK 0.45.0 output from an isolated seeded database, containing 15 failures and 60% recovery. These are real Pi terminal exports, not personal usage data. RTK omits error reasons and truncates commands in its native report; the extension cannot recover omitted text. Parser tests verify preserved multiline command text, including blank lines and indentation.
+
+![Daily page 2 with headers](assets/rtk/review/structured-daily-page2.png)
+
+![Weekly page 2](assets/rtk/review/structured-weekly-page2.png)
+
+![Monthly page 2](assets/rtk/review/structured-monthly-page2.png)
+
+![History page 2](assets/rtk/review/structured-history-page2.png)
+
+![Parsed recent failures](assets/rtk/review/structured-failures-recent.png)
+
+![Top commands, final page](assets/rtk/review/structured-failures-top-last.png)
+
+## Previous repair, before structured reports
 
 The panel is 22 rows high across root, Settings, Usage and Diagnostics. Reports wrap and use `[` / `]` pagination instead of growing the dialog. Esc returns or closes, including with Pi cancel remapped to Ctrl+G; Ctrl+G does not exit RTK. Feature shortcuts and stable panel dimensions are recorded in [design.md](../design.md).
 
@@ -14,7 +32,7 @@ This native History capture shows page 2 of 2 at 56x26. All ten records from iso
 
 ![Native History, final page](assets/rtk/review/fixed-history-last-56x26.png)
 
-Failure reports preserve retained lines beyond 240 characters and page their wrapped text. The last-page capture shows the final record; the interaction check separately visited the long reason's tail on an earlier page.
+The previous repair paged raw failure text beyond 240 characters. This historical capture is superseded by the structured report above. Its fixture included a long reason-like text tail, not an error-reason field emitted by native RTK.
 
 ![Failure report, final page](assets/rtk/review/fixed-failures-last-56x26.png)
 
@@ -50,9 +68,9 @@ Open a multi-page failure fixture at 56x26. PageDown leaves command-01 through c
 
 ![After right bracket](assets/rtk/review/issue-3-failures-after-right-bracket.png)
 
-### 4. Failure reasons disappear beyond the right edge
+### 4. Failure fixture text disappears beyond the right edge
 
-The same failure line contains its reason at 160x30. At 56x26 it ends at `--porc...`, hiding the reason without wrapping or horizontal access.
+The same fixture line contains a reason-like suffix at 160x30. At 56x26 it ends at `--porc...`, hiding that text without wrapping or horizontal access. This fixture did not establish native RTK error-reason availability.
 
 ![Full failure line](assets/rtk/review/issue-4-failures-longline-160x30.png)
 

@@ -1,9 +1,13 @@
 import type {Theme} from '@earendil-works/pi-coding-agent';
 import {getSettingsListTheme} from '@earendil-works/pi-coding-agent';
 import {isRtkCancellation, type RtkRuntime} from './runtime';
-import {dataRow, ReportPager, RTK_BODY_ROWS} from './display';
 import {
-  boundedReportLines,
+  dataRow,
+  ReportPager,
+  RTK_BODY_ROWS,
+  type ReportSection,
+} from './display';
+import {
   clean,
   decodeUsageReport,
   formatCount,
@@ -20,6 +24,7 @@ import {
   type UsageSnapshot,
   type UsageViewKind,
   type PeriodRow,
+  type FailureReport,
 } from './report';
 import {
   visibleWidth,
@@ -157,8 +162,9 @@ export class UsageView implements Component {
     const snapshot = this.snapshot;
     if (snapshot?.kind === 'summary' || snapshot?.kind === 'period') {
       const summary = snapshot.summary;
+      const savingsColor = summary.total_saved === 0 ? 'muted' : 'success';
       return wrapTextWithAnsi(
-        `${this.theme.fg('muted', `${formatCount(summary.total_commands)} commands · `)}${this.theme.fg('success', `${formatTokens(summary.total_saved)} tokens saved · ${formatPercent(summary.avg_savings_pct)} reduction`)}`,
+        `${this.theme.fg('muted', `${formatCount(summary.total_commands)} commands · `)}${this.theme.fg(savingsColor, `${formatTokens(summary.total_saved)} tokens saved · ${formatPercent(summary.avg_savings_pct)} reduction`)}`,
         width,
       );
     }
@@ -197,43 +203,72 @@ export class UsageView implements Component {
   }
 
   render(width: number): string[] {
-    const lines: string[] = [];
+    let sections: readonly ReportSection[];
     if (this.state === 'loading') {
-      lines.push(this.theme.bold('Refreshing usage'));
-      lines.push(
-        ...wrapTextWithAnsi(
-          'Reading a bounded native RTK report. Esc cancels this refresh and returns to RTK.',
-          width,
-        ),
-      );
+      sections = [
+        {
+          header: [],
+          lines: [
+            this.theme.bold('Refreshing usage'),
+            ...wrapTextWithAnsi(
+              'Reading a bounded native RTK report. Esc cancels this refresh and returns to RTK.',
+              width,
+            ),
+          ],
+        },
+      ];
     } else if (this.state === 'failure') {
-      lines.push(this.theme.fg('error', 'Usage unavailable'));
-      lines.push(...wrapTextWithAnsi(this.errorMessage, width));
+      sections = [
+        {
+          header: [],
+          lines: [
+            this.theme.fg('error', 'Usage unavailable'),
+            ...wrapTextWithAnsi(this.errorMessage, width),
+          ],
+        },
+      ];
     } else if (this.state === 'unsupported') {
-      lines.push(this.theme.fg('warning', 'Usage report unsupported'));
-      lines.push(...wrapTextWithAnsi(this.errorMessage, width));
+      sections = [
+        {
+          header: [],
+          lines: [
+            this.theme.fg('warning', 'Usage report unsupported'),
+            ...wrapTextWithAnsi(this.errorMessage, width),
+          ],
+        },
+      ];
     } else if (this.state === 'empty') {
-      lines.push(this.theme.bold(this.emptyTitle()));
-      lines.push(...wrapTextWithAnsi(this.emptyDescription(), width));
+      sections = [
+        {
+          header: [],
+          lines: [
+            this.theme.bold(this.emptyTitle()),
+            ...wrapTextWithAnsi(this.emptyDescription(), width),
+          ],
+        },
+      ];
     } else if (this.snapshot !== undefined) {
-      lines.push(...this.snapshotLines(width));
+      sections = this.snapshotSections(width);
     } else {
-      lines.push(this.theme.fg('muted', 'No native RTK usage report loaded.'));
+      sections = [
+        {
+          header: [],
+          lines: [this.theme.fg('muted', 'No native RTK usage report loaded.')],
+        },
+      ];
     }
     const controls = [
       '',
       this.theme.bold('Display'),
       ...this.settings.render(width),
     ];
-    return [
-      ...this.pager.render(
-        lines,
-        width,
-        RTK_BODY_ROWS - controls.length,
-        this.theme,
-      ),
-      ...controls,
-    ];
+    const reportLines = this.pager.renderSections(
+      sections,
+      width,
+      RTK_BODY_ROWS - controls.length,
+      this.theme,
+    );
+    return [...reportLines, ...controls];
   }
 
   invalidate(): void {
@@ -349,18 +384,20 @@ export class UsageView implements Component {
     return `RTK returned no native data for ${this.view.toLowerCase()} in ${this.scope} scope. This is an empty report, not zeroed statistics.`;
   }
 
-  private snapshotLines(width: number): string[] {
+  private snapshotSections(width: number): readonly ReportSection[] {
     const snapshot = this.snapshot;
-    if (snapshot === undefined) return [];
+    if (snapshot === undefined) return [{header: [], lines: []}];
     switch (snapshot.kind) {
       case 'summary':
-        return this.summaryLines(snapshot.summary, width);
+        return [
+          {header: [], lines: this.summaryLines(snapshot.summary, width)},
+        ];
       case 'period':
-        return this.periodLines(snapshot.view, snapshot.periods, width);
+        return [this.periodReport(snapshot.view, snapshot.periods, width)];
       case 'history':
-        return this.historyLines(snapshot.history, width);
+        return [this.historyReport(snapshot.history, width)];
       case 'failures':
-        return this.failureLines(snapshot.failuresText, width);
+        return this.failureSections(snapshot.failures, width);
     }
   }
 
@@ -388,7 +425,7 @@ export class UsageView implements Component {
         this.theme,
         'Tokens saved',
         this.theme.fg(
-          'success',
+          summary.total_saved === 0 ? 'muted' : 'success',
           `${formatTokens(summary.total_saved)}  ${formatPercent(summary.avg_savings_pct)}`,
         ),
         width,
@@ -410,14 +447,14 @@ export class UsageView implements Component {
     ];
   }
 
-  private periodLines(
+  private periodReport(
     view: PeriodView,
     periods: readonly PeriodRow[],
     width: number,
-  ): string[] {
+  ): ReportSection {
     const prefix = '  ';
     const separator = '  ';
-    const rightHeader = `${'Commands'.padStart(8)}  ${'Saved'.padStart(7)}  ${'Rate'.padStart(6)}`;
+    const rightHeader = `${this.theme.bold(this.theme.fg('accent', 'Commands'.padStart(8)))}${this.theme.fg('muted', separator)}${this.theme.bold(this.theme.fg('accent', 'Saved'.padStart(7)))}${this.theme.fg('muted', separator)}${this.theme.bold(this.theme.fg('accent', 'Rate'.padStart(6)))}`;
     const labelWidth = Math.max(
       1,
       width -
@@ -427,35 +464,34 @@ export class UsageView implements Component {
     );
     const labelHeader =
       view === 'Daily' ? 'Date' : view === 'Weekly' ? 'Week' : 'Month';
-    const lines = [
-      this.theme.bold(`${view} savings`),
-      this.theme.fg(
-        'muted',
-        `${prefix}${labelHeader.padEnd(labelWidth)}${separator}${rightHeader}`,
-      ),
+    const header = [
+      this.theme.bold(this.theme.fg('accent', `${view} savings`)),
+      `${this.theme.bold(this.theme.fg('accent', `${prefix}${labelHeader.padEnd(labelWidth)}`))}${this.theme.fg('muted', separator)}${rightHeader}`,
     ];
+    const lines: string[] = [];
     for (const period of periods) {
-      const right = `${formatCount(period.commands).padStart(8)}  ${formatTokens(period.saved_tokens).padStart(7)}  ${formatPercent(period.savings_pct).padStart(6)}`;
+      const savingsColor = period.saved_tokens === 0 ? 'muted' : 'success';
+      const right = `${this.theme.fg('text', formatCount(period.commands).padStart(8))}${this.theme.fg('muted', separator)}${this.theme.fg(savingsColor, formatTokens(period.saved_tokens).padStart(7))}${this.theme.fg('muted', separator)}${this.theme.fg(savingsColor, formatPercent(period.savings_pct).padStart(6))}`;
       const labels = wrapTextWithAnsi(period.label, labelWidth);
       for (const [index, label] of labels.entries())
         lines.push(
-          `${prefix}${label.padEnd(labelWidth)}${separator}${index === 0 ? right : ''}`,
+          `${prefix}${this.theme.fg('muted', label)}${' '.repeat(Math.max(0, labelWidth - visibleWidth(label)))}${this.theme.fg('muted', separator)}${index === 0 ? right : ''}`,
         );
     }
-    return lines;
+    return {lines, header};
   }
 
-  private historyLines(
+  private historyReport(
     entries: readonly HistoryEntry[],
     width: number,
-  ): string[] {
+  ): ReportSection {
     const timeWidth = Math.max(
       4,
       ...entries.map(entry => visibleWidth(entry.time)),
     );
-    const prefix = `  ${'Time'.padEnd(timeWidth)}  `;
     const separator = '  ';
-    const rightHeader = `${'Saved'.padStart(7)}  ${'Rate'.padStart(6)}`;
+    const rightHeader = `${this.theme.bold(this.theme.fg('accent', 'Saved'.padStart(7)))}${this.theme.fg('muted', separator)}${this.theme.bold(this.theme.fg('accent', 'Rate'.padStart(6)))}`;
+    const prefix = `  ${'Time'.padEnd(timeWidth)}  `;
     const commandWidth = Math.max(
       1,
       width -
@@ -463,17 +499,15 @@ export class UsageView implements Component {
         visibleWidth(rightHeader) -
         visibleWidth(separator),
     );
-    const lines = [
-      this.theme.bold('Recent commands'),
-      this.theme.fg(
-        'muted',
-        `${prefix}${'Command'.padEnd(commandWidth)}${separator}${rightHeader}`,
-      ),
+    const header = [
+      this.theme.bold(this.theme.fg('accent', 'Recent commands')),
+      `${this.theme.bold(this.theme.fg('accent', `  ${'Time'.padEnd(timeWidth)}`))}${this.theme.fg('muted', separator)}${this.theme.bold(this.theme.fg('accent', 'Command'.padEnd(commandWidth)))}${this.theme.fg('muted', separator)}${rightHeader}`,
     ];
+    const lines: string[] = [];
     for (const entry of entries) {
-      const right = `${entry.saved.padStart(7)}  ${formatPercent(entry.rate).padStart(6)}`;
+      const savingsColor = this.isZeroSaving(entry.saved) ? 'muted' : 'success';
+      const right = `${this.theme.fg(savingsColor, entry.saved.padStart(7))}${this.theme.fg('muted', separator)}${this.theme.fg(savingsColor, formatPercent(entry.rate).padStart(6))}`;
       const prefix = `  ${entry.time.padEnd(timeWidth)}  `;
-      const separator = '  ';
       const entryCommandWidth = Math.max(
         1,
         width -
@@ -484,22 +518,112 @@ export class UsageView implements Component {
       const commandLines = wrapTextWithAnsi(entry.command, entryCommandWidth);
       for (const [index, command] of commandLines.entries())
         lines.push(
-          `${index === 0 ? prefix : ' '.repeat(visibleWidth(prefix))}${command}${' '.repeat(Math.max(0, entryCommandWidth - visibleWidth(command)))}${separator}${index === 0 ? right : ''}`,
+          `${index === 0 ? `  ${this.theme.fg('muted', entry.time)}${' '.repeat(Math.max(0, timeWidth - visibleWidth(entry.time)))}${this.theme.fg('muted', separator)}` : ' '.repeat(visibleWidth(prefix))}${this.theme.fg('text', command)}${' '.repeat(Math.max(0, entryCommandWidth - visibleWidth(command)))}${this.theme.fg('muted', separator)}${index === 0 ? right : ''}`,
         );
     }
-    return lines;
+    return {lines, header};
   }
 
-  private failureLines(text: string, width: number): string[] {
+  private failureSections(
+    report: FailureReport,
+    width: number,
+  ): readonly ReportSection[] {
+    const sections: ReportSection[] = [];
+    const recent = this.recentFailureSection(report, width);
+    if (recent !== undefined) sections.push(recent);
+    const top = this.topCommandSection(report, width);
+    if (top !== undefined) sections.push(top);
+    return sections;
+  }
+
+  private failureHeader(report: FailureReport, title: string): string[] {
+    const recoveryColor = report.recoveryRate === 0 ? 'muted' : 'success';
     return [
-      this.theme.bold('Parse failures'),
-      this.theme.fg('muted', 'Global · native RTK report · scope fixed'),
-      ...boundedReportLines(text).flatMap(line =>
-        wrapTextWithAnsi(this.theme.fg('muted', line), width - 2).map(
-          part => `  ${part}`,
-        ),
-      ),
+      `${this.theme.bold(this.theme.fg('warning', 'Parse failures'))}${this.theme.fg('muted', ' · ')}${this.theme.bold(this.theme.fg('accent', title))}`,
+      `${this.theme.fg('muted', 'Global · ')}${this.theme.fg('error', `${formatCount(report.total)} failures`)}${this.theme.fg('muted', ' · ')}${this.theme.fg(recoveryColor, `${formatPercent(report.recoveryRate)} recovered`)}`,
     ];
+  }
+
+  private recentFailureSection(
+    report: FailureReport,
+    width: number,
+  ): ReportSection | undefined {
+    if (report.recent.length === 0) return undefined;
+    const separator = '  ';
+    const timeWidth = Math.max(
+      4,
+      ...report.recent.map(entry => visibleWidth(entry.time)),
+    );
+    const fallbackWidth = Math.max(
+      'Fallback'.length,
+      ...report.recent.map(entry =>
+        visibleWidth(entry.recovered ? 'Recovered' : 'Failed'),
+      ),
+    );
+    const prefixWidth =
+      visibleWidth('  ') +
+      timeWidth +
+      visibleWidth(separator) +
+      fallbackWidth +
+      visibleWidth(separator);
+    const commandWidth = Math.max(1, width - prefixWidth);
+    const header = [
+      ...this.failureHeader(report, 'Recent failures'),
+      `${this.theme.bold(this.theme.fg('accent', `  ${'Time'.padEnd(timeWidth)}`))}${this.theme.fg('muted', separator)}${this.theme.bold(this.theme.fg('accent', 'Fallback'.padEnd(fallbackWidth)))}${this.theme.fg('muted', separator)}${this.theme.bold(this.theme.fg('accent', 'Command'.padEnd(commandWidth)))}`,
+    ];
+    const lines: string[] = [];
+    for (const entry of report.recent) {
+      const status = entry.recovered ? 'Recovered' : 'Failed';
+      const statusColor = entry.recovered ? 'success' : 'error';
+      const left = `  ${entry.time.padEnd(timeWidth)}${separator}${status.padEnd(fallbackWidth)}${separator}`;
+      const commandLines = wrapTextWithAnsi(entry.command, commandWidth);
+      for (const [index, command] of commandLines.entries()) {
+        const prefix =
+          index === 0
+            ? `  ${this.theme.fg('muted', entry.time)}${' '.repeat(Math.max(0, timeWidth - visibleWidth(entry.time)))}${this.theme.fg('muted', separator)}${this.theme.fg(statusColor, status)}${' '.repeat(Math.max(0, fallbackWidth - visibleWidth(status)))}${this.theme.fg('muted', separator)}`
+            : ' '.repeat(visibleWidth(left));
+        lines.push(
+          `${prefix}${this.theme.fg('text', command)}${' '.repeat(Math.max(0, commandWidth - visibleWidth(command)))}`,
+        );
+      }
+    }
+    return {header, lines};
+  }
+
+  private topCommandSection(
+    report: FailureReport,
+    width: number,
+  ): ReportSection | undefined {
+    if (report.topCommands.length === 0) return undefined;
+    const separator = '  ';
+    const countWidth = Math.max(
+      'Count'.length,
+      ...report.topCommands.map(command =>
+        visibleWidth(formatCount(command.count)),
+      ),
+    );
+    const commandWidth = Math.max(
+      1,
+      width - visibleWidth('  ') - visibleWidth(separator) - countWidth,
+    );
+    const header = [
+      ...this.failureHeader(report, 'Top commands'),
+      `${this.theme.bold(this.theme.fg('accent', `  ${'Command'.padEnd(commandWidth)}`))}${this.theme.fg('muted', separator)}${this.theme.bold(this.theme.fg('accent', 'Count'.padStart(countWidth)))}`,
+    ];
+    const lines: string[] = [];
+    for (const item of report.topCommands) {
+      const count = formatCount(item.count);
+      const commandLines = wrapTextWithAnsi(item.command, commandWidth);
+      for (const [index, command] of commandLines.entries())
+        lines.push(
+          `  ${this.theme.fg('text', command)}${' '.repeat(Math.max(0, commandWidth - visibleWidth(command)))}${this.theme.fg('muted', separator)}${index === 0 ? this.theme.fg('warning', count.padStart(countWidth)) : ''}`,
+        );
+    }
+    return {header, lines};
+  }
+
+  private isZeroSaving(value: string): boolean {
+    return /^0+(?:\.0+)?(?:[kKmMbB])?$/u.test(value.trim().replace(/,/gu, ''));
   }
 
   private clearSnapshot(): void {

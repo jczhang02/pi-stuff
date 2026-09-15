@@ -1,4 +1,4 @@
-import {Effect, Schema} from 'effect';
+import {Effect, Option, Schema} from 'effect';
 import {stripVTControlCharacters} from 'node:util';
 
 export type UsageScope = 'Global' | 'Project';
@@ -85,6 +85,26 @@ export interface HistoryEntry {
   saved: string;
 }
 
+const FailureEntrySchema = Schema.Struct({
+  time: Schema.String,
+  command: Schema.String,
+  recovered: Schema.Boolean,
+});
+
+const FailureCommandSchema = Schema.Struct({
+  command: Schema.String,
+  count: Schema.Natural,
+});
+
+const FailureReportSchema = Schema.Struct({
+  total: Schema.Natural,
+  recoveryRate: PercentageSchema,
+  recent: Schema.Array(FailureEntrySchema),
+  topCommands: Schema.Array(FailureCommandSchema),
+});
+
+export type FailureReport = typeof FailureReportSchema.Type;
+
 export const GAIN_VIEWS: readonly UsageViewKind[] = [
   'Overview',
   'Daily',
@@ -102,7 +122,6 @@ export const PERIOD_FIELDS: Readonly<
   Monthly: 'monthly',
 };
 
-const MAX_REPORT_LINES = 120;
 const EMPTY_FAILURE_REPORT = 'No parse failures recorded.';
 const EMPTY_FAILURE_DETAIL =
   "This means all commands parsed successfully (or fallback hasn't triggered yet).";
@@ -116,7 +135,7 @@ export type UsageSnapshot =
       readonly periods: readonly PeriodRow[];
     }
   | {readonly kind: 'history'; readonly history: readonly HistoryEntry[]}
-  | {readonly kind: 'failures'; readonly failuresText: string};
+  | {readonly kind: 'failures'; readonly failures: FailureReport};
 
 export type UsageLoadOutcome =
   | {readonly state: 'ready'; readonly snapshot: UsageSnapshot}
@@ -201,7 +220,9 @@ export function parseHistory(
   return undefined;
 }
 
-export function parseFailures(text: string): 'empty' | string | undefined {
+export function parseFailures(
+  text: string,
+): 'empty' | FailureReport | undefined {
   const cleaned = clean(text);
   const lines = cleaned.split(/\r?\n/u);
   const nonEmptyLines = lines
@@ -214,16 +235,114 @@ export function parseFailures(text: string): 'empty' | string | undefined {
       nonEmptyLines[1] === EMPTY_FAILURE_DETAIL)
   )
     return 'empty';
-  if (!lines.some(line => line.trim() === 'RTK Parse Failures'))
+  if (nonEmptyLines[0] !== 'RTK Parse Failures') return undefined;
+  let total: number | undefined;
+  let recoveryRate: number | undefined;
+  let section: 'summary' | 'top' | 'recent' = 'summary';
+  let separatorExpected = true;
+  let blankLines: string[] = [];
+  const topCommands: Array<typeof FailureCommandSchema.Type> = [];
+  const recent: Array<typeof FailureEntrySchema.Type> = [];
+  // RTK 0.45 prints two optional sections, each limited to ten records.
+  // Commands may contain newlines; continuation lines belong to the last record.
+  const titleIndex = lines.findIndex(
+    line => line.trim() === 'RTK Parse Failures',
+  );
+  for (let index = titleIndex + 1; index < lines.length; index++) {
+    const rawLine = lines[index] ?? '';
+    const line = rawLine.trim();
+    if (line === '') {
+      if (section !== 'summary') blankLines.push(rawLine);
+      continue;
+    }
+    if (separatorExpected && /^[═─]+$/u.test(line)) {
+      separatorExpected = false;
+      continue;
+    }
+    separatorExpected = false;
+    const sectionDivider = /^─+$/u.test(lines[index + 1]?.trim() ?? '');
+    if (line === 'Top Commands (by frequency)' && sectionDivider) {
+      if (section !== 'summary') return undefined;
+      section = 'top';
+      separatorExpected = true;
+      blankLines = [];
+      continue;
+    }
+    if (line === 'Recent Failures (last 10)' && sectionDivider) {
+      if (section === 'recent') return undefined;
+      section = 'recent';
+      separatorExpected = true;
+      blankLines = [];
+      continue;
+    }
+    if (section === 'summary') {
+      const count = /^Total failures:\s+(\d+)$/u.exec(line);
+      const rate = /^Recovery rate:\s+(\d+(?:\.\d+)?)%$/u.exec(line);
+      if (count && total === undefined) total = Number(count[1]);
+      else if (rate && recoveryRate === undefined)
+        recoveryRate = Number(rate[1]);
+      else return undefined;
+    } else if (section === 'top') {
+      const match = /^\s*(\d+)x  (.+)$/u.exec(rawLine);
+      if (match && match[2] !== undefined) {
+        topCommands.push({count: Number(match[1]), command: match[2]});
+        blankLines = [];
+      } else {
+        const previous = topCommands.at(-1);
+        if (!previous || /^\d+x(?:\s|$)/u.test(line)) return undefined;
+        topCommands[topCommands.length - 1] = {
+          ...previous,
+          command: [previous.command, ...blankLines, rawLine].join('\n'),
+        };
+        blankLines = [];
+      }
+    } else {
+      const match =
+        /^\s*(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}) \[(ok|FAIL)\] (.+)$/u.exec(
+          rawLine,
+        );
+      if (match && match[1] !== undefined && match[3] !== undefined) {
+        recent.push({
+          time: match[1],
+          recovered: match[2] === 'ok',
+          command: match[3],
+        });
+        blankLines = [];
+      } else {
+        const previous = recent.at(-1);
+        if (!previous || /^\d{4}-\d{2}-\d{2}/u.test(line)) return undefined;
+        recent[recent.length - 1] = {
+          ...previous,
+          command: [previous.command, ...blankLines, rawLine].join('\n'),
+        };
+        blankLines = [];
+      }
+    }
+  }
+  const report = Option.getOrUndefined(
+    Schema.decodeUnknownOption(FailureReportSchema)({
+      total,
+      recoveryRate,
+      topCommands,
+      recent,
+    }),
+  );
+  if (
+    report === undefined ||
+    report.total === 0 ||
+    !Number.isSafeInteger(report.total) ||
+    report.recent.length > Math.min(10, report.total) ||
+    report.topCommands.length > 10 ||
+    report.recent.length + report.topCommands.length === 0 ||
+    report.topCommands.some(
+      item =>
+        !Number.isSafeInteger(item.count) ||
+        item.count < 1 ||
+        item.count > report.total,
+    )
+  )
     return undefined;
-  return cleaned.trim();
-}
-
-export function boundedReportLines(text: string): string[] {
-  const lines = text.split(/\r?\n/u);
-  const bounded = lines.slice(0, MAX_REPORT_LINES);
-  if (lines.length > MAX_REPORT_LINES) bounded.push('[report truncated]');
-  return bounded;
+  return report;
 }
 
 export function reportArgs(view: UsageViewKind, scope: UsageScope): string[] {
@@ -313,7 +432,7 @@ export async function decodeUsageReport(
       };
     return {
       state: 'ready',
-      snapshot: {kind: 'failures', failuresText: failures},
+      snapshot: {kind: 'failures', failures},
     };
   }
 

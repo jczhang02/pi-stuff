@@ -50,6 +50,8 @@ Feature shortcuts must be directly usable on a 60% keyboard. Do not assign PageU
 
 Keep a panel's dimensions and control positions stable when switching pages, loading data or paging through results. Long reports use a bounded content area with pagination and a visible page position; they must not enlarge the dialog as more records arrive. Resizing the terminal may change the content budget. Wrapping and pagination must preserve access to retained text, while clearly distinguishing any upstream truncation or explicit report-size limit.
 
+Paged tables retain their title and column headers on every page. When a report has different sections, keep each page's section and column meanings visible. Parse external reports into the fields the interface presents; do not substitute a raw CLI dump for a structured view.
+
 ## Narrow terminals
 
 Adapt to the available terminal width with wrapping, compact layouts and truncation where appropriate. If a path or other necessary value is shortened, provide a way to inspect its full content. Keep essential status and the exit action understandable.
