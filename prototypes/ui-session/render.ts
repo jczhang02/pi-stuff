@@ -108,12 +108,13 @@ function toolRows(
         : tool.state === 'running'
           ? 'accent'
           : 'success';
-  const title = `${theme.fg(color, '•')} ${theme.bold(theme.fg('toolTitle', tool.name))}(${theme.fg('text', tool.target)})`;
+  const marker = `${theme.fg(color, '•')} `;
+  const title = `${theme.bold(theme.fg('toolTitle', tool.name))}(${theme.fg('text', tool.target)})`;
   const rows = state.open
     ? wrapTextWithAnsi(title, Math.max(1, width - 2)).map(
-        (line, i) => (i ? '  ' : '') + line,
+        (line, i) => (i ? '  ' : marker) + line,
       )
-    : [truncateToWidth(title, width)];
+    : [truncateToWidth(marker + title, width)];
   const detail = bodyRows(tool.body, Math.max(1, width - 4), theme);
   const shown = state.open
     ? detail
