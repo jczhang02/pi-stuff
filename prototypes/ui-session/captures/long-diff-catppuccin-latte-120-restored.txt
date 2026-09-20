@@ -1,0 +1,40 @@
+
+ • Edit(src/search/providers/remote/pagination/preserve-first-occurrence-and-next-cursor-boundary.ts)
+   ⎿  Added 3 lines, removed 1 line · 4 more lines · expand
+     20    - │   return {items: page.items, nextCursor: page.cursor};
+        20 + │   const items = page.items.filter(item => !seen.has(item.id));
+        21 + │   // Keep the provider cursor, including empty filtered pages.
+
+ Tool output: collapsed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+保留这段草稿
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff · fix/pagination-boundary
+ gpt-5.4 · high                    ctrl+o expand/collapse

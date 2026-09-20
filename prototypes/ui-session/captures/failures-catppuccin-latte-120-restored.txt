@@ -1,0 +1,40 @@
+
+ • 先检查旧入口, 找不到就回到当前实现.
+
+ • Grep("legacyCursor" in src/search)
+   ⎿  No matches
+
+ • Read(src/search/cursor.ts)
+   ⎿  File not found · src/search/cursor.ts · expand
+
+ • WebFetch(docs.example.com/old-pagination)
+   ⎿  HTTP 404 · page not found · expand
+
+ • Bash(bun test tests/search)
+   ⎿  Exit 1 · skips IDs from the previous page · expand
+
+ Tool output: collapsed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+保留这段草稿
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff · fix/pagination-boundary
+ gpt-5.4 · high                    ctrl+o expand/collapse

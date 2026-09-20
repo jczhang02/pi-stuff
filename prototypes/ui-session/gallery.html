@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Pi Stuff · 会话原型</title
+  ><style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, sans-serif;
+      background: #eff1f5;
+      color: #4c4f69;
+    }
+    body {
+      max-width: 1500px;
+      margin: auto;
+      padding: 36px;
+    }
+    h1 {
+      font-size: 30px;
+    }
+    h2 {
+      font-size: 22px;
+    }
+    p {
+      line-height: 1.7;
+      max-width: 1000px;
+    }
+    a {
+      color: #1e66f5;
+    }
+    nav {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 24px 0;
+    }
+    nav a {
+      padding: 6px 10px;
+      background: #e6e9ef;
+      border-radius: 6px;
+      text-decoration: none;
+    }
+    section {
+      padding: 24px 0;
+      border-top: 1px solid #bcc0cc;
+    }
+    code {
+      font:
+        14px ui-monospace,
+        monospace;
+      overflow-wrap: anywhere;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 600px), 1fr));
+      gap: 20px;
+      margin-top: 20px;
+    }
+    figure {
+      margin: 0;
+    }
+    figcaption {
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    img {
+      width: 100%;
+      height: auto;
+      border-radius: 10px;
+      box-shadow: 0 1px 8px #0001;
+    }
+    figure p {
+      font-size: 13px;
+      margin: 8px 0;
+    }
+    li {
+      line-height: 1.8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        background: #1e1e2e;
+        color: #cdd6f4;
+      }
+      nav a {
+        background: #313244;
+      }
+      a {
+        color: #89b4fa;
+      }
+      section {
+        border-color: #45475a;
+      }
+    }
+    @media (max-width: 650px) {
+      body {
+        padding: 20px;
+      }
+    }
+  </style>
+  <h1>Pi Stuff · 会话原型</h1>
+  <p>
+    以当前功能为范围, 在真实 Pi 中运行的新会话样式. 这里的图片来自可交互终端,
+    模型与执行数据是离线样例. <a href="README.md">启动与操作说明</a> ·
+    <a href="../../docs/i18n/zh-CN/research/ui-session-prototype-2026-09-21.md"
+      >来源与详细规则</a
+    >
+    · <a href="../ui-direction/gallery.html">上一轮方案</a>
+  </p>
+  <ul>
+    <li>
+      Read/Grep/Find/Ls 连续成功两次起聚合. 点击组查看调用, 再点一项查看内容.
+    </li>
+    <li>
+      工具采用“操作与目标 / 结果”两层. Write、Web 和成功 Bash 默认收起, Edit
+      保留三行短 diff.
+    </li>
+    <li>WebSearch / WebFetch / WebRead 共用相同样式; 元数据只在展开后显示.</li>
+    <li>Thoughts 显示耗时, 点击阅读正文. 回答失败或中断保持普通文字.</li>
+  </ul>
+  <nav>
+    <a href="#welcome">欢迎页</a><a href="#long-diff">长 diff 与长路径</a
+    ><a href="#session">完整会话</a><a href="#investigate">定位问题</a
+    ><a href="#tools">独立工具</a><a href="#web">Web 家族</a
+    ><a href="#changes">修改与验证</a><a href="#running">执行中</a
+    ><a href="#failures">工具失败与空结果</a><a href="#long-output">长输出</a
+    ><a href="#thoughts">思考过程</a><a href="#interrupted">回答中断</a
+    ><a href="#response-error">回答失败</a><a href="#empty">无输出与取消</a
+    ><a href="#replay">动态执行</a>
+  </nav>
+  <section id="welcome">
+    <h2>欢迎页</h2>
+    <p>保留 pi-stuff-old 的欢迎布局.</p>
+    <code>bun prototypes/ui-session/run.ts welcome</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/welcome-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/welcome-catppuccin-latte-120-main.png"
+            alt="欢迎页 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/welcome-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/welcome-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="long-diff">
+    <h2>长 diff 与长路径</h2>
+    <p>短预览注明隐藏行数; 展开恢复完整路径和带高亮的改动.</p>
+    <code>bun prototypes/ui-session/run.ts long-diff</code>
+    <div class="grid">
+      <figure>
+        <figcaption>Ctrl+O 展开全部 · 浅色 · 120 列</figcaption>
+        <a href="captures/long-diff-catppuccin-latte-120-keyboard-open.png"
+          ><img
+            loading="lazy"
+            src="captures/long-diff-catppuccin-latte-120-keyboard-open.png"
+            alt="长 diff 与长路径 / Ctrl+O 展开全部 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/long-diff-catppuccin-latte-120-keyboard-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/long-diff-catppuccin-latte-120-keyboard-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/long-diff-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/long-diff-catppuccin-latte-120-main.png"
+            alt="长 diff 与长路径 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/long-diff-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/long-diff-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>Ctrl+O 展开全部 · 深色 · 80 列</figcaption>
+        <a href="captures/long-diff-catppuccin-mocha-80-keyboard-open.png"
+          ><img
+            loading="lazy"
+            src="captures/long-diff-catppuccin-mocha-80-keyboard-open.png"
+            alt="长 diff 与长路径 / Ctrl+O 展开全部 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/long-diff-catppuccin-mocha-80-keyboard-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/long-diff-catppuccin-mocha-80-keyboard-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 深色 · 80 列</figcaption>
+        <a href="captures/long-diff-catppuccin-mocha-80-main.png"
+          ><img
+            loading="lazy"
+            src="captures/long-diff-catppuccin-mocha-80-main.png"
+            alt="长 diff 与长路径 / 默认状态 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/long-diff-catppuccin-mocha-80-main.txt">文本</a> ·
+          <a href="captures/long-diff-catppuccin-mocha-80-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="session">
+    <h2>完整会话</h2>
+    <p>从定位到 Web 研究、修改和验证. 连续只读调用聚合, 工具默认收起.</p>
+    <code>bun prototypes/ui-session/run.ts session</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/session-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/session-catppuccin-latte-120-main.png"
+            alt="完整会话 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/session-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/session-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="investigate">
+    <h2>定位问题</h2>
+    <p>5 个连续只读调用聚合为两行; 点击组标题查看各次调用.</p>
+    <code>bun prototypes/ui-session/run.ts investigate</code>
+    <div class="grid">
+      <figure>
+        <figcaption>展开探索组 · 浅色 · 120 列</figcaption>
+        <a href="captures/investigate-catppuccin-latte-120-group-open.png"
+          ><img
+            loading="lazy"
+            src="captures/investigate-catppuccin-latte-120-group-open.png"
+            alt="定位问题 / 展开探索组 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/investigate-catppuccin-latte-120-group-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/investigate-catppuccin-latte-120-group-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/investigate-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/investigate-catppuccin-latte-120-main.png"
+            alt="定位问题 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/investigate-catppuccin-latte-120-main.txt">文本</a>
+          ·
+          <a href="captures/investigate-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>展开其中一个 Read · 浅色 · 120 列</figcaption>
+        <a href="captures/investigate-catppuccin-latte-120-read-open.png"
+          ><img
+            loading="lazy"
+            src="captures/investigate-catppuccin-latte-120-read-open.png"
+            alt="定位问题 / 展开其中一个 Read · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/investigate-catppuccin-latte-120-read-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/investigate-catppuccin-latte-120-read-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>展开探索组 · 深色 · 80 列</figcaption>
+        <a href="captures/investigate-catppuccin-mocha-80-group-open.png"
+          ><img
+            loading="lazy"
+            src="captures/investigate-catppuccin-mocha-80-group-open.png"
+            alt="定位问题 / 展开探索组 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/investigate-catppuccin-mocha-80-group-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/investigate-catppuccin-mocha-80-group-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 深色 · 80 列</figcaption>
+        <a href="captures/investigate-catppuccin-mocha-80-main.png"
+          ><img
+            loading="lazy"
+            src="captures/investigate-catppuccin-mocha-80-main.png"
+            alt="定位问题 / 默认状态 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/investigate-catppuccin-mocha-80-main.txt">文本</a> ·
+          <a href="captures/investigate-catppuccin-mocha-80-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>展开其中一个 Read · 深色 · 80 列</figcaption>
+        <a href="captures/investigate-catppuccin-mocha-80-read-open.png"
+          ><img
+            loading="lazy"
+            src="captures/investigate-catppuccin-mocha-80-read-open.png"
+            alt="定位问题 / 展开其中一个 Read · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/investigate-catppuccin-mocha-80-read-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/investigate-catppuccin-mocha-80-read-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="tools">
+    <h2>独立工具</h2>
+    <p>Read、Grep、Find、Ls 默认只保留操作和结果两行.</p>
+    <code>bun prototypes/ui-session/run.ts tools</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/tools-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/tools-catppuccin-latte-120-main.png"
+            alt="独立工具 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/tools-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/tools-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="web">
+    <h2>Web 家族</h2>
+    <p>搜索、取网页、内容查找和续读共用相同层级, 技术元数据仅在展开时出现.</p>
+    <code>bun prototypes/ui-session/run.ts web</code>
+    <div class="grid">
+      <figure>
+        <figcaption>展开 WebFetch · 浅色 · 120 列</figcaption>
+        <a href="captures/web-catppuccin-latte-120-fetch-open.png"
+          ><img
+            loading="lazy"
+            src="captures/web-catppuccin-latte-120-fetch-open.png"
+            alt="Web 家族 / 展开 WebFetch · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/web-catppuccin-latte-120-fetch-open.txt">文本</a> ·
+          <a href="captures/web-catppuccin-latte-120-fetch-open.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/web-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/web-catppuccin-latte-120-main.png"
+            alt="Web 家族 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/web-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/web-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 深色 · 120 列</figcaption>
+        <a href="captures/web-catppuccin-mocha-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/web-catppuccin-mocha-120-main.png"
+            alt="Web 家族 / 默认状态 · 深色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/web-catppuccin-mocha-120-main.txt">文本</a> ·
+          <a href="captures/web-catppuccin-mocha-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="changes">
+    <h2>修改与验证</h2>
+    <p>Edit 默认展示最多 3 行差异; Write 只报写入结果, 点击查看高亮代码.</p>
+    <code>bun prototypes/ui-session/run.ts changes</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/changes-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/changes-catppuccin-latte-120-main.png"
+            alt="修改与验证 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/changes-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/changes-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>展开 Write · 浅色 · 120 列</figcaption>
+        <a href="captures/changes-catppuccin-latte-120-write-open.png"
+          ><img
+            loading="lazy"
+            src="captures/changes-catppuccin-latte-120-write-open.png"
+            alt="修改与验证 / 展开 Write · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/changes-catppuccin-latte-120-write-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/changes-catppuccin-latte-120-write-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 深色 · 80 列</figcaption>
+        <a href="captures/changes-catppuccin-mocha-80-main.png"
+          ><img
+            loading="lazy"
+            src="captures/changes-catppuccin-mocha-80-main.png"
+            alt="修改与验证 / 默认状态 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/changes-catppuccin-mocha-80-main.txt">文本</a> ·
+          <a href="captures/changes-catppuccin-mocha-80-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>展开 Write · 深色 · 80 列</figcaption>
+        <a href="captures/changes-catppuccin-mocha-80-write-open.png"
+          ><img
+            loading="lazy"
+            src="captures/changes-catppuccin-mocha-80-write-open.png"
+            alt="修改与验证 / 展开 Write · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/changes-catppuccin-mocha-80-write-open.txt">文本</a>
+          ·
+          <a href="captures/changes-catppuccin-mocha-80-write-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="running">
+    <h2>执行中</h2>
+    <p>运行中的工具保留状态和两行最新输出, 完成后收起.</p>
+    <code>bun prototypes/ui-session/run.ts running</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/running-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/running-catppuccin-latte-120-main.png"
+            alt="执行中 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/running-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/running-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="failures">
+    <h2>工具失败与空结果</h2>
+    <p>工具失败保留原因, 没有匹配是正常结果. 不重复显示错误正文.</p>
+    <code>bun prototypes/ui-session/run.ts failures</code>
+    <div class="grid">
+      <figure>
+        <figcaption>展开失败的 WebFetch · 浅色 · 120 列</figcaption>
+        <a href="captures/failures-catppuccin-latte-120-fetch-failed-open.png"
+          ><img
+            loading="lazy"
+            src="captures/failures-catppuccin-latte-120-fetch-failed-open.png"
+            alt="工具失败与空结果 / 展开失败的 WebFetch · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/failures-catppuccin-latte-120-fetch-failed-open.txt"
+            >文本</a
+          >
+          ·
+          <a
+            href="captures/failures-catppuccin-latte-120-fetch-failed-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/failures-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/failures-catppuccin-latte-120-main.png"
+            alt="工具失败与空结果 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/failures-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/failures-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="long-output">
+    <h2>长输出</h2>
+    <p>UI 收起与上游截断分开表达, 输出路径一直可见.</p>
+    <code>bun prototypes/ui-session/run.ts long-output</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/long-output-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/long-output-catppuccin-latte-120-main.png"
+            alt="长输出 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/long-output-catppuccin-latte-120-main.txt">文本</a>
+          ·
+          <a href="captures/long-output-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="thoughts">
+    <h2>思考过程</h2>
+    <p>收起显示 Thoughts for 4s, 展开显示 Thoughts: 和正文.</p>
+    <code>bun prototypes/ui-session/run.ts thoughts</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/thoughts-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-catppuccin-latte-120-main.png"
+            alt="思考过程 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/thoughts-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>展开 Thoughts · 浅色 · 120 列</figcaption>
+        <a href="captures/thoughts-catppuccin-latte-120-open.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-catppuccin-latte-120-open.png"
+            alt="思考过程 / 展开 Thoughts · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-catppuccin-latte-120-open.txt">文本</a> ·
+          <a href="captures/thoughts-catppuccin-latte-120-open.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="interrupted">
+    <h2>回答中断</h2>
+    <p>已有回答仍保留, 中断是一行普通状态文字.</p>
+    <code>bun prototypes/ui-session/run.ts interrupted</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/interrupted-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/interrupted-catppuccin-latte-120-main.png"
+            alt="回答中断 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/interrupted-catppuccin-latte-120-main.txt">文本</a>
+          ·
+          <a href="captures/interrupted-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="response-error">
+    <h2>回答失败</h2>
+    <p>失败原因直接呈现, 无 Tool 标题、结果枝线或独立错误卡片.</p>
+    <code>bun prototypes/ui-session/run.ts response-error</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/response-error-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/response-error-catppuccin-latte-120-main.png"
+            alt="回答失败 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/response-error-catppuccin-latte-120-main.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/response-error-catppuccin-latte-120-main.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 深色 · 120 列</figcaption>
+        <a href="captures/response-error-catppuccin-mocha-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/response-error-catppuccin-mocha-120-main.png"
+            alt="回答失败 / 默认状态 · 深色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/response-error-catppuccin-mocha-120-main.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/response-error-catppuccin-mocha-120-main.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="empty">
+    <h2>无输出与取消</h2>
+    <p>无输出、命令取消、图片文本回退都保留事实.</p>
+    <code>bun prototypes/ui-session/run.ts empty</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/empty-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/empty-catppuccin-latte-120-main.png"
+            alt="无输出与取消 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/empty-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/empty-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="replay">
+    <h2>动态执行</h2>
+    <p>从思考到工具运行再到完成, 验证自动收起和 Esc 中断.</p>
+    <code>bun prototypes/ui-session/run.ts replay</code>
+    <div class="grid">
+      <figure>
+        <figcaption>Esc 中断后 · 浅色 · 120 列</figcaption>
+        <a href="captures/replay-catppuccin-latte-120-cancelled.png"
+          ><img
+            loading="lazy"
+            src="captures/replay-catppuccin-latte-120-cancelled.png"
+            alt="动态执行 / Esc 中断后 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/replay-catppuccin-latte-120-cancelled.txt">文本</a>
+          ·
+          <a href="captures/replay-catppuccin-latte-120-cancelled.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>完成并自动收起 · 浅色 · 120 列</figcaption>
+        <a href="captures/replay-catppuccin-latte-120-completed.png"
+          ><img
+            loading="lazy"
+            src="captures/replay-catppuccin-latte-120-completed.png"
+            alt="动态执行 / 完成并自动收起 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/replay-catppuccin-latte-120-completed.txt">文本</a>
+          ·
+          <a href="captures/replay-catppuccin-latte-120-completed.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>执行中 · 浅色 · 120 列</figcaption>
+        <a href="captures/replay-catppuccin-latte-120-running.png"
+          ><img
+            loading="lazy"
+            src="captures/replay-catppuccin-latte-120-running.png"
+            alt="动态执行 / 执行中 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/replay-catppuccin-latte-120-running.txt">文本</a> ·
+          <a href="captures/replay-catppuccin-latte-120-running.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>思考中 · 浅色 · 120 列</figcaption>
+        <a href="captures/replay-catppuccin-latte-120-thinking.png"
+          ><img
+            loading="lazy"
+            src="captures/replay-catppuccin-latte-120-thinking.png"
+            alt="动态执行 / 思考中 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/replay-catppuccin-latte-120-thinking.txt">文本</a> ·
+          <a href="captures/replay-catppuccin-latte-120-thinking.ansi">ANSI</a>
+        </p>
+      </figure>
+    </div>
+  </section>
+  <footer>
+    <p>
+      点击工具或 Thoughts 展开, Ctrl+O 切换全部详情. replay 场景可按 Esc 中断.
+      完整会话用 Pi 原生滚动查看. 截图使用 Catppuccin 与指定 Nerd Font 字体栈;
+      尚未生产采纳.
+    </p>
+  </footer>
+</html>

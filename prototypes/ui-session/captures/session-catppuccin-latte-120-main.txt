@@ -1,0 +1,40 @@
+ • Explored
+   ⎿  Read 2 files · 2 searches · 1 directory · expand
+
+ • 实现读取了 previousIds, 但没有过滤结果. 我再确认空页时应如何保留游标.
+
+ • WebSearch("cursor pagination duplicate results")
+   ⎿  Found 3 results · expand
+
+ • WebFetch(docs.example.com/pagination)
+   ⎿  Retrieved pagination guide · 6 lines · expand
+
+ • WebRead(docs.example.com/pagination · find "cursor")
+   ⎿  Found 2 matches · expand
+
+ • WebRead(docs.example.com/pagination · continue)
+   ⎿  Read next 3 lines · more available · expand
+
+ • 保持 provider 返回的 cursor, 只过滤重复的 item.
+
+ • Edit(src/search/paginate.ts)
+   ⎿  Added 2 lines, removed 1 line
+     20    - │   return {items: page.items, nextCursor: page.cursor};
+        20 + │   const items = page.items.filter(item => !seen.has(item.id));
+        21 + │   return {items, nextCursor: page.cursor};
+
+ • Write(tests/search/pagination-boundary.test.ts)
+   ⎿  Wrote 7 lines · expand
+
+ • Bash(bun test tests/search)
+   ⎿  8 passed · 0 failed · 0.4s · expand
+
+ • 已修复分页重复: 保留结果顺序, 游标原样传递.
+
+   新增边界测试, 8 项测试通过.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff · fix/pagination-boundary
+ gpt-5.4 · high                    ctrl+o expand/collapse

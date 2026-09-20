@@ -1,0 +1,40 @@
+
+ • Bash(bun test --verbose)
+   ⎿  8 passed · output truncated · expand
+     Showing the retained tail. Full output: /tmp/pi-pagination-tests.log
+
+ • 测试通过. 详细输出保留在日志里.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff · fix/pagination-boundary
+ gpt-5.4 · high                    ctrl+o expand/collapse
