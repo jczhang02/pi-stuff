@@ -2,7 +2,7 @@
 
 [English](../../subagents-redevelopment.md). 以英文版为准.
 
-状态: 2026-09-20 开始决策访谈. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 本记录取代旧规格, 作为下一版实现的方向. 它尚不是完整规格, 也不授权在访谈共同理解确认前开始实现.
+状态: 2026-09-20 通过 RQ01-RQ10 确定运行范围, 下一步讨论 UI. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 本记录取代旧规格, 作为下一版实现的方向. 它尚不是完整规格, 也不授权在 UI 讨论确认前开始实现.
 
 ## 已确认方向
 
@@ -22,7 +22,7 @@
 
 旧实现则在默认只读工作前捕获基线. 它在真实开发目录中展开全部 ignored 文件的状态, 输出 1,749,620 bytes, 超过自身 1 MiB 的 Git 输出上限. 其中 1,748,388 bytes 来自 28,085 条 `node_modules` 记录. 通过实际 Git 封装连续两次复现报错, 失败发生在模型执行前. 这个缺陷来自旧实现, 上游没有该扫描. 此前小项目验收未覆盖这个条件.
 
-## 决策树
+## 讨论范围
 
 第一轮已确定重新开发的边界:
 
@@ -31,9 +31,9 @@
 - 如何区分可证实的缺陷修复与有意改变上游行为.
 - 新实现是否需要继续运行旧实现创建的会话.
 
-下方已接受答案约束工程适配、具体修复和可选新增能力. 内部改写不授权增加生命周期状态、能力或持久化保证. 运行范围确定后, 按派发、进度、查看、通信、取消和恢复的真实场景重谈 UI. 验收随后必须覆盖已安装依赖的真实项目和受控夹具.
+RQ01-RQ10 已确定运行范围. 未被这些决定修改的行为沿用上游, 实现采用满足要求且符合仓库规范的最简单方案. 维护者要求停止引入多余的边界问题. 不因假设场景扩展访谈或增加机制; 只有具体源码或验证证据揭示冲突, 阻碍已约定行为时, 才提出新的运行决策.
 
-问题和推荐在回答前均为提案. 访谈中逐项记录已接受答案. 术语明确后才添加词汇表条目; 只有重要取舍需要长期解释时才写 ADR. 不把实现笔记写入词汇表.
+下一步按派发、进度、查看、通信、取消和续聊的真实场景重谈当前 UI. 验收须覆盖已安装依赖的真实项目和受控夹具. 既有 research 用作证据, 不自动增加要求.
 
 ## 第一轮决定, 2026-09-20 已确认
 
@@ -47,20 +47,20 @@
 
 ## 第二轮决定, 2026-09-20 已确认
 
-**RQ05. 允许完成后续聊.** 维护者接受向同一个子代理再次交办, 保留其先前对话上下文. 例如 reviewer 交付第一份报告后, 可以继续复查修复. 上游可恢复有会话记录的失败或中止任务, 但明确拒绝已完成任务, 因此这是已批准的生命周期新增能力. 结果保留和工作区行为仍待确定; 本决定不会自动恢复旧 assignment 体系或重跑依赖任务. 来源: [resumeTask](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1365).
+**RQ05. 允许完成后续聊.** 维护者接受向同一个子代理再次交办, 保留其先前对话上下文. 例如 reviewer 交付第一份报告后, 可以继续复查修复. 上游可恢复有会话记录的失败或中止任务, 但明确拒绝已完成任务, 因此这是已批准的生命周期新增能力. RQ07-RQ08 规定结果保留和工作区延续方式. 来源: [resumeTask](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1365).
 
-**RQ06. 本次重开发纳入子代理扩展工具.** 维护者决定现在纳入此能力, 不采纳暂缓建议. Researcher 可以直接调用网页搜索等扩展工具. 上游关闭扩展加载; gotgenes 提供了子代理自行加载资源、过滤工具的参考. 子代理取得哪些扩展和工具, 以及如何处理不兼容扩展, 仍待确定. 批准此能力不等于所有已安装扩展都能不受限制地进入子代理, 也不自动开放递归委派. 来源: [arhen 子代理资源加载](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L853-L877)和 [gotgenes 子会话创建](https://github.com/gotgenes/pi-packages/blob/bebfa283fc6a0b8867399b4fcc9dc5997817e9ca/packages/pi-subagents/src/lifecycle/create-subagent-session.ts).
+**RQ06. 本次重开发纳入子代理扩展工具.** 维护者决定现在纳入此能力, 不采纳暂缓建议. Researcher 可以直接调用网页搜索等扩展工具. 上游关闭扩展加载; gotgenes 提供了子代理自行加载资源、过滤工具的参考. RQ09-RQ10 规定工具选择和兼容行为. 来源: [arhen 子代理资源加载](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L853-L877)和 [gotgenes 子会话创建](https://github.com/gotgenes/pi-packages/blob/bebfa283fc6a0b8867399b4fcc9dc5997817e9ca/packages/pi-subagents/src/lifecycle/create-subagent-session.ts).
 
-## 第三轮提案, 等待回答
+## 第三轮决定, 2026-09-20 已确认
 
-**RQ07. 是否逐次保留报告和用量?** Reviewer 先交付第一份报告, 随后复查修复. 推荐保留两次报告及各自状态、耗时、用量, 对话上下文继续沿用, 同时保留该子代理的累计用量. 继续交办不会自动重跑依赖或下游任务. 上游会覆盖任务的最终报告和开始时间, 用量却继续累加, 旧对话仅留在会话文件中. 此提案增加逐次交办记录, 尚不指定新的调度器或旧 assignment 体系. 来源: [resume 重置逻辑](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1411)和[任务快照](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/types.ts#L18-L65).
+**RQ07. 逐次保留报告和用量.** 保留每次交办的报告、状态、耗时和用量, 对话上下文继续沿用, 同时提供该子代理的累计用量. Reviewer 复查后, 第一份报告仍可查看. 继续交办不会自动重跑依赖或下游任务. 上游会覆盖任务的最终报告和开始时间, 用量却继续累加, 因此逐次记录属于已批准的新增能力. 来源: [resume 重置逻辑](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1411)和[任务快照](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/types.ts#L18-L65).
 
-**RQ08. 写代理续聊是否接着自己的代码分支工作?** 实现代理完成补丁后, 再收到补测试的要求. 推荐沿用先前工作区/分支, 保留自己的代码成果; 若仅 worktree 目录被清理, 则从该分支恢复目录. 不自动带入父目录的新修改. 必需的代码状态无法恢复时, 按 RQ03 明确失败, 不换一个基线继续. 只读 reviewer 仍读取选定目录的当前内容. 这将上游工作区方式延续至已完成任务的续聊. 来源: [worktree 挂接](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L768-L813)和[完成处理](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L950-L1003).
+**RQ08. 写代理续聊接着自己的代码分支工作.** 沿用先前工作区/分支, 保留自己的代码成果; 若仅 worktree 目录被清理, 则从该分支恢复目录. 例如实现代理在自己先前的补丁上增加测试. 不自动带入父目录的新修改. 必需的代码状态无法恢复时, 按 RQ03 明确失败, 不换一个基线继续. 只读 reviewer 仍读取选定目录的当前内容. 来源: [worktree 挂接](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L768-L813)和[完成处理](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L950-L1003).
 
-**RQ09. 继承的扩展工具是否以父代理当前启用的工具为上限, 再按角色收窄?** 父代理启用了网页搜索和编辑工具, researcher 可以获得搜索, implementer 可以获得编辑. 推荐从父代理已加载的扩展中选用, 可调用工具以父代理当前启用集合为上限, 角色再收窄范围. 保留上游子代理通信工具; 加载扩展不让子代理取得父代理的委派工具. 子代理在自己的会话中加载和绑定选定扩展来源. 工具过滤不是沙箱, 也不会阻止扩展初始化的副作用. 独立加载和排除委派工具可参考 [gotgenes 会话创建](https://github.com/gotgenes/pi-packages/blob/bebfa283fc6a0b8867399b4fcc9dc5997817e9ca/packages/pi-subagents/src/lifecycle/create-subagent-session.ts#L219-L287).
+**RQ09. 继承的扩展工具以父代理当前启用的工具为上限, 再按角色收窄.** 从父代理已加载的扩展中选用, 可调用工具以父代理当前启用集合为上限, 角色再收窄范围. 例如 researcher 获得搜索, implementer 可以获得编辑. 保留上游子代理通信工具; 加载扩展不让子代理取得父代理的委派工具. 子代理在自己的会话中加载和绑定选定扩展来源. 工具过滤不是沙箱, 也不会阻止扩展初始化的副作用. 参考: [gotgenes 会话创建](https://github.com/gotgenes/pi-packages/blob/bebfa283fc6a0b8867399b4fcc9dc5997817e9ca/packages/pi-subagents/src/lifecycle/create-subagent-session.ts#L219-L287).
 
-**RQ10. 子代理扩展是否限定为可无交互 UI 运行?** 选定的搜索扩展可能加载失败, 某个工具也可能要求弹出终端选择框. 推荐支持能无交互 UI 初始化和运行的扩展; 选定扩展或必需工具无法加载、绑定时, 明确停止子代理启动. 若工具运行时才要求不支持的 UI, 则返回明确的不支持错误, 交给父代理处理. 不静默漏掉必需工具, 不自动转接父代理 UI. Pi 默认无界面 UI 会返回空选择, 因此实现须区分这种行为与正常执行, 并验证支持的扩展. 这些是兼容要求提案, 不是宣称 SDK 能自动识别所有不兼容扩展.
+**RQ10. 支持可无交互 UI 运行的子代理扩展.** 选定扩展或必需工具无法加载、绑定时, 明确停止子代理启动. 若工具运行时才要求不支持的 UI, 则返回明确的不支持错误, 交给父代理处理. 不静默漏掉必需工具, 不自动转接父代理 UI. 须据此验证支持的扩展: Pi 默认无界面 UI 会返回空选择, 本身不能证明兼容.
 
 ## 当前阶段
 
-本轮仅核对源码、research 并访谈决策. 保留既有负责人、实现分支及其他工作树. [PR #98](https://github.com/jczhang02/pi-stuff/pull/98) 代表旧实现, 不作为新版验收候选. 本轮访谈不授权新增运行代码、UI 原型、合并或发布.
+运行行为访谈以 RQ01-RQ10 全部接受收束. 下一阶段基于当前设计和已定能力重谈 UI. 保留既有负责人、实现分支及其他工作树. [PR #98](https://github.com/jczhang02/pi-stuff/pull/98) 代表旧实现, 不作为新版验收候选. 实现和运行验收仍待完成; 本次文档更新不授权合并或发布.
