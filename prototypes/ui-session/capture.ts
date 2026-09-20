@@ -12,6 +12,7 @@ import {
   type Palette,
 } from './launch';
 import {scenes} from './fixtures';
+import {captureLive} from './capture-live';
 const args = parseArgs({
   args: Bun.argv.slice(2),
   allowPositionals: true,
@@ -58,7 +59,7 @@ async function save(
   selectedTheme: Palette,
 ): Promise<void> {
   const screen = await session.screen.capture({
-    settleMs: 200,
+    settleMs: scene?.name.startsWith('live') ? 80 : 200,
     deadlineMs: 1500,
     includeAnsi: true,
   });
@@ -74,8 +75,12 @@ async function save(
   )
     throw new Error('Palette mismatch');
   for (const cell of screen.frame.cells)
-    if (cell.x + cell.width > cols) throw new Error('Clipped cell');
-  const stem = join(out, `${scene?.name}-${selectedTheme}-${cols}-${label}`);
+    if (cell.x + cell.width > screen.frame.cols)
+      throw new Error('Clipped cell');
+  const stem = join(
+    out,
+    `${scene?.name}-${selectedTheme}-${screen.frame.cols}-${label}`,
+  );
   await writeFile(stem + '.txt', screen.text);
   await writeFile(stem + '.ansi', screen.ansi);
   const child = Bun.spawn(
@@ -91,7 +96,7 @@ async function save(
       '--font-family',
       font,
       '--cols',
-      String(cols),
+      String(screen.frame.cols),
       '--rows',
       String(rows),
       '--cell-width',
@@ -112,7 +117,7 @@ async function save(
 }
 await runEffect(async () => {
   await mkdir(out, {recursive: true});
-  const host = await sandbox(scene.name, theme);
+  const host = await sandbox(scene.name, theme, 'capture');
   let terminal: TerminalControl | undefined;
   let session: Session | undefined;
   try {
@@ -132,7 +137,15 @@ await runEffect(async () => {
       host: 'opentui',
       viewport: {cols, rows},
     });
-    if (scene.name === 'replay') {
+    if (scene.name === 'live' || scene.name === 'live-error') {
+      await captureLive(
+        session,
+        scene.name === 'live-error',
+        args.values.cancel,
+        (label, expected) =>
+          save(session!, label, expected, host.palette, theme),
+      );
+    } else if (scene.name === 'replay') {
       await session.screen.waitForText('Thinking', wait);
       await session.keyboard.type(draft);
       await save(session, 'thinking', ['Thinking', draft], host.palette, theme);

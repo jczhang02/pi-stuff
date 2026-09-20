@@ -1,0 +1,40 @@
+ • WebFetch(docs.example.com/pagination)
+   ⎿  Retrieved pagination guide · 6 lines · expand
+
+ • WebRead(docs.example.com/pagination · find "cursor")
+   ⎿  Found 2 matches · expand
+
+ • WebRead(docs.example.com/pagination · continue)
+   ⎿  Read next 3 lines · more available · expand
+
+ • Write(tests/search/pagination-boundary.test.ts)
+   ⎿  Wrote 7 lines · expand
+
+ • Bash(bun test tests/search)
+   ⎿  Exit 1 · skips IDs from the previous page · expand
+
+ • 新增测试复现了跨页重复. 现在只修改 item 过滤, 保留 provider 的 cursor.
+
+ • Edit(src/search/paginate.ts)
+   ⎿  Added 2 lines, removed 1 line
+     20    - │   return {items: page.items, nextCursor: page.cursor};
+        20 + │   const items = page.items.filter(item => !seen.has(item.id));
+        21 + │   return {items, nextCursor: page.cursor};
+
+ • Bash(bun test tests/search)
+   ⎿  8 passed · 0 failed · 1.2s · expand
+
+ • 已修复跨页重复, 8 项测试通过.
+
+   - 保留结果顺序.
+   - cursor 原样传递.
+   - 新增跨页重叠测试.
+
+   页内重复与全空过滤页还可以单独补充覆盖.
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff · fix/pagination-boundary
+ gpt-5.4 · high                    ctrl+o expand/collapse

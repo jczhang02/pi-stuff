@@ -36,6 +36,14 @@ export type Entry =
   | {kind: 'status'; text: string; error?: boolean}
   | {kind: 'explore'; tools: readonly Tool[]};
 
+export function isExploration(entry: Entry): entry is Tool {
+  return (
+    entry.kind === 'tool' &&
+    entry.state === 'done' &&
+    !entry.warning &&
+    ['Read', 'Grep', 'Find', 'Ls'].includes(entry.name)
+  );
+}
 export function groupExploration(entries: readonly Entry[]): Entry[] {
   const result: Entry[] = [];
   let pending: Tool[] = [];
@@ -45,13 +53,7 @@ export function groupExploration(entries: readonly Entry[]): Entry[] {
     pending = [];
   };
   for (const entry of entries) {
-    if (
-      entry.kind === 'tool' &&
-      entry.state === 'done' &&
-      !entry.warning &&
-      ['Read', 'Grep', 'Find', 'Ls'].includes(entry.name)
-    )
-      pending.push(entry);
+    if (isExploration(entry)) pending.push(entry);
     else {
       flush();
       result.push(entry);

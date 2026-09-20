@@ -250,6 +250,18 @@ const truncated: Tool = {
 
 export const scenes = [
   {
+    name: 'live',
+    title: '连续交互会话',
+    note: '提交输入后连续定位、分组探索、Web 失败恢复、测试失败与修复; 后续输入继续边界测试. Esc 中断后可继续.',
+    tokens: ['Welcome back!'],
+  },
+  {
+    name: 'live-error',
+    title: '回答失败后重试',
+    note: '首次提交遇到回答错误, 再次提交可重试, 回答状态不使用工具样式.',
+    tokens: ['Welcome back!'],
+  },
+  {
     name: 'welcome',
     title: '欢迎页',
     note: '保留 pi-stuff-old 的欢迎布局.',
@@ -344,6 +356,8 @@ export type SceneName = (typeof scenes)[number]['name'];
 export function getEntries(name: string): Entry[] {
   switch (name) {
     case 'welcome':
+    case 'live':
+    case 'live-error':
       return [];
     case 'long-diff':
       return [

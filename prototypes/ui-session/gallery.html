@@ -119,7 +119,8 @@
     <li>Thoughts 显示耗时, 点击阅读正文. 回答失败或中断保持普通文字.</li>
   </ul>
   <nav>
-    <a href="#welcome">欢迎页</a><a href="#long-diff">长 diff 与长路径</a
+    <a href="#live">连续交互会话</a><a href="#live-error">回答失败后重试</a
+    ><a href="#welcome">欢迎页</a><a href="#long-diff">长 diff 与长路径</a
     ><a href="#session">完整会话</a><a href="#investigate">定位问题</a
     ><a href="#tools">独立工具</a><a href="#web">Web 家族</a
     ><a href="#changes">修改与验证</a><a href="#running">执行中</a
@@ -128,6 +129,434 @@
     ><a href="#response-error">回答失败</a><a href="#empty">无输出与取消</a
     ><a href="#replay">动态执行</a>
   </nav>
+  <section id="live">
+    <h2>连续交互会话</h2>
+    <p>
+      提交输入后连续定位、分组探索、Web 失败恢复、测试失败与修复;
+      后续输入继续边界测试. Esc 中断后可继续.
+    </p>
+    <code>bun prototypes/ui-session/run.ts live</code>
+    <div class="grid">
+      <figure>
+        <figcaption>Esc 中断后 · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-cancelled.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-cancelled.png"
+            alt="连续交互会话 / Esc 中断后 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-cancelled.txt">文本</a> ·
+          <a href="captures/live-catppuccin-latte-120-cancelled.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>会话中点击展开 Edit · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-edit-clicked.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-edit-clicked.png"
+            alt="连续交互会话 / 会话中点击展开 Edit · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-edit-clicked.txt">文本</a>
+          ·
+          <a href="captures/live-catppuccin-latte-120-edit-clicked.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>展开工具后继续阅读回答 · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-expanded-tail.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-expanded-tail.png"
+            alt="连续交互会话 / 展开工具后继续阅读回答 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-expanded-tail.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-catppuccin-latte-120-expanded-tail.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>第一轮完成 · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-first-complete.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-first-complete.png"
+            alt="连续交互会话 / 第一轮完成 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-first-complete.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-catppuccin-latte-120-first-complete.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>第二轮完成 · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-followup-complete.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-followup-complete.png"
+            alt="连续交互会话 / 第二轮完成 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-followup-complete.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-catppuccin-latte-120-followup-complete.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>执行中逐步聚合探索 · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-group-growing.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-group-growing.png"
+            alt="连续交互会话 / 执行中逐步聚合探索 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-group-growing.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-catppuccin-latte-120-group-growing.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>向上滚动检查完整输出 · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-output-scrolled.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-output-scrolled.png"
+            alt="连续交互会话 / 向上滚动检查完整输出 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-output-scrolled.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-catppuccin-latte-120-output-scrolled.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>思考中 · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-thinking.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-thinking.png"
+            alt="连续交互会话 / 思考中 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-thinking.txt">文本</a> ·
+          <a href="captures/live-catppuccin-latte-120-thinking.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>Web 失败与恢复 · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-web-recovery.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-web-recovery.png"
+            alt="连续交互会话 / Web 失败与恢复 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-web-recovery.txt">文本</a>
+          ·
+          <a href="captures/live-catppuccin-latte-120-web-recovery.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>欢迎页与可编辑请求 · 浅色 · 120 列</figcaption>
+        <a href="captures/live-catppuccin-latte-120-welcome.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-120-welcome.png"
+            alt="连续交互会话 / 欢迎页与可编辑请求 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-120-welcome.txt">文本</a> ·
+          <a href="captures/live-catppuccin-latte-120-welcome.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>返回会话开头 · 浅色 · 60 列</figcaption>
+        <a href="captures/live-catppuccin-latte-60-history-start.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-60-history-start.png"
+            alt="连续交互会话 / 返回会话开头 · 浅色 · 60 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-60-history-start.txt">文本</a>
+          ·
+          <a href="captures/live-catppuccin-latte-60-history-start.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>窄屏重新排版 · 浅色 · 60 列</figcaption>
+        <a href="captures/live-catppuccin-latte-60-narrow-scrolled.png"
+          ><img
+            loading="lazy"
+            src="captures/live-catppuccin-latte-60-narrow-scrolled.png"
+            alt="连续交互会话 / 窄屏重新排版 · 浅色 · 60 列"
+        /></a>
+        <p>
+          <a href="captures/live-catppuccin-latte-60-narrow-scrolled.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-catppuccin-latte-60-narrow-scrolled.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="live-error">
+    <h2>回答失败后重试</h2>
+    <p>首次提交遇到回答错误, 再次提交可重试, 回答状态不使用工具样式.</p>
+    <code>bun prototypes/ui-session/run.ts live-error</code>
+    <div class="grid">
+      <figure>
+        <figcaption>返回会话开头 · 深色 · 60 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-60-history-start.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-60-history-start.png"
+            alt="回答失败后重试 / 返回会话开头 · 深色 · 60 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-60-history-start.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-60-history-start.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>窄屏重新排版 · 深色 · 60 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-60-narrow-scrolled.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-60-narrow-scrolled.png"
+            alt="回答失败后重试 / 窄屏重新排版 · 深色 · 60 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-60-narrow-scrolled.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-60-narrow-scrolled.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>会话中点击展开 Edit · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-edit-clicked.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-edit-clicked.png"
+            alt="回答失败后重试 / 会话中点击展开 Edit · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-80-edit-clicked.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-80-edit-clicked.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>展开工具后继续阅读回答 · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-expanded-tail.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-expanded-tail.png"
+            alt="回答失败后重试 / 展开工具后继续阅读回答 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-80-expanded-tail.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-80-expanded-tail.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>第一轮完成 · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-first-complete.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-first-complete.png"
+            alt="回答失败后重试 / 第一轮完成 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-80-first-complete.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-80-first-complete.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>第二轮完成 · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-followup-complete.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-followup-complete.png"
+            alt="回答失败后重试 / 第二轮完成 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a
+            href="captures/live-error-catppuccin-mocha-80-followup-complete.txt"
+            >文本</a
+          >
+          ·
+          <a
+            href="captures/live-error-catppuccin-mocha-80-followup-complete.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>执行中逐步聚合探索 · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-group-growing.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-group-growing.png"
+            alt="回答失败后重试 / 执行中逐步聚合探索 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-80-group-growing.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-80-group-growing.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>向上滚动检查完整输出 · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-output-scrolled.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-output-scrolled.png"
+            alt="回答失败后重试 / 向上滚动检查完整输出 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-80-output-scrolled.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-80-output-scrolled.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>回答失败后可重试 · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-response-failed.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-response-failed.png"
+            alt="回答失败后重试 / 回答失败后可重试 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-80-response-failed.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-80-response-failed.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>思考中 · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-thinking.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-thinking.png"
+            alt="回答失败后重试 / 思考中 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-80-thinking.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-80-thinking.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>Web 失败与恢复 · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-web-recovery.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-web-recovery.png"
+            alt="回答失败后重试 / Web 失败与恢复 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-80-web-recovery.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/live-error-catppuccin-mocha-80-web-recovery.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>欢迎页与可编辑请求 · 深色 · 80 列</figcaption>
+        <a href="captures/live-error-catppuccin-mocha-80-welcome.png"
+          ><img
+            loading="lazy"
+            src="captures/live-error-catppuccin-mocha-80-welcome.png"
+            alt="回答失败后重试 / 欢迎页与可编辑请求 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/live-error-catppuccin-mocha-80-welcome.txt">文本</a>
+          ·
+          <a href="captures/live-error-catppuccin-mocha-80-welcome.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+    </div>
+  </section>
   <section id="welcome">
     <h2>欢迎页</h2>
     <p>保留 pi-stuff-old 的欢迎布局.</p>
@@ -736,9 +1165,10 @@
   </section>
   <footer>
     <p>
-      点击工具或 Thoughts 展开, Ctrl+O 切换全部详情. replay 场景可按 Esc 中断.
-      完整会话用 Pi 原生滚动查看. 截图使用 Catppuccin 与指定 Nerd Font 字体栈;
-      尚未生产采纳.
+      点击工具或 Thoughts 展开, Ctrl+O 切换全部详情. live 按 Enter 提交初始请求,
+      完成后再提交边界测试请求; Esc 中断后可继续. live-error 展示回答失败与重试.
+      replay 保留短动态对照. 完整会话用 Pi 原生滚动查看. 截图使用 Catppuccin
+      与指定 Nerd Font 字体栈; 尚未生产采纳.
     </p>
   </footer>
 </html>

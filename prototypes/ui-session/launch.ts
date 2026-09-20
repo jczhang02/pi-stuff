@@ -12,7 +12,11 @@ const Theme = Schema.Struct({
   vars: Schema.Struct({text: Schema.String, base: Schema.String}),
 });
 export type Palette = 'catppuccin-mocha' | 'catppuccin-latte';
-export async function sandbox(scene: string, theme: Palette) {
+export async function sandbox(
+  scene: string,
+  theme: Palette,
+  paletteTarget: 'capture' | 'interactive' = 'interactive',
+) {
   if (!scenes.some(s => s.name === scene))
     throw new Error(`Unknown scene: ${scene}`);
   const directory = await mkdtemp(join(tmpdir(), 'pi-ui-session-'));
@@ -54,7 +58,7 @@ export async function sandbox(scene: string, theme: Palette) {
       XDG_CONFIG_HOME: directory,
       XDG_DATA_HOME: directory,
     };
-    const args = [
+    const args: [string, ...string[]] = [
       process.execPath,
       join(root, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
       '--offline',
@@ -84,13 +88,16 @@ export async function sandbox(scene: string, theme: Palette) {
       !/^#[\da-f]{6}$/iu.test(palette.vars.base)
     )
       throw new Error('Invalid palette');
-    const command: [string, ...string[]] = [
-      '/bin/sh',
-      '-c',
-      `printf %b "\\033]10;${palette.vars.text}\\a\\033]11;${palette.vars.base}\\a"; exec "$@"`,
-      'pi-ui-session',
-      ...args,
-    ];
+    const command: [string, ...string[]] =
+      paletteTarget === 'capture'
+        ? [
+            '/bin/sh',
+            '-c',
+            `printf %b "\\033]10;${palette.vars.text}\\a\\033]11;${palette.vars.base}\\a"; exec "$@"`,
+            'pi-ui-session',
+            ...args,
+          ]
+        : args;
     return {
       directory,
       env,

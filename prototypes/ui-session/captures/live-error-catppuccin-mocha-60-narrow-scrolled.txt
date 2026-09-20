@@ -1,0 +1,40 @@
+        │ () => {                                          │
+      2 │   const page = {items: [{id: "a"}], cursor:      │
+        │ "next"};                                         │
+      3 │   expect(paginate(page, ["a"])).toEqual({items:  │
+        │ [], nextCursor: "next"});                        │
+      4 │ });                                              │
+      5 │                                                  │
+      6 │ test("keeps first occurrence within the same     │
+        │ page", () => {                                   │
+      7 │   const first = {id: "a", title: "first"};       │
+      8 │   const page = {items: [first, {id: "a", title:  │
+        │ "later"}], cursor: "next"};                      │
+      9 │   expect(paginate(page,                          │
+        │ []).items).toEqual([first]);                     │
+     10 │ });                                              │
+                                                           │
+ • Bash(bun test tests/search)                             │
+   ⎿  9 passed · 1 failed · duplicate within page ·        │
+      collapse                                             │
+     FAIL keeps first occurrence within the same page      │
+     Expected: [{id: "a", title: "first"}]                 │
+     Received: [{id: "a", title: "first"}, {id: "a", title:│
+     "later"}]                                             │
+                                                           ┃
+     9 pass                                                ┃
+     1 fail                                                ┃
+                                                           ┃
+ • Edit(src/search/paginate.ts)                            │
+   ⎿  Added 5 lines, removed 1 line · collapse             │
+     19 19   │   const seen = new Set(previousIds);        │
+     20    - │   const items = page.items.filter(item =>   │
+           - │ !seen.has(item.id));                        │
+        20 + │   const items = page.items.filter(item => { │
+        21 +  ↓ Jump to latest message · End urn false;    │
+
+────────────────────────────────────────────────────────────
+下一条草稿不会被展开操作覆盖
+────────────────────────────────────────────────────────────
+ pi-stuff · fix/pagination-boundary
+ gpt-5.4 · high                    ctrl+o expand/collapse

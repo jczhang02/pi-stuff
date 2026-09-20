@@ -179,7 +179,9 @@ function explorationSummary(tools: readonly Tool[]): string {
   const lists = tools.filter(t => t.name === 'Ls').length;
   return [
     reads ? `Read ${reads} file${reads === 1 ? '' : 's'}` : '',
-    searches + finds ? `${searches + finds} searches` : '',
+    searches + finds
+      ? `${searches + finds} search${searches + finds === 1 ? '' : 'es'}`
+      : '',
     lists ? `${lists} director${lists === 1 ? 'y' : 'ies'}` : '',
   ]
     .filter(Boolean)

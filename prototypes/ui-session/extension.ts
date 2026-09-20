@@ -7,6 +7,7 @@ import {Box, Text, truncateToWidth, type TUI} from '@earendil-works/pi-tui';
 import {getEntries, replayResult} from './fixtures';
 import {welcomeLines} from '../ui-direction/welcome';
 import {entryComponent, expansionFor, expandAll} from './render';
+import {LiveSession} from './live-session';
 
 export default function sessionPrototype(pi: ExtensionAPI): void {
   const scene = process.env.PI_SESSION_SCENE ?? 'session';
@@ -17,12 +18,32 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
   let removeInput: (() => void) | undefined;
   let globalExpanded = false;
   let replayDone = false;
+  const live =
+    scene === 'live' || scene === 'live-error'
+      ? new LiveSession(() => host?.requestRender(), scene === 'live-error')
+      : undefined;
   const stop = () => {
     if (timer) clearInterval(timer);
     timer = undefined;
     removeInput?.();
     removeInput = undefined;
+    live?.stop();
   };
+  if (live)
+    pi.registerMessageRenderer('session-live', (_message, options, theme) => {
+      live.setExpanded(options.expanded);
+      let content = live.component(theme);
+      return {
+        render(width) {
+          content = live.component(theme);
+          return content.render(width);
+        },
+        invalidate() {
+          content.invalidate();
+        },
+        handleMouse: event => content.handleMouse(event),
+      };
+    });
   entries.forEach((entry, index) => {
     pi.registerMessageRenderer(
       `session-preview-${index}`,
@@ -109,13 +130,27 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
   pi.on('session_start', (_event, ctx) => {
     ctx.ui.setHeader((tui, theme) => {
       host = tui;
-      return scene === 'welcome'
+      return scene === 'welcome' || live
         ? {
-            render: width => welcomeLines(theme, width, tui.terminal.rows),
+            render: width =>
+              live && !live.empty
+                ? []
+                : welcomeLines(theme, width, tui.terminal.rows),
             invalidate() {},
           }
         : new Text('', 0, 0);
     });
+    if (live) {
+      pi.sendMessage({customType: 'session-live', content: '', display: true});
+      ctx.ui.setEditorText(
+        '分页边界会出现重复结果. 请保留第一次出现的记录, 不要改变下一页游标, 并补测试.',
+      );
+      removeInput = ctx.ui.onTerminalInput(data => {
+        if ((data === '\u001b' || data === '\u0003') && live.cancel())
+          return {consume: true};
+        return undefined;
+      });
+    }
     ctx.ui.setFooter((_tui, theme) => ({
       render: width => [
         truncateToWidth(
@@ -142,8 +177,12 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
     });
     if (scene === 'replay') replay(ctx);
   });
-  // No provider request: ordinary submissions remain editable in this visual artifact.
+  // No provider request: live submissions drive the script; static scenes retain drafts.
   pi.on('input', (event, ctx) => {
+    if (live) {
+      live.submit(event.text);
+      return {action: 'handled'};
+    }
     ctx.ui.setEditorText(event.text);
     return {action: 'handled'};
   });

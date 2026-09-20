@@ -1,0 +1,40 @@
+
+ • 我会补上这两个边界, 再检查完整 diff 和测试输出.
+
+ • Explored
+   ⎿  Read 1 file · 1 search · expand
+
+ • Write(tests/search/pagination-additional.test.ts)
+   ⎿  Wrote 10 lines · 2 additional boundary tests · expand
+
+ • Bash(bun test tests/search)
+   ⎿  9 passed · 1 failed · duplicate within page · expand
+
+ • Edit(src/search/paginate.ts)
+   ⎿  Added 5 lines, removed 1 line · 5 more lines · expand
+     20    - │   const items = page.items.filter(item => !seen.has(item.id));
+        20 + │   const items = page.items.filter(item => {
+        21 + │     if (seen.has(item.id)) return false;
+
+ • Bash(bun test tests/search --verbose)
+   ⎿  10 passed · 0 failed · expand
+
+ • Bash(git diff --check)
+   ⎿  No output · exit 0
+
+ • 两个边界都已补齐, 10 项测试通过.
+
+   ```ts
+     if (seen.has(item.id)) return false;
+     seen.add(item.id);
+     return true;
+   ```
+
+   同页和跨页重复都保留第一次出现的记录. 全空过滤页仍保留下一页 cursor. git diff --check 无输出.
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+下一条草稿不会被展开操作覆盖
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff · fix/pagination-boundary
+ gpt-5.4 · high                    ctrl+o expand/collapse
