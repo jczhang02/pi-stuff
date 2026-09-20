@@ -2,7 +2,7 @@
 
 [English](../../subagents-redevelopment-ui.md). 以英文版为准.
 
-状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02. 现进入第 2 部分, FleetView 与任务关系; 下方 UIR03 为待回答提案. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
+状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02; 2026-09-21 已接受 UIR03. FleetView 帮助必须只在其获得键盘焦点时显示. 下方 UIR04 提议帮助位置和焦点标记. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
 
 按真实使用场景逐一讨论 UI: 主界面与页面关系、FleetView 与任务结构、详情与可观测性、介入操作、完成与历史、键盘与视觉统一. 根据维护者反馈, 本轮同时梳理详情的信息层级. 先前 UI 作为起点, 不整套继承它所依赖的旧运行要求.
 
@@ -50,7 +50,7 @@ Transcript 进入完整记录. Info 提供配置、工作区、详细用量及�
 
 **UIR02 已接受.** 运行中先看最新回复和当前活动, 完成后直接看报告, 辅助信息深入一层查看. 完整证据仍可读取, 首屏自身就有用. 明确待答问题和错误仍需单独出图梳理.
 
-## UIR03: FleetView 与任务关系提案
+## UIR03: FleetView 与任务关系已接受
 
 FleetView 继续使用 UIR01 已接受的紧凑列表, 不因任务存在依赖而改变行布局. 独立任务无需额外关系图. 选中的任务属于依赖流程时, 提供入口, 在底部查看区域打开其真实依赖图. 入口具体按键留到键盘交互部分确定.
 
@@ -58,7 +58,7 @@ FleetView 继续使用 UIR01 已接受的紧凑列表, 不因任务存在依赖�
 
 ![三个独立调查沿用 FleetView](../../assets/subagents-redevelopment-ui/06-independent-fleet.png)
 
-Lifecycle、packages 和 tests 独立调查, 每行都能打开详情. 不画依赖箭头, 也不构造父子树.
+Lifecycle、packages 和 tests 独立调查, 每行都能打开详情. 不画依赖箭头, 也不构造父子树. 这张历史图底部的 `j/k` 提示由 UIR04 的焦点对比图取代.
 
 ### 存在依赖的流程
 
@@ -68,10 +68,38 @@ Lifecycle、packages 和 tests 独立调查, 每行都能打开详情. 不画依
 
 显式依赖统一使用有向图, 简单串行链也沿用这一形式. 箭头从前置任务指向使用结果的任务. 选择节点后查看状态, 并进入已接受的详情页; 返回先恢复图中选择, 再回到 FleetView. 上方主对话保持可见, 关系图接管底部交互区域.
 
-这里提议的是紧凑列表与按需关系图的分工, 不提供任意切换 list/tree/graph 的模式菜单. 关系来自已记录的依赖, 不从 prompt 文本或代理名称推断. 图中报告和时间为示例. Waiting 原因适用于这次汇合场景, 不表示所有排队任务都在等待未完成的依赖; 上游按就绪波次调度的运行基线保持不变.
+已接受紧凑列表与按需关系图的分工, 不提供任意切换 list/tree/graph 的模式菜单. 关系来自已记录的依赖, 不从 prompt 文本或代理名称推断. 图中报告和时间为示例. Waiting 原因适用于这次汇合场景, 不表示所有排队任务都在等待未完成的依赖; 上游按就绪波次调度的运行基线保持不变. 接受范围是关系呈现, 不包括关系图中示意性的按键提示.
 
-**UIR03 问题. 是否保留列表形式的 FleetView, 仅在存在真实依赖时提供关系图入口, 图中节点进入同一个详情页?** 推荐采用. 日常查看保持紧凑, 需要理解依赖时有足够空间看清关系.
+**UIR03 已接受.** 保留列表形式的 FleetView, 仅在存在真实依赖时提供关系图入口, 图中节点进入同一个详情页.
+
+## UIR04: 焦点与局部帮助提案
+
+**已确定的修正.** FleetView 可见不等于它获得键盘焦点. 维护者要求列表获得焦点时才显示导航/操作帮助. 在主编辑器输入时隐藏这行帮助, 代理列表仍然保留.
+
+### 参考行为
+
+已检查的 Pi 0.85.1 [选择按键](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/tui/src/keybindings.ts)默认为上下键、Enter 和 Escape/Ctrl+C. [ExtensionSelector](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/modes/interactive/components/extension-selector.ts)额外接受 `j/k`, 但在列表下方显示 `↑↓ navigate` 及配置中的确认/取消按键. Pi 的其他选择器也有在列表上方显示帮助的例子, 帮助位置并非全局统一.
+
+已记录的 Claude Code 2.1.261 [FleetView 焦点截图](https://github.com/jczhang02/pi-stuff/blob/42fe5afa96caf31a255b76ac6ec751999fc10413/docs/assets/claude-subagent-ui/02-selected.txt)将操作帮助放在列表上方. [编辑器焦点截图](https://github.com/jczhang02/pi-stuff/blob/42fe5afa96caf31a255b76ac6ec751999fc10413/docs/assets/claude-subagent-ui/04-message.txt)仍保留列表, 但用输入场景提示取代 FleetView 操作帮助. Claude 的行指针和当前会话圆圈含义不同. 我们沿用已接受的仅圆圈选中, 不复制这套双标记, 也不表示切换了宿主会话.
+
+此前的 `j/k select` 页脚是概念稿自行选择的写法, 不是 Pi/Claude 共同的默认方案. 优先沿用 Pi 已配置的选择按键, 提示显示实际键位. 新图使用默认上下键/Enter 文案及 Pi Stuff 固定的 Esc 返回规则.
+
+### 主编辑器获得焦点
+
+![主编辑器有文字光标, FleetView 没有局部帮助和实心选中圆圈](../../assets/subagents-redevelopment-ui/08-editor-focus.png)
+
+草稿显示文字光标. FleetView 所有圆圈空心, 不显示局部帮助. 内部仍记住上次列表选择, 供返回列表时恢复. 编辑器的光标移动、历史和自动补全保持 Pi 行为.
+
+### FleetView 获得焦点
+
+![FleetView 在列表上方显示局部导航帮助, 只填实所选圆圈](../../assets/subagents-redevelopment-ui/09-fleet-focus.png)
+
+草稿保留, 隐藏文字光标. 只有 lifecycle 的选中圆圈填实. statusline 和列表之间出现一行弱化的帮助: `↑↓ navigate · enter view · esc back`. 不增加指针、整行背景或列表下方的帮助. 两张图的行位置相同; 预留空行仅作示意, 不是固定高度要求.
+
+帮助位置参考 Claude 的局部操作提示, 导航沿用 Pi 的选择按键. 先前已同意用上下键进入 FleetView, 入口须保留编辑器本身的正常处理. 本轮不决定 stop、message 等介入操作的键位.
+
+**UIR04 问题. 是否将获得焦点时的 FleetView 帮助放在列表上方, 显示 Pi 的选择键位, 并只在列表获得焦点时填实选中圆圈?** 推荐采用. 光标和圆圈直接表明键盘正在操作哪里, 无需增加整行高亮.
 
 ## 验证与下一步
 
-运行中/完成后的详情层级已接受. 已目视检查本轮两张概念图的行对齐、依赖连线、选中样式及等待原因. 概念图不作为终端运行证据. 本轮仅更新文档和图片, 等待 UIR03 回答后再推进访谈.
+UIR03 和帮助随焦点显示的规则已接受. 已目视检查两张新概念图的文字光标、帮助位置、圆圈选择和行对齐. 概念图不作为终端运行证据. 本轮仅更新文档和图片, 等待 UIR04 回答后再推进访谈.
