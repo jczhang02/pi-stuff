@@ -1,0 +1,40 @@
+
+ Error: RTK rewrite failed; leaving the original Bash command unchanged. RTK rewrite preparation failed. Run /rtk
+ diagnostics for details.
+
+
+
+ $ git status --short
+
+ M src/search/paginate.ts
+ ?? tests/search/paginate.test.ts
+
+ Took 0.0s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

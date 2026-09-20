@@ -1,0 +1,40 @@
+
+
+
+ read src/search/paginate.ts
+
+
+
+
+ [skill] review-pagination (ctrl+o to expand)
+
+
+
+
+ web_search
+ checked result 1
+ checked result 2
+ checked result 3
+ checked result 4
+ checked result 5
+ checked result 6
+ checked result 7
+ checked result 8
+ checked result 9
+ checked result 10
+ ... (4 more lines, ctrl+o to expand)
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

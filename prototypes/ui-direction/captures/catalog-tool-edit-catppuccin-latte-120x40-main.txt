@@ -1,0 +1,40 @@
+
+
+
+ edit src/search/paginate.ts
+
+  1 export function paginate(page, previousIds) {
+  2   const seen = new Set(previousIds);
+ -3   return {items, nextCursor: page.cursor};
+ +3   const unique = page.items.filter(item => !seen.has(item.id));
+ +4   return {items: unique, nextCursor: page.cursor};
+  4 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

@@ -4,6 +4,23 @@ This is a throwaway, offline design artifact for [issue #99](https://github.com/
 
 [Open the preview gallery](gallery.html) · [Research and surface inventory](../../docs/research/ui-direction-2026-09-20.md) · [中文研究](../../docs/i18n/zh-CN/research/ui-direction-2026-09-20.md)
 
+## Conversation catalog and diff alternatives
+
+The [coverage report](../../docs/research/conversation-coverage-2026-09-20.md) separates current Pi/Pi Stuff output from proposed layouts. `catalog-scenes.ts` is the image manifest. Each catalog scene mounts the installed native component with static data, or uses the host notification API. It does not replay a real model/tool lifecycle. The original conversation candidates still use custom-message renderers.
+
+```sh
+bun prototypes/ui-direction/capture.ts diff-unified
+bun prototypes/ui-direction/capture.ts diff-split
+bun prototypes/ui-direction/capture.ts diff-paired
+bun prototypes/ui-direction/capture.ts diff-split --cols 80
+bun prototypes/ui-direction/capture.ts catalog-tool-edit
+bun prototypes/ui-direction/build-gallery.ts
+```
+
+All three diff candidates show the same edit. Syntax coloring uses the installed Pi highlighter; underlined changes are selected fixture ranges, not a general word-diff algorithm. Split falls back to unified below 110 columns. No dependency was added.
+
+中文: 新增[逐项覆盖报告](../../docs/i18n/zh-CN/research/conversation-coverage-2026-09-20.md)和图片目录. 当前输出目录使用已安装的原生组件与静态数据; A/B/C 仍是待讨论的布局. 目录图片不代表真实模型、工具执行或完整事件回放. 三种 diff 用相同改动比较, 下划线是样例指定范围, 尚未实现通用词级 diff 算法.
+
 ## Reproduce
 
 From this branch's checkout, with the pinned Bun 1.4.0 dependencies installed:
@@ -30,7 +47,7 @@ For a shared foreground session, use the complete isolated launch block below. T
 
 The sample is one pagination task shown at selected stages. Its messages, paths, model, costs, inventory counts, durations and test results are fixtures, not real work. Session identity/naming, Goal, Todo, subagents, background work, BTW and notifications are outside this preview. The extension executes no shell/test commands. Typing an ordinary request is not a supported coding workflow in this artifact. The captured failure describes a sample failed test, not failure of the UI verification.
 
-The renderer uses custom messages. It proves the proposed layout can run inside Pi; it does not prove native built-in tools or assistant/thinking have been replaced. The report documents the separate public built-in-tool override route and the limits of assistant/thinking customization. Image protocols, history replay and live streaming remain outside this visual artifact.
+The original candidate renderer uses custom messages. It proves the proposed layout can run inside Pi; it does not prove native built-in tools or assistant/thinking have been replaced. The report documents the separate public built-in-tool override route and the limits of assistant/thinking customization. Image protocols, history replay and live streaming remain outside this visual artifact.
 
 The export font stack is `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. Palettes are the repository's Catppuccin Latte and Mocha themes. Terminal default foreground/background are set from those palettes before launch; exported colors are checked against the live terminal frame. No screenshot is painted over to change the layout.
 

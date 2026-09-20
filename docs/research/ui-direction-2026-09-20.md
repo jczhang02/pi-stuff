@@ -6,6 +6,8 @@ This research covers the whole Pi Stuff UI. The old interface is the reference, 
 
 **Status:** proposal for discussion, not an accepted production specification. Research date: 2026-09-20. Task: [#99](https://github.com/jczhang02/pi-stuff/issues/99), Beads `pi-stuff-cgl.1`. Base: `cd0f174`. Pi host: `0.85.1`; Bun: `1.4.0`.
 
+The next revision adds [current conversation coverage and three syntax-highlighted diff alternatives](conversation-coverage-2026-09-20.md). That report and the updated gallery supersede the single-diff preview below.
+
 ## What exists and what needs attention
 
 Current Pi Stuff registers Web and RTK in `index.ts`; `/rtk` is its current custom panel. The themes are real. Conversation UI, tool presentation and shared diagnostics are not implemented on this baseline. Native Pi still provides the transcript, input editor, model/session selectors and its own tool display. Session identity/naming, Goal, Todo, subagents, background work, BTW and notifications are explicitly outside this pass.

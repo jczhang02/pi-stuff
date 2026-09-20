@@ -1,0 +1,40 @@
+
+
+
+ $ bun test tests/search/paginate.test.ts
+
+ bun test v1.4.0
+ ... checking duplicate entries between pages
+
+ Elapsed 0.0s
+
+
+
+
+ $ bun test tests/search/paginate.test.ts
+
+ 8 pass
+ 0 fail
+ Ran 8 tests across 1 file.
+
+ Took 0.0s
+
+
+
+
+ $ bun test tests/search/paginate.test.ts
+
+ FAIL skips IDs from the previous page
+ Expected: ["result-3"]
+ Received: ["result-2", "result-3"]
+
+ Took 0.0s
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

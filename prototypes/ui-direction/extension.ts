@@ -6,6 +6,7 @@ import {
   getMarkdownTheme,
   getSettingsListTheme,
   DynamicBorder,
+  highlightCode,
 } from '@earendil-works/pi-coding-agent';
 import {
   type Component,
@@ -19,6 +20,7 @@ import {
 } from '@earendil-works/pi-tui';
 import {getScene, type ToolSample} from './scenes';
 import {welcomeLines} from './welcome';
+import {diffVariantLines, type DiffVariant} from './diff-variants';
 
 function linesComponent(render: (width: number) => string[]): Component {
   return {
@@ -34,6 +36,7 @@ function toolLines(
   theme: Theme,
   expanded: boolean,
   width: number,
+  variant: DiffVariant,
 ) {
   const color =
     tool.state === 'failed'
@@ -42,11 +45,15 @@ function toolLines(
         ? 'accent'
         : 'success';
   const title = `${theme.fg(color, '•')} ${theme.bold(theme.fg('toolTitle', tool.name))}(${theme.fg('text', tool.target)})`;
-  const output = expanded
-    ? tool.output
-    : tool.name === 'Edit' || tool.state === 'failed'
-      ? tool.output
-      : tool.output.slice(0, 2);
+  if (tool.name === 'Edit')
+    return [
+      ` ${title}`,
+      theme.fg('muted', '  ⎿  ') +
+        theme.fg(color, '+3 −1 · preserve order and skip previous IDs'),
+      ...diffVariantLines(theme, width, variant),
+    ];
+  const output =
+    expanded || tool.state === 'failed' ? tool.output : tool.output.slice(0, 2);
   const lines = [
     ...wrapTextWithAnsi(title, width - 2),
     theme.fg('muted', ' ⎿  ') + theme.fg(color, tool.result),
@@ -56,7 +63,13 @@ function toolLines(
         : line.startsWith('−')
           ? 'toolDiffRemoved'
           : 'toolOutput';
-      return wrapTextWithAnsi(theme.fg(token, `    ${line}`), width - 2);
+      const match =
+        tool.name === 'Read' ? /^(\d+  )(.*)$/u.exec(line) : undefined;
+      const rendered = match
+        ? theme.fg('muted', match[1] ?? '') +
+          highlightCode(match[2] ?? '', 'typescript').join('\n')
+        : theme.fg(token, line);
+      return wrapTextWithAnsi(`    ${rendered}`, width - 2);
     }),
   ];
   if (!expanded && output.length < tool.output.length)
@@ -72,6 +85,12 @@ function toolLines(
 export default function uiDirection(pi: ExtensionAPI) {
   const scene = process.env.PI_UI_SCENE ?? 'work';
   const messages = getScene(scene);
+  const variant: DiffVariant =
+    scene === 'diff-split'
+      ? 'split'
+      : scene === 'diff-paired'
+        ? 'paired'
+        : 'unified';
 
   for (const [index, message] of messages.entries()) {
     pi.registerMessageRenderer(
@@ -79,7 +98,7 @@ export default function uiDirection(pi: ExtensionAPI) {
       (_message, options, theme) => {
         if (message.kind === 'tool')
           return linesComponent(width =>
-            toolLines(message.tool, theme, options.expanded, width),
+            toolLines(message.tool, theme, options.expanded, width, variant),
           );
         const markdown = new Markdown(message.text, 0, 0, getMarkdownTheme());
         const content = linesComponent(width =>

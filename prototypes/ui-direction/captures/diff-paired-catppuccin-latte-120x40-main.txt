@@ -1,0 +1,40 @@
+
+
+  修复搜索结果翻页时重复出现的问题, 保留原来的排序, 并补充测试.
+
+
+ • 分页边界改为接收上一页的 ID. 下面是关键改动, 接下来验证重复项和游标是否一起保持正确.
+
+ • Edit(src/search/paginate.ts)
+  ⎿  +3 −1 · preserve order and skip previous IDs
+     Before · lines 18–22
+      18   export function paginate(page: Page, previousIds: string[]) {
+      19 −   const items = uniqueById(page.items);
+      20     const nextCursor = page.cursor;
+      21     return {items, nextCursor};
+      22   }
+
+     After · lines 18–24
+      18   export function paginate(page: Page, previousIds: string[]) {
+      19 +   const seen = new Set(previousIds);
+      20 +   const items = uniqueById(page.items)
+      21 +     .filter(item => !seen.has(item.id));
+      22     const nextCursor = page.cursor;
+      23     return {items, nextCursor};
+      24   }
+
+ • Bash(bun test tests/search/paginate.test.ts)
+  ⎿  Running · 4s
+     bun test v1.4.0
+     ✓ keeps the first occurrence within a page
+     … 2 more lines · Ctrl+O expand
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

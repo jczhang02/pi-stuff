@@ -40,16 +40,8 @@ const edit: ToolSample = {
   name: 'Edit',
   target: 'src/search/paginate.ts',
   state: 'done',
-  result: '+4 −1 · deduplicate page boundaries',
-  output: [
-    '    20  const nextCursor = page.cursor;',
-    '−   21  return {items, nextCursor};',
-    '+   21  const seen = new Set(previousIds);',
-    '+   22  const unique = items.filter(item => !seen.has(item.id));',
-    '+   23  // Keep the first occurrence and the upstream cursor.',
-    '+   24  return {items: unique, nextCursor};',
-    '    25  }',
-  ],
+  result: '+3 −1 · preserve order and skip previous IDs',
+  output: [],
 };
 const tests: ToolSample = {
   name: 'Bash',
@@ -143,6 +135,7 @@ export const scenes = {
 } satisfies Record<string, readonly SampleMessage[]>;
 
 export function getScene(name: string): readonly SampleMessage[] {
+  if (name.startsWith('diff-')) return scenes.diff;
   return (
     Object.entries(scenes).find(([key]) => key === name)?.[1] ?? scenes.work
   );

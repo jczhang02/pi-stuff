@@ -4,6 +4,8 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
 import {Effect, Schema} from 'effect';
+import {catalogScenes, type CatalogScene} from './catalog-scenes';
+import {hostScenes} from './catalog-host-scenes';
 import {
   TerminalControl,
   type Color,
@@ -60,7 +62,12 @@ type Scenario =
   | 'work'
   | 'diff'
   | 'failure'
-  | 'complete';
+  | 'complete'
+  | 'diff-unified'
+  | 'diff-split'
+  | 'diff-paired'
+  | (typeof catalogScenes)[number]['name']
+  | (typeof hostScenes)[number]['name'];
 type ThemeFileValue = Schema.Schema.Type<typeof ThemeFile>;
 
 type RunnerOptions = {
@@ -82,7 +89,8 @@ type IsolatedPaths = {
 
 const USAGE = `Usage: bun prototypes/ui-direction/capture.ts <scenario> [options]
 
-Scenarios: baseline, welcome, work, work-narrow, diff, failure, complete
+Scenarios: baseline, welcome, work, work-narrow, diff, failure, complete,
+diff-unified, diff-split, diff-paired, and catalog scene names from catalog-scenes.ts
 Options:
   --theme <catppuccin-latte|catppuccin-mocha>
   --cols <number> --rows <number>
@@ -95,6 +103,9 @@ function isScenario(value: string): value is Scenario {
     value === 'welcome' ||
     value === 'work' ||
     value === 'diff' ||
+    ['diff-unified', 'diff-split', 'diff-paired'].includes(value) ||
+    catalogScenes.some(scene => scene.name === value) ||
+    hostScenes.some(scene => scene.name === value) ||
     value === 'failure' ||
     value === 'complete'
   );
@@ -202,26 +213,42 @@ async function loadTheme(theme: ThemeName): Promise<ThemeFileValue> {
   return Schema.decodeUnknownSync(ThemeFile)(value);
 }
 
-function expectedToken(scenario: Scenario): string {
+function expectedTokens(scenario: Scenario): readonly string[] {
+  const host = hostScenes.find(item => item.name === scenario);
+  if (host) return [host.expectedToken];
+  if (scenario.startsWith('catalog-')) {
+    const catalog: CatalogScene | undefined = catalogScenes.find(
+      item => item.name === scenario,
+    );
+    if (catalog)
+      return [
+        catalog.expectedToken,
+        ...('expectedTokens' in catalog ? catalog.expectedTokens : []),
+      ];
+  }
+  if (scenario.startsWith('diff-')) return ['previousIds', '+3', 'nextCursor'];
   switch (scenario) {
     case 'baseline':
-      return 'pi v0.85.1';
+      return ['pi v0.85.1'];
     case 'welcome':
-      return 'Welcome back!';
+      return ['Welcome back!'];
     case 'work':
-      return '3 matches';
+      return ['3 matches'];
     case 'diff':
-      return 'deduplicate';
+      return ['previousIds'];
     case 'failure':
-      return 'Test failed';
+      return ['Test failed'];
     case 'complete':
-      return '8 passed';
+      return ['8 passed'];
+    default:
+      throw new Error(`Missing capture token for ${scenario}`);
   }
 }
 
 async function createIsolatedPaths(
   theme: ThemeName,
   quietStartup: boolean,
+  scenario: Scenario,
 ): Promise<IsolatedPaths> {
   const root = await mkdtemp(join(tmpdir(), 'pi-ui-direction-'));
   const agent = join(root, 'agent');
@@ -242,11 +269,16 @@ async function createIsolatedPaths(
     JSON.stringify(
       {
         providers: {
-          preview: {
+          [scenario === 'catalog-host-daxnuts' ? 'opencode' : 'preview']: {
             baseUrl: 'http://127.0.0.1:9/v1',
             api: 'openai-completions',
             apiKey: 'preview-only-no-network',
-            models: [{id: 'preview'}],
+            models: [
+              {
+                id:
+                  scenario === 'catalog-host-daxnuts' ? 'kimi-k2.5' : 'preview',
+              },
+            ],
           },
         },
       },
@@ -254,6 +286,22 @@ async function createIsolatedPaths(
       2,
     ),
   );
+  if (scenario === 'catalog-extension-error') {
+    // Run the real host error path without publishing local repository paths.
+    // The stack is fixture content, just like the error message.
+    await writeFile(
+      join(root, 'fixture-extension.ts'),
+      `
+export default function extension(pi) {
+  pi.on('session_start', () => {
+    const error = new Error('fixture handler failed; retry with /reload');
+    error.stack = 'Error: fixture handler failed; retry with /reload\\n    at sampleHandler (fixture-extension.ts:3:11)';
+    throw error;
+  });
+}
+`,
+    );
+  }
   return {root, agent, sessions, config, data};
 }
 
@@ -293,7 +341,7 @@ function oscLauncher(foreground: string, background: string): string {
   return `printf %b "\\033]10;${foreground}\\a\\033]11;${background}\\a"; command=$1; shift; exec "$command" "$@"`;
 }
 
-function piArguments(options: RunnerOptions): string[] {
+function piArguments(options: RunnerOptions, paths: IsolatedPaths): string[] {
   const argumentsList = [
     '--offline',
     '--no-extensions',
@@ -304,9 +352,9 @@ function piArguments(options: RunnerOptions): string[] {
     '--no-approve',
     '--no-builtin-tools',
     '--provider',
-    'preview',
+    options.scenario === 'catalog-host-daxnuts' ? 'opencode' : 'preview',
     '--model',
-    'preview',
+    options.scenario === 'catalog-host-daxnuts' ? 'kimi-k2.5' : 'preview',
     '--theme',
     themePath(options.theme),
     '--use-theme',
@@ -315,7 +363,22 @@ function piArguments(options: RunnerOptions): string[] {
     'fullscreen',
   ];
   if (options.scenario !== 'baseline') {
-    argumentsList.push('-e', EXTENSION_PATH);
+    argumentsList.push(
+      '-e',
+      options.scenario === 'catalog-extension-error'
+        ? join(paths.root, 'fixture-extension.ts')
+        : options.scenario.startsWith('catalog-host-')
+          ? resolve(
+              REPOSITORY_ROOT,
+              'prototypes/ui-direction/catalog-host-scenes.ts',
+            )
+          : options.scenario.startsWith('catalog-')
+            ? resolve(
+                REPOSITORY_ROOT,
+                'prototypes/ui-direction/catalog-extension.ts',
+              )
+            : EXTENSION_PATH,
+    );
   }
   return argumentsList;
 }
@@ -551,6 +614,7 @@ async function runCapture(options: RunnerOptions): Promise<void> {
   const paths = await createIsolatedPaths(
     options.theme,
     options.scenario !== 'baseline',
+    options.scenario,
   );
   let terminal: TerminalControl | undefined;
   let session: Session | undefined;
@@ -572,7 +636,7 @@ async function runCapture(options: RunnerOptions): Promise<void> {
     const pi = [
       process.execPath,
       PI_CLI_PATH,
-      ...piArguments(options),
+      ...piArguments(options, paths),
     ] as const;
     session = await terminal.launch({
       command: [
@@ -590,10 +654,23 @@ async function runCapture(options: RunnerOptions): Promise<void> {
       env: launchEnvironment(paths, theme, options.scenario, options.theme),
     });
 
-    await waitForReady(session, expectedToken(options.scenario));
-    await captureScreen(session, options, theme, 'main', [
-      expectedToken(options.scenario),
-    ]);
+    const hostScene = hostScenes.find(item => item.name === options.scenario);
+    if (hostScene && 'command' in hostScene) {
+      await waitForReady(
+        session,
+        options.scenario === 'catalog-host-daxnuts' ? 'kimi-k2.5' : 'preview',
+      );
+      await session.keyboard.type(hostScene.command);
+      await session.keyboard.press('Enter');
+      if (options.scenario === 'catalog-host-daxnuts')
+        await session.keyboard.press('Enter');
+    }
+    const tokens = expectedTokens(options.scenario);
+    const readyToken = tokens[0];
+    if (readyToken === undefined)
+      throw new Error('Scene needs a capture token');
+    await waitForReady(session, readyToken);
+    await captureScreen(session, options, theme, 'main', tokens);
     if (options.scenario === 'welcome') {
       await captureSettingsAndRestore(session, options, theme);
     } else if (options.scenario === 'work') {

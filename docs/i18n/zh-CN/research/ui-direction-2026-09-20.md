@@ -6,6 +6,8 @@
 
 **状态:** 讨论提案, 尚未批准为生产规格. 研究日期: 2026-09-20. 任务: [#99](https://github.com/jczhang02/pi-stuff/issues/99), Beads `pi-stuff-cgl.1`. 基线: `cd0f174`. Pi 宿主: `0.85.1`; Bun: `1.4.0`.
 
+后续修订新增[当前 conversation 逐项配图与三种语法高亮 diff 方案](conversation-coverage-2026-09-20.md). 以新报告和更新后的画廊为准, 下文单一 diff 预览属于前一轮方案.
+
 ## 已有内容与需要处理的地方
 
 当前 Pi Stuff 在 `index.ts` 注册 Web 和 RTK; `/rtk` 是现有自定义面板, 主题也已经实现. 本基线还没有会话 UI、工具展示层或共享诊断. 原生 Pi 仍提供会话、输入框、模型/会话选择器及自己的工具展示. 会话身份/命名、Goal、Todo、subagents、后台工作、BTW 和通知明确不在本轮范围内.
