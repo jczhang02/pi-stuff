@@ -452,11 +452,35 @@ export class Coordinator {
     };
     await this.update(record => {
       this.assertAdmissionOpen();
+      const currentAgent = record.agents.find(
+        candidate => candidate.id === agent.id,
+      );
       if (
+        !currentAgent ||
         this.controls.isReleasing(agent.id) ||
-        record.agents.find(candidate => candidate.id === agent.id)?.released
+        currentAgent.released
       )
         throw new Error('Workspace is releasing or released.');
+      if (input.recovery && !currentAgent.held)
+        throw new Error(
+          'Recovery requires a held agent queue. Use an ordinary follow-up to preserve FIFO order.',
+        );
+      if (currentAgent.held && !input.recovery)
+        throw new Error('Agent queue is held. Select explicit recovery first.');
+      // Cancellation holds the agent before its execution reaches ended. Keep
+      // recovery behind that live transaction so it cannot clear the hold early.
+      if (
+        input.recovery &&
+        record.tasks.some(
+          candidate =>
+            candidate.agentId === agent.id &&
+            candidate.phase !== 'queued' &&
+            candidate.phase !== 'ended',
+        )
+      )
+        throw new Error(
+          'Recovery must wait until the previous execution stops.',
+        );
       const currentCeiling = caller
         ? this.effectiveTools(caller)
         : this.host.tools();
@@ -464,9 +488,7 @@ export class Coordinator {
         task.currentTools.some(
           tool =>
             !currentCeiling.includes(tool) ||
-            !record.agents
-              .find(candidate => candidate.id === agent.id)
-              ?.currentTools.includes(tool),
+            !currentAgent.currentTools.includes(tool),
         )
       )
         throw new Error('Tool permissions changed before follow-up admission.');

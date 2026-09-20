@@ -455,6 +455,16 @@ export function resolveFollowup(
         configError('Follow-up assignments cannot select a new role.'),
       );
     }
+    if (
+      overrides.workspace !== undefined &&
+      overrides.workspace !== saved.workspace
+    ) {
+      return yield* Effect.fail(
+        configError(
+          'Follow-up assignments cannot change the retained workspace mode; create a new agent for a different workspace.',
+        ),
+      );
+    }
     const baseline = overrides.baseline ?? saved.baseline;
     const executionTimeoutMs =
       overrides.executionTimeoutMs ?? saved.executionTimeoutMs;

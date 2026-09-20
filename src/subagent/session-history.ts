@@ -1,11 +1,13 @@
 import type {
   ExtensionContext,
-  SessionEntry,
   SessionHeader,
 } from '@earendil-works/pi-coding-agent';
 import {randomUUID} from 'node:crypto';
 import {Schema} from 'effect';
-import {decodeSessionRecord} from './session-records';
+import {
+  decodeSessionRecord,
+  type PersistedSessionEntry,
+} from './session-records';
 
 export const PARENT_HISTORY_TYPE = 'parent-history' as const;
 export const PARENT_HISTORY_VERSION = 1 as const;
@@ -16,7 +18,7 @@ export interface ParentHistorySnapshot {
   readonly version: typeof PARENT_HISTORY_VERSION;
   readonly sourceSessionId: string;
   readonly cwd: string;
-  readonly entries: readonly SessionEntry[];
+  readonly entries: readonly PersistedSessionEntry[];
 }
 
 export interface ForkControlDetails {
@@ -53,7 +55,7 @@ export function decodeParentHistory(serialized: string): ParentHistorySnapshot {
   };
 }
 
-function isContextEntry(entry: SessionEntry): boolean {
+function isContextEntry(entry: PersistedSessionEntry): boolean {
   switch (entry.type) {
     case 'message':
     case 'custom_message':
@@ -65,6 +67,7 @@ function isContextEntry(entry: SessionEntry): boolean {
     case 'custom':
     case 'label':
     case 'session_info':
+    case 'usage': // Accounting records are retained on disk, not copied as context.
       return false;
   }
 }
@@ -81,7 +84,7 @@ function createForkControlEntry(
   parentId: string | null,
   timestamp: string,
   details: ForkControlDetails,
-): SessionEntry {
+): PersistedSessionEntry {
   return {
     type: 'custom_message',
     id,
@@ -94,7 +97,9 @@ function createForkControlEntry(
   };
 }
 
-function sanitizeToolPairs(entries: SessionEntry[]): SessionEntry[] {
+function sanitizeToolPairs(
+  entries: PersistedSessionEntry[],
+): PersistedSessionEntry[] {
   const callsById = new Map<string, ToolCallReference[]>();
   const callsByPosition = new Map<string, ToolCallReference>();
   const resultById = new Map<string, number>();
@@ -195,7 +200,9 @@ function sanitizeToolPairs(entries: SessionEntry[]): SessionEntry[] {
   return next;
 }
 
-function rebaseEntries(entries: SessionEntry[]): SessionEntry[] {
+function rebaseEntries(
+  entries: PersistedSessionEntry[],
+): PersistedSessionEntry[] {
   const sourceToChildId = new Map<string, string>();
   const childIds = entries.map(() => randomUUID());
   for (const [index, entry] of entries.entries()) {
@@ -242,8 +249,10 @@ function rebaseEntries(entries: SessionEntry[]): SessionEntry[] {
   });
 }
 
-function cloneEntries(entries: readonly SessionEntry[]): SessionEntry[] {
-  let cloned: SessionEntry[];
+function cloneEntries(
+  entries: readonly PersistedSessionEntry[],
+): PersistedSessionEntry[] {
+  let cloned: PersistedSessionEntry[];
   try {
     cloned = structuredClone([...entries]);
     JSON.stringify(cloned);
@@ -282,7 +291,7 @@ export function captureParentHistory(
 
 export function prepareHistoryEntries(
   snapshot: ParentHistorySnapshot,
-): SessionEntry[] {
+): PersistedSessionEntry[] {
   const candidate = decodeParentHistory(JSON.stringify(snapshot));
   const entries = cloneEntries(candidate.entries);
   return rebaseEntries(sanitizeToolPairs(entries));

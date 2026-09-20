@@ -29,6 +29,28 @@ const usage = Schema.Struct({
     total: Schema.Number,
   }),
 });
+// Pi 0.86 records prompt/tool changes in the transcript. Keep these as host
+// records, without pretending they are part of the pinned 0.85 SDK union.
+const systemMessage = Schema.Struct({
+  role: Schema.Literal('system'),
+  content: Schema.Union([Schema.String, Schema.mutable(Schema.Array(text))]),
+  sections: Schema.optionalKey(
+    Schema.Record(Schema.String, Schema.NullOr(Schema.String)),
+  ),
+  toolsAdded: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        description: Schema.String,
+        parameters: Schema.Record(Schema.String, Schema.MutableJson),
+      }),
+    ),
+  ),
+  toolsRemoved: Schema.optionalKey(
+    Schema.Array(Schema.Struct({name: Schema.String})),
+  ),
+  timestamp: Schema.Number,
+});
 const message = Schema.Union([
   Schema.Struct({
     role: Schema.Literal('user'),
@@ -169,7 +191,29 @@ const summary = {
   usage: Schema.optionalKey(usage),
   fromHook: Schema.optionalKey(Schema.Boolean),
 };
+const systemEntry = Schema.Struct({
+  ...base,
+  type: Schema.Literal('message'),
+  message: systemMessage,
+});
+const usageEntry = Schema.Struct({
+  ...base,
+  type: Schema.Literal('usage'),
+  kind: Schema.String,
+  provider: Schema.String,
+  model: Schema.String,
+  usage,
+  note: Schema.optionalKey(Schema.String),
+});
+
+export type PersistedSessionEntry =
+  | SessionEntry
+  | typeof systemEntry.Type
+  | typeof usageEntry.Type;
+
 const Entry = Schema.Union([
+  systemEntry,
+  usageEntry,
   Schema.Struct({...base, type: Schema.Literal('message'), message}),
   Schema.Struct({
     ...base,
@@ -188,6 +232,7 @@ const Entry = Schema.Union([
     type: Schema.Literal('compaction'),
     firstKeptEntryId: Schema.String,
     tokensBefore: Schema.Number,
+    systemMessage: Schema.optionalKey(systemMessage),
   }),
   Schema.Struct({
     ...base,
@@ -222,14 +267,15 @@ const Entry = Schema.Union([
   }),
 ]);
 
-/** Validate Pi's pinned persisted entry shape before handing it back to the SDK. */
-export function decodeSessionRecord(serialized: string): SessionEntry {
+/** Validate retained host records before the executing host's SDK opens them. */
+export function decodeSessionRecord(serialized: string): PersistedSessionEntry {
   const entry = Schema.decodeUnknownSync(Schema.fromJsonString(Entry), {
     onExcessProperty: 'preserve',
   })(serialized);
   if (entry.type === 'label') return {...entry, label: entry.label};
   if (entry.type === 'message') {
     const value = entry.message;
+    if (value.role === 'system') return {...entry, message: value};
     return {
       ...entry,
       message:

@@ -9,7 +9,6 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type ExtensionContext,
-  type SessionEntry,
   type SessionHeader,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
@@ -27,7 +26,10 @@ import {
 } from './session-history';
 import {registerWeb} from '../web/register';
 import {trackedBashOperations} from './processes';
-import {decodeSessionRecord} from './session-records';
+import {
+  decodeSessionRecord,
+  type PersistedSessionEntry,
+} from './session-records';
 import type {ChildActivity} from './activity';
 
 export {
@@ -243,7 +245,7 @@ function decodeSessionEntry(
   line: string,
   path: string,
   lineNumber: number,
-): SessionEntry {
+): PersistedSessionEntry {
   try {
     return decodeSessionRecord(line);
   } catch (error) {
@@ -304,7 +306,7 @@ async function syncDirectory(path: string): Promise<void> {
 async function persistSessionState(
   path: string,
   header: SessionHeader,
-  entries: readonly SessionEntry[],
+  entries: readonly PersistedSessionEntry[],
 ): Promise<void> {
   await mkdir(dirname(path), {recursive: true});
   const temporary = `${path}.${randomUUID()}.tmp`;

@@ -1,6 +1,7 @@
 import type {AgentSessionEvent} from '@earendil-works/pi-coding-agent';
 import {Option, Schema} from 'effect';
 import type {TaskRecord} from './records';
+import type {PersistedSessionEntry} from './session-records';
 
 const TextResult = Schema.Struct({
   content: Schema.Array(
@@ -14,10 +15,47 @@ const TextResult = Schema.Struct({
 export type ChildActivity =
   | AgentSessionEvent
   | {
+      type: 'entry_appended';
+      entry: Extract<PersistedSessionEntry, {type: 'usage'}>;
+    }
+  | {
       type: 'resources_loaded';
       rules: readonly string[];
       skills: readonly string[];
     };
+
+type ActivityUsage = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  cost: {total: number};
+};
+
+function addUsage(
+  task: TaskRecord,
+  usage: ActivityUsage | undefined,
+): TaskRecord {
+  if (usage === undefined) return task;
+  const previous = task.usage ?? {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0,
+  };
+  return {
+    ...task,
+    usage: {
+      input: previous.input + usage.input,
+      output: previous.output + usage.output,
+      cacheRead: previous.cacheRead + usage.cacheRead,
+      cacheWrite: previous.cacheWrite + usage.cacheWrite,
+      cost: previous.cost + usage.cost.total,
+    },
+  };
+}
 
 export function observeActivity(
   task: TaskRecord,
@@ -74,6 +112,8 @@ export function observeActivity(
         event.message.role === 'branchSummary'
       )
         return append(event.message.role, event.message.summary);
+      if (event.message.role === 'toolResult')
+        return addUsage(task, event.message.usage);
       if (event.message.role !== 'assistant') return task;
       const message = event.message;
       const text = message.content
@@ -85,26 +125,14 @@ export function observeActivity(
         liveText: '',
         turns: task.turns + 1,
       };
-      const usage = message.usage;
-      if (usage.totalTokens === 0) return next;
-      const previous = task.usage ?? {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        cost: 0,
-      };
-      return {
-        ...next,
-        usage: {
-          input: previous.input + usage.input,
-          output: previous.output + usage.output,
-          cacheRead: previous.cacheRead + usage.cacheRead,
-          cacheWrite: previous.cacheWrite + usage.cacheWrite,
-          cost: previous.cost + usage.cost.total,
-        },
-      };
+      return addUsage(next, message.usage);
     }
+    case 'compaction_end':
+      return addUsage(task, event.result?.usage);
+    case 'entry_appended':
+      return event.entry.type === 'usage'
+        ? addUsage(task, event.entry.usage)
+        : task;
     case 'tool_execution_start':
       return {
         ...append(
@@ -141,6 +169,8 @@ export function observeActivity(
       };
     }
     case 'tool_execution_end': {
+      // The following message_end event persists the same tool result and is the
+      // usage source. Counting event.result here would charge the tool twice.
       const decoded = Schema.decodeUnknownOption(TextResult)(event.result);
       const result = Option.isSome(decoded)
         ? decoded.value.content

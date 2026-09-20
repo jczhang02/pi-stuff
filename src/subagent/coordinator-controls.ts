@@ -74,6 +74,10 @@ export class CoordinatorControls {
       throw new Error(
         'restrict requires taskId, tools and current task ownership.',
       );
+    if (!input.tools.includes('subagent'))
+      throw new Error(
+        'Restrictions must retain the subagent control tool for finish and communication; use cancel to stop a task.',
+      );
     if (
       input.tools.some(
         tool => !this.host.task(input.taskId ?? '').currentTools.includes(tool),
