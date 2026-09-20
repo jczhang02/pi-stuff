@@ -1,0 +1,40 @@
+
+ • Edit(src/search/paginate.ts)
+   ⎿  Successfully replaced 1 block in src/search/paginate.ts.
+     - 3   return {items, nextCursor: page.cursor};
+     + 3   const unique = page.items.filter(item => !seen.has(item.id));
+     + 4   return {items: unique, nextCursor: page.cursor};
+
+ • Bash(bun test tests/search/paginate.test.ts)
+   ⎿  Success · 8 pass
+     8 pass
+     0 fail
+     Ran 8 tests across 1 file.
+
+ • Fix pagination
+
+   The boundary now keeps the first result and carries previousIds forward.
+
+   - preserve order
+   - add a regression test
+
+   ┌──────┬──────────┐
+   │ page │ kept     │
+   ├──────┼──────────┤
+   │ 2    │ result-3 │
+   └──────┴──────────┘
+
+   ```ts
+     return paginate(page, previousIds);
+   ```
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

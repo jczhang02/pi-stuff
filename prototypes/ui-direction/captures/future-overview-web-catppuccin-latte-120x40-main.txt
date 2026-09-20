@@ -1,0 +1,40 @@
+
+  Find the cursor pagination reference and read its guidance.
+
+ • web_search(pagination cursor deduplication)
+   ⎿  1 result · exa
+     1. Cursor pagination guide
+     url: https://example.invalid/pagination
+     snippet: preserve order while advancing the cursor
+     item=0 · contentId=48718f6f-718a-4583-a17d-b99be0365d1e · offset=0 · nextOffset=232 · totalLength=232 ·
+     truncated=false · provider=exa · selection=preferred · fallback=false · source=example.invalid
+
+ • fetch_content(https://example.invalid/pagination)
+   ⎿  Content retrieved
+
+     Pagination notes
+
+     Use the cursor from the previous page and filter IDs before returning the next page.
+     item=0 · contentId=63c5e379-0a92-419f-b74c-e6ab0268bdc5 · offset=0 · nextOffset=104 · totalLength=104 ·
+     truncated=false
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

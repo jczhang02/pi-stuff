@@ -6,6 +6,7 @@ import {parseArgs} from 'node:util';
 import {Effect, Schema} from 'effect';
 import {catalogScenes, type CatalogScene} from './catalog-scenes';
 import {hostScenes} from './catalog-host-scenes';
+import {futureScenes, futureOverviews} from './future-scenes';
 import {
   TerminalControl,
   type Color,
@@ -67,7 +68,9 @@ type Scenario =
   | 'diff-split'
   | 'diff-paired'
   | (typeof catalogScenes)[number]['name']
-  | (typeof hostScenes)[number]['name'];
+  | (typeof hostScenes)[number]['name']
+  | (typeof futureScenes)[number]['name']
+  | (typeof futureOverviews)[number]['name'];
 type ThemeFileValue = Schema.Schema.Type<typeof ThemeFile>;
 
 type RunnerOptions = {
@@ -106,6 +109,8 @@ function isScenario(value: string): value is Scenario {
     ['diff-unified', 'diff-split', 'diff-paired'].includes(value) ||
     catalogScenes.some(scene => scene.name === value) ||
     hostScenes.some(scene => scene.name === value) ||
+    futureScenes.some(scene => scene.name === value) ||
+    futureOverviews.some(scene => scene.name === value) ||
     value === 'failure' ||
     value === 'complete'
   );
@@ -214,6 +219,10 @@ async function loadTheme(theme: ThemeName): Promise<ThemeFileValue> {
 }
 
 function expectedTokens(scenario: Scenario): readonly string[] {
+  const future = [...futureScenes, ...futureOverviews].find(
+    item => item.name === scenario,
+  );
+  if (future) return future.tokens;
   const host = hostScenes.find(item => item.name === scenario);
   if (host) return [host.expectedToken];
   if (scenario.startsWith('catalog-')) {
@@ -365,19 +374,24 @@ function piArguments(options: RunnerOptions, paths: IsolatedPaths): string[] {
   if (options.scenario !== 'baseline') {
     argumentsList.push(
       '-e',
-      options.scenario === 'catalog-extension-error'
-        ? join(paths.root, 'fixture-extension.ts')
-        : options.scenario.startsWith('catalog-host-')
-          ? resolve(
-              REPOSITORY_ROOT,
-              'prototypes/ui-direction/catalog-host-scenes.ts',
-            )
-          : options.scenario.startsWith('catalog-')
+      options.scenario.startsWith('future-')
+        ? resolve(
+            REPOSITORY_ROOT,
+            'prototypes/ui-direction/future-extension.ts',
+          )
+        : options.scenario === 'catalog-extension-error'
+          ? join(paths.root, 'fixture-extension.ts')
+          : options.scenario.startsWith('catalog-host-')
             ? resolve(
                 REPOSITORY_ROOT,
-                'prototypes/ui-direction/catalog-extension.ts',
+                'prototypes/ui-direction/catalog-host-scenes.ts',
               )
-            : EXTENSION_PATH,
+            : options.scenario.startsWith('catalog-')
+              ? resolve(
+                  REPOSITORY_ROOT,
+                  'prototypes/ui-direction/catalog-extension.ts',
+                )
+              : EXTENSION_PATH,
     );
   }
   return argumentsList;
@@ -608,6 +622,52 @@ async function captureWorkInteractions(
   await captureSettingsAndRestore(session, options, theme);
 }
 
+async function captureFutureInteractions(
+  session: Session,
+  options: RunnerOptions,
+  theme: ThemeFileValue,
+): Promise<void> {
+  const detail = 'return {items: unique';
+  const draft = 'Keep the cursor unchanged';
+  await session.keyboard.type(draft);
+  for (const expanded of [false, true]) {
+    const screen = await session.screen.text();
+    const y = screen.split('\n').findIndex(line => line.includes('Read('));
+    if (y < 0) throw new Error('Future Read heading is not visible');
+    await session.mouse({action: 'click', x: 3, y, button: 'left'});
+    await session.screen.waitUntil(
+      snapshot => snapshot.text.includes(detail) === expanded,
+      {timeoutMs: WAIT_TIMEOUT_MS},
+    );
+    const captured = await captureScreen(
+      session,
+      options,
+      theme,
+      expanded ? 'mouse-expanded' : 'mouse-collapsed',
+      [draft, expanded ? detail : 'more lines'],
+    );
+    if (!tailContains(captured.text, draft))
+      throw new Error('Mouse expansion lost the editor draft');
+  }
+  // The initial global setting is collapsed; the scene starts this Read expanded.
+  await session.keyboard.press('Control+O');
+  await session.keyboard.press('Control+O');
+  await session.screen.waitUntil(snapshot => !snapshot.text.includes(detail), {
+    timeoutMs: WAIT_TIMEOUT_MS,
+  });
+  await session.keyboard.press('Control+O');
+  await session.screen.waitForText(detail, {timeoutMs: WAIT_TIMEOUT_MS});
+  const captured = await captureScreen(
+    session,
+    options,
+    theme,
+    'keyboard-expanded',
+    [detail, draft],
+  );
+  if (!tailContains(captured.text, draft))
+    throw new Error('Keyboard expansion lost the editor draft');
+}
+
 async function runCapture(options: RunnerOptions): Promise<void> {
   await mkdir(options.outputDirectory, {recursive: true});
   const theme = await loadTheme(options.theme);
@@ -671,7 +731,9 @@ async function runCapture(options: RunnerOptions): Promise<void> {
       throw new Error('Scene needs a capture token');
     await waitForReady(session, readyToken);
     await captureScreen(session, options, theme, 'main', tokens);
-    if (options.scenario === 'welcome') {
+    if (options.scenario === 'future-tool-read') {
+      await captureFutureInteractions(session, options, theme);
+    } else if (options.scenario === 'welcome') {
       await captureSettingsAndRestore(session, options, theme);
     } else if (options.scenario === 'work') {
       await captureWorkInteractions(session, options, theme);

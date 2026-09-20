@@ -1,0 +1,2133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Pi Stuff · Conversation 与 diff 对照</title
+  ><style>
+    :root {
+      color-scheme: light;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #faf9f6;
+      color: #24252b;
+      font:
+        16px/1.7 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 1540px;
+      margin: auto;
+      padding: 40px 28px;
+    }
+    header {
+      max-width: 1000px;
+    }
+    h1 {
+      font-size: 32px;
+      line-height: 1.3;
+    }
+    h2 {
+      font-size: 24px;
+      margin: 0 0 10px;
+    }
+    h3 {
+      font-size: 18px;
+      margin: 0;
+    }
+    p {
+      margin: 8px 0 16px;
+    }
+    a {
+      color: #59419a;
+      text-underline-offset: 3px;
+    }
+    nav {
+      display: flex;
+      gap: 12px 24px;
+      flex-wrap: wrap;
+      margin: 20px 0;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px;
+    }
+    figure {
+      margin: 0;
+      min-width: 0;
+    }
+    figure p {
+      font-size: 14px;
+      color: #62636c;
+    }
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid #dddce1;
+      border-radius: 6px;
+    }
+    article {
+      padding: 28px 0;
+      border-top: 1px solid #dddce1;
+      scroll-margin-top: 16px;
+    }
+    .section {
+      margin-top: 50px;
+    }
+    .evidence {
+      margin-top: 8px;
+    }
+    footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #dddce1;
+      color: #62636c;
+      font-size: 14px;
+    }
+    @media (max-width: 950px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      main {
+        padding: 24px 16px;
+      }
+    }
+  </style>
+  <main>
+    <header>
+      <h1>当前样式 · 研究参考</h1>
+      <p><a href="gallery.html">返回未来 UI 预览</a></p>
+      <p>
+        先确认当前产品会显示什么, 再比较新的 edit/diff 样式. 原生目录使用当前 Pi
+        / Pi Stuff 的组件和示例数据; A/B/C 是待讨论的设计候选, 没有改变生产入口.
+      </p>
+      <p>
+        图片来自真实 Pi 0.85.1 终端运行. 点击查看原始尺寸. 页面说明属于评审材料,
+        不占用被评估的终端界面.
+      </p>
+      <nav>
+        <a href="#diff-unified">A 统一 diff</a
+        ><a href="#diff-split">B 左右对照</a
+        ><a href="#diff-paired">C 前后代码块</a
+        ><a href="#current">当前 conversation 清单</a
+        ><a href="#shell">保留的整体预览</a>
+      </nav>
+      <nav>
+        <a
+          href="../../docs/i18n/zh-CN/research/conversation-coverage-2026-09-20.md"
+          >逐项覆盖与研究依据</a
+        ><a href="README.md">运行与验证边界</a>
+      </nav>
+    </header>
+    <section>
+      <article id="diff-unified">
+        <h2>A · 统一 diff</h2>
+        <p>
+          双行号与增删符号保留变化方向, 正文按 TypeScript 高亮,
+          新逻辑下划线强调.
+        </p>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>浅色 · 120 列</h3>
+              <p>同一文件、同一修改、同一会话.</p>
+            </figcaption>
+            <a
+              href="captures/diff-unified-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/diff-unified-catppuccin-latte-120x40-main.png"
+                alt="浅色 · 120 列"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a href="captures/diff-unified-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a href="captures/diff-unified-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a href="captures/diff-unified-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>深色 · 120 列</h3>
+              <p>语法颜色与增删方向分开.</p>
+            </figcaption>
+            <a
+              href="captures/diff-unified-catppuccin-mocha-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/diff-unified-catppuccin-mocha-120x40-main.png"
+                alt="深色 · 120 列"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a href="captures/diff-unified-catppuccin-mocha-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a href="captures/diff-unified-catppuccin-mocha-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a href="captures/diff-unified-catppuccin-mocha-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>窄屏 · 80 列</h3>
+              <p>检查换行与缩进, 不裁掉代码.</p>
+            </figcaption>
+            <a
+              href="captures/diff-unified-catppuccin-latte-80x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/diff-unified-catppuccin-latte-80x40-main.png"
+                alt="窄屏 · 80 列"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a href="captures/diff-unified-catppuccin-latte-80x40-main.png"
+                >原图</a
+              >
+              ·
+              <a href="captures/diff-unified-catppuccin-latte-80x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a href="captures/diff-unified-catppuccin-latte-80x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="diff-split">
+        <h2>B · 左右对照</h2>
+        <p>同一修改左右对照, 长行在各栏内换行. 小于 110 列回退为统一 diff.</p>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>浅色 · 120 列</h3>
+              <p>同一文件、同一修改、同一会话.</p>
+            </figcaption>
+            <a
+              href="captures/diff-split-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/diff-split-catppuccin-latte-120x40-main.png"
+                alt="浅色 · 120 列"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a href="captures/diff-split-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a href="captures/diff-split-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a href="captures/diff-split-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>深色 · 120 列</h3>
+              <p>语法颜色与增删方向分开.</p>
+            </figcaption>
+            <a
+              href="captures/diff-split-catppuccin-mocha-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/diff-split-catppuccin-mocha-120x40-main.png"
+                alt="深色 · 120 列"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a href="captures/diff-split-catppuccin-mocha-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a href="captures/diff-split-catppuccin-mocha-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a href="captures/diff-split-catppuccin-mocha-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>窄屏 · 80 列</h3>
+              <p>检查换行与缩进, 不裁掉代码.</p>
+            </figcaption>
+            <a
+              href="captures/diff-split-catppuccin-latte-80x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/diff-split-catppuccin-latte-80x40-main.png"
+                alt="窄屏 · 80 列"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a href="captures/diff-split-catppuccin-latte-80x40-main.png"
+                >原图</a
+              >
+              ·
+              <a href="captures/diff-split-catppuccin-latte-80x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a href="captures/diff-split-catppuccin-latte-80x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="diff-paired">
+        <h2>C · 前后代码块</h2>
+        <p>先看修改前, 再看修改后. 两块保留语法高亮, 仅实际变更行标注增删.</p>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>浅色 · 120 列</h3>
+              <p>同一文件、同一修改、同一会话.</p>
+            </figcaption>
+            <a
+              href="captures/diff-paired-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/diff-paired-catppuccin-latte-120x40-main.png"
+                alt="浅色 · 120 列"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a href="captures/diff-paired-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a href="captures/diff-paired-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a href="captures/diff-paired-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>深色 · 120 列</h3>
+              <p>语法颜色与增删方向分开.</p>
+            </figcaption>
+            <a
+              href="captures/diff-paired-catppuccin-mocha-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/diff-paired-catppuccin-mocha-120x40-main.png"
+                alt="深色 · 120 列"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a href="captures/diff-paired-catppuccin-mocha-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a href="captures/diff-paired-catppuccin-mocha-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a href="captures/diff-paired-catppuccin-mocha-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>窄屏 · 80 列</h3>
+              <p>检查换行与缩进, 不裁掉代码.</p>
+            </figcaption>
+            <a
+              href="captures/diff-paired-catppuccin-latte-80x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/diff-paired-catppuccin-latte-80x40-main.png"
+                alt="窄屏 · 80 列"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a href="captures/diff-paired-catppuccin-latte-80x40-main.png"
+                >原图</a
+              >
+              ·
+              <a href="captures/diff-paired-catppuccin-latte-80x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a href="captures/diff-paired-catppuccin-latte-80x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+    </section>
+    <section class="section" id="current">
+      <h1>当前 conversation · 逐项配图</h1>
+      <p>
+        以下按原生消息、工具、当前扩展、条件宿主内容分类.
+        图注区分直接调用的原生组件与宿主内部样式复现;
+        旧版独有和尚未实现的功能不计入. 网络、模型和命令结果为隔离样例.
+        已存在的诊断提示仍列出, 不重新设计通知功能.
+      </p>
+      <nav>
+        <a href="#catalog-0">conversation</a
+        ><a href="#catalog-1">built-in tools</a><a href="#catalog-2">Web</a
+        ><a href="#catalog-3">RTK</a><a href="#catalog-4">shell</a
+        ><a href="#catalog-5">session summaries</a
+        ><a href="#catalog-6">notices</a><a href="#catalog-7">media</a
+        ><a href="#catalog-8">optional extension output</a
+        ><a href="#catalog-9">conditional host output</a
+        ><a href="#catalog-10">adjacent live activity</a
+        ><a href="#catalog-11">conditional appendix</a>
+      </nav>
+      <article id="catalog-0">
+        <h2>conversation</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>User message with Markdown and code</h3>
+              <p>Pi 0.85.1 UserMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-user-markdown-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-user-markdown-catppuccin-latte-120x40-main.png"
+                alt="User message with Markdown and code"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-user-markdown-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-user-markdown-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-user-markdown-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Assistant Markdown and code</h3>
+              <p>Pi 0.85.1 AssistantMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-assistant-markdown-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-assistant-markdown-catppuccin-latte-120x40-main.png"
+                alt="Assistant Markdown and code"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-assistant-markdown-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-markdown-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-markdown-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Assistant thinking collapsed</h3>
+              <p>Pi 0.85.1 AssistantMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-assistant-thinking-collapsed-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-assistant-thinking-collapsed-catppuccin-latte-120x40-main.png"
+                alt="Assistant thinking collapsed"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-assistant-thinking-collapsed-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-thinking-collapsed-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-thinking-collapsed-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Assistant thinking expanded</h3>
+              <p>Pi 0.85.1 AssistantMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-assistant-thinking-expanded-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-assistant-thinking-expanded-catppuccin-latte-120x40-main.png"
+                alt="Assistant thinking expanded"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-assistant-thinking-expanded-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-thinking-expanded-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-thinking-expanded-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Assistant provider error</h3>
+              <p>Pi 0.85.1 AssistantMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-assistant-error-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-assistant-error-catppuccin-latte-120x40-main.png"
+                alt="Assistant provider error"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-assistant-error-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-error-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-error-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Assistant response aborted</h3>
+              <p>Pi 0.85.1 AssistantMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-assistant-aborted-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-assistant-aborted-catppuccin-latte-120x40-main.png"
+                alt="Assistant response aborted"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-assistant-aborted-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-aborted-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-aborted-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Assistant response truncated</h3>
+              <p>Pi 0.85.1 AssistantMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-assistant-truncated-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-assistant-truncated-catppuccin-latte-120x40-main.png"
+                alt="Assistant response truncated"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-assistant-truncated-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-truncated-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-assistant-truncated-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-1">
+        <h2>built-in tools</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Collapsed read, skill read and generic output</h3>
+              <p>
+                Pi 0.85.1 native renderer; static tool data, Web page data via
+                current Content formatter
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-preview-states-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-preview-states-catppuccin-latte-120x40-main.png"
+                alt="Collapsed read, skill read and generic output"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-preview-states-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-preview-states-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-preview-states-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Empty retrieval, missing file and edit failure</h3>
+              <p>
+                Pi 0.85.1 native renderer; static tool data, Web page data via
+                current Content formatter
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-empty-errors-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-empty-errors-catppuccin-latte-120x40-main.png"
+                alt="Empty retrieval, missing file and edit failure"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-empty-errors-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-empty-errors-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-empty-errors-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Bash preview, truncation and timeout</h3>
+              <p>
+                Pi 0.85.1 native renderer; static tool data, Web page data via
+                current Content formatter
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-bash-truncated-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-bash-truncated-catppuccin-latte-120x40-main.png"
+                alt="Bash preview, truncation and timeout"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-bash-truncated-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-bash-truncated-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-bash-truncated-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Built-in read tool</h3>
+              <p>Pi 0.85.1 createReadToolDefinition + ToolExecutionComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-read-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-read-catppuccin-latte-120x40-main.png"
+                alt="Built-in read tool"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-read-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-read-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-read-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Built-in write tool</h3>
+              <p>
+                Pi 0.85.1 createWriteToolDefinition + ToolExecutionComponent
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-write-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-write-catppuccin-latte-120x40-main.png"
+                alt="Built-in write tool"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-write-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-write-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-write-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Built-in edit diff</h3>
+              <p>Pi 0.85.1 createEditToolDefinition + ToolExecutionComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-edit-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-edit-catppuccin-latte-120x40-main.png"
+                alt="Built-in edit diff"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-edit-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-edit-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-edit-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Built-in Bash running, complete and failed</h3>
+              <p>Pi 0.85.1 createBashToolDefinition + ToolExecutionComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-bash-states-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-bash-states-catppuccin-latte-120x40-main.png"
+                alt="Built-in Bash running, complete and failed"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-bash-states-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-bash-states-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-bash-states-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Built-in grep tool</h3>
+              <p>Pi 0.85.1 createGrepToolDefinition + ToolExecutionComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-grep-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-grep-catppuccin-latte-120x40-main.png"
+                alt="Built-in grep tool"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-grep-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-grep-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-grep-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Built-in find tool</h3>
+              <p>Pi 0.85.1 createFindToolDefinition + ToolExecutionComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-find-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-find-catppuccin-latte-120x40-main.png"
+                alt="Built-in find tool"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-find-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-find-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-find-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Built-in ls tool</h3>
+              <p>Pi 0.85.1 createLsToolDefinition + ToolExecutionComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-ls-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-ls-catppuccin-latte-120x40-main.png"
+                alt="Built-in ls tool"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-ls-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-ls-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-ls-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-2">
+        <h2>Web</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Retained Web content paging</h3>
+              <p>
+                Pi 0.85.1 native renderer; static tool data, Web page data via
+                current Content formatter
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-web-page-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-web-page-catppuccin-latte-120x40-main.png"
+                alt="Retained Web content paging"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-web-page-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-page-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-page-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Web batch item error and unavailable content</h3>
+              <p>
+                Pi 0.85.1 native renderer; static tool data, Web page data via
+                current Content formatter
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-web-errors-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-web-errors-catppuccin-latte-120x40-main.png"
+                alt="Web batch item error and unavailable content"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-web-errors-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-errors-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-errors-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Generic Web search output</h3>
+              <p>
+                Pi Stuff src/web/tools.ts formatter + Pi 0.85.1 generic
+                ToolExecutionComponent
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-web-search-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-web-search-catppuccin-latte-120x40-main.png"
+                alt="Generic Web search output"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-web-search-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-search-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-search-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Generic Web fetch content output</h3>
+              <p>
+                Pi Stuff src/web/tools.ts/content.ts formatter + Pi 0.85.1
+                generic ToolExecutionComponent
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-web-content-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-web-content-catppuccin-latte-120x40-main.png"
+                alt="Generic Web fetch content output"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-web-content-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-content-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-content-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Generic Web retained content find output</h3>
+              <p>
+                Pi Stuff src/web/content.ts formatter + Pi 0.85.1 generic
+                ToolExecutionComponent
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-web-page-find-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-web-page-find-catppuccin-latte-120x40-main.png"
+                alt="Generic Web retained content find output"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-web-page-find-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-page-find-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-web-page-find-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-3">
+        <h2>RTK</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>RTK rewrite Bash and failure notice</h3>
+              <p>
+                Pi Stuff src/rtk/register.ts failureNotice + Pi 0.85.1 Bash
+                renderer/ctx.ui.notify(error)
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-rtk-rewrite-failure-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-rtk-rewrite-failure-catppuccin-latte-120x40-main.png"
+                alt="RTK rewrite Bash and failure notice"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-rtk-rewrite-failure-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-rtk-rewrite-failure-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-rtk-rewrite-failure-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>RTK rewritten Bash command success</h3>
+              <p>
+                Static offline reconstruction of Pi Stuff RTK rewrite + Pi
+                0.85.1 Bash renderer
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-rtk-rewrite-success-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-rtk-rewrite-success-catppuccin-latte-120x40-main.png"
+                alt="RTK rewritten Bash command success"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-rtk-rewrite-success-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-rtk-rewrite-success-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-rtk-rewrite-success-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-4">
+        <h2>shell</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Shell cancelled, nonzero exit and truncation</h3>
+              <p>
+                Pi 0.85.1 native renderer; static tool data, Web page data via
+                current Content formatter
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-shell-interrupted-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-shell-interrupted-catppuccin-latte-120x40-main.png"
+                alt="Shell cancelled, nonzero exit and truncation"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-shell-interrupted-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-shell-interrupted-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-shell-interrupted-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Shell ! and !! output</h3>
+              <p>Pi 0.85.1 BashExecutionComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-shell-modes-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-shell-modes-catppuccin-latte-120x40-main.png"
+                alt="Shell ! and !! output"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-shell-modes-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-shell-modes-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-shell-modes-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-5">
+        <h2>session summaries</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Compaction summary collapsed</h3>
+              <p>Pi 0.85.1 CompactionSummaryMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-compaction-collapsed-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-compaction-collapsed-catppuccin-latte-120x40-main.png"
+                alt="Compaction summary collapsed"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-compaction-collapsed-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-compaction-collapsed-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-compaction-collapsed-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Compaction summary expanded</h3>
+              <p>Pi 0.85.1 CompactionSummaryMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-compaction-expanded-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-compaction-expanded-catppuccin-latte-120x40-main.png"
+                alt="Compaction summary expanded"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-compaction-expanded-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-compaction-expanded-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-compaction-expanded-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Branch summary collapsed</h3>
+              <p>Pi 0.85.1 BranchSummaryMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-branch-collapsed-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-branch-collapsed-catppuccin-latte-120x40-main.png"
+                alt="Branch summary collapsed"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-branch-collapsed-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-branch-collapsed-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-branch-collapsed-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Branch summary expanded</h3>
+              <p>Pi 0.85.1 BranchSummaryMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-branch-expanded-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-branch-expanded-catppuccin-latte-120x40-main.png"
+                alt="Branch summary expanded"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-branch-expanded-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-branch-expanded-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-branch-expanded-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Skill invocation collapsed</h3>
+              <p>Pi 0.85.1 SkillInvocationMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-skill-collapsed-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-skill-collapsed-catppuccin-latte-120x40-main.png"
+                alt="Skill invocation collapsed"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-skill-collapsed-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-skill-collapsed-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-skill-collapsed-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Skill invocation expanded</h3>
+              <p>Pi 0.85.1 SkillInvocationMessageComponent</p>
+            </figcaption>
+            <a
+              href="captures/catalog-skill-expanded-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-skill-expanded-catppuccin-latte-120x40-main.png"
+                alt="Skill invocation expanded"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-skill-expanded-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-skill-expanded-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-skill-expanded-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-6">
+        <h2>notices</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Info notice</h3>
+              <p>Pi 0.85.1 ctx.ui.notify(info)</p>
+            </figcaption>
+            <a
+              href="captures/catalog-notice-info-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-notice-info-catppuccin-latte-120x40-main.png"
+                alt="Info notice"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-notice-info-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-notice-info-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-notice-info-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Warning notice</h3>
+              <p>Pi 0.85.1 ctx.ui.notify(warning)</p>
+            </figcaption>
+            <a
+              href="captures/catalog-notice-warning-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-notice-warning-catppuccin-latte-120x40-main.png"
+                alt="Warning notice"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-notice-warning-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-notice-warning-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-notice-warning-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Error notice with retry</h3>
+              <p>Pi 0.85.1 ctx.ui.notify(error)</p>
+            </figcaption>
+            <a
+              href="captures/catalog-notice-error-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-notice-error-catppuccin-latte-120x40-main.png"
+                alt="Error notice with retry"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-notice-error-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-notice-error-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-notice-error-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Extension handler error with reload retry hint</h3>
+              <p>
+                Pi 0.85.1 ExtensionRunner onError +
+                InteractiveMode.showExtensionError
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-extension-error-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-extension-error-catppuccin-latte-120x40-main.png"
+                alt="Extension handler error with reload retry hint"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-extension-error-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-extension-error-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-extension-error-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-7">
+        <h2>media</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Tool image output with text fallback</h3>
+              <p>Pi 0.85.1 ToolExecutionComponent image content</p>
+            </figcaption>
+            <a
+              href="captures/catalog-tool-image-fallback-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-tool-image-fallback-catppuccin-latte-120x40-main.png"
+                alt="Tool image output with text fallback"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-tool-image-fallback-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-image-fallback-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-tool-image-fallback-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-8">
+        <h2>optional extension output</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Custom message native fallback</h3>
+              <p>Pi 0.85.1 CustomMessageComponent default renderer</p>
+            </figcaption>
+            <a
+              href="captures/catalog-custom-message-fallback-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-custom-message-fallback-catppuccin-latte-120x40-main.png"
+                alt="Custom message native fallback"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-custom-message-fallback-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-custom-message-fallback-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-custom-message-fallback-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Custom entry renderer and failure fallback</h3>
+              <p>
+                Pi registerEntryRenderer + appendEntry, actual host fallback
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-host-custom-entry-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-host-custom-entry-catppuccin-latte-120x40-main.png"
+                alt="Custom entry renderer and failure fallback"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-host-custom-entry-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-custom-entry-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-custom-entry-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-9">
+        <h2>conditional host output</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Command text output</h3>
+              <p>
+                Pi handleSessionCommand Text composition, reconstructed fixture
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-host-command-info-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-host-command-info-catppuccin-latte-120x40-main.png"
+                alt="Command text output"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-host-command-info-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-command-info-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-command-info-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Command Markdown and startup changelog</h3>
+              <p>
+                Pi handleChangelogCommand / handleHotkeysCommand composition,
+                reconstructed fixture
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-host-command-markdown-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-host-command-markdown-catppuccin-latte-120x40-main.png"
+                alt="Command Markdown and startup changelog"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-host-command-markdown-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-command-markdown-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-command-markdown-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Version and package update notices</h3>
+              <p>
+                Pi showNewVersionNotification / showPackageUpdateNotification
+                composition, reconstructed fixture
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-host-updates-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-host-updates-catppuccin-latte-120x40-main.png"
+                alt="Version and package update notices"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-host-updates-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-updates-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-updates-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-10">
+        <h2>adjacent live activity</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Working, retry and compaction indicators</h3>
+              <p>
+                Pi StatusIndicator uses Loader; frozen Loader samples, not
+                transcript placement
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-host-activity-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-host-activity-catppuccin-latte-120x40-main.png"
+                alt="Working, retry and compaction indicators"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-host-activity-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-activity-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-activity-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+      <article id="catalog-11">
+        <h2>conditional appendix</h2>
+        <div class="grid">
+          <figure>
+            <figcaption>
+              <h3>Conditional Earendil announcement</h3>
+              <p>Pi /dementedelves command, actual host component</p>
+            </figcaption>
+            <a
+              href="captures/catalog-host-earendil-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-host-earendil-catppuccin-latte-120x40-main.png"
+                alt="Conditional Earendil announcement"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-host-earendil-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-earendil-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-earendil-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Conditional Armin animation</h3>
+              <p>Pi /arminsayshi command, actual host component</p>
+            </figcaption>
+            <a
+              href="captures/catalog-host-armin-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-host-armin-catppuccin-latte-120x40-main.png"
+                alt="Conditional Armin animation"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-host-armin-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-armin-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-armin-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+          <figure>
+            <figcaption>
+              <h3>Conditional OpenCode / Kimi announcement</h3>
+              <p>
+                Pi opencode + kimi-k2.5 model selection condition, actual host
+                component
+              </p>
+            </figcaption>
+            <a
+              href="captures/catalog-host-daxnuts-catppuccin-latte-120x40-main.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="captures/catalog-host-daxnuts-catppuccin-latte-120x40-main.png"
+                alt="Conditional OpenCode / Kimi announcement"
+                loading="lazy"
+            /></a>
+            <p class="evidence">
+              <a
+                href="captures/catalog-host-daxnuts-catppuccin-latte-120x40-main.png"
+                >原图</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-daxnuts-catppuccin-latte-120x40-main.txt"
+                >终端文本</a
+              >
+              ·
+              <a
+                href="captures/catalog-host-daxnuts-catppuccin-latte-120x40-main.ansi"
+                >ANSI</a
+              >
+            </p>
+          </figure>
+        </div>
+      </article>
+    </section>
+    <section class="section" id="shell">
+      <h1>保留的整体预览</h1>
+      <div class="grid">
+        <figure>
+          <figcaption>
+            <h3>欢迎页</h3>
+            <p>沿用 pi-stuff-old 的欢迎框.</p>
+          </figcaption>
+          <a
+            href="captures/welcome-catppuccin-latte-120x40-main.png"
+            target="_blank"
+            rel="noopener"
+            ><img
+              src="captures/welcome-catppuccin-latte-120x40-main.png"
+              alt="欢迎页"
+              loading="lazy"
+          /></a>
+          <p class="evidence">
+            <a href="captures/welcome-catppuccin-latte-120x40-main.png">原图</a>
+            ·
+            <a href="captures/welcome-catppuccin-latte-120x40-main.txt"
+              >终端文本</a
+            >
+            ·
+            <a href="captures/welcome-catppuccin-latte-120x40-main.ansi"
+              >ANSI</a
+            >
+          </p>
+        </figure>
+        <figure>
+          <figcaption>
+            <h3>会话内工具</h3>
+            <p>旧版前缀, Read 代码按语法高亮.</p>
+          </figcaption>
+          <a
+            href="captures/work-catppuccin-mocha-120x40-main.png"
+            target="_blank"
+            rel="noopener"
+            ><img
+              src="captures/work-catppuccin-mocha-120x40-main.png"
+              alt="会话内工具"
+              loading="lazy"
+          /></a>
+          <p class="evidence">
+            <a href="captures/work-catppuccin-mocha-120x40-main.png">原图</a> ·
+            <a href="captures/work-catppuccin-mocha-120x40-main.txt"
+              >终端文本</a
+            >
+            · <a href="captures/work-catppuccin-mocha-120x40-main.ansi">ANSI</a>
+          </p>
+        </figure>
+        <figure>
+          <figcaption>
+            <h3>失败与恢复</h3>
+            <p>保留失败结果和下一步.</p>
+          </figcaption>
+          <a
+            href="captures/failure-catppuccin-latte-120x40-main.png"
+            target="_blank"
+            rel="noopener"
+            ><img
+              src="captures/failure-catppuccin-latte-120x40-main.png"
+              alt="失败与恢复"
+              loading="lazy"
+          /></a>
+          <p class="evidence">
+            <a href="captures/failure-catppuccin-latte-120x40-main.png">原图</a>
+            ·
+            <a href="captures/failure-catppuccin-latte-120x40-main.txt"
+              >终端文本</a
+            >
+            ·
+            <a href="captures/failure-catppuccin-latte-120x40-main.ansi"
+              >ANSI</a
+            >
+          </p>
+        </figure>
+        <figure>
+          <figcaption>
+            <h3>完成总结</h3>
+            <p>Markdown 与原生输入框.</p>
+          </figcaption>
+          <a
+            href="captures/complete-catppuccin-latte-120x40-main.png"
+            target="_blank"
+            rel="noopener"
+            ><img
+              src="captures/complete-catppuccin-latte-120x40-main.png"
+              alt="完成总结"
+              loading="lazy"
+          /></a>
+          <p class="evidence">
+            <a href="captures/complete-catppuccin-latte-120x40-main.png"
+              >原图</a
+            >
+            ·
+            <a href="captures/complete-catppuccin-latte-120x40-main.txt"
+              >终端文本</a
+            >
+            ·
+            <a href="captures/complete-catppuccin-latte-120x40-main.ansi"
+              >ANSI</a
+            >
+          </p>
+        </figure>
+        <figure>
+          <figcaption>
+            <h3>窄窗口</h3>
+            <p>80 列下的正文和工具换行.</p>
+          </figcaption>
+          <a
+            href="captures/work-narrow-catppuccin-mocha-80x30-main.png"
+            target="_blank"
+            rel="noopener"
+            ><img
+              src="captures/work-narrow-catppuccin-mocha-80x30-main.png"
+              alt="窄窗口"
+              loading="lazy"
+          /></a>
+          <p class="evidence">
+            <a href="captures/work-narrow-catppuccin-mocha-80x30-main.png"
+              >原图</a
+            >
+            ·
+            <a href="captures/work-narrow-catppuccin-mocha-80x30-main.txt"
+              >终端文本</a
+            >
+            ·
+            <a href="captures/work-narrow-catppuccin-mocha-80x30-main.ansi"
+              >ANSI</a
+            >
+          </p>
+        </figure>
+        <figure>
+          <figcaption>
+            <h3>显示设置</h3>
+            <p>工具展开设置, 无独立工具检查器.</p>
+          </figcaption>
+          <a
+            href="captures/welcome-catppuccin-latte-120x40-ui-settings.png"
+            target="_blank"
+            rel="noopener"
+            ><img
+              src="captures/welcome-catppuccin-latte-120x40-ui-settings.png"
+              alt="显示设置"
+              loading="lazy"
+          /></a>
+          <p class="evidence">
+            <a href="captures/welcome-catppuccin-latte-120x40-ui-settings.png"
+              >原图</a
+            >
+            ·
+            <a href="captures/welcome-catppuccin-latte-120x40-ui-settings.txt"
+              >终端文本</a
+            >
+            ·
+            <a href="captures/welcome-catppuccin-latte-120x40-ui-settings.ansi"
+              >ANSI</a
+            >
+          </p>
+        </figure>
+      </div>
+    </section>
+    <footer>
+      Pi 0.85.1 · Bun 1.4.0 · Catppuccin Latte / Mocha.<br />Font: JetBrainsMono
+      Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono.<br />真实终端导出,
+      示例执行. 未验证原生窗口 compositor 或真实 provider. 详情沿用 Pi
+      原生单工具点击展开的能力, 本次静态目录未验收鼠标事件, 无独立工具检查器.
+    </footer>
+  </main>
+</html>

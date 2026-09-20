@@ -1,0 +1,40 @@
+
+ • Bash(git status --short)
+   ⎿  Success · M src/search/paginate.ts
+      M src/search/paginate.ts
+     ?? tests/search/paginate.test.ts
+
+ • Error
+
+ ⎿  Error: RTK rewrite failed; leaving the original Bash command unchanged. RTK rewrite preparation failed. Run /rtk
+    diagnostics for details.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

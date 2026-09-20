@@ -4,6 +4,22 @@ This is a throwaway, offline design artifact for [issue #99](https://github.com/
 
 [Open the preview gallery](gallery.html) · [Research and surface inventory](../../docs/research/ui-direction-2026-09-20.md) · [中文研究](../../docs/i18n/zh-CN/research/ui-direction-2026-09-20.md)
 
+## Future UI preview
+
+The main [gallery](gallery.html) now shows proposed UI based on the current product inventory. The [native catalogue](current-reference.html) is reference material. See the [future UI scope](../../docs/research/future-ui-2026-09-21.md) for the complete input-to-image mapping.
+
+```sh
+bun prototypes/ui-direction/capture.ts future-overview-read
+bun prototypes/ui-direction/capture.ts future-overview-edit --theme catppuccin-mocha
+bun prototypes/ui-direction/capture.ts future-overview-read --theme catppuccin-mocha --cols 80
+bun prototypes/ui-direction/capture.ts future-tool-read
+bun prototypes/ui-direction/build-gallery.ts
+```
+
+`future-scenes.ts` lists the other future scene names. Tool rows expand in place; the preview uses custom renderers and static inputs, not production overrides. Existing A/B/C diff alternatives and the old-style welcome remain available.
+
+中文: 主画廊展示基于当前功能的未来 UI, 原生目录移到参考页. 完整会话和逐类场景使用同一套新样式. 场景名见 `future-scenes.ts`, 工具在原位展开; 这仍是自定义 renderer 与静态数据, 没有替换生产入口.
+
 ## Conversation catalog and diff alternatives
 
 The [coverage report](../../docs/research/conversation-coverage-2026-09-20.md) separates current Pi/Pi Stuff output from proposed layouts. `catalog-scenes.ts` is the image manifest. Each catalog scene mounts the installed native component with static data, or uses the host notification API. It does not replay a real model/tool lifecycle. The original conversation candidates still use custom-message renderers.
@@ -51,7 +67,7 @@ The original candidate renderer uses custom messages. It proves the proposed lay
 
 The export font stack is `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. Palettes are the repository's Catppuccin Latte and Mocha themes. Terminal default foreground/background are set from those palettes before launch; exported colors are checked against the live terminal frame. No screenshot is painted over to change the layout.
 
-Pi 0.85.1 already toggles one tool's expansion on a left click in its tool region (`ToolExecutionComponent.createResultRegion`). The independent inspector and its captures have been removed. This custom-message fixture still demonstrates keyboard expansion only; it is not evidence of native mouse interaction.
+Pi 0.85.1 already toggles one tool's expansion on a left click in its tool region (`ToolExecutionComponent.createResultRegion`). The independent inspector and its captures have been removed. The original fixture demonstrates keyboard expansion. The future Read fixture also verifies mouse collapse/expand and Ctrl+O while preserving an editor draft. Both use custom messages; neither establishes production tool overrides.
 
 ## Findings
 
@@ -69,7 +85,7 @@ The prototype does not select a final design. Statusline fields, tool-family gro
 
 可以用 Ctrl+O 展开工具, `/ui` 或 Ctrl+Alt+U 打开设置, Enter 切换值, Esc 返回. 会话内保留旧版 `Tool(target)` 标题. 本次保留实际终端截图与检查结果, 继续讨论状态栏字段、工具分组、大 diff, 不自动确定生产方案.
 
-Pi 0.85.1 已在工具区域左键点击时切换单个工具的展开状态, 对应 `ToolExecutionComponent.createResultRegion`. 独立检查器及其截图已删除. 本原型仍以自定义消息演示键盘展开, 不作为原生鼠标交互的验收证据.
+Pi 0.85.1 已在工具区域左键点击时切换单个工具的展开状态, 对应 `ToolExecutionComponent.createResultRegion`. 独立检查器及其截图已删除. 原始样例演示键盘展开. 未来 Read 样例还验证了鼠标收起/展开、Ctrl+O 与输入草稿保留. 两者都使用自定义消息, 不代表生产工具已替换.
 
 ## Shared foreground launch
 

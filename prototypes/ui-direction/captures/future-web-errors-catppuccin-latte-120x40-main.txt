@@ -1,0 +1,40 @@
+
+ • fetch_content(https://example.invalid/missing)
+   ⎿  Item failed · error: http: HTTP 404
+     error: http: HTTP 404
+     item=0
+
+ • get_search_content(contentId=expired-content)
+   ⎿  Error: Content unavailable. Search or fetch again.
+     Content unavailable. Search or fetch again.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

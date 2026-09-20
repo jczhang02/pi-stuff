@@ -1,0 +1,40 @@
+
+  Review the pagination boundary.
+
+   Keep the first occurrence of each result and preserve the cursor.
+
+   ```ts
+     paginate(page, previousIds)
+   ```
+
+ • Thinking...
+
+ • I found the duplicate at the page boundary.
+
+ • Grep(/previousIds/ in src/search (*.ts))
+   ⎿  3 matches
+     src/search/paginate.ts:19    │ const seen = new Set(previousIds);
+     src/search/types.ts:12       │ previousIds?: string[];
+     src/search/fixtures.ts:8     │ previousIds fixture
+     [Truncated: 3 matches limit]
+
+ • Read(src/search/paginate.ts:18-25)
+   ⎿  5 lines
+     18 │ export function paginate(page, previousIds) {
+     19 │   const seen = new Set(previousIds);
+     20 │   const unique = page.items.filter(item => !seen.has(item.id));
+     21 │   return {items: unique, nextCursor: page.cursor};
+     22 │ }
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

@@ -1,0 +1,40 @@
+
+  Review the pagination boundary.
+
+   Keep the first occurrence of each result and preserve the cursor.
+
+   ```ts
+     paginate(page, previousIds)
+   ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

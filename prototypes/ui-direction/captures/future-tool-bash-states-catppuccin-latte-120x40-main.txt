@@ -1,0 +1,40 @@
+
+ • Bash(bun test tests/search/paginate.test.ts)
+   ⎿  Running · bun test v1.4.0
+     bun test v1.4.0
+     ... checking duplicate entries between pages
+
+ • Bash(bun test tests/search/paginate.test.ts)
+   ⎿  Success · 8 pass
+     8 pass
+     0 fail
+     Ran 8 tests across 1 file.
+
+ • Bash(bun test tests/search/paginate.test.ts)
+   ⎿  Error: FAIL skips IDs from the previous page
+     FAIL skips IDs from the previous page
+     Expected: ["result-3"]
+     Received: ["result-2", "result-3"]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16
