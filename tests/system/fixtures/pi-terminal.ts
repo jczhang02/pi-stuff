@@ -4,7 +4,7 @@ import {join, resolve} from 'node:path';
 import {TerminalControl, type Session} from '@kitlangton/terminal-control';
 import {Schema} from 'effect';
 
-const Request = Schema.Struct({
+export const ModelRequest = Schema.Struct({
   messages: Schema.Array(
     Schema.Struct({
       role: Schema.String,
@@ -29,12 +29,27 @@ const Request = Schema.Struct({
   ),
 });
 
+export type ModelRequest = typeof ModelRequest.Type;
+export type FixtureReply = (
+  | {text: string}
+  | {tool: string; arguments: string}
+) & {
+  usage?: {input: number; output: number};
+};
+
 // The real host loads the product entrypoint. Only the external model is deterministic.
 export async function launchPi(
   configuration = '{}',
   extraExtension?: string,
-  profile: 'rtk' | 'web' = 'rtk',
+  profile: 'rtk' | 'web' | 'subagent' = 'rtk',
   mode: 'regular' | 'fullscreen' = 'fullscreen',
+  childModel?: (
+    request: ModelRequest,
+  ) =>
+    | FixtureReply
+    | Response
+    | undefined
+    | Promise<FixtureReply | Response | undefined>,
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
   const agent = join(directory, 'agent');
@@ -54,23 +69,40 @@ export async function launchPi(
         new URL(request.url).pathname !== '/v1/chat/completions'
       )
         return new Response(null, {status: 404});
-      const body = Schema.decodeUnknownSync(Request)(await request.json());
-      offered = body.tools?.map(tool => tool.function.name) ?? [];
+      const body = Schema.decodeUnknownSync(ModelRequest)(await request.json());
+      const childReply = await childModel?.(body);
+      if (childReply instanceof Response) return childReply;
+      if (childReply === undefined)
+        offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
-      const finished = last?.role === 'tool' || tool === '';
-      if (last?.role === 'tool')
+      const finished = childReply
+        ? 'text' in childReply
+        : last?.role === 'tool' || tool === '';
+      if (childReply === undefined && last?.role === 'tool')
         result = Schema.is(Schema.String)(last.content)
           ? last.content
           : JSON.stringify(last.content);
       const delta = finished
-        ? {content: `RTK_TURN_${turn}_DONE`}
+        ? {
+            content:
+              childReply && 'text' in childReply
+                ? childReply.text
+                : `RTK_TURN_${turn}_DONE`,
+          }
         : {
             tool_calls: [
               {
                 index: 0,
                 id: `rtk_${turn}`,
                 type: 'function',
-                function: {name: tool, arguments: args},
+                function: {
+                  name:
+                    childReply && 'tool' in childReply ? childReply.tool : tool,
+                  arguments:
+                    childReply && 'tool' in childReply
+                      ? childReply.arguments
+                      : args,
+                },
               },
             ],
           };
@@ -84,6 +116,13 @@ export async function launchPi(
       return new Response(
         `data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({
           ...chunk,
+          usage: childReply?.usage
+            ? {
+                prompt_tokens: childReply.usage.input,
+                completion_tokens: childReply.usage.output,
+                total_tokens: childReply.usage.input + childReply.usage.output,
+              }
+            : undefined,
           choices: [
             {
               index: 0,
@@ -158,7 +197,12 @@ export async function launchPi(
         '--no-approve',
         ...(profile === 'web'
           ? ['--no-builtin-tools']
-          : ['--tools', 'bash,read']),
+          : [
+              '--tools',
+              profile === 'subagent'
+                ? 'bash,read,subagent,web_search,fetch_content,get_search_content'
+                : 'bash,read',
+            ]),
         '--provider',
         'fixture',
         '--model',

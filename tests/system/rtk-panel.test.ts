@@ -172,11 +172,13 @@ test('RTK uses literal Escape through executable editor and small-terminal notic
       timeoutMs: 3000,
     });
     await host.terminal.keyboard.press('Escape');
-    await host.terminal.screen.waitUntil(
-      screen => !screen.text.includes('RTK executable'),
+    const settings = await host.terminal.screen.waitUntil(
+      screen =>
+        !screen.text.includes('RTK executable') &&
+        screen.text.includes('RTK / Settings'),
       {timeoutMs: 3000},
     );
-    expect(await host.terminal.screen.text()).toContain('RTK / Settings');
+    expect(settings.text).toContain('RTK / Settings');
     await host.terminal.keyboard.press('Escape');
     await host.terminal.screen.waitForText('Configure RTK and inspect usage.', {
       timeoutMs: 3000,

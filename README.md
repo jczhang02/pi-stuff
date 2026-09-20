@@ -17,9 +17,11 @@ This checkout contains a development web extension with independent search, page
 
 [RTK integration](docs/rtk.md) adds supported Bash rewriting, independent final-result ANSI cleanup and an inline `/rtk` panel for settings, native usage and diagnostics. It resolves mise-managed installations without changing PATH and retains Pi's built-in Bash execution.
 
+[Subagents](docs/subagents.md) adds one tool for parallel and dependent work, retained follow-ups, communication and cancellation. FleetView and bottom inspection expose current activity, saved results and recovery state. Implementation acceptance is tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97).
+
 The package also includes ten light and dark [themes](docs/themes.md) from Catppuccin, Tokyo Night, Gruvbox and Rosé Pine. Choose them through Pi's theme settings; loading the package preserves your current choice.
 
-The tested target is Linux Bun-compiled Pi `0.85.1`. The stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Other platforms/host versions are unverified. Beyond Web access, RTK integration and themes, the capabilities below describe product direction, not implemented features.
+The tested target is Linux Bun-compiled Pi `0.85.1`. The stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Other platforms/host versions are unverified. Capabilities below without a linked implementation guide describe product direction.
 
 ## About
 
@@ -53,6 +55,7 @@ The [source-layout rules](docs/agents/engineering.md#source-layout) govern entry
 - [src/pi/](src/pi/) owns shared host configuration and tool-switch policy.
 - [src/web/](src/web/) owns Web access, including its tools, authentication, transport and session lifecycle. Other capabilities belong in sibling directories when implemented.
 - [src/rtk/](src/rtk/) owns RTK discovery, command rewriting, final-result cleanup and the inline panel.
+- [src/subagent/](src/subagent/) owns delegation, child sessions, workspaces, persistence and inspection.
 - [themes/](themes/) contains static Pi theme resources declared by the package.
 - [tests/component/](tests/component/) exercises module behavior; [tests/system/](tests/system/) loads the extension in the real Pi host.
 
@@ -64,6 +67,7 @@ Web host registration lives in `src/web/register.ts`; tool definitions live in `
 | -------------------------------------------------------------- | --------------------------------------------------------------- |
 | [Web access](docs/web-access.md)                               | Loading, settings, credentials, tools and limits                |
 | [RTK integration](docs/rtk.md)                                 | Rewrite, ANSI cleanup, settings, native statistics and recovery |
+| [Subagents](docs/subagents.md)                                 | Delegation, keyboard inspection, configuration and recovery     |
 | [Themes](docs/themes.md)                                       | Theme selection, automatic pairs, palette sources and limits    |
 | [Contributing](CONTRIBUTING.md)                                | Issues, focused changes, verification, and pull requests        |
 | [Agent instructions](AGENTS.md)                                | Agent writing and Git workflow requirements                     |
