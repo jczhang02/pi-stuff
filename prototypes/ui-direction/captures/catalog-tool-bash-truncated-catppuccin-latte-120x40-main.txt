@@ -1,0 +1,40 @@
+
+
+
+ $ bun test
+
+ ... (9 earlier lines, ctrl+o to expand)
+ checked result 10
+ checked result 11
+ checked result 12
+ checked result 13
+ checked result 14
+
+ [Full output: /tmp/pi-bash-preview.log. Truncated: showing 14 of 30 lines]
+
+ Took 0.0s
+
+
+
+
+ $ bun test (timeout 15s)
+
+ Command timed out after 15 seconds
+
+ Took 0.0s
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

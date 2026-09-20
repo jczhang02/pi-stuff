@@ -1,0 +1,40 @@
+
+
+
+ web_search
+ item: 0
+ contentId: 78abe3fa-79e9-476b-a563-51230bbe2336
+ offset: 0
+ nextOffset: 232
+ totalLength: 232
+ truncated: false
+
+ query: pagination cursor deduplication
+ provider: exa
+ selection: preferred
+ fallback: false
+
+ 1. Cursor pagination guide
+ url: https://example.invalid/pagination
+ source: example.invalid
+ snippet: preserve order while advancing the cursor
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

@@ -1,0 +1,40 @@
+
+ • Bash(bun test tests/search/paginate.test.ts)
+   ⎿  Error: FAIL skips IDs from the previous page
+     FAIL skips IDs from the previous page
+     Expected: ["result-3"]
+     Received: ["result-2", "result-3"]
+
+ • I will compare the incoming page with previousIds before returning results.
+
+ • I found the duplicate at the page boundary.
+
+ • Read(src/search/paginate.ts:18-25)
+   ⎿  5 lines
+     18 │ export function paginate(page, previousIds) {
+     19 │   const seen = new Set(previousIds);
+     20 │   const unique = page.items.filter(item => !seen.has(item.id));
+     21 │   return {items: unique, nextCursor: page.cursor};
+     22 │ }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

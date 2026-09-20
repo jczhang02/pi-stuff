@@ -1,0 +1,40 @@
+
+ • Read(src/search/paginate.ts:18-25)
+   ⎿  5 lines
+     18 │ export function paginate(page, previousIds) {
+     19 │   const seen = new Set(previousIds);
+     20 │   const unique = page.items.filter(item => !seen.has(item.id));
+     21 │   return {items: unique, nextCursor: page.cursor};
+     22 │ }
+
+ Tool output: expanded
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Keep the cursor unchanged
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

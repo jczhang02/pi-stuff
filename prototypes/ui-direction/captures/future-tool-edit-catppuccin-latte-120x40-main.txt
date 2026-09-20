@@ -1,0 +1,40 @@
+
+ • Edit(src/search/paginate.ts)
+   ⎿  Successfully replaced 1 block in src/search/paginate.ts.
+     - 3   return {items, nextCursor: page.cursor};
+     + 3   const unique = page.items.filter(item => !seen.has(item.id));
+     + 4   return {items: unique, nextCursor: page.cursor};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

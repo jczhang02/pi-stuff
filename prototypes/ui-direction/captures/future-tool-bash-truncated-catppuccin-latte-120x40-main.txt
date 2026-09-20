@@ -1,0 +1,40 @@
+
+ • Bash(bun test)
+   ⎿  Success · checked result 1
+     checked result 1
+     checked result 2
+     checked result 3
+     … 11 more lines · Ctrl+O expand
+     [Full output: /tmp/pi-bash-preview.log]
+     [Truncated: showing 14 of 30 lines]
+
+ • Bash(bun test)
+   ⎿  Error: Command timed out after 15 seconds
+     Command timed out after 15 seconds
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16
