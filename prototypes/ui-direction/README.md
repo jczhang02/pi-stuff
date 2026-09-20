@@ -26,7 +26,6 @@ For a shared foreground session, use the complete isolated launch block below. T
 
 - Pi's native `Ctrl+O` expands/collapses sample tool messages.
 - `/ui` opens the native SettingsList. `Ctrl+Alt+U` opens the same settings while preserving the editor draft. Enter changes a value; Esc closes.
-- `/tools` opens all retained output in the old inspector: a wide view uses a left tool list and right detail pane, while a narrow view opens the list first. Arrows select in the list; Enter or Tab focuses details, where arrows scroll. Esc returns to the list, then closes. `[` and `]` also select tools. Selection and confirmation follow Pi keybindings; these are the defaults.
 - The host owns the actual editor, transcript viewport, completion and footer placement. The prototype supplies header/footer components and fixture message renderers.
 
 The sample is one pagination task shown at selected stages. Its messages, paths, model, costs, inventory counts, durations and test results are fixtures, not real work. Session identity/naming, Goal, Todo, subagents, background work, BTW and notifications are outside this preview. The extension executes no shell/test commands. Typing an ordinary request is not a supported coding workflow in this artifact. The captured failure describes a sample failed test, not failure of the UI verification.
@@ -35,15 +34,15 @@ The renderer uses custom messages. It proves the proposed layout can run inside 
 
 The export font stack is `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. Palettes are the repository's Catppuccin Latte and Mocha themes. Terminal default foreground/background are set from those palettes before launch; exported colors are checked against the live terminal frame. No screenshot is painted over to change the layout.
 
+Pi 0.85.1 already toggles one tool's expansion on a left click in its tool region (`ToolExecutionComponent.createResultRegion`). The independent inspector and its captures have been removed. This custom-message fixture still demonstrates keyboard expansion only; it is not evidence of native mouse interaction.
+
 ## Findings
 
 The useful change is consistent hierarchy across the whole transcript: action/target, outcome, then a useful excerpt. Full output remains inspectable. The old Pi Stuff boxed welcome, transcript prefixes, inline tool heading and native input are retained as references. Compact versus expanded tool output can be tried directly.
 
-The first smoke run exposed startup resource listings that displaced task content, duplicate settings hints and a tool-expansion setting that did not track native Ctrl+O. Those were corrected through normal Pi configuration and component state. Independent review also found a scrolling bound based on source rather than rendered rows and insufficient draft-preservation verification; the code and verification were corrected before the retained capture pass.
+The first smoke run exposed startup resource listings that displaced task content, duplicate settings hints and a tool-expansion setting that did not track native Ctrl+O. Those were corrected through normal Pi configuration and component state. Independent review also identified insufficient draft-preservation verification, which was corrected before the retained capture pass.
 
-The revision also corrected hardcoded tool-navigation keys. Wide/narrow captures and an isolated `j`/`k`/`ctrl+j` remapping check passed selection, confirmation, Escape and draft restoration.
-
-The prototype does not select a final design. Statusline fields, tool-family grouping, `/tools` list/detail behavior and large-diff navigation remain discussion items supported by the previews.
+The prototype does not select a final design. Statusline fields, tool-family grouping, large-diff navigation remain discussion items supported by the previews.
 
 ## 中文说明
 
@@ -51,9 +50,9 @@ The prototype does not select a final design. Statusline fields, tool-family gro
 
 样例中的执行、测试、费用、时长和加载清单都是示例数据. 普通输入不会启动真实编码任务. 宿主提供真实输入框、会话区域和布局; 原型提供自定义消息、header/footer 和设置组件. 会话身份/命名、Goal、Todo、subagents、后台工作、BTW 和通知不在本次预览范围内. 这不等于生产工具或 Thinking 已实现.
 
-修订同时修正了硬编码工具导航键. 宽窄截图检查及隔离的 `j`/`k`/`ctrl+j` 重映射实验通过选择、确认、Esc 和草稿恢复验证.
+可以用 Ctrl+O 展开工具, `/ui` 或 Ctrl+Alt+U 打开设置, Enter 切换值, Esc 返回. 会话内保留旧版 `Tool(target)` 标题. 本次保留实际终端截图与检查结果, 继续讨论状态栏字段、工具分组、大 diff, 不自动确定生产方案.
 
-可以用 Ctrl+O 展开工具, `/ui` 或 Ctrl+Alt+U 打开设置, Enter 切换值, Esc 返回. `/tools` 的宽窗口显示左侧工具列表和右侧详情, 窄窗口先显示列表. 方向键选择工具, Enter/Tab 进入详情后方向键滚动, Esc 先回列表再关闭; `[ ]` 也可切换工具. 选择与确认沿用 Pi 的按键配置, 此处为默认键; 会话内保留旧版 `Tool(target)` 标题. 本次保留实际终端截图与检查结果, 继续讨论状态栏字段、工具分组、大 diff, 不自动确定生产方案.
+Pi 0.85.1 已在工具区域左键点击时切换单个工具的展开状态, 对应 `ToolExecutionComponent.createResultRegion`. 独立检查器及其截图已删除. 本原型仍以自定义消息演示键盘展开, 不作为原生鼠标交互的验收证据.
 
 ## Shared foreground launch
 

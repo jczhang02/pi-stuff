@@ -11,7 +11,6 @@ import {
   type Component,
   Markdown,
   Box,
-  visibleWidth,
   SettingsList,
   Key,
   matchesKey,
@@ -204,109 +203,6 @@ export default function uiDirection(pi: ExtensionAPI) {
     pi.registerShortcut('ctrl+alt+u', {
       description: 'Open display settings',
       handler: openSettings,
-    });
-    pi.registerCommand('tools', {
-      description: 'Inspect the complete tool output',
-      handler: async (_args, commandCtx) => {
-        const tools = messages.flatMap(message =>
-          message.kind === 'tool' ? [message.tool] : [],
-        );
-        await commandCtx.ui.custom<void>((tui, theme, keys, done) => {
-          let index = 0;
-          let offset = 0;
-          let maximumOffset = 0;
-          let detailFocus = false;
-          const navigation = `${keys.getKeys('tui.select.up').join('/')} / ${keys.getKeys('tui.select.down').join('/')}`;
-          const confirm = keys.getKeys('tui.select.confirm').join('/');
-          return {
-            render(width) {
-              const split = width >= 96;
-              const leftWidth = split ? Math.floor(width * 0.32) : width;
-              const rightWidth = split ? width - leftWidth - 1 : width;
-              const height = Math.max(3, Math.min(16, tui.terminal.rows - 12));
-              const tool = tools[index];
-              const rows = tool
-                ? toolLines(tool, theme, true, rightWidth)
-                : [' No tools in this session.'];
-              maximumOffset = Math.max(0, rows.length - height + 4);
-              offset = Math.min(offset, maximumOffset);
-              const list = [
-                ` ${theme.bold('Tools')} · ${tools.length} activities`,
-                '',
-                ...tools.map((item, position) =>
-                  theme.fg(
-                    position === index ? 'accent' : 'muted',
-                    ` ${position === index ? '›' : ' '} ${item.name}(${item.target})`,
-                  ),
-                ),
-              ];
-              const detail = [
-                ` ${theme.bold(`Tools / ${tool?.name ?? 'Empty'}`)} · ${tools.length ? index + 1 : 0}/${tools.length}`,
-                '',
-                ...rows.slice(offset, offset + height - 4),
-              ];
-              const fit = (line: string, columns: number) => {
-                const clipped = truncateToWidth(line, columns);
-                return (
-                  clipped +
-                  ' '.repeat(Math.max(0, columns - visibleWidth(clipped)))
-                );
-              };
-              const body = Array.from({length: height}, (_, row) =>
-                split
-                  ? `${fit(list[row] ?? '', leftWidth)}${theme.fg('borderMuted', '│')}${fit(detail[row] ?? '', rightWidth)}`
-                  : fit((detailFocus ? detail : list)[row] ?? '', width),
-              );
-              return [
-                theme.fg('borderAccent', '─'.repeat(width)),
-                ...body,
-                truncateToWidth(
-                  theme.fg(
-                    'dim',
-                    detailFocus
-                      ? ` ${navigation} Scroll · Tab List · Esc Back`
-                      : ` ${navigation} Select · ${confirm} Details · Tab Pane · [ ] Select · Esc Close`,
-                  ),
-                  width,
-                ),
-                theme.fg('borderAccent', '─'.repeat(width)),
-              ];
-            },
-            handleInput(data) {
-              if (matchesKey(data, Key.escape)) {
-                if (detailFocus) detailFocus = false;
-                else done();
-              } else if (
-                matchesKey(data, Key.tab) ||
-                keys.matches(data, 'tui.select.confirm')
-              ) {
-                detailFocus = !detailFocus;
-              } else if (
-                data === ']' ||
-                data === '[' ||
-                (!detailFocus &&
-                  (keys.matches(data, 'tui.select.down') ||
-                    keys.matches(data, 'tui.select.up')))
-              ) {
-                const next =
-                  data === ']' || keys.matches(data, 'tui.select.down');
-                index = Math.max(
-                  0,
-                  Math.min(tools.length - 1, index + (next ? 1 : -1)),
-                );
-                offset = 0;
-              } else if (keys.matches(data, 'tui.select.down'))
-                offset = Math.min(maximumOffset, offset + 1);
-              else if (keys.matches(data, 'tui.select.up'))
-                offset = Math.max(0, offset - 1);
-              tui.requestRender();
-            },
-            invalidate() {
-              /* Render reads the selected fixture directly. */
-            },
-          };
-        });
-      },
     });
   });
 }

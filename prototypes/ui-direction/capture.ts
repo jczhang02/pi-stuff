@@ -37,8 +37,6 @@ const CAPTURE_DEADLINE_MS = 5_000;
 const ESCAPE_BYTE = new Uint8Array([0x1b]);
 // Pi's legacy terminal encoding for ctrl+alt+u is ESC followed by ctrl+u.
 const CTRL_ALT_U_BYTES = new Uint8Array([0x1b, 0x15]);
-const PREVIOUS_TOOL_BYTE = new Uint8Array([0x5b]);
-const NEXT_TOOL_BYTE = new Uint8Array([0x5d]);
 
 const ThemeFile = Schema.Struct({
   name: Schema.String,
@@ -454,22 +452,13 @@ function tailContains(text: string, value: string): boolean {
     .some(line => line.includes(value));
 }
 
-async function submitCommand(
-  session: Session,
-  command: string,
-  clearEditor: boolean,
-): Promise<void> {
-  if (clearEditor) await session.keyboard.press('Control+U');
-  await session.keyboard.type(command);
-  await session.keyboard.press('Enter');
-}
-
 async function captureSettingsAndRestore(
   session: Session,
   options: RunnerOptions,
   theme: ThemeFileValue,
 ): Promise<void> {
-  await submitCommand(session, '/ui', false);
+  await session.keyboard.type('/ui');
+  await session.keyboard.press('Enter');
   await session.screen.waitForText('Display settings', {
     timeoutMs: WAIT_TIMEOUT_MS,
   });
@@ -554,62 +543,6 @@ async function captureWorkInteractions(
     'src/search/types.ts:12',
   ]);
   await captureSettingsAndRestore(session, options, theme);
-  await submitCommand(session, '/tools history', true);
-  await session.screen.waitForText('Tools · 2 activities', {
-    timeoutMs: WAIT_TIMEOUT_MS,
-  });
-  if (options.cols < 96) {
-    await captureScreen(session, options, theme, 'tools-list', [
-      'Tools · 2 activities',
-    ]);
-    await session.keyboard.press('Enter');
-  }
-  await waitForReady(session, 'Tools / Search');
-  await captureScreen(session, options, theme, 'tools-history', [
-    'Tools /',
-    '1/2',
-  ]);
-  await session.keyboard.write(NEXT_TOOL_BYTE);
-  await session.screen.waitForText('Tools / Read', {
-    timeoutMs: WAIT_TIMEOUT_MS,
-  });
-  await session.screen.waitForIdle({
-    timeoutMs: WAIT_TIMEOUT_MS,
-    quietForMs: CAPTURE_SETTLE_MS,
-  });
-  await captureScreen(session, options, theme, 'tools-history-next', [
-    'Tools /',
-    '2/2',
-    'Read',
-  ]);
-  await session.keyboard.write(PREVIOUS_TOOL_BYTE);
-  await session.screen.waitForText('Tools / Search', {
-    timeoutMs: WAIT_TIMEOUT_MS,
-  });
-  await session.screen.waitForIdle({
-    timeoutMs: WAIT_TIMEOUT_MS,
-    quietForMs: CAPTURE_SETTLE_MS,
-  });
-  await captureScreen(session, options, theme, 'tools-history-previous', [
-    'Tools /',
-    '1/2',
-    'Search',
-  ]);
-  if (options.cols >= 96) await session.keyboard.press('Tab');
-  await session.screen.waitForText('Esc Back', {timeoutMs: WAIT_TIMEOUT_MS});
-  await session.keyboard.write(ESCAPE_BYTE);
-  await Bun.sleep(250);
-  await session.screen.waitForText('Esc Close', {timeoutMs: WAIT_TIMEOUT_MS});
-  await session.keyboard.write(ESCAPE_BYTE);
-  await Bun.sleep(250);
-  await session.keyboard.type('继续检查工具输出');
-  await session.screen.waitUntil(
-    snapshot => tailContains(snapshot.text, '继续检查工具输出'),
-    {timeoutMs: WAIT_TIMEOUT_MS},
-  );
-  await captureScreen(session, options, theme, 'tools-restored', [
-    '继续检查工具输出',
-  ]);
 }
 
 async function runCapture(options: RunnerOptions): Promise<void> {
