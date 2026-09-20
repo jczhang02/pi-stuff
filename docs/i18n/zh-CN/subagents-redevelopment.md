@@ -45,11 +45,21 @@
 
 **RQ04. 无需兼容旧实现记录.** 新版不需要迁移或续跑旧实现创建的会话. 保留旧代码和记录, 存储分开, 不将不兼容记录解释为新任务. 维护者未授权删除旧数据.
 
-## 第二轮提案, 等待回答
+## 第二轮决定, 2026-09-20 已确认
 
-**RQ05. 是否允许已完成任务再次接收交办?** 上游可恢复有会话记录的失败或中止任务, 但明确拒绝已完成任务. 例如 reviewer 交付审查报告后, 主代理修复代码, 再让同一个 reviewer 带着先前上下文复查. 推荐增加此能力, 复用已有 Pi 会话机制. 这是有意增加生命周期能力, 不是缺陷修复. 如接受, 实施前再确定结果记录和工作区行为; 接受此能力不会自动恢复旧 assignment 体系或重跑依赖任务. 来源: [resumeTask](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1365).
+**RQ05. 允许完成后续聊.** 维护者接受向同一个子代理再次交办, 保留其先前对话上下文. 例如 reviewer 交付第一份报告后, 可以继续复查修复. 上游可恢复有会话记录的失败或中止任务, 但明确拒绝已完成任务, 因此这是已批准的生命周期新增能力. 结果保留和工作区行为仍待确定; 本决定不会自动恢复旧 assignment 体系或重跑依赖任务. 来源: [resumeTask](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1365).
 
-**RQ06. 本次重开发是否允许子代理使用扩展工具?** 例如 researcher 直接调用已安装的网页搜索扩展. 上游关闭扩展加载; gotgenes 提供了子代理自行加载资源、过滤工具的参考. 推荐首版暂缓, 保留上游工具边界, 由父代理提供研究结果. 支持扩展需要确定初始化、清理和工具权限, 并非只增加一个工具名. 来源: [arhen 子代理资源加载](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L853-L877)和 [gotgenes 子会话创建](https://github.com/gotgenes/pi-packages/blob/bebfa283fc6a0b8867399b4fcc9dc5997817e9ca/packages/pi-subagents/src/lifecycle/create-subagent-session.ts).
+**RQ06. 本次重开发纳入子代理扩展工具.** 维护者决定现在纳入此能力, 不采纳暂缓建议. Researcher 可以直接调用网页搜索等扩展工具. 上游关闭扩展加载; gotgenes 提供了子代理自行加载资源、过滤工具的参考. 子代理取得哪些扩展和工具, 以及如何处理不兼容扩展, 仍待确定. 批准此能力不等于所有已安装扩展都能不受限制地进入子代理, 也不自动开放递归委派. 来源: [arhen 子代理资源加载](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L853-L877)和 [gotgenes 子会话创建](https://github.com/gotgenes/pi-packages/blob/bebfa283fc6a0b8867399b4fcc9dc5997817e9ca/packages/pi-subagents/src/lifecycle/create-subagent-session.ts).
+
+## 第三轮提案, 等待回答
+
+**RQ07. 是否逐次保留报告和用量?** Reviewer 先交付第一份报告, 随后复查修复. 推荐保留两次报告及各自状态、耗时、用量, 对话上下文继续沿用, 同时保留该子代理的累计用量. 继续交办不会自动重跑依赖或下游任务. 上游会覆盖任务的最终报告和开始时间, 用量却继续累加, 旧对话仅留在会话文件中. 此提案增加逐次交办记录, 尚不指定新的调度器或旧 assignment 体系. 来源: [resume 重置逻辑](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1411)和[任务快照](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/types.ts#L18-L65).
+
+**RQ08. 写代理续聊是否接着自己的代码分支工作?** 实现代理完成补丁后, 再收到补测试的要求. 推荐沿用先前工作区/分支, 保留自己的代码成果; 若仅 worktree 目录被清理, 则从该分支恢复目录. 不自动带入父目录的新修改. 必需的代码状态无法恢复时, 按 RQ03 明确失败, 不换一个基线继续. 只读 reviewer 仍读取选定目录的当前内容. 这将上游工作区方式延续至已完成任务的续聊. 来源: [worktree 挂接](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L768-L813)和[完成处理](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L950-L1003).
+
+**RQ09. 继承的扩展工具是否以父代理当前启用的工具为上限, 再按角色收窄?** 父代理启用了网页搜索和编辑工具, researcher 可以获得搜索, implementer 可以获得编辑. 推荐从父代理已加载的扩展中选用, 可调用工具以父代理当前启用集合为上限, 角色再收窄范围. 保留上游子代理通信工具; 加载扩展不让子代理取得父代理的委派工具. 子代理在自己的会话中加载和绑定选定扩展来源. 工具过滤不是沙箱, 也不会阻止扩展初始化的副作用. 独立加载和排除委派工具可参考 [gotgenes 会话创建](https://github.com/gotgenes/pi-packages/blob/bebfa283fc6a0b8867399b4fcc9dc5997817e9ca/packages/pi-subagents/src/lifecycle/create-subagent-session.ts#L219-L287).
+
+**RQ10. 子代理扩展是否限定为可无交互 UI 运行?** 选定的搜索扩展可能加载失败, 某个工具也可能要求弹出终端选择框. 推荐支持能无交互 UI 初始化和运行的扩展; 选定扩展或必需工具无法加载、绑定时, 明确停止子代理启动. 若工具运行时才要求不支持的 UI, 则返回明确的不支持错误, 交给父代理处理. 不静默漏掉必需工具, 不自动转接父代理 UI. Pi 默认无界面 UI 会返回空选择, 因此实现须区分这种行为与正常执行, 并验证支持的扩展. 这些是兼容要求提案, 不是宣称 SDK 能自动识别所有不兼容扩展.
 
 ## 当前阶段
 
