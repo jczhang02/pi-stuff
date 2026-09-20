@@ -1,0 +1,40 @@
+ PI STUFF  /  pi-stuff
+
+
+ 修复搜索结果翻页时重复出现的问题, 保留原来的排序, 并补充测试.
+
+
+ 我先检查分页边界和已有测试. 重复项可能来自上一页的游标, 需要确认去重发生在哪一层.
+
+ ✓ Search  nextCursor · src/search
+   3 matches in 2 files
+   src/search/paginate.ts:20  const nextCursor = page.cursor;
+   src/search/paginate.ts:21  return {items, nextCursor};
+   … 1 more lines · Ctrl+O expand
+
+ ✓ Read  src/search/paginate.ts:18–23
+   6 lines · pagination boundary
+   18  export function paginate(page, previousIds) {
+   19    const items = uniqueById(page.items);
+   … 4 more lines · Ctrl+O expand
+
+ 当前去重集合只覆盖单页. 我会保留第一条结果的顺序, 并把上一页已出现的 ID 传入边界处理.
+
+ Tool output: collapsed
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Display settings
+
+→ Tool output  preview
+  Task list    expanded
+
+  Show a short result with key output, or keep all output expanded.
+
+ ↑↓ Navigate · Enter Change · Esc Close
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

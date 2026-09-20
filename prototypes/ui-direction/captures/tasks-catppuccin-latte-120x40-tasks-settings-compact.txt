@@ -1,0 +1,40 @@
+ PI STUFF  /  pi-stuff
+
+
+ 修复搜索结果翻页时重复出现的问题, 保留原来的排序, 并补充测试.
+
+
+ 核心改动已经完成. 我把顺序与游标检查交给 reviewer, 测试边界交给 tester, 等结果后再一起收尾.
+
+ ✓ Edit  src/search/paginate.ts
+   +4 −1 · deduplicate page boundaries
+       20  const nextCursor = page.cursor;
+   −   21  return {items, nextCursor};
+   +   21  const seen = new Set(previousIds);
+   +   22  const unique = items.filter(item => !seen.has(item.id));
+   +   23  // Keep the first occurrence and the upstream cursor.
+   +   24  return {items: unique, nextCursor};
+       25  }
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Todo 2/4 complete
+ ●  Verify regression tests
+ Agents 1 running · 1 done
+ ●  reviewer   Checking order and cursor      18s
+ ✓  tester     Added 3 boundary cases         12s
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Display settings
+
+  Tool output  preview
+→ Task list    compact
+
+  Keep the full task list visible, or show the current step.
+
+ ↑↓ Navigate · Enter Change · Esc Close
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  12% context · $0.16

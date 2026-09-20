@@ -1,0 +1,40 @@
+ PI STUFF  /  pi-stuff
+
+ ██████    Welcome back!
+ ██  ██    What would you like to work on?
+ ████  ██  4 extensions · 18 tools · 6 skills
+ ██    ██  Type a request, @ for files, / for commands.
+
+ /model Choose model   /resume Continue session   /ui Display settings
+
+ Tool output: expanded
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Display settings
+
+→ Tool output  full
+  Task list    expanded
+
+  Show a short result with key output, or keep all output expanded.
+
+ ↑↓ Navigate · Enter Change · Esc Close
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ pi-stuff  ·  fix/search-pagination
+ gpt-5.4 · high  ·  0% context
