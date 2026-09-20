@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-redevelopment-ui.md). English is authoritative.
 
-Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03 and UIR04 local help accepted on 2026-09-21. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
+Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03 and UIR04 local help accepted on 2026-09-21. UIR05 proposes sending an instruction from child detail and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
 
 Discuss the UI one part at a time through real usage scenarios: main layout and transitions; FleetView and task structure; details and observability; interventions; completion and history; keyboard and visual consistency. The maintainer's feedback brings detail hierarchy into this round. The previous UI is a starting point, not a wholesale adoption of its old runtime requirements.
 
@@ -100,6 +100,44 @@ The accepted help position follows Claude's local action placement. Navigation f
 
 **Accepted UIR04.** Place FleetView's local action help above its rows, below the statusline, and change it with keyboard focus. Show FleetView actions when the list is focused; hide those actions when focus returns to the editor. The maintainer explicitly accepted this Claude-style help behavior. Exact hint wording and the images' hollow-circle treatment outside list focus remain illustrative; the earlier circle-only selection rule still applies.
 
+## UIR05: sending an instruction from detail
+
+Scenario: lifecycle is investigating worktree recovery. The user wants it to focus on the missing-branch path and leave files unchanged. The following three images show successive states of that interaction.
+
+### What upstream supports
+
+Arhen's [steering tool](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L351-L377) calls the running child's session with `streamingBehavior: "steer"`. Pi [queues that input](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts) while streaming and removes it from the pending steering list when its user-message event starts. It does not immediately abort an executing tool or prove that the model understood the instruction.
+
+This is distinct from sibling mailboxes, which recipients poll, and from replying to a child blocked on `ask_parent`. This round covers steering a working child. Completed-agent follow-up is already in RQ05; its UI and the pending-question UI will be considered with their respective scenarios.
+
+Source inspection also exposes a false-positive path in [steerTask](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1434-L1441): a specified ID can return success without a live child, and the session call is fire-and-forget. The redevelopment must validate the actual target and queue acceptance before displaying success. This is a source finding to reproduce and repair under the existing bug-fix scope, not an executed regression test or a new receipt protocol.
+
+### 1. Compose while keeping the finding visible
+
+![A local message editor beneath the child's latest finding](assets/subagents-redevelopment-ui/10-message-compose.png)
+
+The detail's Message action opens a temporary local editor below the latest reply. Identity, assignment and current finding remain visible; the activity trail folds to make room. The composer names lifecycle as its recipient. It does not restore the main editor, statusline or FleetView, and does not switch the host session.
+
+The illustrated keys are `m` to open Message, Enter to send, Shift+Enter for a newline and Esc to return to detail. Use Pi's configured submit/newline bindings and the fixed Esc-back rule. While typing, only composer help is shown; letters such as `m` and `x` are text, not detail actions. Esc sends nothing and preserves the local draft when reopening it for the same child.
+
+### 2. Show the queued instruction
+
+![The composer closes and the accepted instruction remains visible as queued](assets/subagents-redevelopment-ui/11-message-queued.png)
+
+After queue acceptance, close the composer and restore detail. Keep the exact instruction visible with `Queued` while it remains pending. In this scene, a tool is still working, so the explanation says it is waiting for the current step to finish. Derive that explanation from actual activity; do not display it for every possible delay.
+
+A submission error leaves the draft available and explains why the instruction was not queued. Do not show success from the upstream manager's boolean alone. Never label queue acceptance as Read, Applied or Acknowledged.
+
+### 3. Let the child's reply show what happened
+
+![The child produces a new reply and the user's message folds into the record](assets/subagents-redevelopment-ui/12-message-response.png)
+
+Once this instruction actually enters the conversation, remove its pending indication. An unrelated child event is not enough. The example then shows a new child reply: it will trace the missing-branch fallback without editing files. That text is illustrative model output, not a UI-generated acknowledgement or an enforced wording requirement.
+
+The user's message folds to one line and remains available in the transcript. The latest child reply and current activity again take priority. There is no separate messaging dashboard or extra model call to summarize compliance.
+
+**UIR05 question. Use a temporary editor inside child detail, close it after successful submission, and show pending input followed by the child's actual response in the same detail?** Recommendation: yes. It keeps the recipient and current work visible throughout the interaction.
+
 ## Verification and next step
 
-UIR03 and UIR04 local help are accepted. The focus concepts were visually inspected for caret visibility, help placement, circle selection and aligned rows. Concept images do not establish terminal behavior. This update records the maintainer's answer without changing product code or images. Continue with detail observability and intervention scenarios.
+UIR01-UIR04 remain accepted within their recorded scope. UIR05 is a proposal. The three message concepts were visually inspected for recipient clarity, focus, message text and truthful pending/reply treatment. Ghostty and Pi configuration were rechecked; the composer uses the configured block cursor. These are ImageGen concepts, not executed message-delivery or terminal acceptance tests. This round changes documentation and images only. Await the UIR05 answer before advancing the interview.

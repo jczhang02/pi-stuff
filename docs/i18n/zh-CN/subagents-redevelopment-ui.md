@@ -2,7 +2,7 @@
 
 [English](../../subagents-redevelopment-ui.md). 以英文版为准.
 
-状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02; 2026-09-21 已接受 UIR03 和 UIR04 局部帮助规则. FleetView 只在列表获得键盘焦点时于列表上方显示帮助. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
+状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02; 2026-09-21 已接受 UIR03 和 UIR04 局部帮助规则. UIR05 提议从子代理详情发送补充指令, 尚待回答. FleetView 只在列表获得键盘焦点时于列表上方显示帮助. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
 
 按真实使用场景逐一讨论 UI: 主界面与页面关系、FleetView 与任务结构、详情与可观测性、介入操作、完成与历史、键盘与视觉统一. 根据维护者反馈, 本轮同时梳理详情的信息层级. 先前 UI 作为起点, 不整套继承它所依赖的旧运行要求.
 
@@ -100,6 +100,44 @@ Lifecycle、packages 和 tests 独立调查, 每行都能打开详情. 不画依
 
 **UIR04 已接受.** FleetView 局部操作提示放在列表上方、statusline 下方, 随键盘焦点改变. 列表获得焦点时显示 FleetView 操作, 返回编辑器时隐藏这些操作. 维护者明确接受了 Claude 的这条帮助规则. 具体提示文案及图中失焦后圆圈全空心的处理仍作示意; 先前仅通过圆圈表示选中的规则保持不变.
 
+## UIR05: 从详情发送补充指令
+
+场景: lifecycle 正在调查 worktree 恢复, 用户希望它集中检查分支丢失的路径, 不修改文件. 以下三张图是同一次交互的连续状态.
+
+### 上游支持什么
+
+Arhen 的 [steering 工具](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L351-L377)以 `streamingBehavior: "steer"` 调用运行中的子代理会话. Pi 在流式执行期间[将输入排队](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts), 当对应 user-message 事件开始时从待处理列表移除. 这不会立即中止正在执行的工具, 也不能证明模型理解了指令.
+
+它与同级代理主动轮询的 mailbox、回答 `ask_parent` 阻塞问题不同. 本轮只讨论给工作中的子代理补充指令. 完成后的续聊已由 RQ05 接受; 续聊界面和待答问题界面分别结合对应场景讨论.
+
+源码检查还发现 [steerTask](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1434-L1441)的一条误报路径: 指定 ID 时即使没有 live child 也可能返回成功, 且未等待 session 调用结果. 重新开发须核实实际目标及入队结果后才显示成功. 这是既有修错范围内待复现和修复的源码发现, 不作为已执行的回归测试, 也不增加回执协议.
+
+### 1. 填写时仍能看见当前发现
+
+![在子代理最新发现下方临时展开消息输入区](../../assets/subagents-redevelopment-ui/10-message-compose.png)
+
+详情的 Message 操作在最新回复下方临时展开局部编辑器. 身份、任务和当前发现保持可见, 工具活动折叠以腾出空间. 输入区明确标出收件人 lifecycle. 不恢复主编辑器、statusline 或 FleetView, 也不切换宿主会话.
+
+图示按键为 `m` 打开 Message、Enter 发送、Shift+Enter 换行、Esc 返回详情. 实现沿用 Pi 配置中的提交/换行按键和固定的 Esc 返回规则. 输入时只显示编辑器帮助, `m`、`x` 等字母作为文字输入, 不触发详情操作. Esc 不发送消息, 再次打开同一子代理输入区时保留局部草稿.
+
+### 2. 显示待处理的指令
+
+![入队成功后收起输入区, 指令原文以 Queued 状态保留](../../assets/subagents-redevelopment-ui/11-message-queued.png)
+
+确认入队后收起编辑器并恢复详情. 指令仍在待处理列表时, 显示原文和 `Queued`. 图中工具仍在运行, 因而说明正在等待当前步骤结束. 该原因应来自实际活动, 不统一套用到所有延迟.
+
+提交失败时保留草稿, 说明未能入队的原因. 不仅凭上游 manager 的布尔返回值显示成功. 不将入队标为 Read、Applied 或 Acknowledged.
+
+### 3. 由子代理回复体现后续行为
+
+![子代理产生新回复, 用户指令折叠留在记录中](../../assets/subagents-redevelopment-ui/12-message-response.png)
+
+该指令实际进入会话后才移除待处理提示, 任意其他子代理事件都不足以证明这一点. 示例随后出现新回复: 不修改文件, 继续追踪分支丢失后的回退路径. 这是示意性的模型输出, 不是 UI 自动生成的回执, 也不要求模型必须这样回复.
+
+用户消息折叠为一行, 完整内容仍能从 transcript 查看. 页面再次优先展示最新回复和当前活动. 不另做消息管理页, 不额外调用模型总结是否遵从指令.
+
+**UIR05 问题. 是否在子代理详情内临时展开输入区, 提交成功后收起, 在同一详情中展示待处理指令和子代理后续的真实回复?** 推荐采用. 整个过程都能看清发给谁、它正在做什么.
+
 ## 验证与下一步
 
-UIR03 和 UIR04 局部帮助规则已接受. 已目视检查焦点概念图的文字光标、帮助位置、圆圈选择和行对齐. 概念图不作为终端运行证据. 本次记录维护者的回答, 不改产品代码或图片. 接下来继续梳理详情可观测性和介入操作场景.
+UIR01-UIR04 在各自记录的范围内保持已接受, UIR05 为提案. 已目视检查三张消息概念图的收件人、焦点、消息文本及待处理/回复呈现. 重新核对了 Ghostty 和 Pi 配置, 输入区采用配置中的块状光标. 图片由 ImageGen 生成, 不是实际消息投递或终端验收. 本轮仅更新文档和图片, 等待 UIR05 回答后再推进访谈.
