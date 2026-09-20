@@ -1,17 +1,17 @@
- PI STUFF  /  pi-stuff
-
- ██████    Welcome back!
- ██  ██    What would you like to work on?
- ████  ██  4 extensions · 18 tools · 6 skills
- ██    ██  Type a request, @ for files, / for commands.
-
- /model Choose model   /resume Continue session   /ui Display settings
+╭─── Pi Stuff ─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting started                                        │
+│                   Welcome back!                    │ Type / to browse commands                                       │
+│                                                    │ ─────────────────────────────────────────────────────────────── │
+│                      ██████                        │ Loaded                                                          │
+│                      ██  ██                        │ 4 extensions                                                    │
+│                      ████  ██                      │ 18 tools · 6 skills                                             │
+│                      ██    ██                      │                                                                 │
+│                                                    │                                                                 │
+│                  gpt-5.4 · openai                  │                                                                 │
+│                   ~/dev/pi-stuff                   │                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
  Tool output: expanded
-
-
-
-
 
 
 

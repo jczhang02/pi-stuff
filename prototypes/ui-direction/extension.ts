@@ -3,7 +3,6 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   type Theme,
-  UserMessageComponent,
   getMarkdownTheme,
   getSettingsListTheme,
   DynamicBorder,
@@ -11,14 +10,16 @@ import {
 import {
   type Component,
   Markdown,
-  Text,
+  Box,
+  visibleWidth,
   SettingsList,
   Key,
   matchesKey,
   truncateToWidth,
   wrapTextWithAnsi,
 } from '@earendil-works/pi-tui';
-import {getScene, taskRows, agentRows, type ToolSample} from './scenes';
+import {getScene, type ToolSample} from './scenes';
+import {welcomeLines} from './welcome';
 
 function linesComponent(render: (width: number) => string[]): Component {
   return {
@@ -41,9 +42,7 @@ function toolLines(
       : tool.state === 'running'
         ? 'accent'
         : 'success';
-  const mark =
-    tool.state === 'failed' ? '✗' : tool.state === 'running' ? '●' : '✓';
-  const title = `${theme.fg(color, mark)} ${theme.bold(theme.fg('toolTitle', tool.name))}  ${theme.fg('text', tool.target)}`;
+  const title = `${theme.fg(color, '•')} ${theme.bold(theme.fg('toolTitle', tool.name))}(${theme.fg('text', tool.target)})`;
   const output = expanded
     ? tool.output
     : tool.name === 'Edit' || tool.state === 'failed'
@@ -51,21 +50,21 @@ function toolLines(
       : tool.output.slice(0, 2);
   const lines = [
     ...wrapTextWithAnsi(title, width - 2),
-    theme.fg(color, `  ${tool.result}`),
+    theme.fg('muted', ' ⎿  ') + theme.fg(color, tool.result),
     ...output.flatMap(line => {
       const token = line.startsWith('+')
         ? 'toolDiffAdded'
         : line.startsWith('−')
           ? 'toolDiffRemoved'
           : 'toolOutput';
-      return wrapTextWithAnsi(theme.fg(token, `  ${line}`), width - 2);
+      return wrapTextWithAnsi(theme.fg(token, `    ${line}`), width - 2);
     }),
   ];
   if (!expanded && output.length < tool.output.length)
     lines.push(
       theme.fg(
         'dim',
-        `  … ${tool.output.length - output.length} more lines · Ctrl+O expand`,
+        `    … ${tool.output.length - output.length} more lines · Ctrl+O expand`,
       ),
     );
   return lines.map(line => ` ${line}`);
@@ -74,47 +73,44 @@ function toolLines(
 export default function uiDirection(pi: ExtensionAPI) {
   const scene = process.env.PI_UI_SCENE ?? 'work';
   const messages = getScene(scene);
-  let taskDisplay = 'expanded';
 
   for (const [index, message] of messages.entries()) {
     pi.registerMessageRenderer(
       `ui-direction-${index}`,
       (_message, options, theme) => {
-        if (message.kind === 'user')
-          return new UserMessageComponent(message.text, getMarkdownTheme(), 1);
-        if (message.kind === 'assistant')
-          return new Markdown(message.text, 1, 0, getMarkdownTheme());
         if (message.kind === 'tool')
           return linesComponent(width =>
             toolLines(message.tool, theme, options.expanded, width),
           );
-        return new Text('');
+        const markdown = new Markdown(message.text, 0, 0, getMarkdownTheme());
+        const content = linesComponent(width =>
+          markdown
+            .render(Math.max(1, width - 2))
+            .map(
+              (line, index) =>
+                `${index === 0 ? theme.fg(message.kind === 'user' ? 'mdQuote' : 'accent', message.kind === 'user' ? ' ' : '• ') : '  '}${line}`,
+            ),
+        );
+        const box = new Box(
+          1,
+          message.kind === 'user' ? 1 : 0,
+          message.kind === 'user'
+            ? text => theme.bg('userMessageBg', text)
+            : undefined,
+        );
+        box.addChild(content);
+        return box;
       },
     );
   }
 
   pi.on('session_start', async (_event, ctx) => {
-    ctx.ui.setHeader((_tui, theme) =>
-      linesComponent(width => [
-        ` ${theme.bold(theme.fg('accent', 'PI STUFF'))}${theme.fg('muted', '  /  pi-stuff')}`,
-        ...(scene === 'welcome'
-          ? [
-              '',
-              ` ${theme.fg('accent', '██████  ')}  ${theme.bold(theme.fg('text', 'Welcome back!'))}`,
-              ` ${theme.fg('accent', '██  ██  ')}  ${theme.fg('text', 'What would you like to work on?')}`,
-              ` ${theme.fg('accent', '████  ██')}  ${theme.fg('muted', '4 extensions · 18 tools · 6 skills')}`,
-              ` ${theme.fg('accent', '██    ██')}  ${theme.fg('muted', 'Type a request, @ for files, / for commands.')}`,
-              '',
-              ...wrapTextWithAnsi(
-                theme.fg(
-                  'dim',
-                  ' /model Choose model   /resume Continue session   /ui Display settings',
-                ),
-                width,
-              ),
-            ]
-          : []),
-      ]),
+    ctx.ui.setHeader((tui, theme) =>
+      linesComponent(width =>
+        scene === 'welcome'
+          ? welcomeLines(theme, width, tui.terminal.rows)
+          : [],
+      ),
     );
     ctx.ui.setFooter((_tui, theme) =>
       linesComponent(width => {
@@ -137,26 +133,6 @@ export default function uiDirection(pi: ExtensionAPI) {
         ];
       }),
     );
-    const updateTasks = () => {
-      if (scene !== 'tasks') return;
-      ctx.ui.setWidget('tasks', (_tui, theme) =>
-        linesComponent(width => [
-          theme.fg('borderMuted', '─'.repeat(Math.max(1, width))),
-          ` ${theme.bold(theme.fg('accent', 'Todo'))} ${theme.fg('muted', '2/4 complete')}`,
-          ...(taskDisplay === 'expanded'
-            ? taskRows.map(
-                row =>
-                  ` ${theme.fg(row.startsWith('✓') ? 'muted' : 'text', row)}`,
-              )
-            : [` ${theme.fg('text', taskRows[2] ?? '')}`]),
-          ` ${theme.bold(theme.fg('accent', 'Agents'))} ${theme.fg('muted', '1 running · 1 done')}`,
-          ...agentRows.flatMap(row =>
-            wrapTextWithAnsi(` ${theme.fg('text', row)}`, width),
-          ),
-        ]),
-      );
-    };
-    updateTasks();
     for (const [index, message] of messages.entries()) {
       pi.sendMessage({
         customType: `ui-direction-${index}`,
@@ -167,7 +143,7 @@ export default function uiDirection(pi: ExtensionAPI) {
     ctx.ui.setEditorText(scene === 'complete' ? '检查一下完整 diff' : '');
     const openSettings = async (commandCtx: ExtensionContext) => {
       const draft = commandCtx.ui.getEditorText();
-      await commandCtx.ui.custom<void>((tui, theme, _keys, done) => {
+      await commandCtx.ui.custom<void>((tui, theme, keys, done) => {
         const border = new DynamicBorder(text =>
           theme.fg('borderAccent', text),
         );
@@ -183,27 +159,19 @@ export default function uiDirection(pi: ExtensionAPI) {
               description:
                 'Show a short result with key output, or keep all output expanded.',
             },
-            {
-              id: 'tasks',
-              label: 'Task list',
-              currentValue: taskDisplay,
-              values: ['expanded', 'compact'],
-              description:
-                'Keep the full task list visible, or show the current step.',
-            },
           ],
           5,
           {
             ...getSettingsListTheme(),
             hint: () =>
-              theme.fg('dim', ' ↑↓ Navigate · Enter Change · Esc Close'),
+              theme.fg(
+                'dim',
+                ` ${keys.getKeys('tui.select.up').join('/')} / ${keys.getKeys('tui.select.down').join('/')} Navigate · ${keys.getKeys('tui.select.confirm').join('/')} Change · Esc Close`,
+              ),
           },
           (id, value) => {
             if (id === 'tools') {
               commandCtx.ui.setToolsExpanded(value === 'full');
-            } else {
-              taskDisplay = value;
-              updateTasks();
             }
           },
           done,
@@ -243,41 +211,93 @@ export default function uiDirection(pi: ExtensionAPI) {
         const tools = messages.flatMap(message =>
           message.kind === 'tool' ? [message.tool] : [],
         );
-        await commandCtx.ui.custom<void>((tui, theme, _keys, done) => {
+        await commandCtx.ui.custom<void>((tui, theme, keys, done) => {
           let index = 0;
           let offset = 0;
           let maximumOffset = 0;
+          let detailFocus = false;
+          const navigation = `${keys.getKeys('tui.select.up').join('/')} / ${keys.getKeys('tui.select.down').join('/')}`;
+          const confirm = keys.getKeys('tui.select.confirm').join('/');
           return {
             render(width) {
+              const split = width >= 96;
+              const leftWidth = split ? Math.floor(width * 0.32) : width;
+              const rightWidth = split ? width - leftWidth - 1 : width;
+              const height = Math.max(3, Math.min(16, tui.terminal.rows - 12));
               const tool = tools[index];
               const rows = tool
-                ? toolLines(tool, theme, true, width)
+                ? toolLines(tool, theme, true, rightWidth)
                 : [' No tools in this session.'];
-              const height = Math.max(3, tui.terminal.rows - 12);
-              maximumOffset = Math.max(0, rows.length - height);
+              maximumOffset = Math.max(0, rows.length - height + 4);
               offset = Math.min(offset, maximumOffset);
-              const body = rows.slice(offset, offset + height);
+              const list = [
+                ` ${theme.bold('Tools')} · ${tools.length} activities`,
+                '',
+                ...tools.map((item, position) =>
+                  theme.fg(
+                    position === index ? 'accent' : 'muted',
+                    ` ${position === index ? '›' : ' '} ${item.name}(${item.target})`,
+                  ),
+                ),
+              ];
+              const detail = [
+                ` ${theme.bold(`Tools / ${tool?.name ?? 'Empty'}`)} · ${tools.length ? index + 1 : 0}/${tools.length}`,
+                '',
+                ...rows.slice(offset, offset + height - 4),
+              ];
+              const fit = (line: string, columns: number) => {
+                const clipped = truncateToWidth(line, columns);
+                return (
+                  clipped +
+                  ' '.repeat(Math.max(0, columns - visibleWidth(clipped)))
+                );
+              };
+              const body = Array.from({length: height}, (_, row) =>
+                split
+                  ? `${fit(list[row] ?? '', leftWidth)}${theme.fg('borderMuted', '│')}${fit(detail[row] ?? '', rightWidth)}`
+                  : fit((detailFocus ? detail : list)[row] ?? '', width),
+              );
               return [
                 theme.fg('borderAccent', '─'.repeat(width)),
-                ` ${theme.bold('Tool output')}  ${tools.length ? `${index + 1}/${tools.length}` : '0 tools'}`,
-                '',
                 ...body,
-                '',
-                theme.fg('dim', ' [ Previous · ] Next · ↑↓ Scroll · Esc Close'),
+                truncateToWidth(
+                  theme.fg(
+                    'dim',
+                    detailFocus
+                      ? ` ${navigation} Scroll · Tab List · Esc Back`
+                      : ` ${navigation} Select · ${confirm} Details · Tab Pane · [ ] Select · Esc Close`,
+                  ),
+                  width,
+                ),
                 theme.fg('borderAccent', '─'.repeat(width)),
               ];
             },
             handleInput(data) {
-              if (matchesKey(data, Key.escape)) done();
-              else if (data === ']' && tools.length > 0) {
-                index = Math.min(tools.length - 1, index + 1);
+              if (matchesKey(data, Key.escape)) {
+                if (detailFocus) detailFocus = false;
+                else done();
+              } else if (
+                matchesKey(data, Key.tab) ||
+                keys.matches(data, 'tui.select.confirm')
+              ) {
+                detailFocus = !detailFocus;
+              } else if (
+                data === ']' ||
+                data === '[' ||
+                (!detailFocus &&
+                  (keys.matches(data, 'tui.select.down') ||
+                    keys.matches(data, 'tui.select.up')))
+              ) {
+                const next =
+                  data === ']' || keys.matches(data, 'tui.select.down');
+                index = Math.max(
+                  0,
+                  Math.min(tools.length - 1, index + (next ? 1 : -1)),
+                );
                 offset = 0;
-              } else if (data === '[' && tools.length > 0) {
-                index = Math.max(0, index - 1);
-                offset = 0;
-              } else if (matchesKey(data, Key.down))
+              } else if (keys.matches(data, 'tui.select.down'))
                 offset = Math.min(maximumOffset, offset + 1);
-              else if (matchesKey(data, Key.up))
+              else if (keys.matches(data, 'tui.select.up'))
                 offset = Math.max(0, offset - 1);
               tui.requestRender();
             },

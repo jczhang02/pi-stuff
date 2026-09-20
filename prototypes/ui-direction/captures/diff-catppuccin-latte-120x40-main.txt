@@ -1,26 +1,26 @@
- PI STUFF  /  pi-stuff
 
 
- 修复搜索结果翻页时重复出现的问题, 保留原来的排序, 并补充测试.
+  修复搜索结果翻页时重复出现的问题, 保留原来的排序, 并补充测试.
 
 
- 分页边界改为接收上一页的 ID. 下面是关键改动, 接下来验证重复项和游标是否一起保持正确.
+ • 分页边界改为接收上一页的 ID. 下面是关键改动, 接下来验证重复项和游标是否一起保持正确.
 
- ✓ Edit  src/search/paginate.ts
-   +4 −1 · deduplicate page boundaries
-       20  const nextCursor = page.cursor;
-   −   21  return {items, nextCursor};
-   +   21  const seen = new Set(previousIds);
-   +   22  const unique = items.filter(item => !seen.has(item.id));
-   +   23  // Keep the first occurrence and the upstream cursor.
-   +   24  return {items: unique, nextCursor};
-       25  }
+ • Edit(src/search/paginate.ts)
+  ⎿  +4 −1 · deduplicate page boundaries
+         20  const nextCursor = page.cursor;
+     −   21  return {items, nextCursor};
+     +   21  const seen = new Set(previousIds);
+     +   22  const unique = items.filter(item => !seen.has(item.id));
+     +   23  // Keep the first occurrence and the upstream cursor.
+     +   24  return {items: unique, nextCursor};
+         25  }
 
- ● Bash  bun test tests/search/paginate.test.ts
-   Running · 4s
-   bun test v1.4.0
-   ✓ keeps the first occurrence within a page
-   … 2 more lines · Ctrl+O expand
+ • Bash(bun test tests/search/paginate.test.ts)
+  ⎿  Running · 4s
+     bun test v1.4.0
+     ✓ keeps the first occurrence within a page
+     … 2 more lines · Ctrl+O expand
+
 
 
 

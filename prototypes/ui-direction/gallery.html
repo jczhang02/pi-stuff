@@ -95,12 +95,12 @@
         这些图片用于讨论, 尚未确定为生产方案.
       </p>
       <p>
-        图片来自真实 Pi 0.85.1 终端运行. 内容和执行状态为隔离样例, Todo 和
-        Agents 不是当前产品中已实现的能力. 点击图片查看原始尺寸.
+        图片来自真实 Pi 0.85.1 终端运行. 内容和执行状态为隔离样例, 欢迎页和
+        transcript 保留旧版 Pi Stuff 的参考样式. 点击图片查看原始尺寸.
       </p>
       <nav>
         <a href="../../docs/i18n/zh-CN/research/ui-direction-2026-09-20.md"
-          >16 个 UI 区域与多源研究</a
+          >UI 区域与多源研究</a
         ><a href="README.md">运行方式与验证边界</a>
       </nav>
     </header>
@@ -108,7 +108,7 @@
       <figure id="screen-1">
         <figcaption>
           <h2>01 · 欢迎页</h2>
-          <p>保留 Pi 标识、加载概况与输入入口, 缩短欢迎区.</p>
+          <p>完整保留旧 Pi Stuff 的带框欢迎页、启动信息和输入入口.</p>
         </figcaption>
         <a
           href="captures/welcome-catppuccin-latte-120x40-main.png"
@@ -134,7 +134,7 @@
       <figure id="screen-2">
         <figcaption>
           <h2>02 · 工作中的会话</h2>
-          <p>正文、检索摘要和原生输入区一起查看. 深色主题.</p>
+          <p>保留旧 transcript 前缀、正文、检索摘要和原生输入区. 深色主题.</p>
         </figcaption>
         <a
           href="captures/work-catppuccin-mocha-120x40-main.png"
@@ -175,28 +175,7 @@
       </figure>
       <figure id="screen-4">
         <figcaption>
-          <h2>04 · Todo 与 Agents</h2>
-          <p>参考旧版输入区上方的任务清单和 agent 状态.</p>
-        </figcaption>
-        <a
-          href="captures/tasks-catppuccin-latte-120x40-main.png"
-          target="_blank"
-          rel="noopener"
-          ><img
-            src="captures/tasks-catppuccin-latte-120x40-main.png"
-            alt="04 · Todo 与 Agents"
-            loading="lazy"
-        /></a>
-        <p class="evidence">
-          <a href="captures/tasks-catppuccin-latte-120x40-main.png">打开原图</a>
-          ·
-          <a href="captures/tasks-catppuccin-latte-120x40-main.txt">终端文本</a>
-          · <a href="captures/tasks-catppuccin-latte-120x40-main.ansi">ANSI</a>
-        </p>
-      </figure>
-      <figure id="screen-5">
-        <figcaption>
-          <h2>05 · 失败与恢复</h2>
+          <h2>04 · 失败与恢复</h2>
           <p>保留失败结果、关键错误和下一步, 不暗示修改已回滚.</p>
         </figcaption>
         <a
@@ -205,7 +184,7 @@
           rel="noopener"
           ><img
             src="captures/failure-catppuccin-latte-120x40-main.png"
-            alt="05 · 失败与恢复"
+            alt="04 · 失败与恢复"
             loading="lazy"
         /></a>
         <p class="evidence">
@@ -220,9 +199,9 @@
           <a href="captures/failure-catppuccin-latte-120x40-main.ansi">ANSI</a>
         </p>
       </figure>
-      <figure id="screen-6">
+      <figure id="screen-5">
         <figcaption>
-          <h2>06 · 完成总结</h2>
+          <h2>05 · 完成总结</h2>
           <p>总结结果与验证状态, 输入区保留下一条请求.</p>
         </figcaption>
         <a
@@ -231,7 +210,7 @@
           rel="noopener"
           ><img
             src="captures/complete-catppuccin-latte-120x40-main.png"
-            alt="06 · 完成总结"
+            alt="05 · 完成总结"
             loading="lazy"
         /></a>
         <p class="evidence">
@@ -246,9 +225,9 @@
           <a href="captures/complete-catppuccin-latte-120x40-main.ansi">ANSI</a>
         </p>
       </figure>
-      <figure id="screen-7">
+      <figure id="screen-6">
         <figcaption>
-          <h2>07 · 窄窗口</h2>
+          <h2>06 · 窄窗口</h2>
           <p>80 × 30, 检查中文换行、工具目标和底部信息.</p>
         </figcaption>
         <a
@@ -257,7 +236,7 @@
           rel="noopener"
           ><img
             src="captures/work-narrow-catppuccin-mocha-80x30-main.png"
-            alt="07 · 窄窗口"
+            alt="06 · 窄窗口"
             loading="lazy"
         /></a>
         <p class="evidence">
@@ -274,9 +253,9 @@
           >
         </p>
       </figure>
-      <figure id="screen-8">
+      <figure id="screen-7">
         <figcaption>
-          <h2>08 · 显示设置</h2>
+          <h2>07 · 显示设置</h2>
           <p>使用 Pi 原生 SettingsList. Enter 修改, Esc 关闭.</p>
         </figcaption>
         <a
@@ -285,7 +264,7 @@
           rel="noopener"
           ><img
             src="captures/welcome-catppuccin-latte-120x40-ui-settings.png"
-            alt="08 · 显示设置"
+            alt="07 · 显示设置"
             loading="lazy"
         /></a>
         <p class="evidence">
@@ -302,9 +281,9 @@
           >
         </p>
       </figure>
-      <figure id="screen-9">
+      <figure id="screen-8">
         <figcaption>
-          <h2>09 · 完整工具输出</h2>
+          <h2>08 · 完整工具输出</h2>
           <p>通过 Ctrl+O 展开, 与紧凑视图使用同一份内容.</p>
         </figcaption>
         <a
@@ -313,7 +292,7 @@
           rel="noopener"
           ><img
             src="captures/work-catppuccin-mocha-120x40-work-expanded.png"
-            alt="09 · 完整工具输出"
+            alt="08 · 完整工具输出"
             loading="lazy"
         /></a>
         <p class="evidence">
@@ -330,10 +309,13 @@
           >
         </p>
       </figure>
-      <figure id="screen-10">
+      <figure id="screen-9">
         <figcaption>
-          <h2>10 · 工具详情</h2>
-          <p>逐个查看完整输出, [ ] 切换, 方向键滚动.</p>
+          <h2>09 · 工具检查器</h2>
+          <p>
+            宽窗口显示左侧工具列表和右侧详情, 窄窗口聚焦详情. 会话内保留旧版
+            Tool(target) 标题.
+          </p>
         </figcaption>
         <a
           href="captures/work-catppuccin-mocha-120x40-tools-history.png"
@@ -341,7 +323,7 @@
           rel="noopener"
           ><img
             src="captures/work-catppuccin-mocha-120x40-tools-history.png"
-            alt="10 · 工具详情"
+            alt="09 · 工具检查器"
             loading="lazy"
         /></a>
         <p class="evidence">
@@ -354,6 +336,39 @@
           >
           ·
           <a href="captures/work-catppuccin-mocha-120x40-tools-history.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure id="screen-10">
+        <figcaption>
+          <h2>10 · 窄窗口工具检查器</h2>
+          <p>
+            窄窗口先显示工具列表, 再聚焦详情. 会话内保留旧版 Tool(target) 标题.
+          </p>
+        </figcaption>
+        <a
+          href="captures/work-narrow-catppuccin-mocha-80x30-tools-history.png"
+          target="_blank"
+          rel="noopener"
+          ><img
+            src="captures/work-narrow-catppuccin-mocha-80x30-tools-history.png"
+            alt="10 · 窄窗口工具检查器"
+            loading="lazy"
+        /></a>
+        <p class="evidence">
+          <a
+            href="captures/work-narrow-catppuccin-mocha-80x30-tools-history.png"
+            >打开原图</a
+          >
+          ·
+          <a
+            href="captures/work-narrow-catppuccin-mocha-80x30-tools-history.txt"
+            >终端文本</a
+          >
+          ·
+          <a
+            href="captures/work-narrow-catppuccin-mocha-80x30-tools-history.ansi"
             >ANSI</a
           >
         </p>
@@ -388,7 +403,7 @@
     <footer>
       Pi 0.85.1 · Bun 1.4.0 · Catppuccin Latte / Mocha · 120 × 40 / 80 × 30<br />Font:
       JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono. 无
-      provider 或真实 agent 执行. 原生窗口和 compositor 未验证.
+      provider 或真实任务执行. 原生窗口和 compositor 未验证.
     </footer>
   </main>
 </html>

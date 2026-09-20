@@ -61,7 +61,6 @@ type Scenario =
   | 'welcome'
   | 'work'
   | 'diff'
-  | 'tasks'
   | 'failure'
   | 'complete';
 type ThemeFileValue = Schema.Schema.Type<typeof ThemeFile>;
@@ -85,7 +84,7 @@ type IsolatedPaths = {
 
 const USAGE = `Usage: bun prototypes/ui-direction/capture.ts <scenario> [options]
 
-Scenarios: baseline, welcome, work, work-narrow, diff, tasks, failure, complete
+Scenarios: baseline, welcome, work, work-narrow, diff, failure, complete
 Options:
   --theme <catppuccin-latte|catppuccin-mocha>
   --cols <number> --rows <number>
@@ -98,7 +97,6 @@ function isScenario(value: string): value is Scenario {
     value === 'welcome' ||
     value === 'work' ||
     value === 'diff' ||
-    value === 'tasks' ||
     value === 'failure' ||
     value === 'complete'
   );
@@ -211,13 +209,11 @@ function expectedToken(scenario: Scenario): string {
     case 'baseline':
       return 'pi v0.85.1';
     case 'welcome':
-      return 'What would you like';
+      return 'Welcome back!';
     case 'work':
       return '3 matches';
     case 'diff':
       return 'deduplicate';
-    case 'tasks':
-      return 'Agents';
     case 'failure':
       return 'Test failed';
     case 'complete':
@@ -477,7 +473,7 @@ async function captureSettingsAndRestore(
   await session.screen.waitForText('Display settings', {
     timeoutMs: WAIT_TIMEOUT_MS,
   });
-  await session.screen.waitForText('Task list', {
+  await session.screen.waitForText('Tool output', {
     timeoutMs: WAIT_TIMEOUT_MS,
   });
   await session.screen.waitForIdle({
@@ -489,7 +485,7 @@ async function captureSettingsAndRestore(
     options,
     theme,
     'ui-settings',
-    ['Display settings', 'Task list'],
+    ['Display settings', 'Tool output'],
   );
   const initialToolValue = initialSettings.text.includes('Tool output  full')
     ? 'full'
@@ -518,7 +514,7 @@ async function captureSettingsAndRestore(
   await session.screen.waitForText('Display settings', {
     timeoutMs: WAIT_TIMEOUT_MS,
   });
-  await session.screen.waitForText('Task list', {
+  await session.screen.waitForText('Tool output', {
     timeoutMs: WAIT_TIMEOUT_MS,
   });
   await session.screen.waitForIdle({
@@ -527,7 +523,7 @@ async function captureSettingsAndRestore(
   });
   await captureScreen(session, options, theme, 'ui-settings-draft', [
     'Display settings',
-    'Task list',
+    'Tool output',
     `Tool output  ${toggledToolValue}`,
   ]);
   await session.keyboard.write(ESCAPE_BYTE);
@@ -545,46 +541,6 @@ async function captureSettingsAndRestore(
   ]);
 }
 
-async function captureTaskInteractions(
-  session: Session,
-  options: RunnerOptions,
-  theme: ThemeFileValue,
-): Promise<void> {
-  await submitCommand(session, '/ui', true);
-  await session.screen.waitForText('Display settings', {
-    timeoutMs: WAIT_TIMEOUT_MS,
-  });
-  await session.screen.waitForText('Task list    expanded', {
-    timeoutMs: WAIT_TIMEOUT_MS,
-  });
-  await session.keyboard.press('ArrowDown');
-  await session.keyboard.press('Enter');
-  await session.screen.waitForText('Task list    compact', {
-    timeoutMs: WAIT_TIMEOUT_MS,
-  });
-  await session.screen.waitForIdle({
-    timeoutMs: WAIT_TIMEOUT_MS,
-    quietForMs: CAPTURE_SETTLE_MS,
-  });
-  await captureScreen(session, options, theme, 'tasks-settings-compact', [
-    'Display settings',
-    'Task list    compact',
-  ]);
-  await session.keyboard.write(ESCAPE_BYTE);
-  await Bun.sleep(250);
-  await session.screen.waitForText('Verify regression tests', {
-    timeoutMs: WAIT_TIMEOUT_MS,
-  });
-  await session.screen.waitForIdle({
-    timeoutMs: WAIT_TIMEOUT_MS,
-    quietForMs: CAPTURE_SETTLE_MS,
-  });
-  await captureScreen(session, options, theme, 'tasks-compact', [
-    'Todo',
-    'Verify regression tests',
-  ]);
-}
-
 async function captureWorkInteractions(
   session: Session,
   options: RunnerOptions,
@@ -599,15 +555,22 @@ async function captureWorkInteractions(
   ]);
   await captureSettingsAndRestore(session, options, theme);
   await submitCommand(session, '/tools history', true);
-  await session.screen.waitForText('Tool output  1/', {
+  await session.screen.waitForText('Tools · 2 activities', {
     timeoutMs: WAIT_TIMEOUT_MS,
   });
+  if (options.cols < 96) {
+    await captureScreen(session, options, theme, 'tools-list', [
+      'Tools · 2 activities',
+    ]);
+    await session.keyboard.press('Enter');
+  }
+  await waitForReady(session, 'Tools / Search');
   await captureScreen(session, options, theme, 'tools-history', [
-    'Tool output',
+    'Tools /',
     '1/2',
   ]);
   await session.keyboard.write(NEXT_TOOL_BYTE);
-  await session.screen.waitForText('Tool output  2/2', {
+  await session.screen.waitForText('Tools / Read', {
     timeoutMs: WAIT_TIMEOUT_MS,
   });
   await session.screen.waitForIdle({
@@ -615,12 +578,12 @@ async function captureWorkInteractions(
     quietForMs: CAPTURE_SETTLE_MS,
   });
   await captureScreen(session, options, theme, 'tools-history-next', [
-    'Tool output',
+    'Tools /',
     '2/2',
     'Read',
   ]);
   await session.keyboard.write(PREVIOUS_TOOL_BYTE);
-  await session.screen.waitForText('Tool output  1/2', {
+  await session.screen.waitForText('Tools / Search', {
     timeoutMs: WAIT_TIMEOUT_MS,
   });
   await session.screen.waitForIdle({
@@ -628,11 +591,25 @@ async function captureWorkInteractions(
     quietForMs: CAPTURE_SETTLE_MS,
   });
   await captureScreen(session, options, theme, 'tools-history-previous', [
-    'Tool output',
+    'Tools /',
     '1/2',
     'Search',
   ]);
+  if (options.cols >= 96) await session.keyboard.press('Tab');
+  await session.screen.waitForText('Esc Back', {timeoutMs: WAIT_TIMEOUT_MS});
   await session.keyboard.write(ESCAPE_BYTE);
+  await Bun.sleep(250);
+  await session.screen.waitForText('Esc Close', {timeoutMs: WAIT_TIMEOUT_MS});
+  await session.keyboard.write(ESCAPE_BYTE);
+  await Bun.sleep(250);
+  await session.keyboard.type('继续检查工具输出');
+  await session.screen.waitUntil(
+    snapshot => tailContains(snapshot.text, '继续检查工具输出'),
+    {timeoutMs: WAIT_TIMEOUT_MS},
+  );
+  await captureScreen(session, options, theme, 'tools-restored', [
+    '继续检查工具输出',
+  ]);
 }
 
 async function runCapture(options: RunnerOptions): Promise<void> {
@@ -686,10 +663,8 @@ async function runCapture(options: RunnerOptions): Promise<void> {
     ]);
     if (options.scenario === 'welcome') {
       await captureSettingsAndRestore(session, options, theme);
-    } else if (options.scenario === 'work' && options.outputLabel === 'work') {
+    } else if (options.scenario === 'work') {
       await captureWorkInteractions(session, options, theme);
-    } else if (options.scenario === 'tasks') {
-      await captureTaskInteractions(session, options, theme);
     }
   } catch (error) {
     try {

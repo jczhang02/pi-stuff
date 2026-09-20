@@ -103,14 +103,6 @@ export const scenes = {
     {kind: 'tool', tool: edit},
     {kind: 'tool', tool: tests},
   ],
-  tasks: [
-    request,
-    {
-      kind: 'assistant',
-      text: '核心改动已经完成. 我把顺序与游标检查交给 reviewer, 测试边界交给 tester, 等结果后再一起收尾.',
-    },
-    {kind: 'tool', tool: edit},
-  ],
   failure: [
     {kind: 'tool', tool: failed},
     {
@@ -155,14 +147,3 @@ export function getScene(name: string): readonly SampleMessage[] {
     Object.entries(scenes).find(([key]) => key === name)?.[1] ?? scenes.work
   );
 }
-
-export const taskRows = [
-  '✓  Reproduce duplicate page boundary',
-  '✓  Preserve order and cursor',
-  '●  Verify regression tests',
-  '○  Review and summarize changes',
-];
-export const agentRows = [
-  '●  reviewer   Checking order and cursor      18s',
-  '✓  tester     Added 3 boundary cases         12s',
-];

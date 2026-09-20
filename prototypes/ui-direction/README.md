@@ -12,7 +12,6 @@ From this branch's checkout, with the pinned Bun 1.4.0 dependencies installed:
 bun prototypes/ui-direction/capture.ts welcome
 bun prototypes/ui-direction/capture.ts work
 bun prototypes/ui-direction/capture.ts diff
-bun prototypes/ui-direction/capture.ts tasks
 bun prototypes/ui-direction/capture.ts failure
 bun prototypes/ui-direction/capture.ts complete
 bun prototypes/ui-direction/capture.ts work-narrow
@@ -27,30 +26,34 @@ For a shared foreground session, use the complete isolated launch block below. T
 
 - Pi's native `Ctrl+O` expands/collapses sample tool messages.
 - `/ui` opens the native SettingsList. `Ctrl+Alt+U` opens the same settings while preserving the editor draft. Enter changes a value; Esc closes.
-- `/tools` opens all retained output. `[` and `]` select tools; arrows scroll; Esc closes.
+- `/tools` opens all retained output in the old inspector: a wide view uses a left tool list and right detail pane, while a narrow view opens the list first. Arrows select in the list; Enter or Tab focuses details, where arrows scroll. Esc returns to the list, then closes. `[` and `]` also select tools. Selection and confirmation follow Pi keybindings; these are the defaults.
 - The host owns the actual editor, transcript viewport, completion and footer placement. The prototype supplies header/footer components and fixture message renderers.
 
-The sample is one pagination task shown at selected stages. Its messages, paths, model, costs, inventory counts, durations, Todo states, agent responses and test results are fixtures, not real work. The extension executes no shell/test commands and starts no agents. Typing an ordinary request is not a supported coding workflow in this artifact. The captured failure describes a sample failed test, not failure of the UI verification.
+The sample is one pagination task shown at selected stages. Its messages, paths, model, costs, inventory counts, durations and test results are fixtures, not real work. Session identity/naming, Goal, Todo, subagents, background work, BTW and notifications are outside this preview. The extension executes no shell/test commands. Typing an ordinary request is not a supported coding workflow in this artifact. The captured failure describes a sample failed test, not failure of the UI verification.
 
-The renderer uses custom messages. It proves the proposed layout can run inside Pi; it does not prove native built-in tools or assistant/thinking have been replaced. The report documents the separate public built-in-tool override route and the limits of assistant/thinking customization. Agent stop/steer, Goal persistence, notifications, image protocols, history replay and live streaming remain outside this visual artifact.
+The renderer uses custom messages. It proves the proposed layout can run inside Pi; it does not prove native built-in tools or assistant/thinking have been replaced. The report documents the separate public built-in-tool override route and the limits of assistant/thinking customization. Image protocols, history replay and live streaming remain outside this visual artifact.
 
 The export font stack is `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. Palettes are the repository's Catppuccin Latte and Mocha themes. Terminal default foreground/background are set from those palettes before launch; exported colors are checked against the live terminal frame. No screenshot is painted over to change the layout.
 
 ## Findings
 
-The useful change is consistent hierarchy across the whole transcript: action/target, outcome, then a useful excerpt. Full output remains inspectable. The old Pi logo, transcript order, above-editor Todo/agent placement and native input are retained as references. Compact versus expanded tool output and Todo density can be tried directly.
+The useful change is consistent hierarchy across the whole transcript: action/target, outcome, then a useful excerpt. Full output remains inspectable. The old Pi Stuff boxed welcome, transcript prefixes, inline tool heading and native input are retained as references. Compact versus expanded tool output can be tried directly.
 
 The first smoke run exposed startup resource listings that displaced task content, duplicate settings hints and a tool-expansion setting that did not track native Ctrl+O. Those were corrected through normal Pi configuration and component state. Independent review also found a scrolling bound based on source rather than rendered rows and insufficient draft-preservation verification; the code and verification were corrected before the retained capture pass.
 
-The prototype does not select a final design. Welcome density, statusline fields, tool-family grouping, large-diff navigation and stateful feature integration remain discussion items supported by the previews.
+The revision also corrected hardcoded tool-navigation keys. Wide/narrow captures and an isolated `j`/`k`/`ctrl+j` remapping check passed selection, confirmation, Escape and draft restoration.
+
+The prototype does not select a final design. Statusline fields, tool-family grouping, `/tools` list/detail behavior and large-diff navigation remain discussion items supported by the previews.
 
 ## 中文说明
 
 这是 #99 的一次性设计原型, 保留在 `codex/ui-research-preview` 分支, 生产入口不加载. 上面的命令在隔离目录中运行真实 Pi 0.85.1, 导出终端图片、ANSI 和文本后清理临时状态. 图片采用仓库里的 Catppuccin 明暗主题和明确的字体栈, 不是绘制的终端示意图.
 
-样例中的执行、测试、费用、时长、加载清单、Todo 和 agent 状态都是示例数据. 普通输入不会启动真实编码任务. 宿主提供真实输入框、会话区域和布局; 原型提供自定义消息、header/footer 和设置组件. 这不等于生产工具、Thinking、Goal、后台或 subagent 已实现.
+样例中的执行、测试、费用、时长和加载清单都是示例数据. 普通输入不会启动真实编码任务. 宿主提供真实输入框、会话区域和布局; 原型提供自定义消息、header/footer 和设置组件. 会话身份/命名、Goal、Todo、subagents、后台工作、BTW 和通知不在本次预览范围内. 这不等于生产工具或 Thinking 已实现.
 
-可以用 Ctrl+O 展开工具, `/ui` 或 Ctrl+Alt+U 打开设置, Enter 切换值, Esc 返回. `/tools` 支持完整输出、`[ ]` 切换和方向键滚动. 本次保留实际终端截图与检查结果, 继续讨论欢迎信息密度、状态栏字段、工具分组、大 diff 和其他组件接入, 不自动确定生产方案.
+修订同时修正了硬编码工具导航键. 宽窄截图检查及隔离的 `j`/`k`/`ctrl+j` 重映射实验通过选择、确认、Esc 和草稿恢复验证.
+
+可以用 Ctrl+O 展开工具, `/ui` 或 Ctrl+Alt+U 打开设置, Enter 切换值, Esc 返回. `/tools` 的宽窗口显示左侧工具列表和右侧详情, 窄窗口先显示列表. 方向键选择工具, Enter/Tab 进入详情后方向键滚动, Esc 先回列表再关闭; `[ ]` 也可切换工具. 选择与确认沿用 Pi 的按键配置, 此处为默认键; 会话内保留旧版 `Tool(target)` 标题. 本次保留实际终端截图与检查结果, 继续讨论状态栏字段、工具分组、大 diff, 不自动确定生产方案.
 
 ## Shared foreground launch
 
