@@ -6,8 +6,8 @@ import {oneLine} from '../../src/subagent/ui/format';
 test('named inspect shortcuts preserve valid remaps and reject malformed names', () => {
   expect(configuredShortcut('ctrl+g')).toBe('ctrl+g');
   expect(configuredShortcut('Ctrl+Shift+P')).toBe('ctrl+shift+p');
-  expect(configuredShortcut('ctrl+ctrl+g')).toBe('ctrl+r');
-  expect(configuredShortcut('not-a-key')).toBe('ctrl+r');
+  expect(configuredShortcut('ctrl+ctrl+g')).toBe('ctrl+q');
+  expect(configuredShortcut('not-a-key')).toBe('ctrl+q');
   expect(oneLine('ok\u001b]52;c;clipboard\u0007\u001b[31m text')).toBe(
     'ok text',
   );
@@ -287,8 +287,35 @@ test('browsing keeps targeted editor letters and stop back navigation local', as
     await host.terminal.screen.waitForText('Prompt', {timeoutMs: 5000});
     await host.terminal.keyboard.type('a');
     await host.terminal.screen.waitForText('Actions', {timeoutMs: 5000});
-    await host.terminal.keyboard.type('jjj');
-    await host.terminal.keyboard.press('Enter');
+
+    async function chooseAction(label: string): Promise<void> {
+      const screen = await host.terminal.screen.text();
+      const actionLines = screen
+        .split('\n')
+        .filter(
+          line =>
+            line.trimStart().startsWith('● ') ||
+            line.trimStart().startsWith('○ '),
+        );
+      const selectedIndex = actionLines.findIndex(line =>
+        line.trimStart().startsWith('● '),
+      );
+      const targetIndex = actionLines.findIndex(line =>
+        line.includes(` ${label}`),
+      );
+      expect(selectedIndex).toBeGreaterThanOrEqual(0);
+      expect(targetIndex).toBeGreaterThanOrEqual(0);
+      const delta = targetIndex - selectedIndex;
+      if (delta > 0)
+        for (let index = 0; index < delta; index++)
+          await host.terminal.keyboard.press('ArrowDown');
+      else
+        for (let index = 0; index < -delta; index++)
+          await host.terminal.keyboard.press('ArrowUp');
+      await host.terminal.keyboard.press('Enter');
+    }
+
+    await chooseAction('Message assignment');
     await host.terminal.screen.waitForText('Targeted action', {
       timeoutMs: 5000,
     });
@@ -296,7 +323,7 @@ test('browsing keeps targeted editor letters and stop back navigation local', as
     await host.terminal.screen.waitForText('jkq?', {timeoutMs: 5000});
     await host.terminal.keyboard.press('Escape');
     await host.terminal.screen.waitForText('Actions', {timeoutMs: 5000});
-    await host.terminal.keyboard.press('Enter');
+    await chooseAction('Message assignment');
     await host.terminal.screen.waitForText('Targeted action', {
       timeoutMs: 5000,
     });
@@ -307,8 +334,7 @@ test('browsing keeps targeted editor letters and stop back navigation local', as
     await host.terminal.screen.waitForText('Prompt', {timeoutMs: 5000});
     await host.terminal.keyboard.type('a');
     await host.terminal.screen.waitForText('Actions', {timeoutMs: 5000});
-    await host.terminal.keyboard.type('jjjjj');
-    await host.terminal.keyboard.press('Enter');
+    await chooseAction('Stop owned branch');
     await host.terminal.screen.waitForText('Stop branch', {timeoutMs: 5000});
     await host.terminal.keyboard.press('Escape');
     await host.terminal.screen.waitForText('Prompt', {timeoutMs: 5000});

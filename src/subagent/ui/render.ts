@@ -1,8 +1,10 @@
 import type {Theme} from '@earendil-works/pi-coding-agent';
-import {truncateToWidth} from '@earendil-works/pi-tui';
+import {truncateToWidth, visibleWidth} from '@earendil-works/pi-tui';
 import type {AgentRecord, FleetRecord, TaskRecord} from '../records';
 import {
   appendWrapped,
+  attentionTaskForAgent,
+  countAttention,
   computeFleetColumns,
   formatElapsed,
   formatTokens,
@@ -12,7 +14,6 @@ import {
   stateColor,
   stateOf,
   taskForAgent,
-  taskNeedsAttention,
 } from './format';
 import {
   compactTaskLabel,
@@ -25,6 +26,12 @@ import {
 import {computeDependencyGraphGeometry, renderDependencyGraph} from './graph';
 import {detailSections, projectSection, sectionLabels} from './sections';
 import {END_SCROLL_OFFSET} from './types';
+import {
+  inspectionViewport,
+  revealOffset,
+  targetedMinimumRows,
+  windowLines,
+} from './viewport';
 import type {
   ActionKind,
   BrowsePane,
@@ -80,6 +87,7 @@ export function renderInspection(state: RenderState, width: number): string[] {
       'Terminal too small',
       'Use at least 48 columns and 12 rows · q or Esc back',
     ];
+  if (state.surface === 'targeted') return renderTargetedViewport(state, width);
   const lines = renderSurface(state, width);
   if (state.surface === 'fleet' || state.surface === 'overview')
     return lines.map(line => truncateToWidth(line, width, ''));
@@ -120,9 +128,13 @@ function renderTop(state: RenderState, title: string): string[] {
     state.surface === 'fleet'
       ? 'Fleet'
       : `Agents / ${oneLine(title || 'Inspection')}`;
+  const editorSurface = state.surface === 'targeted';
   const lines = [
     state.theme.bold(location),
-    state.theme.fg('dim', 'q back · ? help'),
+    state.theme.fg(
+      'dim',
+      editorSurface ? 'Esc back · draft preserved' : 'q back · ? help',
+    ),
   ];
   if (state.snapshot.storageError !== null)
     lines.push(
@@ -150,12 +162,14 @@ function renderFleet(state: RenderState, width: number): string[] {
   const agents = retainedAgents(state.snapshot).filter(
     agent =>
       !state.attentionOnly ||
-      taskNeedsAttention(
-        state.snapshot,
-        taskForAgent(state.snapshot, agent.id),
-      ),
+      attentionTaskForAgent(state.snapshot, agent.id) !== undefined,
   );
-  const columns = computeFleetColumns(state.snapshot, width, state.now);
+  const columns = computeFleetColumns(
+    state.snapshot,
+    width,
+    state.now,
+    state.attentionOnly,
+  );
   const rows: AgentRecord[] = [
     {
       id: 'main',
@@ -174,7 +188,14 @@ function renderFleet(state: RenderState, width: number): string[] {
     ...agents,
   ];
   if (rows.length === 1)
-    lines.push(state.theme.fg('muted', 'No subagents have been assigned.'));
+    lines.push(
+      state.theme.fg(
+        'muted',
+        state.attentionOnly
+          ? 'No subagents need attention.'
+          : 'No subagents have been assigned.',
+      ),
+    );
   const available = Math.max(
     1,
     Math.min(6, state.terminalRows - 5 - lines.length - 3),
@@ -196,19 +217,17 @@ function renderFleet(state: RenderState, width: number): string[] {
       columns,
       state.theme,
       state.now,
+      state.attentionOnly
+        ? attentionTaskForAgent(state.snapshot, agent.id)
+        : taskForAgent(state.snapshot, agent.id),
     );
     lines.push(row);
   }
-  const attention = state.snapshot.notices.filter(
-    notice => !notice.acknowledged,
-  ).length;
+  const attention = countAttention(state.snapshot);
   const hiddenAttention = agents.filter(
     (agent, index) =>
       (index < start || index >= start + available) &&
-      taskNeedsAttention(
-        state.snapshot,
-        taskForAgent(state.snapshot, agent.id),
-      ),
+      attentionTaskForAgent(state.snapshot, agent.id) !== undefined,
   ).length;
   const hiddenActive = agents.filter((agent, index) => {
     const task = taskForAgent(state.snapshot, agent.id);
@@ -218,10 +237,23 @@ function renderFleet(state: RenderState, width: number): string[] {
       task.phase !== 'ended'
     );
   }).length;
+  const attentionSummary = attention > 0 ? `${attention} attention` : '';
+  const offscreenSummary = [
+    hiddenActive > 0 ? `${hiddenActive} active` : '',
+    hiddenAttention > 0 ? `${hiddenAttention} attention` : '',
+  ].filter(Boolean);
+  const footerSummary = [
+    attentionSummary,
+    offscreenSummary.length > 0
+      ? `offscreen: ${offscreenSummary.join(', ')}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
   lines.push(
     state.theme.fg(
       'dim',
-      `${agents.length ? `${start + 1}-${Math.min(agents.length, start + available)} of ${agents.length}` : '0'} agents · ${attention} attention · offscreen: ${hiddenActive} active, ${hiddenAttention} attention`,
+      `${agents.length ? `${start + 1}-${Math.min(agents.length, start + available)} of ${agents.length}` : '0'} agents${footerSummary ? ` · ${footerSummary}` : ''}`,
     ),
   );
   lines.push(
@@ -342,7 +374,7 @@ function overviewStructure(
         .filter(task => model.taskIds.includes(task.id))
         .findIndex(task => task.id === state.selectedTaskId);
       if (index >= 0) anchor?.(lines.length + index, lines.length + index);
-      renderList(state, model, lines);
+      renderList(state, model, width, lines);
     }
   }
   return lines;
@@ -351,6 +383,7 @@ function overviewStructure(
 function renderList(
   state: RenderState,
   model: OverviewModel,
+  width: number,
   lines: string[],
 ): void {
   const scoped = new Set(model.taskIds);
@@ -364,8 +397,11 @@ function renderList(
       : state.theme.fg('muted', '○');
     const agent = state.snapshot.agents.find(item => item.id === task.agentId);
     const label = `${oneLine(agent?.name ?? 'agent')} · ${oneLine(compactTaskLabel(task))}`;
+    const status = stateColor(state.theme, stateOf(task));
+    const suffix = status ? `  ${status}` : '';
+    const labelWidth = Math.max(1, width - 2 - visibleWidth(suffix));
     lines.push(
-      `${marker} ${state.theme.fg('text', truncateToWidth(label, 100, '…'))}  ${stateColor(state.theme, stateOf(task))}`,
+      `${marker} ${state.theme.fg('text', truncateToWidth(label, labelWidth, '…'))}${suffix}`,
     );
   }
 }
@@ -405,38 +441,70 @@ function renderSummary(
   width: number,
   lines: string[],
 ): void {
+  const displayState = stateOf(task);
+  const stateText =
+    displayState || oneLine(task.stage || task.phase || 'in progress');
   lines.push(
     state.theme.bold(
-      `${state.pane === 'summary' ? '●' : '○'} Selected assignment`,
+      `${state.pane === 'summary' ? '●' : '○'} Selected assignment · ${stateText}`,
     ),
   );
-  appendWrapped(
-    lines,
-    `${task.description || task.prompt} · ${stateColor(state.theme, stateOf(task))}`,
-    '  ',
-    width,
-    state.theme,
+  lines.push(
+    `  Usable as input: ${task.outcome === 'fulfilled' && task.durability === 'saved' ? 'yes' : 'no'}`,
   );
+  const agent = state.snapshot.agents.find(item => item.id === task.agentId);
+  const label = [
+    agent?.name ? oneLine(agent.name) : '',
+    oneLine(task.description || task.prompt || 'assignment'),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  appendWrapped(lines, label, '  ', width, state.theme);
+  const reason = task.reason.trim();
+  if (reason.length > 0 && task.phase !== 'ended')
+    appendWrapped(lines, `Reason: ${reason}`, '  ', width, state.theme);
+  const report = task.report.trim();
+  if (report.length > 0)
+    appendWrapped(lines, `Result: ${report}`, '  ', width, state.theme);
+  else if (task.outcome !== null || task.declaration !== null)
+    appendWrapped(
+      lines,
+      `Result: ${previewOutcome(task)}`,
+      '  ',
+      width,
+      state.theme,
+    );
+  else appendWrapped(lines, 'Result: pending', '  ', width, state.theme);
   const prerequisites = prerequisiteNames(state.snapshot, task);
-  appendWrapped(
-    lines,
-    `Prerequisites: ${prerequisites.length > 0 ? prerequisites.join(', ') : 'none'}`,
-    '  ',
-    width,
-    state.theme,
-  );
-  appendWrapped(
-    lines,
-    `Eligible result: ${task.outcome === 'fulfilled' && task.durability === 'saved' ? 'yes' : 'no'}`,
-    '  ',
-    width,
-    state.theme,
-  );
+  if (prerequisites.length > 0)
+    appendWrapped(
+      lines,
+      `Prerequisites: ${prerequisites.join(', ')}`,
+      '  ',
+      width,
+      state.theme,
+    );
   const missing = missingPrerequisites(state.snapshot, task);
   if (missing.length > 0)
     appendWrapped(
       lines,
       `Missing inputs: ${missing.join(', ')}`,
+      '  ',
+      width,
+      state.theme,
+    );
+  if (task.durability === 'failed')
+    appendWrapped(
+      lines,
+      'Result unavailable: required saved evidence failed.',
+      '  ',
+      width,
+      state.theme,
+    );
+  if (task.artifactError)
+    appendWrapped(
+      lines,
+      `Artifact issue: ${task.artifactError}`,
       '  ',
       width,
       state.theme,
@@ -460,30 +528,49 @@ function renderDetail(
   lines.push(
     state.theme.fg(
       'accent',
-      `${oneLine(agent?.name || 'agent')} · ${oneLine(task.description || task.prompt || 'assignment')}`,
+      truncateToWidth(
+        oneLine(task.description || task.prompt || 'assignment'),
+        width,
+        '…',
+      ),
     ),
   );
+  const newer = taskForAgent(state.snapshot, task.agentId);
+  if (newer !== undefined && newer.id !== task.id)
+    lines.push(
+      state.theme.fg('warning', newerAssignmentLine(state.theme, newer, width)),
+    );
+  const displayState = stateOf(task);
+  const currentState = displayState
+    ? stateColor(state.theme, displayState)
+    : state.theme.fg('dim', oneLine(task.stage || task.phase || 'in progress'));
   lines.push(
     state.theme.fg(
       'dim',
-      `${stateColor(state.theme, stateOf(task))} · ${formatElapsed(task, state.now)} · ↓ ${formatTokens(task.usage?.output)} tokens`,
+      `${currentState} · ${formatElapsed(task, state.now)} · ↓ ${formatTokens(task.usage?.output)} tokens`,
     ),
   );
   if (state.detailUnread)
-    lines.push(
-      state.theme.fg(
-        'accent',
-        `${state.detailUnread} new activity · f follows latest`,
-      ),
-    );
+    lines.push(state.theme.fg('accent', 'New activity · f follows latest'));
   for (const section of detailSections) {
     const open = state.openSections.has(section);
     const selected = section === state.selectedDetailSection;
-    if (selected) anchor?.(lines.length - 2, lines.length - 2);
+    if (selected) {
+      const header = Math.max(0, lines.length - 2);
+      anchor?.(header, header);
+    }
     lines.push(
       `${selected ? state.theme.fg('accent', '●') : state.theme.fg('muted', '○')} ${sectionTitle(state.theme, sectionLabels[section], open)}`,
     );
-    if (open) renderDetailSection(state, task, section, width, lines);
+    if (open)
+      renderDetailSection(
+        state,
+        task,
+        section,
+        width,
+        lines,
+        selected ? anchor : undefined,
+      );
   }
   lines.push(
     state.theme.fg(
@@ -500,6 +587,7 @@ function renderDetailSection(
   section: DetailSection,
   width: number,
   lines: string[],
+  anchor?: (start: number, end: number) => void,
 ): void {
   const content: string[] = [];
   for (const text of projectSection(
@@ -520,15 +608,40 @@ function renderDetailSection(
     else appendWrapped(content, text, '  ', width, state.theme);
   // Full content has its own reader. Keep the content tree traversable even
   // when a report or a tool log contains thousands of lines.
-  const historyStart =
+  const historyAssignments =
     section === 'history'
-      ? Math.max(0, content.findIndex(line => line.includes('●')) - 4)
+      ? state.snapshot.tasks
+          .filter(candidate => candidate.agentId === task.agentId)
+          .toSorted((left, right) => left.admittedAt - right.admittedAt)
+      : [];
+  const selectedHistoryIndex =
+    section === 'history'
+      ? historyAssignments.findIndex(
+          assignment => assignment.id === state.selectedHistoryTaskId,
+        )
+      : -1;
+  const historyStart =
+    section === 'history' && selectedHistoryIndex >= 0
+      ? Math.max(0, selectedHistoryIndex - 4)
       : 0;
   const preview = content.slice(
     historyStart,
     historyStart + (section === 'prompt' ? 4 : 6),
   );
+  const previewStart = lines.length;
   lines.push(...preview);
+  if (section === 'history' && anchor !== undefined) {
+    if (
+      selectedHistoryIndex >= historyStart &&
+      selectedHistoryIndex < historyStart + preview.length
+    ) {
+      const selectedLine = Math.max(
+        0,
+        previewStart + selectedHistoryIndex - historyStart - 2,
+      );
+      anchor(selectedLine, selectedLine);
+    }
+  }
   if (preview.length < content.length)
     lines.push(
       state.theme.fg(
@@ -605,8 +718,12 @@ function renderActions(
   width: number,
   anchor?: (start: number, end: number) => void,
 ): string[] {
-  const lines = renderTop(state, 'Actions');
   const task = selectedTask(state);
+  const agent = state.snapshot.agents.find(item => item.id === task?.agentId);
+  const lines = renderTop(
+    state,
+    agent === undefined ? 'Actions' : `Actions · ${oneLine(agent.name)}`,
+  );
   if (task === undefined) {
     lines.push(state.theme.fg('accent', 'Main fleet controls'));
     if (state.actions.includes('reply'))
@@ -618,12 +735,7 @@ function renderActions(
         state.theme,
       );
   } else {
-    lines.push(
-      state.theme.fg(
-        'accent',
-        `${oneLine(task.description || task.prompt)} · ${stateColor(state.theme, stateOf(task))}`,
-      ),
-    );
+    lines.push(renderTaskLabelWithState(state.theme, task, width, 'accent'));
   }
   if (state.actions.length === 0)
     lines.push(state.theme.fg('muted', 'No actions are currently available.'));
@@ -634,7 +746,7 @@ function renderActions(
       index === state.selectedActionIndex
         ? state.theme.fg('accent', '●')
         : state.theme.fg('muted', '○');
-    lines.push(`${marker} ${actionLabel(action)}`);
+    lines.push(`${marker} ${actionLabel(action, task?.phase === 'ended')}`);
     if (
       index === state.selectedActionIndex &&
       actionUnavailable(state, action) !== undefined
@@ -651,7 +763,7 @@ function renderActions(
   return lines;
 }
 
-function actionLabel(action: ActionKind): string {
+function actionLabel(action: ActionKind, ended: boolean): string {
   switch (action) {
     case 'inspect':
       return 'Open detail';
@@ -668,7 +780,7 @@ function actionLabel(action: ActionKind): string {
     case 'steer':
       return 'Steer active assignment';
     case 'reply':
-      return 'Reply to pending question';
+      return ended ? 'Reply to earlier question' : 'Reply to pending question';
     case 'followup':
       return 'Follow up with retained context';
     case 'stop':
@@ -724,30 +836,81 @@ function renderHelp(state: RenderState, _width: number): string[] {
   ];
 }
 
-function renderTargeted(state: RenderState, width: number): string[] {
-  const lines = renderTop(state, 'Targeted action');
+interface TargetedRenderParts {
+  readonly header: readonly string[];
+  readonly target: string;
+  readonly summary: string;
+  readonly editor: readonly string[];
+  readonly footer: string;
+}
+
+function targetedRenderParts(
+  state: RenderState,
+  width: number,
+): TargetedRenderParts | undefined {
+  const header = renderTop(state, 'Targeted action');
   const target = state.draftTarget;
-  if (target === undefined)
-    return [
-      ...lines,
-      state.theme.fg('muted', 'No operation selected.'),
-      state.theme.fg('dim', 'q back'),
-    ];
-  lines.push(
-    state.theme.fg(
+  if (target === undefined) return undefined;
+  return {
+    header,
+    target: state.theme.fg(
       'accent',
       `${target.operation} · ${oneLine(target.recipient || 'recipient')}`,
     ),
-  );
-  appendWrapped(lines, target.summary, '  ', width, state.theme);
-  if (state.editorLines !== undefined) lines.push(...state.editorLines);
-  lines.push(
-    state.theme.fg(
+    summary: state.theme.fg(
+      'dim',
+      `  ${truncateToWidth(oneLine(target.summary), width - 2, '…')}`,
+    ),
+    editor: state.editorLines ?? [],
+    footer: state.theme.fg(
       'dim',
       'Enter submit · configured newline inserts a line · Esc saves draft and returns',
     ),
-  );
-  return lines;
+  };
+}
+
+function renderTargeted(state: RenderState, width: number): string[] {
+  const parts = targetedRenderParts(state, width);
+  if (parts === undefined)
+    return [
+      ...renderTop(state, 'Targeted action'),
+      state.theme.fg('muted', 'No operation selected.'),
+      state.theme.fg('dim', 'q back'),
+    ];
+  return [
+    ...parts.header,
+    parts.target,
+    parts.summary,
+    ...parts.editor,
+    parts.footer,
+  ];
+}
+
+function renderTargetedViewport(state: RenderState, width: number): string[] {
+  const parts = targetedRenderParts(state, width);
+  if (parts === undefined)
+    return renderTargeted(state, width).map(line =>
+      truncateToWidth(line, width, ''),
+    );
+  const header = parts.header.map(line => truncateToWidth(line, width, ''));
+  const target = truncateToWidth(parts.target, width, '');
+  const summary = truncateToWidth(parts.summary, width, '');
+  const editor = parts.editor.map(line => truncateToWidth(line, width, ''));
+  const footer = truncateToWidth(parts.footer, width, '');
+  const full = [...header, target, summary, ...editor, footer];
+  if (full.length <= state.terminalRows) return full;
+
+  const location = header[0] ?? '';
+  const compact = [location, target, summary, ...editor, footer];
+  if (compact.length <= state.terminalRows) return compact;
+
+  const essential = [location, target, ...editor, footer];
+  if (essential.length <= state.terminalRows) return essential;
+
+  return [
+    'Terminal too small for the native editor',
+    `Resize to at least ${targetedMinimumRows(editor.length)} rows · Esc back`,
+  ].map(line => truncateToWidth(line, width, ''));
 }
 
 function renderLateSteer(state: RenderState, width: number): string[] {
@@ -793,14 +956,19 @@ function renderStop(
     width,
     state.theme,
   );
-  for (const task of tasks)
-    appendWrapped(
-      lines,
-      `${task.description || task.prompt} · ${stateColor(state.theme, stateOf(task))}`,
-      '  ',
-      width,
-      state.theme,
+  for (const task of tasks) {
+    const agent = state.snapshot.agents.find(item => item.id === task.agentId);
+    const prefix = `${truncateToWidth(oneLine(agent?.name ?? 'agent'), Math.floor(width / 3), '…')} · `;
+    lines.push(
+      prefix +
+        renderTaskLabelWithState(
+          state.theme,
+          task,
+          width - visibleWidth(prefix),
+          'text',
+        ),
     );
+  }
   anchor?.(
     lines.length - 2 + (state.stopConfirm ? 0 : 1),
     lines.length - 2 + (state.stopConfirm ? 0 : 1),
@@ -821,6 +989,45 @@ function selectedTask(state: RenderState): TaskRecord | undefined {
   return state.selectedTaskId === undefined
     ? undefined
     : state.snapshot.tasks.find(task => task.id === state.selectedTaskId);
+}
+
+function renderTaskLabelWithState(
+  theme: Theme,
+  task: TaskRecord,
+  width: number,
+  labelColor: Parameters<Theme['fg']>[0],
+): string {
+  const label = oneLine(task.description || task.prompt || 'assignment');
+  const displayState = stateOf(task);
+  const renderedState = displayState
+    ? stateColor(theme, displayState)
+    : theme.fg('dim', oneLine(task.stage || task.phase || 'in progress'));
+  const suffix = ` · ${renderedState}`;
+  const available = Math.max(8, width - visibleWidth(suffix));
+  return `${theme.fg(labelColor, truncateToWidth(label, available, '…'))}${suffix}`;
+}
+
+function newerAssignmentLine(
+  theme: Theme,
+  task: TaskRecord,
+  width: number,
+): string {
+  const prefix = 'Newer assignment · ';
+  const suffix = ' · History';
+  const available = Math.max(
+    8,
+    width - visibleWidth(prefix) - visibleWidth(suffix),
+  );
+  return `${prefix}${renderTaskLabelWithState(theme, task, available, 'text')}${suffix}`;
+}
+
+function previewOutcome(task: TaskRecord): string {
+  const declared = task.declaration ?? 'not declared';
+  const final = task.outcome ?? 'not settled';
+  if (declared === 'not declared' && final === 'not settled')
+    return `pending · durability ${task.durability}`;
+  if (declared === final) return final;
+  return `declared ${declared} · final ${final}`;
 }
 
 function emptyConfiguration() {
@@ -848,43 +1055,20 @@ function limitLines(
   terminalRows: number,
   surface: InspectSurface,
 ): string[] {
-  const max =
-    surface === 'fleet'
-      ? Math.min(11, Math.max(6, terminalRows - 5))
-      : Math.max(6, terminalRows - 5);
+  const {contentRows} = inspectionViewport(terminalRows, surface);
+  const footer = lines.at(-1);
+  const contentEnd = footer === undefined ? lines.length : lines.length - 1;
   return [
     ...lines.slice(0, 2).map(line => truncateToWidth(line, width, '')),
-    ...windowLines(lines.slice(2), offset, max - 2, width, 'Content'),
+    ...windowLines(
+      lines.slice(2, contentEnd),
+      offset,
+      contentRows,
+      width,
+      'Content',
+    ),
+    ...(footer === undefined ? [] : [truncateToWidth(footer, width, '')]),
   ];
-}
-
-function windowLines(
-  lines: readonly string[],
-  offset: number,
-  available: number,
-  width: number,
-  label: string,
-): string[] {
-  const normalized = lines.map(line => truncateToWidth(line, width, ''));
-  if (normalized.length <= available) return normalized;
-  const count = Math.max(1, available - 1);
-  const maxStart = Math.max(0, normalized.length - count);
-  const start = Math.max(
-    0,
-    offset >= END_SCROLL_OFFSET / 2
-      ? maxStart - (END_SCROLL_OFFSET - offset)
-      : Math.min(offset, maxStart),
-  );
-  const result = normalized.slice(start, start + count);
-  if (available > 1)
-    result.push(
-      truncateToWidth(
-        `${label} ${start + 1}-${start + result.length}/${normalized.length} · u/d scroll`,
-        width,
-        '',
-      ),
-    );
-  return result;
 }
 
 /** Called only after selection or viewport changes; manual scrolling stays intact. */
@@ -893,7 +1077,10 @@ export function inspectionSelectionOffset(
   width: number,
 ): number {
   let range: readonly [number, number] | undefined;
-  let available = Math.max(1, state.terminalRows - 8);
+  let available = inspectionViewport(
+    state.terminalRows,
+    state.surface,
+  ).revealRows;
   if (state.surface === 'detail')
     renderDetail(state, width, (start, end) => {
       range = [start, end];
@@ -919,9 +1106,7 @@ export function inspectionSelectionOffset(
       range = [start, end];
     });
   }
-  if (range === undefined) return state.scrollOffset;
-  if (range[0] < state.scrollOffset) return Math.max(0, range[0]);
-  if (range[1] >= state.scrollOffset + available)
-    return Math.max(0, range[1] - available + 1);
-  return state.scrollOffset;
+  return range === undefined
+    ? state.scrollOffset
+    : revealOffset(range, state.scrollOffset, available);
 }

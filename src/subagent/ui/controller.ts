@@ -13,10 +13,8 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui';
 import type {Coordinator} from '../coordinator';
-import {isPendingQuestion} from '../coordinator-mailbox';
 import type {FleetRecord, TaskRecord} from '../records';
 import type {SubagentSettings} from '../settings';
-import {taskForAgent} from './format';
 import {FleetFooter, type FleetFooterState} from './footer';
 import {TargetedActionController, type TargetedActionHost} from './actions';
 import {
@@ -31,15 +29,10 @@ import {
   type RenderState,
 } from './render';
 import {ReaderStore} from './reader';
-import {detailSections, sectionLabels} from './sections';
+import {sectionLabels} from './sections';
 import {BrowseNavigator} from './browser';
 import {END_SCROLL_OFFSET} from './types';
-import type {
-  ActionKind,
-  DetailSection,
-  DraftTarget,
-  InspectSurface,
-} from './types';
+import type {ActionKind, DraftTarget, InspectSurface} from './types';
 
 interface ShortcutResolution {
   readonly shortcut: string;
@@ -61,8 +54,8 @@ export class SubagentUIController
   private readonly navigation = new BrowseNavigator();
   private readonly readerStore = new ReaderStore();
   private readonly targetedActions: TargetedActionController;
-  private readonly openSectionsByTask = new Map<string, Set<DetailSection>>();
   private actions: readonly ActionKind[] = [];
+  private actionsOrigin: InspectSurface | undefined;
   private notice: string | undefined;
   private searchReturnSurface: InspectSurface | undefined;
   private detailUnread = 0;
@@ -91,7 +84,7 @@ export class SubagentUIController
         this.viewGeneration++;
       },
       setActionIndex: index => {
-        this.navigation.selectedActionIndex = index;
+        this.navigation.selectAction(index);
       },
       setNotice: notice => {
         this.notice = notice;
@@ -200,7 +193,7 @@ export class SubagentUIController
       selectedOverviewIndex: this.navigation.selectedOverviewIndex,
       selectedDetailSection: this.navigation.selectedDetailSection,
       selectedActionIndex: this.navigation.selectedActionIndex,
-      openSections: this.openSections(),
+      openSections: this.navigation.openSections(this.snapshotRecord),
       pane: this.navigation.pane,
       graphPan: this.navigation.graphPan,
       scrollOffset: this.navigation.scrollOffset,
@@ -231,7 +224,7 @@ export class SubagentUIController
       (resized && this.navigation.surface === 'detail')
     ) {
       const offset = inspectionSelectionOffset(state, width);
-      this.navigation.scrollOffset = offset;
+      this.navigation.revealMain(offset);
       state = {...state, scrollOffset: offset};
       this.detailRevealPending = false;
       this.graphRevealPending = false;
@@ -249,20 +242,29 @@ export class SubagentUIController
       this.openHelp();
       return;
     }
+    if (this.navigation.surface === 'actions') {
+      if (this.letter(data, 'g')) {
+        this.navigation.jumpAction('first', this.actions.length);
+        this.detailRevealPending = true;
+        this.requestRender();
+        return;
+      }
+      if (data === 'G' || matchesKey(data, Key.shift('g'))) {
+        this.navigation.jumpAction('last', this.actions.length);
+        this.detailRevealPending = true;
+        this.requestRender();
+        return;
+      }
+    }
     if (['actions', 'help', 'stop'].includes(this.navigation.surface)) {
       if (this.letter(data, 'u'))
-        this.navigation.scrollOffset = Math.max(
-          0,
-          this.navigation.scrollOffset - this.halfPage(),
-        );
+        this.navigation.pageScroll('main', -1, this.halfPage());
       else if (this.letter(data, 'd'))
-        this.navigation.scrollOffset = pageDown(
-          this.navigation.scrollOffset,
-          this.halfPage(),
-        );
-      else if (this.letter(data, 'g')) this.navigation.scrollOffset = 0;
+        this.navigation.pageScroll('main', 1, this.halfPage());
+      else if (this.letter(data, 'g'))
+        this.navigation.jumpScroll('main', 'start');
       else if (data === 'G' || matchesKey(data, Key.shift('g')))
-        this.navigation.scrollOffset = END_SCROLL_OFFSET;
+        this.navigation.jumpScroll('main', 'end');
       else {
         this.routeInspectionInput(data);
         return;
@@ -342,9 +344,10 @@ export class SubagentUIController
     )
       this.graphRevealPending = true;
     this.targetedActions.refreshStopPreview();
+    if (this.navigation.surface === 'actions') this.refreshActions();
     const following = this.readerStore.isFollowing;
     this.readerStore.updateLatest(this.snapshotRecord);
-    if (following) this.navigation.readerOffset = END_SCROLL_OFFSET;
+    if (following) this.navigation.jumpScroll('reader', 'end');
     const selected = this.selectedTask();
     if (this.navigation.surface === 'detail' && selected !== undefined) {
       const nextStamp = detailActivityStamp(selected);
@@ -424,32 +427,19 @@ export class SubagentUIController
     const previousDispatchId = this.navigation.selectedDispatchId;
     const ids = this.navigation.overviewTaskIds(this.snapshotRecord);
     if (this.matchesTab(data)) {
-      this.navigation.pane =
-        this.navigation.pane === 'items' ? 'summary' : 'items';
+      this.navigation.togglePane();
     } else if (this.navigation.pane === 'summary') {
-      if (this.matchesDown(data))
-        this.navigation.summaryOffset = Math.min(
-          END_SCROLL_OFFSET,
-          this.navigation.summaryOffset + 1,
-        );
+      if (this.matchesDown(data)) this.navigation.pageScroll('summary', 1, 1);
       else if (this.matchesUp(data))
-        this.navigation.summaryOffset = Math.max(
-          0,
-          this.navigation.summaryOffset - 1,
-        );
+        this.navigation.pageScroll('summary', -1, 1);
       else if (this.letter(data, 'u'))
-        this.navigation.summaryOffset = Math.max(
-          0,
-          this.navigation.summaryOffset - this.halfPage(),
-        );
+        this.navigation.pageScroll('summary', -1, this.halfPage());
       else if (this.letter(data, 'd'))
-        this.navigation.summaryOffset = pageDown(
-          this.navigation.summaryOffset,
-          this.halfPage(),
-        );
-      else if (this.letter(data, 'g')) this.navigation.summaryOffset = 0;
+        this.navigation.pageScroll('summary', 1, this.halfPage());
+      else if (this.letter(data, 'g'))
+        this.navigation.jumpScroll('summary', 'start');
       else if (data === 'G' || matchesKey(data, Key.shift('g')))
-        this.navigation.summaryOffset = END_SCROLL_OFFSET;
+        this.navigation.jumpScroll('summary', 'end');
       else if (this.letter(data, '/')) this.beginSearch();
       else if (this.letter(data, 'n')) this.findSurfaceMatch(1);
       else if (data === 'N' || matchesKey(data, Key.shift('n')))
@@ -481,20 +471,16 @@ export class SubagentUIController
     else if (data === 'N' || matchesKey(data, Key.shift('n')))
       this.findSurfaceMatch(-1);
     else if (this.letter(data, 'a')) this.openActions();
-    else if (this.letter(data, 'g'))
+    else if (this.letter(data, 'g')) {
       this.navigation.selectOverviewIndex(0, this.snapshotRecord);
-    else if (data === 'G' || matchesKey(data, Key.shift('g')))
+      this.graphRevealPending = true;
+    } else if (data === 'G' || matchesKey(data, Key.shift('g'))) {
       this.navigation.selectOverviewIndex(ids.length - 1, this.snapshotRecord);
-    else if (this.letter(data, 'u'))
-      this.navigation.scrollOffset = Math.max(
-        0,
-        this.navigation.scrollOffset - this.halfPage(),
-      );
+      this.graphRevealPending = true;
+    } else if (this.letter(data, 'u'))
+      this.navigation.pageScroll('main', -1, this.halfPage());
     else if (this.letter(data, 'd'))
-      this.navigation.scrollOffset = pageDown(
-        this.navigation.scrollOffset,
-        this.halfPage(),
-      );
+      this.navigation.pageScroll('main', 1, this.halfPage());
     else if (this.matchesConfirm(data)) this.openSelectedOverview();
     if (
       this.navigation.selectedTaskId !== previousTaskId ||
@@ -508,41 +494,35 @@ export class SubagentUIController
     const task = this.selectedTask();
     if (task === undefined) return;
     const previousSection = this.navigation.selectedDetailSection;
-    const sections = detailSections;
-    const index = sections.indexOf(this.navigation.selectedDetailSection);
-    const historyOpen =
-      this.navigation.selectedDetailSection === 'history' &&
-      this.openSections().has('history');
-    if (historyOpen && this.matchesDown(data))
-      this.navigation.moveHistory(1, this.snapshotRecord);
-    else if (historyOpen && this.matchesUp(data))
-      this.navigation.moveHistory(-1, this.snapshotRecord);
-    else if (this.matchesDown(data))
-      this.navigation.selectedDetailSection =
-        sections[Math.min(sections.length - 1, index + 1)] ?? 'prompt';
+    let detailMove:
+      | {
+          readonly sectionChanged: boolean;
+          readonly selectionChanged: boolean;
+        }
+      | undefined;
+    if (this.matchesDown(data))
+      detailMove = this.navigation.moveDetail(this.snapshotRecord, 1);
     else if (this.matchesUp(data))
-      this.navigation.selectedDetailSection =
-        sections[Math.max(0, index - 1)] ?? 'prompt';
-    else if (this.letter(data, 'h'))
-      this.openSections().delete(this.navigation.selectedDetailSection);
-    else if (this.letter(data, 'l'))
-      this.openSections().add(this.navigation.selectedDetailSection);
-    else if (this.matchesConfirm(data)) this.openDetailSection();
+      detailMove = this.navigation.moveDetail(this.snapshotRecord, -1);
+    else if (this.letter(data, 'h')) {
+      this.navigation.foldDetail(this.snapshotRecord, false);
+      this.detailRevealPending = true;
+    } else if (this.letter(data, 'l')) {
+      this.navigation.foldDetail(this.snapshotRecord, true);
+      this.detailRevealPending = true;
+    } else if (this.matchesConfirm(data)) this.openDetailSection();
     else if (this.letter(data, 'a')) this.openActions();
     else if (this.letter(data, 'u'))
-      this.navigation.scrollOffset = Math.max(
-        0,
-        this.navigation.scrollOffset - this.halfPage(),
-      );
+      this.navigation.pageScroll('main', -1, this.halfPage());
     else if (this.letter(data, 'd'))
-      this.navigation.scrollOffset = pageDown(
-        this.navigation.scrollOffset,
-        this.halfPage(),
-      );
-    else if (this.letter(data, 'g')) this.navigation.scrollOffset = 0;
-    else if (data === 'G' || matchesKey(data, Key.shift('g')))
-      this.navigation.scrollOffset = END_SCROLL_OFFSET;
-    else if (this.letter(data, '/')) {
+      this.navigation.pageScroll('main', 1, this.halfPage());
+    else if (this.letter(data, 'g')) {
+      this.navigation.jumpDetail(this.snapshotRecord, 'first');
+      this.detailRevealPending = true;
+    } else if (data === 'G' || matchesKey(data, Key.shift('g'))) {
+      this.navigation.jumpDetail(this.snapshotRecord, 'last');
+      this.detailRevealPending = true;
+    } else if (this.letter(data, '/')) {
       this.openReader(
         sectionLabels[this.navigation.selectedDetailSection],
         this.readerStore.text(
@@ -559,10 +539,14 @@ export class SubagentUIController
         'progress',
       );
       this.readerStore.setFollowing(true);
-      this.navigation.readerOffset = END_SCROLL_OFFSET;
+      this.navigation.jumpScroll('reader', 'end');
       this.detailUnread = 0;
     }
-    if (this.navigation.selectedDetailSection !== previousSection)
+    if (
+      detailMove?.sectionChanged === true ||
+      detailMove?.selectionChanged === true ||
+      this.navigation.selectedDetailSection !== previousSection
+    )
       this.detailRevealPending = true;
     this.requestRender();
   }
@@ -570,26 +554,20 @@ export class SubagentUIController
   private handleReaderInput(data: string): void {
     if (this.letter(data, 'u')) {
       this.readerStore.setFollowing(false);
-      this.navigation.readerOffset = Math.max(
-        0,
-        this.navigation.readerOffset - this.halfPage(),
-      );
+      this.navigation.pageScroll('reader', -1, this.halfPage());
     } else if (this.letter(data, 'd')) {
       this.readerStore.setFollowing(false);
-      this.navigation.readerOffset = pageDown(
-        this.navigation.readerOffset,
-        this.halfPage(),
-      );
+      this.navigation.pageScroll('reader', 1, this.halfPage());
     } else if (this.letter(data, 'g')) {
       this.readerStore.setFollowing(false);
-      this.navigation.readerOffset = 0;
+      this.navigation.jumpScroll('reader', 'start');
     } else if (data === 'G' || matchesKey(data, Key.shift('g'))) {
       this.readerStore.setFollowing(false);
-      this.navigation.readerOffset = END_SCROLL_OFFSET;
+      this.navigation.jumpScroll('reader', 'end');
     } else if (this.letter(data, 'f')) {
       this.readerStore.setFollowing(!this.readerStore.isFollowing);
       if (this.readerStore.isFollowing)
-        this.navigation.readerOffset = END_SCROLL_OFFSET;
+        this.navigation.jumpScroll('reader', 'end');
     } else if (this.letter(data, 'n')) {
       this.readerStore.setFollowing(false);
       this.findReaderMatch(1);
@@ -606,15 +584,9 @@ export class SubagentUIController
   private handleActionsInput(data: string): void {
     const previousIndex = this.navigation.selectedActionIndex;
     if (this.matchesDown(data))
-      this.navigation.selectedActionIndex = Math.min(
-        this.actions.length - 1,
-        this.navigation.selectedActionIndex + 1,
-      );
+      this.navigation.moveAction(1, this.actions.length);
     else if (this.matchesUp(data))
-      this.navigation.selectedActionIndex = Math.max(
-        0,
-        this.navigation.selectedActionIndex - 1,
-      );
+      this.navigation.moveAction(-1, this.actions.length);
     else if (this.matchesConfirm(data))
       this.activateAction(this.actions[this.navigation.selectedActionIndex]);
     if (previousIndex !== this.navigation.selectedActionIndex)
@@ -624,8 +596,9 @@ export class SubagentUIController
 
   private handleLateSteerInput(data: string): void {
     if (this.matchesDown(data) || this.matchesUp(data))
-      this.navigation.selectedActionIndex =
-        this.navigation.selectedActionIndex === 0 ? 1 : 0;
+      this.navigation.selectAction(
+        this.navigation.selectedActionIndex === 0 ? 1 : 0,
+      );
     else if (this.matchesConfirm(data)) {
       if (this.navigation.selectedActionIndex === 0)
         this.targetedActions.convertLateSteer();
@@ -655,8 +628,7 @@ export class SubagentUIController
 
   private openOverviewFromCurrent(): void {
     this.navigation.pushFrame();
-    this.navigation.overviewRootTaskId = undefined;
-    this.navigation.prepareOverview(this.snapshotRecord);
+    this.navigation.prepareOverviewScope(this.snapshotRecord, undefined);
     this.navigation.surface = 'overview';
     this.markViewChanged();
     this.graphRevealPending = true;
@@ -667,7 +639,8 @@ export class SubagentUIController
       this.navigation.selectedFleetIndex
     ];
     if (row === undefined || row.id === 'main') this.closeToMain();
-    else this.openDetail(taskForAgent(this.snapshotRecord, row.id)?.id);
+    else
+      this.openDetail(this.navigation.currentTaskForAgent(this.snapshotRecord));
   }
 
   private openSelectedOverview(): void {
@@ -696,21 +669,13 @@ export class SubagentUIController
   private openDetail(taskId: string | undefined): void {
     if (taskId === undefined) return;
     this.navigation.pushFrame();
-    this.navigation.selectedTaskId = taskId;
-    this.navigation.selectedHistoryTaskId = taskId;
-    this.navigation.selectedAgentId =
-      this.snapshotRecord.tasks.find(task => task.id === taskId)?.agentId ??
-      this.navigation.selectedAgentId;
-    this.navigation.selectedDetailSection = 'prompt';
-    this.navigation.selectedActionIndex = 0;
-    this.navigation.scrollOffset = 0;
+    this.navigation.selectDetail(taskId, this.snapshotRecord);
     this.detailUnread = 0;
     this.detailActivityStamp = detailActivityStamp(
       this.snapshotRecord.tasks.find(task => task.id === taskId),
     );
     this.navigation.surface = 'detail';
     this.markViewChanged();
-    this.initializeSections(taskId);
     this.detailRevealPending = true;
   }
 
@@ -732,13 +697,12 @@ export class SubagentUIController
       childrenOf(this.snapshotRecord, task.id).length > 0
     ) {
       this.navigation.pushFrame();
-      this.navigation.selectedDispatchId = task.dispatchId;
-      this.navigation.overviewRootTaskId = task.id;
-      this.navigation.prepareOverview(this.snapshotRecord);
-      this.navigation.selectedTaskId = childrenOf(
+      this.navigation.prepareOverviewScope(
         this.snapshotRecord,
         task.id,
-      )[0]?.id;
+        task.dispatchId,
+        childrenOf(this.snapshotRecord, task.id)[0]?.id,
+      );
       this.navigation.surface = 'overview';
       this.markViewChanged();
       this.graphRevealPending = true;
@@ -765,7 +729,7 @@ export class SubagentUIController
     this.navigation.pushFrame();
     const task = this.selectedTask();
     this.readerStore.open(title, text, task?.id, section);
-    this.navigation.readerOffset = 0;
+    this.navigation.jumpScroll('reader', 'start');
     this.navigation.surface = 'reader';
     this.markViewChanged();
     if (task !== undefined) void this.loadFullReader(task, section);
@@ -778,8 +742,11 @@ export class SubagentUIController
     )
       return;
     this.navigation.pushFrame();
-    this.actions = this.availableActions();
-    this.navigation.selectedActionIndex = 0;
+    this.actionsOrigin = this.navigation.surface;
+    this.actions = this.targetedActions.availableActions(
+      this.actionsOrigin ?? 'detail',
+    );
+    this.navigation.selectAction(0, this.actions.length);
     this.navigation.surface = 'actions';
     this.markViewChanged();
   }
@@ -802,7 +769,7 @@ export class SubagentUIController
     const task = this.selectedTask();
     if (task === undefined) {
       if (action === 'reply') {
-        const question = this.pendingMainQuestion();
+        const question = this.targetedActions.pendingQuestion(null);
         if (question !== undefined)
           this.targetedActions.startMainReply(
             question.id,
@@ -835,10 +802,12 @@ export class SubagentUIController
       case 'children': {
         const child = childrenOf(this.snapshotRecord, task.id)[0];
         if (child === undefined) return;
-        this.navigation.selectedTaskId = child.id;
-        this.navigation.selectedDispatchId = child.dispatchId;
-        this.navigation.overviewRootTaskId = task.id;
-        this.navigation.prepareOverview(this.snapshotRecord);
+        this.navigation.prepareOverviewScope(
+          this.snapshotRecord,
+          task.id,
+          child.dispatchId,
+          child.id,
+        );
         this.navigation.surface = 'overview';
         this.markViewChanged();
         this.graphRevealPending = true;
@@ -899,7 +868,7 @@ export class SubagentUIController
       const match = this.readerStore.firstMatch(
         this.tui?.terminal.columns ?? 80,
       );
-      if (match >= 0) this.navigation.readerOffset = match;
+      if (match >= 0) this.navigation.seekReader(match);
       this.notice =
         match < 0 ? `No matches for ${this.readerStore.query}` : undefined;
     } else {
@@ -937,6 +906,7 @@ export class SubagentUIController
     }
     this.markViewChanged();
     this.navigation.reconcile(this.snapshotRecord);
+    if (this.navigation.surface === 'actions') this.refreshActions();
     this.requestRender();
   }
 
@@ -949,26 +919,6 @@ export class SubagentUIController
     this.requestRender();
   }
 
-  private initializeSections(taskId: string): void {
-    if (this.openSectionsByTask.has(taskId)) return;
-    const task = this.snapshotRecord.tasks.find(item => item.id === taskId);
-    const open = new Set<DetailSection>(['prompt']);
-    if (task?.phase === 'ended')
-      open.add(task.outcome === 'fulfilled' ? 'result' : 'progress');
-    else open.add('progress');
-    this.openSectionsByTask.set(taskId, open);
-  }
-
-  private openSections(): Set<DetailSection> {
-    if (this.navigation.selectedTaskId === undefined)
-      return new Set<DetailSection>();
-    this.initializeSections(this.navigation.selectedTaskId);
-    return (
-      this.openSectionsByTask.get(this.navigation.selectedTaskId) ??
-      new Set<DetailSection>()
-    );
-  }
-
   private selectedTask(): TaskRecord | undefined {
     return this.navigation.selectedTaskId === undefined
       ? undefined
@@ -977,62 +927,18 @@ export class SubagentUIController
         );
   }
 
-  private availableActions(): readonly ActionKind[] {
-    const task = this.selectedTask();
-    const actions: ActionKind[] =
-      this.navigation.surface === 'fleet' ? ['attention'] : [];
-    if (task === undefined) {
-      if (this.pendingMainQuestion() !== undefined) actions.push('reply');
-      return actions;
-    }
-    actions.push('inspect', 'reader', 'copy');
-    if (childrenOf(this.snapshotRecord, task.id).length > 0)
-      actions.push('children');
-    if (task.phase !== 'ended') actions.push('message', 'steer', 'stop');
-    const question = this.pendingQuestionForTask(task.id) !== undefined;
-    if (question) actions.push('reply');
-    if (task.phase === 'ended') actions.push('followup');
-    const agent = this.snapshotRecord.agents.find(
-      item => item.id === task.agentId,
+  private refreshActions(): void {
+    const previousActions = this.actions;
+    const selected = previousActions[this.navigation.selectedActionIndex];
+    const nextActions = this.targetedActions.availableActions(
+      this.actionsOrigin ?? 'detail',
     );
-    if (agent?.released === false && task.phase === 'ended')
-      actions.push('release');
-    if (
-      task.phase === 'unknown' ||
-      task.phase === 'cancelling' ||
-      task.durability === 'failed'
-    )
-      actions.push('recover');
-    if (
-      task.phase === 'queued' ||
-      task.phase === 'waiting' ||
-      this.snapshotRecord.agents.find(agent => agent.id === task.agentId)?.held
-    ) {
-      actions.push('queue-continue', 'queue-cancel');
-    }
-    if (
-      this.snapshotRecord.notices.some(
-        notice => notice.taskId === task.id && !notice.acknowledged,
-      )
-    )
-      actions.push('acknowledge');
-    return actions;
-  }
-
-  private pendingMainQuestion() {
-    return this.pendingQuestionForTask(null);
-  }
-
-  private pendingQuestionForTask(taskId: string | null) {
-    return this.snapshotRecord.messages.find(message => {
-      if (!isPendingQuestion(this.snapshotRecord, message)) return false;
-      if (message.taskId === taskId) return true;
-      return (
-        taskId !== null &&
-        message.taskId === null &&
-        message.fromTaskId === taskId
-      );
-    });
+    const listChanged =
+      previousActions.length !== nextActions.length ||
+      previousActions.some((action, index) => action !== nextActions[index]);
+    const selectedChanged = this.navigation.retainAction(nextActions, selected);
+    this.actions = nextActions;
+    if (listChanged || selectedChanged) this.detailRevealPending = true;
   }
 
   private async loadFullReader(
@@ -1061,7 +967,7 @@ export class SubagentUIController
         ? Math.max(0, lines.length - 1)
         : this.navigation.readerOffset;
     const match = this.readerStore.findMatch(width, direction, offset);
-    if (match !== undefined) this.navigation.readerOffset = match;
+    if (match !== undefined) this.navigation.seekReader(match);
     this.notice =
       match === undefined && this.readerStore.query
         ? `No matches for ${this.readerStore.query}`
@@ -1070,78 +976,18 @@ export class SubagentUIController
 
   private findSurfaceMatch(direction: -1 | 1): void {
     const query = this.readerStore.query.trim().toLocaleLowerCase();
+    const result = this.navigation.findSurfaceMatch(
+      this.snapshotRecord,
+      query,
+      direction,
+    );
     this.notice = query
-      ? `No matches for ${this.readerStore.query}`
+      ? result.matched
+        ? `Search: ${this.readerStore.query}`
+        : `No matches for ${this.readerStore.query}`
       : undefined;
-    if (!query) return;
-    if (this.navigation.surface === 'fleet') {
-      const rows = this.navigation.fleetRows(this.snapshotRecord);
-      const matching = rows.filter(row => {
-        if (row.id === 'main') return 'main'.includes(query);
-        const agent = this.snapshotRecord.agents.find(
-          candidate => candidate.id === row.id,
-        );
-        const task = taskForAgent(this.snapshotRecord, row.id);
-        return `${agent?.name ?? ''} ${task?.description ?? ''} ${task?.prompt ?? ''}`
-          .toLocaleLowerCase()
-          .includes(query);
-      });
-      if (matching.length === 0) return;
-      this.notice = `Search: ${this.readerStore.query}`;
-      const current = matching.findIndex(
-        row => row.id === this.navigation.selectedAgentId,
-      );
-      const next =
-        current < 0
-          ? 0
-          : (current + direction + matching.length) % matching.length;
-      const row = matching[next];
-      if (row !== undefined)
-        this.navigation.selectFleetIndex(
-          rows.indexOf(row),
-          this.snapshotRecord,
-        );
-      return;
-    }
-    if (this.navigation.surface === 'overview') {
-      const models = overviewModels(
-        this.snapshotRecord,
-        this.navigation.overviewRootTaskId,
-      );
-      const model = models.find(
-        candidate =>
-          candidate.dispatchId === this.navigation.selectedDispatchId,
-      );
-      if (model === undefined) return;
-      const matching = model.nodes.filter(node => {
-        const task = node.task;
-        const agent = task
-          ? this.snapshotRecord.agents.find(
-              candidate => candidate.id === task.agentId,
-            )
-          : undefined;
-        return `${node.label} ${agent?.name ?? ''} ${task?.prompt ?? ''}`
-          .toLocaleLowerCase()
-          .includes(query);
-      });
-      if (matching.length === 0) return;
-      this.notice = `Search: ${this.readerStore.query}`;
-      const current = matching.findIndex(
-        node => node.id === this.navigation.selectedTaskId,
-      );
-      const next =
-        current < 0
-          ? 0
-          : (current + direction + matching.length) % matching.length;
-      const node = matching[next];
-      if (node !== undefined) {
-        this.navigation.selectOverviewIndex(
-          model.nodes.indexOf(node),
-          this.snapshotRecord,
-        );
-        this.graphRevealPending = true;
-      }
-    }
+    if (result.selectionChanged && this.navigation.surface === 'overview')
+      this.graphRevealPending = true;
   }
 
   private matchesDown(data: string): boolean {
@@ -1195,10 +1041,6 @@ export class SubagentUIController
   private markViewChanged(): void {
     this.viewGeneration++;
   }
-}
-
-function pageDown(offset: number, amount: number): number {
-  return Math.min(END_SCROLL_OFFSET, offset + amount);
 }
 
 function resolveShortcut(requested: string): ShortcutResolution {

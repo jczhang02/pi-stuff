@@ -2,6 +2,47 @@ import {expect, test} from 'bun:test';
 import {Schema} from 'effect';
 import {launchPi} from './fixtures/pi-terminal';
 
+const Admission = Schema.Struct({
+  tasks: Schema.Array(Schema.Struct({taskId: Schema.String})),
+});
+
+const decodeAdmission = (value: string) =>
+  Schema.decodeUnknownSync(Admission)(JSON.parse(value));
+
+type PiHost = Awaited<ReturnType<typeof launchPi>>;
+
+async function visibleActionLines(host: PiHost): Promise<string[]> {
+  return (await host.terminal.screen.text())
+    .split('\n')
+    .filter(line => line.includes('● ') || line.includes('○ '));
+}
+
+async function selectVisibleAction(host: PiHost, label: string): Promise<void> {
+  const lines = await visibleActionLines(host);
+  const current = lines.findIndex(line => line.includes('● '));
+  const target = lines.findIndex(line => line.includes(label));
+  expect(target).toBeGreaterThanOrEqual(0);
+  expect(current).toBeGreaterThanOrEqual(0);
+  if (target > current)
+    await host.terminal.keyboard.type('j'.repeat(target - current));
+  else if (target < current)
+    await host.terminal.keyboard.type('k'.repeat(current - target));
+  await host.terminal.keyboard.press('Enter');
+}
+
+async function confirmStop(host: PiHost): Promise<void> {
+  const lines = await visibleActionLines(host);
+  const selected = lines.some(line => line.includes('● Confirm stop'));
+  if (!selected) {
+    await host.terminal.keyboard.type('j');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await host.terminal.keyboard.type('G');
+    await host.terminal.screen.waitForText('● Confirm stop', {
+      timeoutMs: 5000,
+    });
+  }
+}
+
 test('forward dependencies preserve admission order among ready overview nodes', async () => {
   const host = await launchPi(
     '{}',
@@ -122,8 +163,7 @@ test('a long Stop preview follows new descendants and keeps confirmation reachab
     await host.terminal.screen.waitForText('Agents / Actions', {
       timeoutMs: 5000,
     });
-    await host.terminal.keyboard.type('jjjjjj');
-    await host.terminal.keyboard.press('Enter');
+    await selectVisibleAction(host, 'Stop owned branch');
     await host.terminal.screen.waitForText('Agents / Stop branch', {
       timeoutMs: 5000,
     });
@@ -145,7 +185,7 @@ test('a long Stop preview follows new descendants and keeps confirmation reachab
     await host.terminal.screen.waitForText('The preview remains live', {
       timeoutMs: 5000,
     });
-    await host.terminal.keyboard.type('j');
+    await confirmStop(host);
     await host.terminal.screen.waitForText('● Confirm stop', {timeoutMs: 5000});
     const confirmation = await host.terminal.screen.text();
     expect(confirmation).toContain('Agents / Stop branch');
@@ -255,7 +295,7 @@ test('overview selection reveals distant and saved-input nodes while summary scr
       timeoutMs: 5000,
     });
     await host.terminal.keyboard.type('G');
-    await host.terminal.screen.waitForText('Eligible result: yes', {
+    await host.terminal.screen.waitForText('Result: SAVED_NAVIGATION_RESULT', {
       timeoutMs: 5000,
     });
     expect(await host.terminal.screen.text()).toContain('● node7');
@@ -264,7 +304,7 @@ test('overview selection reveals distant and saved-input nodes while summary scr
     await host.terminal.screen.waitForText('Agents / Actions', {
       timeoutMs: 5000,
     });
-    await host.terminal.keyboard.press('Enter');
+    await selectVisibleAction(host, 'Open detail');
     await host.terminal.screen.waitForText('Prompt', {timeoutMs: 5000});
     await host.terminal.keyboard.type('/');
     await host.terminal.screen.waitForText('Targeted action', {
@@ -297,12 +337,50 @@ test('overview selection reveals distant and saved-input nodes while summary scr
     );
     await host.terminal.keyboard.type('q');
     await host.terminal.screen.waitForText('Agents / node7', {timeoutMs: 5000});
-    for (let index = 0; index < 7; index++)
-      await host.terminal.keyboard.type('lj');
+    const detailSections = [
+      'Prompt',
+      'Progress',
+      'Result',
+      'Communication',
+      'Relations and queue',
+      'Configuration and usage',
+      'Workspace and recovery',
+      'History and evidence',
+    ];
+    for (let index = 1; index < detailSections.length; index++) {
+      await host.terminal.keyboard.type('j');
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const screen = await host.terminal.screen.text();
+      const selectedIndex = detailSections.findIndex(section =>
+        screen
+          .split('\n')
+          .some(line => line.includes('● ') && line.includes(section)),
+      );
+      if (selectedIndex === index - 1) await host.terminal.keyboard.type('j');
+    }
+    await host.terminal.keyboard.type('G');
     await host.terminal.screen.waitForText('● ▸ History and evidence', {
       timeoutMs: 5000,
     });
     expect(await host.terminal.screen.text()).toContain('Agents / node7');
+    await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('Reader · node7 / History', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.press('Escape');
+    await host.terminal.screen.waitForText('Agents / node7', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.type('g');
+    await host.terminal.screen.waitForText('● ▾ Prompt', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('Reader · node7 / Prompt', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.press('Escape');
+    await host.terminal.screen.waitForText('Agents / node7', {
+      timeoutMs: 5000,
+    });
     await host.terminal.keyboard.type('q');
     await host.terminal.screen.waitForText('Agents / Overview', {
       timeoutMs: 5000,
@@ -363,6 +441,128 @@ test('overview selection reveals distant and saved-input nodes while summary scr
     console.error(await host.terminal.screen.text());
     throw error;
   } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('a cancelled task without queued work remains Cancelled in Fleet', async () => {
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let childRequests = 0;
+  const host = await launchPi(
+    '{}',
+    undefined,
+    'subagent',
+    'fullscreen',
+    async request => {
+      if (!JSON.stringify(request.messages).includes('CANCEL_ONLY_ASSIGNMENT'))
+        return undefined;
+      if (request.messages.at(-1)?.role === 'tool')
+        return {text: 'recovery settled'};
+      if (childRequests++ === 0) {
+        started.resolve();
+        await release.promise;
+        return {
+          tool: 'subagent',
+          arguments: JSON.stringify({
+            command: 'finish',
+            outcome: 'fulfilled',
+            text: 'cancel-only response',
+          }),
+        };
+      }
+      return {
+        tool: 'subagent',
+        arguments: JSON.stringify({
+          command: 'finish',
+          outcome: 'fulfilled',
+          text: 'RECOVERY_FINISHED',
+        }),
+      };
+    },
+  );
+  try {
+    await host.terminal.screen.waitForText('Pi can explain', {
+      timeoutMs: 15000,
+    });
+    const admitted = await host.invoke(
+      'subagent',
+      JSON.stringify({
+        command: 'dispatch',
+        tasks: [
+          {
+            name: 'cancel-only',
+            prompt: 'CANCEL_ONLY_ASSIGNMENT',
+            workspace: 'live',
+          },
+        ],
+      }),
+    );
+    const taskId = decodeAdmission(admitted).tasks[0]?.taskId;
+    expect(taskId).toBeString();
+    await started.promise;
+    await host.command('/agents fleet');
+    await host.terminal.screen.waitForText('Fleet', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('cancel-only', {timeoutMs: 5000});
+    await host.terminal.keyboard.type('j');
+    await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('Prompt', {timeoutMs: 5000});
+    await host.terminal.keyboard.type('a');
+    await host.terminal.screen.waitForText('Agents / Actions', {
+      timeoutMs: 5000,
+    });
+    await selectVisibleAction(host, 'Stop owned branch');
+    await host.terminal.screen.waitForText('Agents / Stop branch', {
+      timeoutMs: 5000,
+    });
+    await confirmStop(host);
+    await host.terminal.screen.waitForText('● Confirm stop', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('Cancellation accepted', {
+      timeoutMs: 5000,
+    });
+    release.resolve();
+    await host.terminal.keyboard.type('q');
+    await host.terminal.screen.waitForText('Fleet', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('Cancelled', {timeoutMs: 5000});
+    const fleet = await host.terminal.screen.text();
+    expect(fleet).toContain('Cancelled');
+    expect(fleet).not.toContain('Held');
+
+    await host.terminal.keyboard.type('j');
+    await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('Prompt', {timeoutMs: 5000});
+    await host.terminal.keyboard.type('a');
+    await host.terminal.screen.waitForText('Agents / Actions', {
+      timeoutMs: 5000,
+    });
+    const recoveryActions = await visibleActionLines(host);
+    expect(recoveryActions[0]).toContain('Recover held or unknown queue');
+    expect(
+      recoveryActions.some(line =>
+        line.includes('Follow up with retained context'),
+      ),
+    ).toBe(false);
+    expect(recoveryActions.some(line => line.includes('Queue controls'))).toBe(
+      false,
+    );
+    await selectVisibleAction(host, 'Recover held or unknown queue');
+    await host.terminal.screen.waitForText('Targeted action', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.type('RECOVERY_FOLLOWUP');
+    await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('followup accepted', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.press('Escape');
+    await host.terminal.screen.waitForText('Fleet', {timeoutMs: 5000});
+    const recoveredFleet = await host.terminal.screen.text();
+    expect(recoveredFleet).toContain('RECOVERY_FOLLOWUP');
+    expect(recoveredFleet).toContain('Done');
+    await host.terminal.keyboard.press('Escape');
+  } finally {
+    release.resolve();
     await host.close();
   }
 }, 30000);

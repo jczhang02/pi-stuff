@@ -132,6 +132,7 @@ export class SubagentEditor extends CustomEditor {
   override render(width: number): string[] {
     if (!this.inspection || this.inspector === undefined)
       return super.render(width);
+    if (this.draft !== undefined) this.draft.focused = this.focused;
     const draftLines = this.draft?.render(Math.max(1, width - 2));
     return this.inspector.renderInspection(width, draftLines);
   }
@@ -262,7 +263,7 @@ export function configuredShortcut(
   const candidate = settingsShortcut?.trim();
   return candidate !== undefined && isSupportedShortcut(candidate)
     ? candidate.toLowerCase()
-    : 'ctrl+r';
+    : 'ctrl+q';
 }
 
 const shortcutModifiers = new Set(['ctrl', 'shift', 'alt', 'super']);

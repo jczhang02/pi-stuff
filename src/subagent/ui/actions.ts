@@ -1,10 +1,15 @@
 import type {Coordinator} from '../coordinator';
 import {isPendingQuestion} from '../coordinator-mailbox';
-import type {FleetRecord, TaskRecord} from '../records';
+import type {Communication, FleetRecord, TaskRecord} from '../records';
 import type {SubagentInput} from '../protocol';
 import {copyToClipboard} from '@earendil-works/pi-coding-agent';
-import {descendants} from './navigation';
-import type {DraftOperation, DraftTarget, InspectSurface} from './types';
+import {childrenOf, descendants} from './navigation';
+import type {
+  ActionKind,
+  DraftOperation,
+  DraftTarget,
+  InspectSurface,
+} from './types';
 
 export interface DraftEditorPort {
   beginDraft(target: DraftTarget, prefill: string): void;
@@ -61,6 +66,77 @@ export class TargetedActionController {
   private readonly inFlight = new Set<string>();
 
   constructor(private readonly host: TargetedActionHost) {}
+
+  pendingQuestion(taskId: string | null): Communication | undefined {
+    const snapshot = this.host.snapshot();
+    return snapshot.messages.find(message => {
+      if (!isPendingQuestion(snapshot, message)) return false;
+      if (message.taskId === taskId) return true;
+      return (
+        taskId !== null &&
+        message.taskId === null &&
+        message.fromTaskId === taskId
+      );
+    });
+  }
+
+  availableActions(origin: InspectSurface): readonly ActionKind[] {
+    const snapshot = this.host.snapshot();
+    const task = this.host.selectedTask();
+    const actions: ActionKind[] = [];
+    if (task === undefined) {
+      if (this.pendingQuestion(null) !== undefined) actions.push('reply');
+      actions.push('attention');
+      return actions;
+    }
+    const question = this.pendingQuestion(task.id) !== undefined;
+    if (task.phase === 'ended') {
+      actions.push(this.canRecover(task) ? 'recover' : 'followup');
+      if (question) actions.push('reply');
+    } else if (task.phase !== 'cancelling') {
+      if (question) actions.push('reply');
+      actions.push('steer', 'message');
+    } else if (question) {
+      actions.push('reply');
+    }
+    if (origin !== 'detail') actions.push('inspect');
+    actions.push('reader', 'copy');
+    if (childrenOf(snapshot, task.id).length > 0) actions.push('children');
+    if (
+      snapshot.tasks.some(
+        candidate =>
+          candidate.agentId === task.agentId && candidate.phase === 'queued',
+      )
+    )
+      actions.push('queue-continue', 'queue-cancel');
+    if (
+      snapshot.notices.some(
+        notice => notice.taskId === task.id && !notice.acknowledged,
+      )
+    )
+      actions.push('acknowledge');
+    if (origin === 'fleet') actions.push('attention');
+    if (task.phase !== 'ended') actions.push('stop');
+    const agent = snapshot.agents.find(item => item.id === task.agentId);
+    if (agent?.released === false && task.phase === 'ended')
+      actions.push('release');
+    return actions;
+  }
+
+  private canRecover(task: TaskRecord): boolean {
+    const snapshot = this.host.snapshot();
+    const agent = snapshot.agents.find(item => item.id === task.agentId);
+    return (
+      task.phase === 'ended' &&
+      agent?.held === true &&
+      snapshot.tasks
+        .filter(candidate => candidate.agentId === task.agentId)
+        .every(
+          candidate =>
+            candidate.phase === 'queued' || candidate.phase === 'ended',
+        )
+    );
+  }
 
   lateSteer(): string | undefined {
     return this.lateSteerText;
@@ -279,9 +355,14 @@ export class TargetedActionController {
   }
 
   async acknowledge(task: TaskRecord): Promise<void> {
-    const notice = this.host
+    const notices = this.host
       .snapshot()
-      .notices.find(item => item.taskId === task.id && !item.acknowledged);
+      .notices.filter(item => item.taskId === task.id && !item.acknowledged);
+    const notice =
+      notices.find(
+        item =>
+          !item.id.startsWith('ended:') && !item.id.startsWith('settled:'),
+      ) ?? notices[0];
     if (notice === undefined) {
       const message = 'No unresolved notice is recorded for this assignment.';
       this.host.setNotice(message);

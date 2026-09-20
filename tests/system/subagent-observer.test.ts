@@ -316,6 +316,30 @@ function latestMarker(request: ModelRequest, markers: readonly string[]) {
     .toSorted((left, right) => right.position - left.position)[0]?.marker;
 }
 
+async function selectVisibleAction(
+  host: ObserverHost,
+  label: string,
+): Promise<void> {
+  const lines = (
+    await host.terminal.screen.capture({
+      allowIncomplete: true,
+      settleMs: 0,
+      deadlineMs: 0,
+    })
+  ).text
+    .split('\n')
+    .filter(line => line.includes('● ') || line.includes('○ '));
+  const current = lines.findIndex(line => line.includes('● '));
+  const target = lines.findIndex(line => line.includes(label));
+  expect(target).toBeGreaterThanOrEqual(0);
+  expect(current).toBeGreaterThanOrEqual(0);
+  if (target > current)
+    await host.terminal.keyboard.type('j'.repeat(target - current));
+  else if (target < current)
+    await host.terminal.keyboard.type('k'.repeat(current - target));
+  await host.terminal.keyboard.press('Enter');
+}
+
 test('a second Pi observes one writer live, cannot dispatch, and leaves it operational after close', async () => {
   const controls = await makeSessionControlExtension();
   const slowStarted = Promise.withResolvers<void>();
@@ -446,8 +470,7 @@ test('a second Pi observes one writer live, cannot dispatch, and leaves it opera
     });
     await observer.terminal.keyboard.type('a');
     await observer.terminal.screen.waitForText('Actions', {timeoutMs: 10000});
-    await observer.terminal.keyboard.type('jjj');
-    await observer.terminal.keyboard.press('Enter');
+    await selectVisibleAction(observer, 'Message assignment');
     await observer.terminal.screen.waitForText('Targeted action', {
       timeoutMs: 10000,
     });

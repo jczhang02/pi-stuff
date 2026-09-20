@@ -108,7 +108,11 @@ export function overviewModels(
   const root = rootTaskId
     ? snapshot.tasks.find(task => task.id === rootTaskId)
     : undefined;
-  const rootLabel = root === undefined ? undefined : compactTaskLabel(root);
+  const rootAgent = snapshot.agents.find(agent => agent.id === root?.agentId);
+  const rootLabel =
+    root === undefined
+      ? undefined
+      : oneLine(rootAgent?.name ?? compactTaskLabel(root));
   const models: OverviewModel[] = [];
   for (const dispatchId of dispatchOrder(snapshot)) {
     const allTasks = tasksForDispatch(snapshot, dispatchId);

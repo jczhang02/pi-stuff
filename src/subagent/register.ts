@@ -14,13 +14,15 @@ import {Coordinator} from './coordinator';
 import {FleetStore} from './store';
 import type {SubagentSettings} from './settings';
 import {installSubagentUI, type SubagentUIHandle} from './ui';
-import {oneLine} from './ui/format';
+import {oneLine, stateOf} from './ui/format';
 
 const ToolSummary = Schema.Struct({
   status: Schema.optional(Schema.String),
   message: Schema.optional(Schema.String),
   waitStatus: Schema.optional(Schema.String),
   text: Schema.optional(Schema.String),
+  record: Schema.optional(Schema.String),
+  total: Schema.optional(Schema.Number),
   tasks: Schema.optional(
     Schema.Array(
       Schema.Struct({
@@ -62,8 +64,12 @@ export function registerSubagent(
     label: 'Subagent',
     description: [
       'Delegate with dispatch(tasks): name and prompt are required; needs refers to keys in that batch, inputs to saved fulfilled task IDs.',
+      'Give each assignment a concise description for human inspection; put detailed instructions in prompt.',
       'Dispatch returns immediately. Use inspect or bounded wait to observe progress; ending the main response does not cancel background work.',
+      'Omit tools for workspace-appropriate defaults. Explicit tools must include subagent. Default snapshot is read-only and cannot run bash; use workspace: write for edits OR running tests, including a reviewer who must execute tests.',
+      'Wait without timeoutMs uses the configured event wait; avoid short polling loops. Scope wait to the task or dispatch whose result you need.',
       'Target message/steer/cancel/read/accept by taskId. Followup uses agentId and text to create a new assignment in retained context. release uses agentId.',
+      'restrict(taskId, tools) can only REMOVE tools, never grant tools or change workspace. Select the required workspace and tools at dispatch.',
       'A child uses report(text) for an interim finding, ask(text) for a parent answer, and finish(outcome: fulfilled|unable, text, files?, checks?) to declare delivery. A normal final answer does not declare fulfillment.',
       'Reply uses questionId and text. read(taskId, record: report|transcript|diff, offset?, length?) retrieves full saved content.',
       'Use returned identities, not names. Inspect effective configuration before requesting tools or workspaces beyond the current ceiling.',
@@ -97,15 +103,19 @@ export function registerSubagent(
         summary?.message ??
         summary?.text?.slice(0, 160) ??
         (tasks
-          ? [...outcomeCounts]
-              .map(([state, count]) => `${count} ${state}`)
-              .join(' · ')
+          ? tasks.length === 0
+            ? 'No retained assignments.'
+            : [...outcomeCounts]
+                .map(([state, count]) => `${count} ${state}`)
+                .join(' · ')
           : summary?.status) ??
         (options.isPartial ? 'Working...' : 'Operation completed.');
       return new Text(
         theme.fg(
           context.isError ? 'error' : 'muted',
-          `${oneLine(status)}${summary?.waitStatus ? ` · wait ${summary.waitStatus}` : ''}${tasks ? '\n/agents opens the retained details.' : ''}`,
+          summary?.record !== undefined
+            ? `${summary.record} · ${summary.total ?? summary.text?.length ?? 0} characters · Ctrl+O to expand`
+            : `${oneLine(status)}${summary?.waitStatus === 'expired' ? ' · still working' : ''}`,
         ),
         0,
         0,
@@ -176,7 +186,7 @@ export function registerSubagent(
                         content: `Subagent ${task.description}: ${task.outcome}.\nTask ${task.id} · agent ${task.agentId} · dispatch ${task.dispatchId}\n${preview}${preview.length < full.length ? '\nPreview; read the saved report for the complete result.' : ''}`,
                         display: true,
                         details: {
-                          summary: `${name}: ${task.outcome}.\n${preview.split('\n')[0]?.slice(0, 160) ?? ''}`,
+                          summary: `${name}: ${stateOf(task)}.\n${preview.split('\n')[0]?.slice(0, 160) ?? ''}${(preview.split('\n')[0]?.length ?? 0) > 160 ? '…' : ''}`,
                         },
                       },
                       {triggerTurn: false},
@@ -190,6 +200,16 @@ export function registerSubagent(
                     const settled = text.match(
                       /^Dispatch .+ with (\d+) assignments settled:/u,
                     );
+                    const questionId = text.match(/^Question ([^:]+): /u)?.[1];
+                    const question = coordinator?.snapshot.messages.find(
+                      message => message.id === questionId,
+                    );
+                    const sourceTask = coordinator?.snapshot.tasks.find(
+                      candidate => candidate.id === question?.fromTaskId,
+                    );
+                    const sourceName = coordinator?.snapshot.agents.find(
+                      agent => agent.id === sourceTask?.agentId,
+                    )?.name;
                     pi.sendMessage(
                       {
                         customType: 'subagent',
@@ -198,7 +218,9 @@ export function registerSubagent(
                         details: {
                           summary: settled
                             ? `${settled[1]} assignments settled. Open /agents for results.`
-                            : `${task?.description ?? 'message'}: ${preview.split('\n')[0]?.slice(0, 160) ?? ''}`,
+                            : question !== undefined
+                              ? `${sourceName ?? 'A child'} needs an answer.\n${question.text.slice(0, 160)}${question.text.length > 160 ? '…' : ''}`
+                              : `${task?.description ?? 'message'}: ${preview.split('\n')[0]?.slice(0, 160) ?? ''}`,
                         },
                       },
                       {triggerTurn: false},

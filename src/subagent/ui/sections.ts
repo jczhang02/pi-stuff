@@ -34,39 +34,96 @@ interface SectionContext {
   readonly mode: 'preview' | 'full';
 }
 
+const LOW_SIGNAL_PROGRESS_EVENTS = new Set([
+  'limits',
+  'resources',
+  'restriction',
+]);
+
 /** Shared content projection for inline detail, full reading and copying. */
 const sections: Readonly<
   Record<DetailSection, (context: SectionContext) => readonly string[]>
 > = {
-  prompt: ({snapshot, task}) => [
-    `Original request: ${task.prompt}`,
-    `History copy: ${task.configuration.copyHistory ? 'enabled' : 'disabled'}`,
-    `Fixed upstream inputs: ${prerequisiteNames(snapshot, task).join(', ') || 'none'}`,
-  ],
-  progress: ({task, now, mode}) => [
-    `Stage: ${task.stage || 'unknown'}${task.reason ? ` · ${task.reason}` : ''}`,
-    `Model: ${task.configuration.model} · retries: ${task.retries}`,
-    `Started: ${timestamp(task.startedAt)} · ended: ${timestamp(task.endedAt)}`,
-    `Last activity: ${timestamp(task.lastEventAt)}${mode === 'preview' ? ` · ${Math.max(0, Math.floor((now - task.lastEventAt) / 1000))}s ago` : ''}`,
-    `Execution clock: ${task.executionMs}ms · limit: ${task.configuration.executionTimeoutMs ?? 'disabled'}`,
-    ...task.activeTools.map(
-      tool => `Active tool: ${tool.name} · ${tool.progress || 'in progress'}`,
-    ),
-    ...(task.liveText ? [`Live text: ${task.liveText}`] : []),
-    ...task.events.map(
-      event => `${timestamp(event.at)} · ${event.kind} · ${event.text}`,
-    ),
-  ],
-  result: ({task}) => [
-    `Declared outcome: ${task.declaration ?? 'not declared'} · final outcome: ${task.outcome ?? 'not settled'}`,
-    `Report\n${task.report || 'No report is available.'}`,
-    `Stop outcome: ${task.stopOutcome ?? 'none'} · ended: ${timestamp(task.endedAt)}`,
-    `Main acceptance: ${task.acceptance === null ? 'unknown' : task.acceptance ? 'accepted' : 'rejected'} · durability: ${task.durability}`,
-    `Artifact: ${task.artifactError ?? 'no artifact error recorded'}`,
-    `Files: ${task.files.join(', ') || 'none'} · checks: ${task.checks.join(', ') || 'none'}`,
-    `Commit: ${task.commit ?? '—'}`,
-    `Diff\n${task.diff || 'No diff is recorded.'}`,
-  ],
+  prompt: ({snapshot, task, mode}) => {
+    const lines = [`Original request: ${task.prompt}`];
+    if (mode === 'full') {
+      lines.push(
+        `History copy: ${task.configuration.copyHistory ? 'enabled' : 'disabled'}`,
+        `Fixed upstream inputs: ${prerequisiteNames(snapshot, task).join(', ') || 'none'}`,
+      );
+      return lines;
+    }
+    if (task.configuration.copyHistory) lines.push('History copy: enabled');
+    const inputs = prerequisiteNames(snapshot, task);
+    if (inputs.length > 0)
+      lines.push(`Fixed upstream inputs: ${inputs.join(', ')}`);
+    return lines;
+  },
+  progress: ({task, now, mode}) => {
+    const stage = `Stage: ${task.stage || task.phase || 'unknown'}${task.reason ? ` · ${task.reason}` : ''}`;
+    if (mode === 'preview') {
+      const meaningful = task.events.filter(
+        event => !LOW_SIGNAL_PROGRESS_EVENTS.has(event.kind),
+      );
+      const latest = meaningful.at(-1) ?? task.events.at(-1);
+      return [
+        stage,
+        ...task.activeTools.map(
+          tool =>
+            `Active tool: ${tool.name} · ${tool.progress || 'in progress'}`,
+        ),
+        ...(task.liveText ? [`Live text: ${task.liveText}`] : []),
+        ...(latest
+          ? [
+              `Latest activity: ${timestamp(latest.at)} · ${latest.kind} · ${latest.text}`,
+            ]
+          : []),
+        `Last activity: ${timestamp(task.lastEventAt)} · ${Math.max(0, Math.floor((now - task.lastEventAt) / 1000))}s ago`,
+      ];
+    }
+    return [
+      stage,
+      `Model: ${task.configuration.model} · retries: ${task.retries}`,
+      `Started: ${timestamp(task.startedAt)} · ended: ${timestamp(task.endedAt)}`,
+      `Last activity: ${timestamp(task.lastEventAt)}`,
+      `Execution clock: ${task.executionMs}ms · limit: ${task.configuration.executionTimeoutMs ?? 'disabled'}`,
+      ...task.activeTools.map(
+        tool => `Active tool: ${tool.name} · ${tool.progress || 'in progress'}`,
+      ),
+      ...(task.liveText ? [`Live text: ${task.liveText}`] : []),
+      ...task.events.map(
+        event => `${timestamp(event.at)} · ${event.kind} · ${event.text}`,
+      ),
+    ];
+  },
+  result: ({task, mode}) => {
+    if (mode === 'preview') {
+      const lines = [`Report: ${task.report || 'No report is available.'}`];
+      lines.push(previewOutcome(task));
+      if (task.acceptance !== null && task.outcome !== 'fulfilled')
+        lines.push(`Main review: ${task.acceptance ? 'accepted' : 'rejected'}`);
+      if (task.files.length > 0) lines.push(`Files: ${task.files.join(', ')}`);
+      if (task.checks.length > 0)
+        lines.push(`Checks: ${task.checks.join(', ')}`);
+      if (task.artifactError)
+        lines.push(`Artifact issue: ${task.artifactError}`);
+      if (task.unsavedFiles.length > 0)
+        lines.push(`Unsaved files: ${task.unsavedFiles.join(', ')}`);
+      if (task.commit) lines.push(`Commit: ${task.commit}`);
+      if (task.diff) lines.push('Diff: available in the full retained record.');
+      return lines;
+    }
+    return [
+      `Declared outcome: ${task.declaration ?? 'not declared'} · final outcome: ${task.outcome ?? 'not settled'}`,
+      `Report\n${task.report || 'No report is available.'}`,
+      `Stop outcome: ${task.stopOutcome ?? 'none'} · ended: ${timestamp(task.endedAt)}`,
+      `Main acceptance: ${task.acceptance === null ? 'unknown' : task.acceptance ? 'accepted' : 'rejected'} · durability: ${task.durability}`,
+      `Artifact: ${task.artifactError ?? 'no artifact error recorded'}`,
+      `Files: ${task.files.join(', ') || 'none'} · checks: ${task.checks.join(', ') || 'none'}`,
+      `Commit: ${task.commit ?? '—'}`,
+      `Diff\n${task.diff || 'No diff is recorded.'}`,
+    ];
+  },
   communication: ({snapshot, task, now}) => {
     const messages = snapshot.messages.filter(
       message => message.taskId === task.id || message.fromTaskId === task.id,
@@ -161,6 +218,23 @@ export function projectSection(
   return key === undefined
     ? ['Section unavailable.']
     : sections[key]({snapshot, task, now, selectedHistoryTaskId, mode});
+}
+
+function previewOutcome(task: TaskRecord): string {
+  const declared = task.declaration ?? 'not declared';
+  const final = task.outcome ?? 'not settled';
+  if (declared !== 'not declared' && declared !== final)
+    return `Declared outcome: ${declared} · final outcome: ${final}`;
+  if (final === 'fulfilled' && task.durability === 'saved')
+    return task.acceptance === null
+      ? 'Saved · awaiting main review'
+      : task.acceptance
+        ? 'Saved · accepted'
+        : 'Saved · rejected';
+  if (final === 'fulfilled') return `Fulfilled · save ${task.durability}`;
+  if (final !== 'not settled') return `Outcome: ${final} · ${task.durability}`;
+  if (declared !== 'not declared') return `Declared outcome: ${declared}`;
+  return `Result: pending · durability ${task.durability}`;
 }
 
 function usageText(task: TaskRecord): string {

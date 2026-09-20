@@ -161,10 +161,16 @@ export function taskNeedsAttention(
   if (task === undefined) return false;
   if (
     task.phase === 'unknown' ||
-    snapshot.agents.find(agent => agent.id === task.agentId)?.held === true ||
+    (snapshot.agents.find(agent => agent.id === task.agentId)?.held === true &&
+      snapshot.tasks.some(
+        candidate =>
+          candidate.agentId === task.agentId && candidate.phase === 'queued',
+      )) ||
     task.durability === 'failed' ||
     task.outcome === 'failed' ||
-    task.outcome === 'interrupted'
+    task.outcome === 'interrupted' ||
+    task.outcome === 'incomplete' ||
+    task.outcome === 'unable'
   )
     return true;
   return snapshot.messages.some(
@@ -177,11 +183,19 @@ export function taskNeedsAttention(
   );
 }
 
-export function countAttention(snapshot: FleetRecord): number {
-  const tasks = snapshot.tasks.filter(task =>
-    taskNeedsAttention(snapshot, task),
+function attentionTargets(snapshot: FleetRecord): ReadonlySet<string> {
+  const tasks = snapshot.agents.flatMap(agent => {
+    const task = taskForAgent(snapshot, agent.id);
+    return task !== undefined && taskNeedsAttention(snapshot, task)
+      ? [task]
+      : [];
+  });
+  const notices = snapshot.notices.filter(
+    notice =>
+      !notice.acknowledged &&
+      !notice.id.startsWith('ended:') &&
+      !notice.id.startsWith('settled:'),
   );
-  const notices = snapshot.notices.filter(notice => !notice.acknowledged);
   const mainMessages = snapshot.messages
     .filter(
       message =>
@@ -190,12 +204,28 @@ export function countAttention(snapshot: FleetRecord): number {
           ? isPendingQuestion(snapshot, message)
           : message.consumedAt === null),
     )
-    .map(message => `message:${message.id}`);
+    .map(message => message.fromTaskId ?? `message:${message.id}`);
   return new Set([
     ...tasks.map(task => task.id),
     ...notices.map(notice => notice.taskId),
     ...mainMessages,
-  ]).size;
+  ]);
+}
+
+export function countAttention(snapshot: FleetRecord): number {
+  return attentionTargets(snapshot).size;
+}
+
+export function attentionTaskForAgent(
+  snapshot: FleetRecord,
+  agentId: string,
+): TaskRecord | undefined {
+  const targets = attentionTargets(snapshot);
+  const current = taskForAgent(snapshot, agentId);
+  if (current !== undefined && targets.has(current.id)) return current;
+  return snapshot.tasks.findLast(
+    task => task.agentId === agentId && targets.has(task.id),
+  );
 }
 
 export function formatRange(
@@ -211,9 +241,14 @@ export function computeFleetColumns(
   snapshot: FleetRecord,
   width: number,
   now: number,
+  attentionOnly = false,
 ): FleetColumns {
   const agents = snapshot.agents;
-  const tasks = agents.flatMap(agent => [taskForAgent(snapshot, agent.id)]);
+  const tasks = agents.map(agent =>
+    attentionOnly
+      ? attentionTaskForAgent(snapshot, agent.id)
+      : taskForAgent(snapshot, agent.id),
+  );
   const name = agents.reduce(
     (longest, agent) => Math.max(longest, visibleWidth(oneLine(agent.name))),
     visibleWidth(MAIN_ID),
@@ -253,6 +288,7 @@ export function renderFleetRow(
   columns: FleetColumns,
   theme: Theme,
   now: number,
+  task = taskForAgent(snapshot, agent.id),
 ): string {
   const marker = selected ? theme.fg('accent', '●') : theme.fg('muted', '○');
   const name = truncateToWidth(oneLine(agent.name), columns.name, '…');
@@ -260,14 +296,16 @@ export function renderFleetRow(
     name + ' '.repeat(Math.max(0, columns.name - visibleWidth(name)));
   if (agent.id === MAIN_ID)
     return truncateToWidth(`${marker} ${nameCell}`, columns.width, '');
-  const task = taskForAgent(snapshot, agent.id);
   const queued = snapshot.tasks.filter(
-    candidate => candidate.agentId === agent.id && candidate.phase === 'queued',
+    candidate =>
+      candidate.id !== task?.id &&
+      candidate.agentId === agent.id &&
+      candidate.phase === 'queued',
   ).length;
   const queue =
     queued > 0
       ? columns.description >= 12
-        ? ` · ${queued} queued`
+        ? ` · ${queued} ${agent.held ? 'held' : 'queued'}`
         : ` +${queued}`
       : '';
   const description =
@@ -279,7 +317,10 @@ export function renderFleetRow(
   const descriptionCell =
     description +
     ' '.repeat(Math.max(0, columns.description - visibleWidth(description)));
-  const state = stateColor(theme, agent.held ? 'Held' : stateOf(task));
+  const state = stateColor(
+    theme,
+    agent.held && task?.phase === 'queued' ? 'Held' : stateOf(task),
+  );
   const stateCell =
     state + ' '.repeat(Math.max(0, columns.state - visibleWidth(state)));
   const elapsed = formatElapsed(task, now).padStart(columns.elapsed);

@@ -1,8 +1,10 @@
 import type {FleetRecord} from '../records';
+import {END_SCROLL_OFFSET} from './types';
 import type {BrowsePane, DetailSection, InspectSurface} from './types';
 import {computeDependencyGraphGeometry} from './graph';
 import {dispatchOrder, overviewModels, retainedAgents} from './navigation';
-import {taskForAgent, taskNeedsAttention} from './format';
+import {attentionTaskForAgent, taskForAgent} from './format';
+import {detailSections} from './sections';
 
 interface Frame {
   readonly surface: InspectSurface;
@@ -24,6 +26,11 @@ interface Frame {
 
 export interface FleetRowSelection {
   readonly id: string;
+}
+
+export interface SurfaceMatchResult {
+  readonly matched: boolean;
+  readonly selectionChanged: boolean;
 }
 
 /** Owns inspection surfaces, selection frames, and per-surface scroll state. */
@@ -51,6 +58,7 @@ export class BrowseNavigator {
       }
     | undefined;
   private readonly stack: Frame[] = [];
+  private readonly openSectionsByTask = new Map<string, Set<DetailSection>>();
 
   open(surface: 'fleet' | 'overview', snapshot: FleetRecord): void {
     this.stack.length = 0;
@@ -228,17 +236,185 @@ export class BrowseNavigator {
     this.summaryOffset = 0;
   }
 
+  prepareOverviewScope(
+    snapshot: FleetRecord,
+    rootTaskId: string | undefined,
+    dispatchId?: string,
+    taskId?: string,
+  ): void {
+    this.overviewRootTaskId = rootTaskId;
+    if (dispatchId !== undefined) this.selectedDispatchId = dispatchId;
+    if (taskId !== undefined) this.selectedTaskId = taskId;
+    this.prepareOverview(snapshot);
+  }
+
+  togglePane(): void {
+    this.pane = this.pane === 'items' ? 'summary' : 'items';
+  }
+
+  pageScroll(
+    target: 'main' | 'summary' | 'reader',
+    direction: -1 | 1,
+    amount: number,
+  ): void {
+    const current = this.scrollValue(target);
+    const next = Math.max(
+      0,
+      Math.min(END_SCROLL_OFFSET, current + direction * Math.max(1, amount)),
+    );
+    this.writeScrollValue(target, next);
+  }
+
+  jumpScroll(
+    target: 'main' | 'summary' | 'reader',
+    position: 'start' | 'end',
+  ): void {
+    this.writeScrollValue(target, position === 'end' ? END_SCROLL_OFFSET : 0);
+  }
+
+  seekReader(offset: number): void {
+    this.readerOffset = Math.max(0, Math.min(END_SCROLL_OFFSET, offset));
+  }
+
+  selectDetail(taskId: string, snapshot: FleetRecord): void {
+    this.selectedTaskId = taskId;
+    this.selectedHistoryTaskId = taskId;
+    this.selectedAgentId =
+      snapshot.tasks.find(task => task.id === taskId)?.agentId ??
+      this.selectedAgentId;
+    this.selectedDetailSection = 'prompt';
+    this.selectedActionIndex = 0;
+    this.scrollOffset = 0;
+    this.initializeSections(snapshot, taskId);
+  }
+
+  private moveDetailSection(direction: -1 | 1): void {
+    const index = detailSections.indexOf(this.selectedDetailSection);
+    this.selectedDetailSection =
+      detailSections[
+        Math.max(0, Math.min(detailSections.length - 1, index + direction))
+      ] ?? 'prompt';
+  }
+
+  moveDetail(snapshot: FleetRecord, direction: -1 | 1) {
+    if (
+      this.selectedDetailSection === 'history' &&
+      this.openSections(snapshot).has('history')
+    ) {
+      const previous = this.selectedHistoryTaskId;
+      this.moveHistory(direction, snapshot);
+      return {
+        sectionChanged: false,
+        selectionChanged: previous !== this.selectedHistoryTaskId,
+      };
+    }
+    const previous = this.selectedDetailSection;
+    this.moveDetailSection(direction);
+    return {
+      sectionChanged: previous !== this.selectedDetailSection,
+      selectionChanged: false,
+    };
+  }
+
+  jumpDetail(snapshot: FleetRecord, position: 'first' | 'last') {
+    if (
+      this.selectedDetailSection === 'history' &&
+      this.openSections(snapshot).has('history')
+    ) {
+      const previous = this.selectedHistoryTaskId;
+      this.prepareHistory(snapshot);
+      const ids = this.historyTaskIds(snapshot);
+      this.selectedHistoryTaskId = position === 'last' ? ids.at(-1) : ids[0];
+      return {
+        sectionChanged: false,
+        selectionChanged: previous !== this.selectedHistoryTaskId,
+      };
+    }
+    const previous = this.selectedDetailSection;
+    this.selectedDetailSection =
+      position === 'last' ? (detailSections.at(-1) ?? 'prompt') : 'prompt';
+    return {
+      sectionChanged: previous !== this.selectedDetailSection,
+      selectionChanged: false,
+    };
+  }
+
+  foldDetail(snapshot: FleetRecord, open: boolean): void {
+    this.setDetailSectionOpen(snapshot, this.selectedDetailSection, open);
+  }
+
+  private setDetailSectionOpen(
+    snapshot: FleetRecord,
+    section: DetailSection,
+    open: boolean,
+  ): void {
+    const taskId = this.selectedTaskId;
+    if (taskId === undefined) return;
+    this.initializeSections(snapshot, taskId);
+    const sections = this.openSectionsByTask.get(taskId);
+    if (sections === undefined) return;
+    if (open) sections.add(section);
+    else sections.delete(section);
+  }
+
+  openSections(snapshot: FleetRecord): ReadonlySet<DetailSection> {
+    const taskId = this.selectedTaskId;
+    if (taskId === undefined) return new Set<DetailSection>();
+    this.initializeSections(snapshot, taskId);
+    return this.openSectionsByTask.get(taskId) ?? new Set<DetailSection>();
+  }
+
+  revealMain(offset: number): void {
+    this.scrollOffset = Math.max(0, Math.min(END_SCROLL_OFFSET, offset));
+  }
+
+  selectAction(index: number, count?: number): void {
+    const maximum =
+      count === undefined ? END_SCROLL_OFFSET : Math.max(0, count - 1);
+    this.selectedActionIndex = Math.max(0, Math.min(maximum, index));
+  }
+
+  moveAction(direction: -1 | 1, count: number): boolean {
+    const previous = this.selectedActionIndex;
+    this.selectAction(previous + direction, count);
+    return previous !== this.selectedActionIndex;
+  }
+
+  jumpAction(position: 'first' | 'last', count: number): boolean {
+    const previous = this.selectedActionIndex;
+    this.selectAction(position === 'last' ? count - 1 : 0, count);
+    return previous !== this.selectedActionIndex;
+  }
+
+  retainAction(
+    actions: readonly string[],
+    selected: string | undefined,
+  ): boolean {
+    const previous = this.selectedActionIndex;
+    const retained = selected === undefined ? -1 : actions.indexOf(selected);
+    this.selectAction(
+      retained >= 0 ? retained : Math.max(0, actions.indexOf('reader')),
+      actions.length,
+    );
+    return (
+      selected !== actions[this.selectedActionIndex] ||
+      previous !== this.selectedActionIndex
+    );
+  }
+
   fleetRows(snapshot: FleetRecord): readonly FleetRowSelection[] {
     const agents = retainedAgents(snapshot).filter(agent => {
       if (!this.attentionOnly) return true;
-      return taskNeedsAttention(snapshot, taskForAgent(snapshot, agent.id));
+      return attentionTaskForAgent(snapshot, agent.id) !== undefined;
     });
     return [{id: 'main'}, ...agents.map(agent => ({id: agent.id}))];
   }
 
   currentTaskForAgent(snapshot: FleetRecord): string | undefined {
     if (this.selectedAgentId === 'main') return undefined;
-    return taskForAgent(snapshot, this.selectedAgentId)?.id;
+    return this.attentionOnly
+      ? attentionTaskForAgent(snapshot, this.selectedAgentId)?.id
+      : taskForAgent(snapshot, this.selectedAgentId)?.id;
   }
 
   overviewTaskIds(snapshot: FleetRecord): readonly string[] {
@@ -368,11 +544,120 @@ export class BrowseNavigator {
       this.selectedHistoryTaskId = this.selectedTaskId;
   }
 
-  moveHistory(direction: -1 | 1, snapshot: FleetRecord): void {
+  private moveHistory(direction: -1 | 1, snapshot: FleetRecord): void {
     const ids = this.historyTaskIds(snapshot);
     if (ids.length === 0) return;
     const current = Math.max(0, ids.indexOf(this.selectedHistoryTaskId ?? ''));
     this.selectedHistoryTaskId =
       ids[Math.max(0, Math.min(ids.length - 1, current + direction))];
+  }
+
+  findSurfaceMatch(
+    snapshot: FleetRecord,
+    query: string,
+    direction: -1 | 1,
+  ): SurfaceMatchResult {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return {matched: false, selectionChanged: false};
+
+    if (this.surface === 'fleet') {
+      const rows = this.fleetRows(snapshot);
+      const matching = rows.filter(row => {
+        if (row.id === 'main') return 'main'.includes(normalized);
+        const agent = snapshot.agents.find(
+          candidate => candidate.id === row.id,
+        );
+        const task = this.attentionOnly
+          ? attentionTaskForAgent(snapshot, row.id)
+          : taskForAgent(snapshot, row.id);
+        return `${agent?.name ?? ''} ${task?.description ?? ''} ${task?.prompt ?? ''}`
+          .toLocaleLowerCase()
+          .includes(normalized);
+      });
+      if (matching.length === 0)
+        return {matched: false, selectionChanged: false};
+      const current = matching.findIndex(
+        row => row.id === this.selectedAgentId,
+      );
+      const next =
+        current < 0
+          ? 0
+          : (current + direction + matching.length) % matching.length;
+      const row = matching[next];
+      if (row === undefined) return {matched: true, selectionChanged: false};
+      const previousAgentId = this.selectedAgentId;
+      const previousTaskId = this.selectedTaskId;
+      this.selectFleetIndex(rows.indexOf(row), snapshot);
+      return {
+        matched: true,
+        selectionChanged:
+          previousAgentId !== this.selectedAgentId ||
+          previousTaskId !== this.selectedTaskId,
+      };
+    }
+
+    if (this.surface === 'overview') {
+      const models = overviewModels(snapshot, this.overviewRootTaskId);
+      const model = models.find(
+        candidate => candidate.dispatchId === this.selectedDispatchId,
+      );
+      if (model === undefined) return {matched: false, selectionChanged: false};
+      const matching = model.nodes.filter(node => {
+        const task = node.task;
+        const agent = task
+          ? snapshot.agents.find(candidate => candidate.id === task.agentId)
+          : undefined;
+        return `${node.label} ${agent?.name ?? ''} ${task?.prompt ?? ''}`
+          .toLocaleLowerCase()
+          .includes(normalized);
+      });
+      if (matching.length === 0)
+        return {matched: false, selectionChanged: false};
+      const current = matching.findIndex(
+        node => node.id === this.selectedTaskId,
+      );
+      const next =
+        current < 0
+          ? 0
+          : (current + direction + matching.length) % matching.length;
+      const node = matching[next];
+      if (node === undefined) return {matched: true, selectionChanged: false};
+      const previousTaskId = this.selectedTaskId;
+      const previousIndex = this.selectedOverviewIndex;
+      this.selectOverviewIndex(model.nodes.indexOf(node), snapshot);
+      return {
+        matched: true,
+        selectionChanged:
+          previousTaskId !== this.selectedTaskId ||
+          previousIndex !== this.selectedOverviewIndex,
+      };
+    }
+
+    return {matched: false, selectionChanged: false};
+  }
+
+  private scrollValue(target: 'main' | 'summary' | 'reader'): number {
+    if (target === 'summary') return this.summaryOffset;
+    if (target === 'reader') return this.readerOffset;
+    return this.scrollOffset;
+  }
+
+  private writeScrollValue(
+    target: 'main' | 'summary' | 'reader',
+    value: number,
+  ): void {
+    if (target === 'summary') this.summaryOffset = value;
+    else if (target === 'reader') this.readerOffset = value;
+    else this.scrollOffset = value;
+  }
+
+  private initializeSections(snapshot: FleetRecord, taskId: string): void {
+    if (this.openSectionsByTask.has(taskId)) return;
+    const task = snapshot.tasks.find(item => item.id === taskId);
+    const open = new Set<DetailSection>(['prompt']);
+    if (task?.phase === 'ended')
+      open.add(task.outcome === 'fulfilled' ? 'result' : 'progress');
+    else open.add('progress');
+    this.openSectionsByTask.set(taskId, open);
   }
 }

@@ -45,7 +45,7 @@ Each agent retains its identity, context and workspace. Each assignment has a se
 }
 ```
 
-Use `recovery: true` for an agent whose abnormal result held its queue. Recovery creates a new record; it never rewrites the failed result or reruns its old consumers. `queue` with `queueAction: "continue"` or `"cancel"` explicitly resolves the remaining queue.
+Use `recovery: true` for an agent whose abnormal result held its queue, after its active execution has stopped. Healthy agents use ordinary follow-ups in FIFO order; recovery cannot jump their queue. Recovery creates a new record; it never rewrites the failed result or reruns its old consumers. `queue` with `queueAction: "continue"` or `"cancel"` explicitly resolves the remaining queue.
 
 ## Read and control work
 
@@ -76,7 +76,7 @@ Cancellation follows current task ownership. Reusing an old descendant in a new 
 
 FleetView sits below the normal statusline. Main has no description. Child rows align name, description, state and metrics; normal execution has no redundant Running label. Selection changes the circle icon, without a full-row highlight. At most six child rows are shown, with offscreen activity and attention counts.
 
-`/agents` opens the overview; `/agents fleet` focuses FleetView. The default inspection shortcut is `Ctrl+R`, subject to effective host/extension conflict detection. Remap it through `subagent.inspectShortcut` if Pi reports a conflict. The active shortcut preserves the main editor's draft, cursor and undo state, including while the main agent is busy.
+`/agents` opens the overview; `/agents fleet` focuses FleetView. The default inspection shortcut is `Ctrl+Q`. Pi already uses `Ctrl+R` for session renaming. Configured shortcuts still undergo host/extension conflict detection; remap through `subagent.inspectShortcut` if Pi reports a conflict. The active shortcut preserves the main editor's draft, cursor and undo state, including while the main agent is busy.
 
 | Context               | Keys                                                                      |
 | --------------------- | ------------------------------------------------------------------------- |
@@ -89,11 +89,17 @@ FleetView sits below the normal statusline. Main has no description. Child rows 
 
 Arrow keys are optional aliases. Text editors use native Pi editing and submission; browsing letters never trigger actions inside input. Back retains a targeted draft instead of sending it. A failed send leaves its draft and recipient visible. Stop requires confirmation.
 
+Targeted input keeps the recipient, native editor, completion selection and submit hint visible. Short windows first omit optional context; if the native editor itself cannot fit, a size notice gives the required height and preserves Esc back. Ordinary detail pages keep their navigation footer visible while content scrolls.
+
 Bottom inspection replaces the main editor, statusline and FleetView while leaving the main transcript above it. It is neither an overlay nor a switch of the host's active agent. Prompt appears before Progress. Details remain pinned to the opened assignment as new follow-ups arrive. Full reports, logs and diffs are reachable from the content tree.
 
 Tab moves focus between the overview's structure and summary. Each region scrolls independently. Selection brings the chosen node or detail heading into view; manual panning remains until another selection or resize. Long Actions, Help and Stop previews use the same `u/d` and `g/G` controls. Stop's preview includes descendants admitted while it is open.
 
+In Actions and Detail, `g/G` selects and reveals the first/last item. An expanded History section applies those keys to its assignment list. In a full reader they move to the start/end of the content. `u/d` scrolls without changing the selected item.
+
 Configuration detail records the rules and available skills actually loaded for the assignment, admission limits and later tool restrictions. Per-task usage and dispatch aggregates are labelled separately; aggregates include each descendant and follow-up once and identify unmeasured tasks. A paused reader retains its current content and shows new activity until following is explicitly resumed.
+
+Detail previews put the request, current work and result ahead of configuration and execution metadata; the full sections retain the underlying evidence. Attention counts unresolved questions, actionable notices and current failures. A successful recovery clears the old failure from that count, while an unresolved notice on an earlier assignment remains reachable through the attention filter.
 
 In Detail, `/` opens the selected section in the full reader and searches it. Missing matches produce an explicit notice and preserve the current position. The reader header identifies the agent and section.
 
@@ -111,7 +117,7 @@ User settings live in the Pi agent directory's `pi-stuff.json`. Project defaults
     "maxDepth": 3,
     "resultWaitMs": 60000,
     "answerWaitMs": 600000,
-    "inspectShortcut": "ctrl+r",
+    "inspectShortcut": "ctrl+q",
     "defaults": {"thinking": "medium"}
   }
 }
@@ -149,6 +155,8 @@ Models use `provider/model` syntax and the host's configured authentication. Chi
 | `direct`   | Explicit writing in the selected directory, including non-Git projects.                                       |
 
 Isolation setup failure never falls back to the parent's directory. Source index and worktree remain unchanged during snapshot capture. A follow-up reuses its workspace unless an explicit baseline change is accepted. Consumers receive fixed commits, not moving branch tips. Multiple code inputs need an explicit integration baseline; applying artifacts to the main checkout remains a main-agent decision.
+
+A retained agent keeps its workspace mode. Dispatch a new agent when changing between snapshot, write, live or direct access. Tool restrictions keep `subagent` available for reporting and lifecycle control; the coordinator still checks the child's authority for every operation.
 
 Records live under `<Pi agent directory>/pi-stuff/subagents/<parent session ID>/`, alongside child contexts, copied-history records and workspaces. A local executor owns writes. A second opener observes rather than starting duplicate work. After a crash, unresolved tasks require explicit recovery; saved work is not replayed. Missing or corrupt required context, code or executor evidence blocks continuation rather than silently substituting fresh state.
 
