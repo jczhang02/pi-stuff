@@ -91,6 +91,6 @@
       "sourceImage": "08-editor-focus.png"
     }
   ],
-  "revisionNote": "UIR01, revised UIR02 and UIR03 accepted. FleetView help visibility now explicitly depends on keyboard focus. UIR04 help position and focus-marker treatment remain a proposal; older j/k hints are illustrative history.",
+  "revisionNote": "UIR01, revised UIR02, UIR03 and UIR04 local help accepted. FleetView help appears above the rows only while the list has keyboard focus. Exact hint wording and hollow circles outside list focus remain illustrative; older j/k hints are design history.",
   "updatedDate": "2026-09-21"
 }

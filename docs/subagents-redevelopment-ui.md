@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-redevelopment-ui.md). English is authoritative.
 
-Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03 accepted on 2026-09-21. FleetView help must appear only while FleetView has keyboard focus. UIR04 below proposes its placement and focus markers. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
+Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03 and UIR04 local help accepted on 2026-09-21. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
 
 Discuss the UI one part at a time through real usage scenarios: main layout and transitions; FleetView and task structure; details and observability; interventions; completion and history; keyboard and visual consistency. The maintainer's feedback brings detail hierarchy into this round. The previous UI is a starting point, not a wholesale adoption of its old runtime requirements.
 
@@ -72,7 +72,7 @@ This accepted division uses a compact list and an on-demand relationship view, w
 
 **Accepted UIR03.** Keep FleetView as a list and offer an on-demand graph only for actual dependencies, with nodes opening the same detail view.
 
-## UIR04: focus and local help proposal
+## UIR04: local help accepted
 
 **Required correction.** FleetView being visible does not mean it has keyboard focus. The maintainer requires FleetView navigation/action help to appear only while focus is in that list. Typing in the main editor hides that help while retaining the agent rows.
 
@@ -96,10 +96,10 @@ The draft has a visible text caret. All FleetView circles are hollow and local h
 
 The draft remains, without its caret. Only the selected lifecycle circle is filled. One muted help line sits between statusline and rows: `↑↓ navigate · enter view · esc back`. There is no extra pointer, selected-row background or help below the list. The two concepts retain the same row positions; the spare line is illustrative, not a fixed-height requirement.
 
-The proposed help position follows Claude's local action placement. Navigation follows Pi's selection bindings. Earlier approval of arrows to enter FleetView remains; the entry must preserve normal editor handling. This round does not define stop, message or other intervention shortcuts.
+The accepted help position follows Claude's local action placement. Navigation follows Pi's selection bindings. Earlier approval of arrows to enter FleetView remains; the entry must preserve normal editor handling. This round does not define stop, message or other intervention shortcuts.
 
-**UIR04 question. Put focused FleetView help above its rows, use Pi selection-key labels, and show the filled selection circle only while the list is focused?** Recommendation: yes. The caret and circle make the keyboard target visible without adding a row highlight.
+**Accepted UIR04.** Place FleetView's local action help above its rows, below the statusline, and change it with keyboard focus. Show FleetView actions when the list is focused; hide those actions when focus returns to the editor. The maintainer explicitly accepted this Claude-style help behavior. Exact hint wording and the images' hollow-circle treatment outside list focus remain illustrative; the earlier circle-only selection rule still applies.
 
 ## Verification and next step
 
-UIR03 and focus-dependent help visibility are accepted. The two new concepts were visually inspected for caret visibility, help placement, circle selection and aligned rows. Concept images do not establish terminal behavior. This round changes documentation and images only. Await the UIR04 answer before advancing the interview.
+UIR03 and UIR04 local help are accepted. The focus concepts were visually inspected for caret visibility, help placement, circle selection and aligned rows. Concept images do not establish terminal behavior. This update records the maintainer's answer without changing product code or images. Continue with detail observability and intervention scenarios.
