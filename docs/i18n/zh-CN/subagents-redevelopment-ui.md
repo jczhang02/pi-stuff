@@ -2,7 +2,7 @@
 
 [English](../../subagents-redevelopment-ui.md). 以英文版为准.
 
-状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02; 2026-09-21 已接受 UIR03 和 UIR04 局部帮助规则. UIR05 提议从子代理详情发送补充指令, 尚待回答. FleetView 只在列表获得键盘焦点时于列表上方显示帮助. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
+状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02; 2026-09-21 已接受 UIR03、UIR04 局部帮助规则及 UIR05. UIR06 提议在详情中展示和回答子代理待答问题, 尚待回答. FleetView 只在列表获得键盘焦点时于列表上方显示帮助. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
 
 按真实使用场景逐一讨论 UI: 主界面与页面关系、FleetView 与任务结构、详情与可观测性、介入操作、完成与历史、键盘与视觉统一. 根据维护者反馈, 本轮同时梳理详情的信息层级. 先前 UI 作为起点, 不整套继承它所依赖的旧运行要求.
 
@@ -100,7 +100,7 @@ Lifecycle、packages 和 tests 独立调查, 每行都能打开详情. 不画依
 
 **UIR04 已接受.** FleetView 局部操作提示放在列表上方、statusline 下方, 随键盘焦点改变. 列表获得焦点时显示 FleetView 操作, 返回编辑器时隐藏这些操作. 维护者明确接受了 Claude 的这条帮助规则. 具体提示文案及图中失焦后圆圈全空心的处理仍作示意; 先前仅通过圆圈表示选中的规则保持不变.
 
-## UIR05: 从详情发送补充指令
+## UIR05: 从详情发送补充指令已接受
 
 场景: lifecycle 正在调查 worktree 恢复, 用户希望它集中检查分支丢失的路径, 不修改文件. 以下三张图是同一次交互的连续状态.
 
@@ -136,8 +136,42 @@ Arhen 的 [steering 工具](https://github.com/arhen/pi-extensions/blob/676b11eb
 
 用户消息折叠为一行, 完整内容仍能从 transcript 查看. 页面再次优先展示最新回复和当前活动. 不另做消息管理页, 不额外调用模型总结是否遵从指令.
 
-**UIR05 问题. 是否在子代理详情内临时展开输入区, 提交成功后收起, 在同一详情中展示待处理指令和子代理后续的真实回复?** 推荐采用. 整个过程都能看清发给谁、它正在做什么.
+**UIR05 已接受.** 在子代理详情内临时展开输入区, 确认实际入队后收起, 在同一详情中展示待处理指令和子代理后续的真实回复. Esc 或提交失败时保留草稿. 整个过程都能看清发给谁、它正在做什么, 不编造已读或遵从回执.
+
+## UIR06: 子代理向父代理提问
+
+场景: lifecycle 找到 worktree 回退路径后, 询问应该复现问题还是继续追踪源码. 两张图分别展示待答问题和用户可选的介入回复.
+
+### 上游支持什么
+
+Arhen 的 [ask_parent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/child.ts#L18-L34)接收一个纯文本问题, 阻塞子代理并询问父代理, 不直接询问人类. [Manager](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L572-L600)将状态改为 awaiting_parent, 通过父代理正在等待的结果或后续消息传递问题.
+
+父代理通过 [reply_subagent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L331-L350)回答, 解除该调用的阻塞. 这与给工作中的子代理补充指令不同. 上游 [peek](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/peek.ts#L136-L191)可以查看和取消, 没有供人类回复的输入区. 本提案为同一个回答操作增加 UI 入口, 仍遵循已确定的单一工具设计.
+
+[任务快照](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/types.ts#L18-L51)记录等待状态, 不包含问题原文. UI 须从现有提问事件或子代理 transcript 取得原文, 并关联当前仍待回答的问题. 不从最新回复推测问题, 也不把旧问题显示为仍在等待. 本提案不增加持久化问题协议, 不改变恢复行为.
+
+上游已有 [10 分钟回复超时](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L622-L650), 到时向子代理返回后备指令. UI 跟随真实的待答状态, 不增加倒计时或人工批准关卡.
+
+### 1. 让待答问题成为详情主体
+
+![向 main 提出的问题优先显示在子代理详情中](../../assets/subagents-redevelopment-ui/13-question-pending.png)
+
+标题显示 Waiting for main, 不暗示人类必须回答. 待答问题取代 Latest update 成为中心内容. 示例中的解释属于子代理问题原文, 不是 UI 生成的摘要. 先前工具活动折叠在下方, 不在该子代理阻塞时描绘正在执行的工具.
+
+父代理仍能按原有流程回答. 打开详情不会把问题保留给人类独占, 也不中断父代理. 主对话继续留在上方, 沿用已接受的底部详情布局.
+
+### 2. 回复时保留问题原文
+
+![在原始待答问题下方临时展开回复输入区](../../assets/subagents-redevelopment-ui/14-question-reply.png)
+
+Enter 打开标为 Reply to lifecycle 的局部编辑器. 沿用 UIR05 的输入区形式及 Pi 配置中的提交/换行按键, Esc 不发送并返回. 问题原文始终可见. 输入时使用编辑器按键, 不触发详情快捷键.
+
+提交通过回答操作回复当前问题, 不进入 steering 队列. 确认回答被接受后才收起编辑器. 可以短暂显示 Answer sent, 但须等子代理实际恢复后才回到正常工作详情. 后续真实回复和活动体现结果, 不编造 Read、Applied 或 Acknowledged.
+
+提交必须对应打开时的那条问题. 若它已被回答、超时或取消, 保留草稿, 刷新详情并简短说明. 不将草稿发给后来的问题, 也不擅自转成补充指令. 投递失败同样保留草稿. 这些是拟议回复入口的正确性要求, 不新增运行功能.
+
+**UIR06 问题. 是否让待答问题优先显示在子代理详情中, 用户可通过同一局部输入区介入回答, 同时保留父代理的正常回答流程?** 推荐采用. 这样能直接看清阻塞原因, 并复用已接受的交互.
 
 ## 验证与下一步
 
-UIR01-UIR04 在各自记录的范围内保持已接受, UIR05 为提案. 已目视检查三张消息概念图的收件人、焦点、消息文本及待处理/回复呈现. 重新核对了 Ghostty 和 Pi 配置, 输入区采用配置中的块状光标. 图片由 ImageGen 生成, 不是实际消息投递或终端验收. 本轮仅更新文档和图片, 等待 UIR05 回答后再推进访谈.
+UIR01-UIR05 在各自记录的范围内保持已接受, UIR06 为提案. 已目视检查两张提问概念图的等待对象、问题优先级及回复时保留的上下文. 重新核对了 Ghostty 和 Pi 配置, 输入区采用配置中的块状光标. 源码结论针对固定的 arhen 1.3.55; 本轮没有执行回复投递、超时或竞态测试. 图片由 ImageGen 生成, 不作为终端验收证据. 本轮仅更新文档和图片, 等待 UIR06 回答后再推进访谈.

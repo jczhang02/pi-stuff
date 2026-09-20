@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-redevelopment-ui.md). English is authoritative.
 
-Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03 and UIR04 local help accepted on 2026-09-21. UIR05 proposes sending an instruction from child detail and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
+Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03, UIR04 local help and UIR05 accepted on 2026-09-21. UIR06 proposes showing and answering a pending child question in detail and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
 
 Discuss the UI one part at a time through real usage scenarios: main layout and transitions; FleetView and task structure; details and observability; interventions; completion and history; keyboard and visual consistency. The maintainer's feedback brings detail hierarchy into this round. The previous UI is a starting point, not a wholesale adoption of its old runtime requirements.
 
@@ -100,7 +100,7 @@ The accepted help position follows Claude's local action placement. Navigation f
 
 **Accepted UIR04.** Place FleetView's local action help above its rows, below the statusline, and change it with keyboard focus. Show FleetView actions when the list is focused; hide those actions when focus returns to the editor. The maintainer explicitly accepted this Claude-style help behavior. Exact hint wording and the images' hollow-circle treatment outside list focus remain illustrative; the earlier circle-only selection rule still applies.
 
-## UIR05: sending an instruction from detail
+## UIR05: sending an instruction from detail accepted
 
 Scenario: lifecycle is investigating worktree recovery. The user wants it to focus on the missing-branch path and leave files unchanged. The following three images show successive states of that interaction.
 
@@ -136,8 +136,42 @@ Once this instruction actually enters the conversation, remove its pending indic
 
 The user's message folds to one line and remains available in the transcript. The latest child reply and current activity again take priority. There is no separate messaging dashboard or extra model call to summarize compliance.
 
-**UIR05 question. Use a temporary editor inside child detail, close it after successful submission, and show pending input followed by the child's actual response in the same detail?** Recommendation: yes. It keeps the recipient and current work visible throughout the interaction.
+**Accepted UIR05.** Use a temporary editor inside child detail, close it after actual queue acceptance, and show pending input followed by the child's actual response in the same detail. Preserve the draft on Esc or submission failure. It keeps the recipient and current work visible throughout the interaction without inventing a read or compliance receipt.
+
+## UIR06: a child asks its parent a question
+
+Scenario: lifecycle has found the worktree fallback and asks whether to reproduce it or continue tracing the source. These two images show the pending question and an optional human reply.
+
+### What upstream supports
+
+Arhen's [ask_parent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/child.ts#L18-L34) takes one plain-text question. It blocks the child and asks the parent agent, not the human directly. The [manager](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L572-L600) marks the child awaiting_parent and routes the question through the parent's pending wait result or a follow-up message.
+
+The parent answers through [reply_subagent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L331-L350), which resolves the blocked call. This is different from steering a working child. Upstream [peek](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/peek.ts#L136-L191) can inspect or cancel but has no human reply composer. The proposal adds that UI entry to the same reply operation, within the agreed single-tool design.
+
+The [task snapshot](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/types.ts#L18-L51) records the waiting state but not the question text. The UI must obtain the original text from the existing question event or child transcript and associate it with the live pending question. Do not infer a question from the latest reply or show an old question as still pending. This proposal does not add a durable question protocol or change recovery behavior.
+
+Upstream has a [10-minute reply timeout](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L622-L650); after that, it returns a fallback instruction to the child. The UI follows the actual pending state. No countdown or human-approval gate is introduced.
+
+### 1. Make the pending question the primary content
+
+![A question for main takes priority in the child's detail](assets/subagents-redevelopment-ui/13-question-pending.png)
+
+The header says Waiting for main, so it does not imply that the human must answer. The question replaces Latest update as the central content. The example's explanation is part of the child's question text, not a UI-generated summary. Prior tool activity folds below it; no live tool is depicted while this child is blocked.
+
+The parent remains free to answer through its normal flow. Opening detail does not reserve the question for the human or interrupt the parent. The main transcript stays above, and the accepted bottom-detail layout remains.
+
+### 2. Reply while keeping the question visible
+
+![A temporary reply editor beneath the original pending question](assets/subagents-redevelopment-ui/14-question-reply.png)
+
+Enter opens a local editor labelled Reply to lifecycle. It uses the UIR05 composer pattern and Pi's configured submit/newline bindings, with Esc returning without sending. The original question stays visible. Typing uses composer bindings rather than detail shortcuts.
+
+Submit answers this pending question through the reply operation; it does not enqueue a steering message. Close the composer only after the reply is accepted. The UI may briefly show Answer sent, but returns to normal working detail only when the child actually resumes. Its later reply and activity show the result; do not invent Read, Applied or Acknowledged.
+
+Bind submission to the question that was opened. If it has already been answered, expired or cancelled, preserve the draft and refresh detail with a concise explanation. Do not send that draft to a later question or silently turn it into steering. A delivery failure also preserves the draft. These are correctness requirements for the proposed reply entry, not additional runtime features.
+
+**UIR06 question. Give a pending question priority in child detail and allow an optional human reply through the same local composer, while the parent can still answer normally?** Recommendation: yes. It makes the blocker clear and reuses the accepted interaction.
 
 ## Verification and next step
 
-UIR01-UIR04 remain accepted within their recorded scope. UIR05 is a proposal. The three message concepts were visually inspected for recipient clarity, focus, message text and truthful pending/reply treatment. Ghostty and Pi configuration were rechecked; the composer uses the configured block cursor. These are ImageGen concepts, not executed message-delivery or terminal acceptance tests. This round changes documentation and images only. Await the UIR05 answer before advancing the interview.
+UIR01-UIR05 remain accepted within their recorded scope. UIR06 is a proposal. Both question concepts were visually inspected for the waiting recipient, question priority and retained context while replying. Ghostty and Pi configuration were rechecked; the composer uses the configured block cursor. Source findings concern pinned arhen 1.3.55; reply delivery, timeout and race behavior were not executed this round. These are ImageGen concepts, not terminal acceptance evidence. This round changes documentation and images only. Await the UIR06 answer before advancing the interview.
