@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-redevelopment-ui.md). English is authoritative.
 
-Status: part 1, main layout and page transitions, updated on 2026-09-20. UIR01 is accepted with a trailing-column alignment correction. The first UIR02 detail design was rejected; the revised proposal below awaits an answer. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
+Status: UIR01 and revised UIR02 accepted on 2026-09-20. Part 2 now covers FleetView and task relationships; UIR03 below is a proposal awaiting an answer. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
 
 Discuss the UI one part at a time through real usage scenarios: main layout and transitions; FleetView and task structure; details and observability; interventions; completion and history; keyboard and visual consistency. The maintainer's feedback brings detail hierarchy into this round. The previous UI is a starting point, not a wholesale adoption of its old runtime requirements.
 
@@ -28,9 +28,9 @@ The observed [Claude Code task detail](https://github.com/jczhang02/pi-stuff/blo
 
 Current [Claude Agent View documentation](https://code.claude.com/docs/en/agent-view#peek-and-reply) prioritizes recent output or a pending question in its peek. [Cursor's review workflow](https://docs.cursor.com/en/agent/review) makes the produced changes directly accessible from an agent response. These inform the proposal's information order. Their session switching, peek containers and GUI controls are not prerequisites for Pi's inline detail.
 
-## UIR02: revised detail proposal
+## UIR02: revised detail accepted
 
-Opening a child still proposes replacing the entire bottom interaction area, with the visible main conversation above. Main editor, main statusline and FleetView are absent while inspecting. Returning restores the previous FleetView selection and main draft; background work continues. This page transition and the revised hierarchy remain pending together.
+Opening a child replaces the entire bottom interaction area, with the visible main conversation above. Main editor, main statusline and FleetView are absent while inspecting. Returning restores the previous FleetView selection and main draft; background work continues. The maintainer accepted this revised hierarchy and its retained page relationship. The sample keys and exact height remain illustrative.
 
 ### While working
 
@@ -48,8 +48,30 @@ The same central area shows the final report directly. Its conclusion and suppor
 
 The working and completed images are states of one design. The local action hints change from message/stop to follow-up as appropriate. Key assignments and action behavior are illustrative until the interaction round.
 
-**UIR02 question. Continue with this detail hierarchy: latest reply and current activity while working, report on completion, with supporting information one step deeper?** Recommendation: yes. Preserve access to full evidence while making the first screen useful on its own. A concrete pending question or error should take priority when present; those states still need their own design pass.
+**Accepted UIR02.** Show the latest reply and current activity while working, then the report on completion, with supporting information one step deeper. Preserve access to full evidence while making the first screen useful on its own. Concrete pending questions and errors still need their own design pass.
+
+## UIR03: FleetView and task relationships proposal
+
+FleetView remains the compact list accepted in UIR01. Its row layout does not change when a task has dependencies. Independent work needs no extra relationship diagram. When the selected task belongs to a dependency workflow, provide an entry to its actual dependency graph in the bottom inspection area. The exact entry key will be decided with keyboard interaction.
+
+### Independent investigations
+
+![Three independent investigations in the usual FleetView](assets/subagents-redevelopment-ui/06-independent-fleet.png)
+
+Lifecycle, packages and tests investigate independently. Each row can open its detail. There are no dependency arrows or an invented parent-child tree.
+
+### A workflow with dependencies
+
+![Two prerequisites feeding a reviewer, with one report still pending](assets/subagents-redevelopment-ui/07-dependency-graph.png)
+
+This is a separate scenario: reviewer requires the results of lifecycle and packages. The image shows the graph after opening it from FleetView. Packages is done, lifecycle is still working, and reviewer has not started. Both dependency edges remain visible; the selected-node line explains that lifecycle is the outstanding prerequisite.
+
+Use one directed graph form for explicit dependencies, including a simple serial chain. Connect prerequisites to consumers. Select a node to inspect its state and open the accepted detail view; Back returns to the graph selection, then to FleetView. The upper main conversation stays visible, while the graph takes the bottom interaction region.
+
+This is a proposed division between a compact list and an on-demand relationship view, not a menu of interchangeable list/tree/graph renderers. Graphs come from recorded dependencies, not inferred relationships between prompt text or agent names. The sample reports and timings are illustrative. Its Waiting reason is truthful for this particular join; it is not a claim that every queued task is waiting on an unfinished dependency. Upstream's ready-wave scheduling remains the runtime baseline.
+
+**UIR03 question. Keep FleetView as a list and offer an on-demand graph only for actual dependencies, with nodes opening the same detail view?** Recommendation: yes. It keeps ordinary monitoring compact and gives dependency questions enough space to be answered visually.
 
 ## Verification and next step
 
-The three revised images were visually inspected for the aligned FleetView tail, main/detail separation, English text and readable working/completed hierarchy. Both earlier images remain as design history. This round changes documentation and concept art only; no runtime implementation or terminal acceptance was performed. Await the maintainer's answer to revised UIR02 before advancing the interview.
+The working/completed detail hierarchy is now accepted. The two new concepts were visually inspected for aligned rows, correct dependency edges, selection treatment and the waiting explanation. Concept images do not establish terminal behavior. This round changes documentation and images only. Await the UIR03 answer before advancing the interview.
