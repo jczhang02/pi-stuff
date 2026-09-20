@@ -64,3 +64,5 @@ Next, revisit the current UI through concrete launch, progress, inspection, comm
 ## Current phase
 
 The runtime interview is closed with RQ01-RQ10 accepted. The next phase is to revisit the UI using the current design and agreed capabilities. Preserve the existing task owner, implementation branch and other worktrees. [PR #98](https://github.com/jczhang02/pi-stuff/pull/98) represents the previous implementation and is not a redevelopment acceptance candidate. Implementation and runtime acceptance remain pending; this documentation update does not authorize a merge or release.
+
+The [visual UI interview](subagents-redevelopment-ui.md) proceeds one part at a time. Its current layout proposals remain separate from the accepted runtime decisions above.

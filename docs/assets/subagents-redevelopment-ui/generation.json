@@ -1,0 +1,50 @@
+{
+  "date": "2026-09-20",
+  "tool": "Built-in image_gen.imagegen",
+  "purpose": "Concept previews for the first UI interview round; not runtime screenshots or acceptance evidence.",
+  "environment": {
+    "theme": "catppuccin-latte",
+    "background": "#eff1f5",
+    "foreground": "#4c4f69",
+    "cursor": "#dc8a78",
+    "fontFamilies": [
+      "JetBrainsMono Nerd Font Mono",
+      "Symbols Nerd Font Mono",
+      "LXGW WenKai Mono"
+    ],
+    "fontSizePt": 12,
+    "fontThicken": true,
+    "ligatures": false,
+    "defaultTerminalCells": {
+      "columns": 150,
+      "rows": 50
+    },
+    "padding": {
+      "x": 2,
+      "y": 2
+    },
+    "piTuiMode": "fullscreen",
+    "liveTerminalAvailable": false,
+    "referenceCaptures": [
+      "../subagents/light-fleet-120x36.png",
+      "../subagents/light-detail-160x48.png"
+    ],
+    "fidelity": "ImageGen approximates configured typography and terminal proportions; it does not guarantee pixel-accurate font rasterization or cell geometry."
+  },
+  "outputs": [
+    {
+      "file": "01-main.png",
+      "generationId": "exec-a0a4f33f-3020-4436-b9ac-ce5386569731",
+      "prompt": "Use case: ui-mockup. Create a highly faithful terminal UI concept image, not a poster. The attached image is a style reference from the user's actual Pi terminal. Use its Pi text rendering, modest font weight, native text colors, pale tool output blocks. Remove all fixture/demo text and startup theme listing. Create a fresh realistic work scenario.\nCanvas: 1536x1024, landscape, edge-to-edge terminal content, no outer window chrome or rounded window frame. Approximate a 150-column x 50-row Ghostty terminal at 12pt. Flat solid background #eff1f5; foreground #4c4f69; accent teal #179299; blue #1e66f5; muted gray #8c8fa1; amber #df8e1d; thin rules #ccd0da; cursor #dc8a78. Font JetBrainsMono Nerd Font Mono, fallback Symbols Nerd Font Mono, then LXGW WenKai Mono. Monospaced, slightly thickened, no ligatures, compact ~18-20px line spacing, English only. Very small 6px left/right content inset; align all left edges. No gradients, shadow, browser cards, tabs, sidebar, overlay, demo labels, annotations or legend.\nThe main conversation is realistic English. From top to about y=430, show these blocks, with modest vertical gaps:\nUser message on light gray rectangle, 2 lines:\n\"Review subagent worktree recovery against the upstream package.\"\n\"Run two investigations in parallel, then have a reviewer compare the findings.\"\nAssistant text, 2 lines:\n\"I'll trace recovery and inspect upstream behavior in parallel.\"\n\"The reviewer will start when both reports are ready.\"\nPale mint tool block, three lines:\n\"subagent\"\n\"Started lifecycle and packages.\"\n\"reviewer is waiting for both reports.\"\nAssistant text:\n\"While they work, I'll check the recovery decision we already agreed on.\"\nPale mint read-tool block, 4 lines:\n\"read docs/subagents-redevelopment.md\"\n\"Continue from the subagent's previous workspace and branch.\"\n\"If only the worktree directory was removed, restore it from that branch.\"\n\"If the required code state cannot be recovered, report the failure.\"\nAssistant text:\n\"I'll check whether recovery can silently fall back to the main directory.\"\nAll text must be legible and spelled correctly. The scene is illustrative task progress, not a completed run.\nSTATE 1: Main agent screen with compact FleetView at the very bottom.\nAfter the conversation, leave natural empty terminal space. At around y=755 show main activity \"Checking the recovery path...\" in muted text.\nAt y=780 to y=835, show the native MAIN input editor: two thin full-width horizontal rules, a single draft line between them \"Also check what happens when the branch is missing.\" An unobtrusive caret at end, not a big input panel.\nImmediately below the editor are TWO statusline rows:\nrow 1 left \"~/dev/pi-stuff (codex/subagent-implementation)\"\nrow 2 left \"↑24k ↓3.1k $0.031 9%/272k\"\nrow 2 far right \"(openai-codex) gpt-6-astra · medium\"\nBelow the statusline, the full-width FleetView has FOUR rows. Use only selection circles, with lifecycle selected as a filled circle and all others hollow. No row background selection, no bold selected name, no left gutter. Main has no description or stats.\nExact row content, arranged as shared aligned terminal columns:\n\"○ main\"\n\"● lifecycle     Trace worktree recovery\" and far right \"34s · ↓ 1.8k tokens\"\n\"○ packages      Compare upstream behavior\" and far right \"31s · ↓ 1.4k tokens\"\n\"○ reviewer      Review both findings\" and state \"Waiting\" aligned just before the time column; no elapsed or tokens for this unstarted task.\nName starts and description starts align in all child rows. The circles begin at exactly the same left x as statusline text. The numeric time columns and down arrows and tokens text align across active rows, statistics end at the right content edge. No \"Running\", no task numbers.\nA final muted footer line at bottom reads \"j/k select · Enter inspect · Esc back\". Keep all rows fully visible. The fleet occupies the entire bottom width and is BELOW statusline. No other fleet or UI duplicate.",
+      "sourceImage": "../subagents/light-fleet-120x36.png",
+      "initialGenerationId": "exec-4629189a-2ae5-47b2-a7ff-752290752b84",
+      "refinementPrompt": "Use case: precise-object-edit. In this Pi terminal screenshot change exactly one thing: REMOVE the small orange rectangular caret immediately after the draft sentence \"Also check what happens when the branch is missing.\" The keyboard focus is on the selected lifecycle row in FleetView, so the main editor must retain its draft text but have no visible text cursor. Leave the complete draft sentence unchanged, all other text, spacing, all circles, all statistics, colors, and every other pixel as close to the original as possible. Keep 1536x1024. No new labels, icons, borders or annotations."
+    },
+    {
+      "file": "02-detail.png",
+      "generationId": "exec-bb01809f-bf9b-47a5-ad4f-8e149a74b7e0",
+      "prompt": "Use case: ui-mockup / precise-object-edit. Edit the provided Pi terminal image into the immediate next state after opening the selected lifecycle subagent. This is a second state of the SAME screen, not an alternative design.\nKeep the canvas exactly 1536x1024. Preserve the entire main conversation from the top through the final assistant sentence at y≈515 unchanged, with the exact same English text, positions, font, color and pale tool blocks. Preserve #eff1f5 background, #4c4f69 foreground, JetBrainsMono Nerd Font Mono appearance and compact monospaced grid.\nREPLACE only the lower screen area starting around y=560 through the bottom. Remove the main activity line, both editor rules, input draft and caret, main statusline/path/model/usage, ALL compact FleetView rows and previous footer. They must NOT appear anywhere in this lower area. The upper main conversation stays visible; this is not a switched host session and not an overlay.\nIn that vacated bottom region create a full-width, flat, borderless inline subagent detail view, integrated with the terminal background. A single thin horizontal separator at y=560 is allowed. No bounding box, tabs, side navigation, input field or dimmed background.\nAll left edges align with the main terminal content around x=22. The header at y≈582 is bold \"Agents / lifecycle\"; on the same row far right \"34s · ↓ 1.8k tokens\". On the next line show \"Trace worktree recovery\" in subdued teal. Use compact tree sections beneath, Prompt BEFORE Progress, exact text:\n\"▾ Prompt\"\n\"  Check how a write-capable subagent resumes after its worktree is removed.\"\n\"  Compare a retained branch with a missing branch.\"\n\"▾ Progress\"\n\"  ├─ read src/manager.ts\"\n\"  │  Found the resume path and worktree attachment.\"\n\"  └─ read src/worktree.ts\"\n\"     Inspecting behavior when the original branch is missing...\"\n\"▸ Result\"\n\"▸ Communication\"\n\"▸ Workspace\"\n\"▸ Usage\"\n\"▸ History\"\nArrange these as a readable compact monospace tree starting around y=640, with ~22px line height. Active Progress label may use a teal disclosure marker, without a full-row highlight. No completed report: lifecycle is still investigating. No Running label. The tree shows a modest preview, not a wall of implementation metadata. No task ID numbers.\nBottom contextual footer at y≈992: \"j/k select · Enter read · a actions · Esc back\"\nDo not add prose about prototypes, simulations, drafts being saved, UI architecture or what was removed. Do not add any screenshot title, annotation, numbering or watermark. The only two locations on the screen are the unchanged main conversation above and lifecycle details below. Crisp readable English.",
+      "sourceGenerationId": "exec-4629189a-2ae5-47b2-a7ff-752290752b84"
+    }
+  ]
+}
