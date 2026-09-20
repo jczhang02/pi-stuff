@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-redevelopment-ui.md). English is authoritative.
 
-Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03, UIR04 local help and UIR05 accepted on 2026-09-21. UIR06 proposes showing and answering a pending child question in detail and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
+Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03, UIR04 local help, UIR05 and UIR06 accepted on 2026-09-21. UIR07 proposes stopping a child with its existing work visible and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
 
 Discuss the UI one part at a time through real usage scenarios: main layout and transitions; FleetView and task structure; details and observability; interventions; completion and history; keyboard and visual consistency. The maintainer's feedback brings detail hierarchy into this round. The previous UI is a starting point, not a wholesale adoption of its old runtime requirements.
 
@@ -48,7 +48,7 @@ The same central area shows the final report directly. Its conclusion and suppor
 
 The working and completed images are states of one design. The local action hints change from message/stop to follow-up as appropriate. Key assignments and action behavior are illustrative until the interaction round.
 
-**Accepted UIR02.** Show the latest reply and current activity while working, then the report on completion, with supporting information one step deeper. Preserve access to full evidence while making the first screen useful on its own. Concrete pending questions and errors still need their own design pass.
+**Accepted UIR02.** Show the latest reply and current activity while working, then the report on completion, with supporting information one step deeper. Preserve access to full evidence while making the first screen useful on its own. UIR06 covers pending questions; errors still need their own design pass.
 
 ## UIR03: FleetView and task relationships accepted
 
@@ -108,7 +108,7 @@ Scenario: lifecycle is investigating worktree recovery. The user wants it to foc
 
 Arhen's [steering tool](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L351-L377) calls the running child's session with `streamingBehavior: "steer"`. Pi [queues that input](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts) while streaming and removes it from the pending steering list when its user-message event starts. It does not immediately abort an executing tool or prove that the model understood the instruction.
 
-This is distinct from sibling mailboxes, which recipients poll, and from replying to a child blocked on `ask_parent`. This round covers steering a working child. Completed-agent follow-up is already in RQ05; its UI and the pending-question UI will be considered with their respective scenarios.
+This is distinct from sibling mailboxes, which recipients poll, and from replying to a child blocked on `ask_parent`. This round covers steering a working child. Completed-agent follow-up is already in RQ05; its UI still needs its own scenario. UIR06 covers the pending-question UI.
 
 Source inspection also exposes a false-positive path in [steerTask](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1434-L1441): a specified ID can return success without a live child, and the session call is fire-and-forget. The redevelopment must validate the actual target and queue acceptance before displaying success. This is a source finding to reproduce and repair under the existing bug-fix scope, not an executed regression test or a new receipt protocol.
 
@@ -138,7 +138,7 @@ The user's message folds to one line and remains available in the transcript. Th
 
 **Accepted UIR05.** Use a temporary editor inside child detail, close it after actual queue acceptance, and show pending input followed by the child's actual response in the same detail. Preserve the draft on Esc or submission failure. It keeps the recipient and current work visible throughout the interaction without inventing a read or compliance receipt.
 
-## UIR06: a child asks its parent a question
+## UIR06: a child asks its parent a question, accepted
 
 Scenario: lifecycle has found the worktree fallback and asks whether to reproduce it or continue tracing the source. These two images show the pending question and an optional human reply.
 
@@ -146,7 +146,7 @@ Scenario: lifecycle has found the worktree fallback and asks whether to reproduc
 
 Arhen's [ask_parent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/child.ts#L18-L34) takes one plain-text question. It blocks the child and asks the parent agent, not the human directly. The [manager](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L572-L600) marks the child awaiting_parent and routes the question through the parent's pending wait result or a follow-up message.
 
-The parent answers through [reply_subagent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L331-L350), which resolves the blocked call. This is different from steering a working child. Upstream [peek](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/peek.ts#L136-L191) can inspect or cancel but has no human reply composer. The proposal adds that UI entry to the same reply operation, within the agreed single-tool design.
+The parent answers through [reply_subagent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L331-L350), which resolves the blocked call. This is different from steering a working child. Upstream [peek](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/peek.ts#L136-L191) can inspect or cancel but has no human reply composer. The accepted design adds that UI entry to the same reply operation, within the agreed single-tool design.
 
 The [task snapshot](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/types.ts#L18-L51) records the waiting state but not the question text. The UI must obtain the original text from the existing question event or child transcript and associate it with the live pending question. Do not infer a question from the latest reply or show an old question as still pending. This proposal does not add a durable question protocol or change recovery behavior.
 
@@ -168,10 +168,50 @@ Enter opens a local editor labelled Reply to lifecycle. It uses the UIR05 compos
 
 Submit answers this pending question through the reply operation; it does not enqueue a steering message. Close the composer only after the reply is accepted. The UI may briefly show Answer sent, but returns to normal working detail only when the child actually resumes. Its later reply and activity show the result; do not invent Read, Applied or Acknowledged.
 
-Bind submission to the question that was opened. If it has already been answered, expired or cancelled, preserve the draft and refresh detail with a concise explanation. Do not send that draft to a later question or silently turn it into steering. A delivery failure also preserves the draft. These are correctness requirements for the proposed reply entry, not additional runtime features.
+Bind submission to the question that was opened. If it has already been answered, expired or cancelled, preserve the draft and refresh detail with a concise explanation. Do not send that draft to a later question or silently turn it into steering. A delivery failure also preserves the draft. These are correctness requirements for the reply entry, not additional runtime features.
 
-**UIR06 question. Give a pending question priority in child detail and allow an optional human reply through the same local composer, while the parent can still answer normally?** Recommendation: yes. It makes the blocker clear and reuses the accepted interaction.
+**Accepted UIR06.** Give a pending question priority in child detail and allow an optional human reply through the same local composer. The parent can still answer normally. Preserve the question while composing and retain the draft if submission fails or that question is no longer pending.
+
+## UIR07: stopping a child and retaining its work
+
+Scenario: the user stops lifecycle before it finishes its investigation. Its latest finding remains useful. Packages is independent; reviewer needs lifecycle's completed result. The three images are consecutive states of the same detail.
+
+### What upstream supports
+
+Arhen [wires peek's stop action](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L23-L52) to the selected task. Its [inline confirmation](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/peek.ts#L183-L191) uses x then y. The separate run-level cancellation operation stops the run's nonterminal tasks. This detail action targets lifecycle, not every agent.
+
+The [single-task cancellation path](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1443-L1457) does not cancel unrelated siblings. The [scheduler](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1201-L1249) skips a dependent whose prerequisite did not complete. In this scenario, packages can finish and reviewer will be skipped. This is a dependency consequence, not recursive cancellation.
+
+Upstream [retains the session and last output](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1014-L1056). For a write task it tries to commit partial work to the task branch, removing the worktree directory after successful preservation; a commit failure leaves the directory for inspection. Stop does not roll back completed edits. Show actual available output and workspace evidence; do not equate stopping with a successful save.
+
+### 1. Confirm within the existing detail
+
+![An inline confirmation names lifecycle and explains the effect on reviewer](assets/subagents-redevelopment-ui/15-stop-confirm.png)
+
+The x action temporarily replaces the detail footer with Stop lifecycle?, a short preservation statement and the known dependency consequence. Enter confirms and Esc dismisses the confirmation. The child keeps working until confirmation. Keep the current finding and activity visible, without a modal or dimming. Use Pi's configured confirmation binding and the fixed Esc-back rule.
+
+The reviewer notice comes from this workflow's actual dependency. Do not display it for independent tasks. The preservation statement describes the operation's intent, not a completed-save receipt; any preservation failure must remain visible under the shared error rules.
+
+### 2. Distinguish a stop request from a stopped child
+
+![Stopping remains visible until execution and request finalization have ended](assets/subagents-redevelopment-ui/16-stopping.png)
+
+After confirmation, display Stopping and retain the last output. Reading the transcript and returning remain available. Do not offer another stop, message or resume while stopping is in progress. Esc returns to FleetView; it does not undo the stop request.
+
+There is a source-level timing issue to reproduce: upstream marks the task aborted before the underlying child abort and finalization have completed, without awaiting them in cancelTask. That status alone cannot justify this UI's Stopped label. The rewrite must observe actual completion of the stop and request finalization before displaying it, using the existing execution lifecycle. This is a pending correctness repair under the agreed fix scope, not evidence that upstream already provides a stop-completion event or a new durable recovery system.
+
+### 3. Keep the incomplete work readable
+
+![Stopped detail retains the last finding, incomplete-report notice and resume entry](assets/subagents-redevelopment-ui/17-stopped.png)
+
+Stopped is distinct from Done and Failed. The last child reply and tool evidence stay available, and the page says that the report was not finished. Do not generate a replacement report. This read-only example has no file changes. Reviewer is shown as skipped only after the scheduler records that outcome.
+
+In this last image, packages has also finished, reviewer has been skipped and the run has settled. A retained session is available, so m resume can open the same local composer pattern used in UIR05. It keeps the last output visible while the user specifies how to continue. A successful resume starts a new request in the retained child context, preserving the stopped request under RQ07 and its own workspace under RQ08.
+
+Upstream [resume prerequisites](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1352) require the run to settle and a retained session to exist. If those conditions are not met, explain the actual reason instead of offering an action that cannot run. Resume [executes only this child](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1394-L1411); it does not automatically restart reviewer. Completed-agent follow-up remains separately accepted in RQ05. This round adds no automatic retry, rollback or workflow restart.
+
+**UIR07 question. Use inline stop confirmation, show Stopping until the request has actually ended, then retain the incomplete output with a contextual resume entry in the same detail?** Recommendation: yes. The user can see the target, consequence, retained work and next action without changing pages.
 
 ## Verification and next step
 
-UIR01-UIR05 remain accepted within their recorded scope. UIR06 is a proposal. Both question concepts were visually inspected for the waiting recipient, question priority and retained context while replying. Ghostty and Pi configuration were rechecked; the composer uses the configured block cursor. Source findings concern pinned arhen 1.3.55; reply delivery, timeout and race behavior were not executed this round. These are ImageGen concepts, not terminal acceptance evidence. This round changes documentation and images only. Await the UIR06 answer before advancing the interview.
+UIR01-UIR06 remain accepted within their recorded scope. UIR07 is a proposal. The three stop concepts were visually inspected for confirmation scope, distinct stopping/stopped states, retained output and dependency consequences. Ghostty and Pi configuration were rechecked. Source findings concern pinned arhen 1.3.55; cancellation timing, partial preservation and resume behavior were not executed this round. These are ImageGen concepts, not terminal acceptance evidence. This round changes documentation and images only. Await the UIR07 answer before advancing the interview.

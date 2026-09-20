@@ -2,7 +2,7 @@
 
 [English](../../subagents-redevelopment-ui.md). 以英文版为准.
 
-状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02; 2026-09-21 已接受 UIR03、UIR04 局部帮助规则及 UIR05. UIR06 提议在详情中展示和回答子代理待答问题, 尚待回答. FleetView 只在列表获得键盘焦点时于列表上方显示帮助. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
+状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02; 2026-09-21 已接受 UIR03、UIR04 局部帮助规则、UIR05 和 UIR06. UIR07 提议停止子代理时保留已有工作可见, 尚待回答. FleetView 只在列表获得键盘焦点时于列表上方显示帮助. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
 
 按真实使用场景逐一讨论 UI: 主界面与页面关系、FleetView 与任务结构、详情与可观测性、介入操作、完成与历史、键盘与视觉统一. 根据维护者反馈, 本轮同时梳理详情的信息层级. 先前 UI 作为起点, 不整套继承它所依赖的旧运行要求.
 
@@ -48,7 +48,7 @@ Transcript 进入完整记录. Info 提供配置、工作区、详细用量及�
 
 运行中和完成后是同一设计的两个状态. 操作提示相应从 message/stop 变为 follow-up. 具体按键和操作行为暂作示意, 在交互部分确定.
 
-**UIR02 已接受.** 运行中先看最新回复和当前活动, 完成后直接看报告, 辅助信息深入一层查看. 完整证据仍可读取, 首屏自身就有用. 明确待答问题和错误仍需单独出图梳理.
+**UIR02 已接受.** 运行中先看最新回复和当前活动, 完成后直接看报告, 辅助信息深入一层查看. 完整证据仍可读取, 首屏自身就有用. UIR06 已覆盖待答问题, 错误仍需单独出图梳理.
 
 ## UIR03: FleetView 与任务关系已接受
 
@@ -108,7 +108,7 @@ Lifecycle、packages 和 tests 独立调查, 每行都能打开详情. 不画依
 
 Arhen 的 [steering 工具](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L351-L377)以 `streamingBehavior: "steer"` 调用运行中的子代理会话. Pi 在流式执行期间[将输入排队](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts), 当对应 user-message 事件开始时从待处理列表移除. 这不会立即中止正在执行的工具, 也不能证明模型理解了指令.
 
-它与同级代理主动轮询的 mailbox、回答 `ask_parent` 阻塞问题不同. 本轮只讨论给工作中的子代理补充指令. 完成后的续聊已由 RQ05 接受; 续聊界面和待答问题界面分别结合对应场景讨论.
+它与同级代理主动轮询的 mailbox、回答 `ask_parent` 阻塞问题不同. 本轮只讨论给工作中的子代理补充指令. 完成后的续聊已由 RQ05 接受, 其 UI 仍待结合对应场景讨论. UIR06 已覆盖待答问题界面.
 
 源码检查还发现 [steerTask](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1434-L1441)的一条误报路径: 指定 ID 时即使没有 live child 也可能返回成功, 且未等待 session 调用结果. 重新开发须核实实际目标及入队结果后才显示成功. 这是既有修错范围内待复现和修复的源码发现, 不作为已执行的回归测试, 也不增加回执协议.
 
@@ -138,7 +138,7 @@ Arhen 的 [steering 工具](https://github.com/arhen/pi-extensions/blob/676b11eb
 
 **UIR05 已接受.** 在子代理详情内临时展开输入区, 确认实际入队后收起, 在同一详情中展示待处理指令和子代理后续的真实回复. Esc 或提交失败时保留草稿. 整个过程都能看清发给谁、它正在做什么, 不编造已读或遵从回执.
 
-## UIR06: 子代理向父代理提问
+## UIR06: 子代理向父代理提问已接受
 
 场景: lifecycle 找到 worktree 回退路径后, 询问应该复现问题还是继续追踪源码. 两张图分别展示待答问题和用户可选的介入回复.
 
@@ -146,7 +146,7 @@ Arhen 的 [steering 工具](https://github.com/arhen/pi-extensions/blob/676b11eb
 
 Arhen 的 [ask_parent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/child.ts#L18-L34)接收一个纯文本问题, 阻塞子代理并询问父代理, 不直接询问人类. [Manager](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L572-L600)将状态改为 awaiting_parent, 通过父代理正在等待的结果或后续消息传递问题.
 
-父代理通过 [reply_subagent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L331-L350)回答, 解除该调用的阻塞. 这与给工作中的子代理补充指令不同. 上游 [peek](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/peek.ts#L136-L191)可以查看和取消, 没有供人类回复的输入区. 本提案为同一个回答操作增加 UI 入口, 仍遵循已确定的单一工具设计.
+父代理通过 [reply_subagent](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L331-L350)回答, 解除该调用的阻塞. 这与给工作中的子代理补充指令不同. 上游 [peek](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/peek.ts#L136-L191)可以查看和取消, 没有供人类回复的输入区. 已接受的设计为同一个回答操作增加 UI 入口, 仍遵循已确定的单一工具设计.
 
 [任务快照](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/types.ts#L18-L51)记录等待状态, 不包含问题原文. UI 须从现有提问事件或子代理 transcript 取得原文, 并关联当前仍待回答的问题. 不从最新回复推测问题, 也不把旧问题显示为仍在等待. 本提案不增加持久化问题协议, 不改变恢复行为.
 
@@ -168,10 +168,50 @@ Enter 打开标为 Reply to lifecycle 的局部编辑器. 沿用 UIR05 的输入
 
 提交通过回答操作回复当前问题, 不进入 steering 队列. 确认回答被接受后才收起编辑器. 可以短暂显示 Answer sent, 但须等子代理实际恢复后才回到正常工作详情. 后续真实回复和活动体现结果, 不编造 Read、Applied 或 Acknowledged.
 
-提交必须对应打开时的那条问题. 若它已被回答、超时或取消, 保留草稿, 刷新详情并简短说明. 不将草稿发给后来的问题, 也不擅自转成补充指令. 投递失败同样保留草稿. 这些是拟议回复入口的正确性要求, 不新增运行功能.
+提交必须对应打开时的那条问题. 若它已被回答、超时或取消, 保留草稿, 刷新详情并简短说明. 不将草稿发给后来的问题, 也不擅自转成补充指令. 投递失败同样保留草稿. 这些是回复入口的正确性要求, 不新增运行功能.
 
-**UIR06 问题. 是否让待答问题优先显示在子代理详情中, 用户可通过同一局部输入区介入回答, 同时保留父代理的正常回答流程?** 推荐采用. 这样能直接看清阻塞原因, 并复用已接受的交互.
+**UIR06 已接受.** 待答问题优先显示在子代理详情中, 用户可通过同一局部输入区介入回答, 父代理仍可正常回答. 填写时保留问题原文, 提交失败或该问题已不再等待时保留草稿.
+
+## UIR07: 停止子代理并保留已有工作
+
+场景: 用户在 lifecycle 完成调查前将其停止, 它最近的发现仍有用. Packages 独立工作, reviewer 需要 lifecycle 的完整结果. 三张图是同一详情的连续状态.
+
+### 上游支持什么
+
+Arhen 将 [peek 的停止操作](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L23-L52)绑定到选中的 task. 它的[就地确认](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/peek.ts#L183-L191)使用 x 后按 y. 另一个 run 级取消操作才会停止整组未结束任务. 这里的详情操作只针对 lifecycle.
+
+[单任务取消路径](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1443-L1457)不取消无关同级任务. [调度器](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1201-L1249)会跳过前置任务未完成的后续任务. 在这个场景中, packages 可以继续完成, reviewer 会被跳过. 这是依赖产生的后果, 不是递归取消.
+
+上游[保留会话和最后的输出](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1014-L1056). 写任务会尝试将部分改动提交到任务分支, 保存成功后移除 worktree 目录; 提交失败则保留目录供检查. 停止不会回滚已完成的编辑. 界面展示实际可用的输出及工作区证据, 不把停止等同于保存成功.
+
+### 1. 在现有详情中确认
+
+![就地确认明确停止 lifecycle 并说明 reviewer 所受影响](../../assets/subagents-redevelopment-ui/15-stop-confirm.png)
+
+x 暂时将详情页脚替换为 Stop lifecycle?、简短的保留说明和已知的依赖后果. Enter 确认, Esc 取消确认. 确认前子代理继续工作. 当前发现和活动保持可见, 不弹窗或压暗背景. 实现沿用 Pi 配置中的确认键和固定的 Esc 返回规则.
+
+Reviewer 提示来自当前流程的真实依赖, 独立任务不显示这行. 保留说明表达操作意图, 不是已完成保存的回执; 保存失败须按共享错误规则清楚呈现.
+
+### 2. 区分请求停止与已经停止
+
+![执行和本次任务收尾完成前持续显示 Stopping](../../assets/subagents-redevelopment-ui/16-stopping.png)
+
+确认后显示 Stopping, 保留最后的输出. 仍可阅读 transcript 和返回. 正在停止时不提供重复停止、消息或恢复操作. Esc 返回 FleetView, 不撤销停止请求.
+
+源码中有一个时机问题待复现: 上游在底层 child abort 和收尾完成前就标为 aborted, cancelTask 没有等待它们结束. 不能仅凭这个状态显示本设计中的 Stopped. 重写时须沿现有执行生命周期观察停止和本次任务收尾的实际完成, 再改变界面. 这是已约定修错范围内的待验证修复, 不表示上游已有停止完成事件, 也不增加持久化恢复系统.
+
+### 3. 保留未完成内容供阅读
+
+![停止后的详情保留最后发现、报告未完成提示及恢复入口](../../assets/subagents-redevelopment-ui/17-stopped.png)
+
+Stopped 与 Done、Failed 分开. 最后的子代理回复和工具证据继续可读, 页面明确报告尚未完成. 不另行生成替代报告. 这是只读调查的示例, 没有文件改动. 调度器实际记录跳过结果后才将 reviewer 显示为 skipped.
+
+最后这张图中, packages 也已完成, reviewer 已跳过, 整组任务已结束. 原会话仍可用, 因而 m resume 可以打开沿用 UIR05 形式的局部输入区, 填写后续要求时仍能看见最后输出. 恢复成功后在原子代理上下文中开始新一次交办, 按 RQ07 保留停止前的记录, 按 RQ08 沿用自己的工作区.
+
+上游[恢复前提](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1352)要求整组任务结束且原会话存在. 条件不满足时说明实际原因, 不提供无法执行的操作. 恢复[只执行当前子代理](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1394-L1411), 不自动重启 reviewer. 已完成代理续聊仍由 RQ05 单独确定. 本轮不增加自动重试、回滚或整组流程重启.
+
+**UIR07 问题. 是否采用就地确认停止, 真正结束前显示 Stopping, 结束后在同一详情保留未完成内容并按条件提供恢复入口?** 推荐采用. 用户可以直接看清操作对象、影响、已有成果和下一步.
 
 ## 验证与下一步
 
-UIR01-UIR05 在各自记录的范围内保持已接受, UIR06 为提案. 已目视检查两张提问概念图的等待对象、问题优先级及回复时保留的上下文. 重新核对了 Ghostty 和 Pi 配置, 输入区采用配置中的块状光标. 源码结论针对固定的 arhen 1.3.55; 本轮没有执行回复投递、超时或竞态测试. 图片由 ImageGen 生成, 不作为终端验收证据. 本轮仅更新文档和图片, 等待 UIR06 回答后再推进访谈.
+UIR01-UIR06 在各自记录的范围内保持已接受, UIR07 为提案. 已目视检查三张停止概念图的确认范围、正在停止/已经停止区分、已有输出和依赖后果. 重新核对了 Ghostty 和 Pi 配置. 源码结论针对固定的 arhen 1.3.55; 本轮没有执行取消时机、部分成果保存或恢复测试. 图片由 ImageGen 生成, 不作为终端验收证据. 本轮仅更新文档和图片, 等待 UIR07 回答后再推进访谈.
