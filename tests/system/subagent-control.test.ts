@@ -343,7 +343,14 @@ test('cancellation before final delivery blocks dependents while a late cancella
     );
     expect(cancelled).toContain('cancell');
     release.resolve();
-    await host.invoke('subagent', '{"command":"wait","timeoutMs":5000}');
+    await host.invoke(
+      'subagent',
+      JSON.stringify({
+        command: 'wait',
+        taskId: first.tasks[1]?.taskId,
+        timeoutMs: 5000,
+      }),
+    );
     const afterCancel = Schema.decodeUnknownSync(Snapshot)(
       await host.invoke('subagent', '{"command":"inspect"}'),
     );

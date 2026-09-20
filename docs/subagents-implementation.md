@@ -53,12 +53,14 @@ PI_TEST_HOST=/absolute/path/to/pi-0.85.1 bun test tests/system/subagent-*.test.t
 Final local verification on 2026-09-20:
 
 - `bun run check` and `git diff --check`: passed.
-- `bun test tests`: 234 passed, 0 failed, 3,081 assertions across 48 files.
-- Compiled Pi 0.85.1, `bun test tests/system/subagent-*.test.ts tests/system/pi-host.test.ts`: 73 passed, 0 failed, 1,999 assertions across 21 files.
+- `bun test tests`: 240 passed, 0 failed, 3,115 assertions across 49 files.
+- Compiled Pi 0.85.1, `bun test tests/system/subagent-*.test.ts tests/system/pi-host.test.ts`: 73 passed, 0 failed, 1,999 assertions across 21 files. After the scoped-wait test correction, its compiled control suite passed again with 4 tests and 26 assertions.
 - The interaction and navigation suites through the isolated UTF-8 tmux host: 7 passed, 35 assertions. Earlier geometry and host-return trials also passed.
 - All 24 light/dark, surface and resize captures passed; six representative captures are retained below.
 
 Final failures were repaired rather than accepted as skips. Deterministic regressions exposed a copied Git index losing racy-stat protection and a replacement index losing intent-to-add/skip-worktree metadata. The final capture preserves the index and gives its private copy a conservative timestamp. Native editor races, no-match search and misleading graph joins also have regression coverage. Two terminal tests now assert the matching snapshot directly instead of requiring a second quiet capture.
+
+The first remote CI run exposed release requests arriving after public settlement but before private cleanup finished, and admission errors losing their storage failure cause during configuration loading. Release now reserves the agent, waits for cleanup outside the journal/workspace locks, and checks storage before releasing evidence. Removing the reservation also resumes eligible queued work. [Controlled release regressions](../tests/component/subagent-release.test.ts) cover these windows; the actual-host admission regression uses a 64-assignment atomic batch and reproduced the lost cause three times before the fix. The cancellation test now waits for its dependent explicitly, matching event-driven wait semantics; its outcome assertions remain unchanged.
 
 A separate live `openai-codex/gpt-6-astra` trial used a disposable case-sensitive path cache project. Two investigations ran concurrently, a reviewer consumed both fixed results, and the original implementation agent completed a follow-up. All four records ended fulfilled and saved; output usage was 198, 217, 217 and 363 tokens. Inspection returned to main and the parent exited normally. This verifies that provider and workflow, not every available model or extension.
 

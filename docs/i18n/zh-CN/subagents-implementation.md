@@ -53,12 +53,14 @@ PI_TEST_HOST=/absolute/path/to/pi-0.85.1 bun test tests/system/subagent-*.test.t
 2026-09-20 最终本地验证:
 
 - `bun run check` 和 `git diff --check`: 通过.
-- `bun test tests`: 48 个文件, 234 项通过, 0 失败, 3,081 个断言.
-- 编译版 Pi 0.85.1, `bun test tests/system/subagent-*.test.ts tests/system/pi-host.test.ts`: 21 个文件, 73 项通过, 0 失败, 1,999 个断言.
+- `bun test tests`: 49 个文件, 240 项通过, 0 失败, 3,115 个断言.
+- 编译版 Pi 0.85.1, `bun test tests/system/subagent-*.test.ts tests/system/pi-host.test.ts`: 21 个文件, 73 项通过, 0 失败, 1,999 个断言. 修正定向等待测试后, 编译宿主的控制套件再次通过 4 项测试和 26 个断言.
 - 独立 UTF-8 tmux 宿主中的交互和导航套件: 7 项通过, 35 个断言. 此前的几何布局和返回宿主试验也已通过.
 - 24 张明暗主题、各页面和窗口缩放截图检查均通过, 下方保留六张代表截图.
 
 最终失败均已修复, 未用跳过测试接受失败. 确定性回归复现了复制 Git index 丢失 racy-stat 保护, 以及替换 index 丢失 intent-to-add/skip-worktree 元信息. 最终方案保留 index, 将私有副本设置为保守时间戳. 原生编辑竞态、无匹配搜索和误导性图汇合也有回归覆盖. 两项终端测试直接断言匹配到的 snapshot, 不再额外要求第二次静止采样.
+
+首次远端 CI 发现, Release 可能在公开结果已结束但内部清理未完成时到达, 而配置读取期间发生的保存故障会在派发拒绝信息中丢失原因. Release 现先保留代理, 在 journal/workspace 锁外等待清理, 释放证据前再检查存储状态. 解除保留后也恢复符合条件的排队任务. [可控释放回归](../../../tests/component/subagent-release.test.ts)覆盖这些时序窗口; 实际宿主的派发回归使用 64 项原子批次, 修复前连续三次复现错误原因丢失. 取消测试现明确等待下游任务, 与事件驱动 wait 的语义一致, 结果断言保持不变.
 
 另一次真实 `openai-codex/gpt-6-astra` 试跑使用可丢弃的大小写敏感路径缓存项目. 两个调查并行执行, 审查员消费两份固定结果, 原实现代理再完成一次续聊. 四次记录均为 fulfilled 且已保存, 输出用量分别为 198、217、217、363 tokens. 检查页返回 main 后, 父会话正常退出. 这验证了该提供商和工作流, 不代表所有可用模型或扩展.
 

@@ -156,7 +156,7 @@ If an isolated worktree is missing but its saved commit and child context remain
 
 Actual session departure stops and saves children first. Core save errors block successful departure and remain visible. Optional event-listener failures do not convert a fulfilled task to failed. The `pi-stuff:subagent` event carries the current revision and task records for observers.
 
-Release refuses unsaved tracked, untracked or ignored content and active execution. Keep partial work until it has been preserved. Linux process identities and tracked shell process groups provide cancellation/recovery evidence; tool allowlists and worktree paths are not an OS sandbox, and deliberately detached external daemons need external reconciliation.
+Release refuses unsaved tracked, untracked or ignored content and active or queued assignments. For an ended assignment, it reserves the agent against new admission and waits for notification/session cleanup before checking and releasing the workspace. A save failure detected before deletion stops release. Failure to save the final release record is reported even if the workspace directory has already been removed; saved artifacts and context remain available. Keep partial work until it has been preserved. Linux process identities and tracked shell process groups provide cancellation/recovery evidence; tool allowlists and worktree paths are not an OS sandbox, and deliberately detached external daemons need external reconciliation.
 
 Reverting the extension code does not migrate or erase these records. Stop the owning Pi session successfully and retain the record directory before changing implementation versions. Do not manually delete an executor lock to force a second writer.
 

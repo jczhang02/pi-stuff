@@ -118,10 +118,13 @@ export class Coordinator {
           () => undefined,
         ),
       schedule: () => this.schedule(),
-      isAgentActive: agentId =>
-        [...this.executions.keys()].some(
-          id => this.task(id).agentId === agentId,
-        ),
+      waitForAgent: async agentId => {
+        await Promise.all(
+          [...this.executions]
+            .filter(([id]) => this.task(id).agentId === agentId)
+            .map(([, execution]) => execution),
+        );
+      },
       workspaceOperation: operation => this.workspaceOperation(operation),
       runtime: {
         session: id => this.runtime.session(id),
@@ -448,8 +451,7 @@ export class Coordinator {
       historyFile: previous.historyFile,
     };
     await this.update(record => {
-      if (this.closing)
-        throw new Error('Session is departing; admission is closed.');
+      this.assertAdmissionOpen();
       if (
         this.controls.isReleasing(agent.id) ||
         record.agents.find(candidate => candidate.id === agent.id)?.released
@@ -641,15 +643,18 @@ export class Coordinator {
     };
   }
 
-  private async dispatch(input: SubagentInput, caller: string | null) {
-    if (this.closing) {
-      const failure = this.record.storageError;
+  private assertAdmissionOpen(): void {
+    const failure = this.record.storageError;
+    if (this.closing || failure !== null)
       throw new Error(
         failure
-          ? `Session is departing because saving failed: ${failure}`
-          : 'Session is departing or saving failed; admission is closed.',
+          ? `Admission is closed because saving failed: ${failure}`
+          : 'Session is departing; admission is closed.',
       );
-    }
+  }
+
+  private async dispatch(input: SubagentInput, caller: string | null) {
+    this.assertAdmissionOpen();
     if (!input.tasks?.length) throw new Error('dispatch requires tasks.');
     const parentManager = caller
       ? this.runtime.session(caller)?.sessionManager
@@ -678,8 +683,7 @@ export class Coordinator {
       admittedTasks.push({...task, historyFile});
     }
     await this.update(record => {
-      if (this.closing)
-        throw new Error('Session is departing; admission is closed.');
+      this.assertAdmissionOpen();
       if (
         caller &&
         (this.task(caller).stopOutcome !== null ||

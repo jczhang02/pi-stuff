@@ -507,9 +507,11 @@ test('failed admission persistence starts no child and leaves no consumed quota 
       'subagent',
       JSON.stringify({
         command: 'dispatch',
-        tasks: [
-          {name: 'unrecorded', prompt: 'NEVER_ADMITTED', workspace: 'live'},
-        ],
+        tasks: Array.from({length: 64}, (_, index) => ({
+          name: `unrecorded-${index}`,
+          prompt: 'NEVER_ADMITTED',
+          workspace: 'live',
+        })),
       }),
     );
     expect(rejected).toContain('"status":"rejected"');

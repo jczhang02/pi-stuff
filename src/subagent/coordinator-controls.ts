@@ -21,7 +21,7 @@ export interface CoordinatorControlHost {
   effectiveTools: (id: string) => readonly string[];
   cancelTask: (id: string, caller: string | null) => Promise<void>;
   schedule: () => void;
-  isAgentActive: (agentId: string) => boolean;
+  waitForAgent: (agentId: string) => Promise<void>;
   workspaceOperation: <T>(operation: () => Promise<T>) => Promise<T>;
   runtime: CoordinatorControlRuntime;
 }
@@ -159,10 +159,7 @@ export class CoordinatorControls {
     if (
       this.host
         .snapshot()
-        .tasks.some(
-          task => task.agentId === agent.id && task.phase !== 'ended',
-        ) ||
-      this.host.isAgentActive(agent.id)
+        .tasks.some(task => task.agentId === agent.id && task.phase !== 'ended')
     )
       throw new Error(
         'Agent still has active or queued work. Stop it before release.',
@@ -171,7 +168,11 @@ export class CoordinatorControls {
       throw new Error('Workspace release is already in progress.');
     this.releasing.add(agent.id);
     try {
+      // Ended results can precede notification and session cleanup. Reserve
+      // the agent against admission, then drain cleanup outside either lock.
+      await this.host.waitForAgent(agent.id);
       await this.host.update(record => {
+        this.assertReleaseSaved(record);
         if (
           record.tasks.some(
             task => task.agentId === agent.id && task.phase !== 'ended',
@@ -187,29 +188,41 @@ export class CoordinatorControls {
       });
       const workspace = agent.workspace;
       if (workspace)
-        await this.host.workspaceOperation(() =>
-          withExecutionTracking(
+        await this.host.workspaceOperation(() => {
+          this.assertReleaseSaved(this.host.snapshot());
+          return withExecutionTracking(
             join(this.host.storeDirectory, 'sessions', agent.id, 'processes'),
             () => Effect.runPromise(releaseWorkspace({...workspace})),
+          );
+        });
+      await this.host.update(record => {
+        this.assertReleaseSaved(record);
+        return {
+          ...record,
+          agents: record.agents.map(candidate =>
+            candidate.id === agent.id
+              ? {
+                  ...candidate,
+                  released: true,
+                  workspace: candidate.workspace
+                    ? {...candidate.workspace, released: true}
+                    : null,
+                }
+              : candidate,
           ),
-        );
-      await this.host.update(record => ({
-        ...record,
-        agents: record.agents.map(candidate =>
-          candidate.id === agent.id
-            ? {
-                ...candidate,
-                released: true,
-                workspace: candidate.workspace
-                  ? {...candidate.workspace, released: true}
-                  : null,
-              }
-            : candidate,
-        ),
-      }));
+        };
+      });
     } finally {
       this.releasing.delete(agent.id);
+      this.host.schedule();
     }
     return {status: 'released', agentId: agent.id};
+  }
+
+  private assertReleaseSaved(record: FleetRecord): void {
+    if (record.storageError !== null)
+      throw new Error(
+        `Workspace remains reserved because saving failed: ${record.storageError}`,
+      );
   }
 }
