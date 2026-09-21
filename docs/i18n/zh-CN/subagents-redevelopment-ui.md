@@ -2,7 +2,7 @@
 
 [English](../../subagents-redevelopment-ui.md). 以英文版为准.
 
-状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02; 2026-09-21 已接受 UIR03、UIR04 局部帮助规则、UIR05 和 UIR06. UIR07 提议停止子代理时保留已有工作可见, 尚待回答. FleetView 只在列表获得键盘焦点时于列表上方显示帮助. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
+状态: 2026-09-20 已接受 UIR01 和修订后的 UIR02; 2026-09-21 已接受 UIR03、UIR04 局部帮助规则及 UIR05-UIR07. UIR08 提议任务失败详情, 尚待回答. FleetView 只在列表获得键盘焦点时于列表上方显示帮助. 首版 UIR02 图片仍作为被否定的设计历史保留. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 运行范围已在[重新开发决策](subagents-redevelopment.md)中确定.
 
 按真实使用场景逐一讨论 UI: 主界面与页面关系、FleetView 与任务结构、详情与可观测性、介入操作、完成与历史、键盘与视觉统一. 根据维护者反馈, 本轮同时梳理详情的信息层级. 先前 UI 作为起点, 不整套继承它所依赖的旧运行要求.
 
@@ -48,7 +48,7 @@ Transcript 进入完整记录. Info 提供配置、工作区、详细用量及�
 
 运行中和完成后是同一设计的两个状态. 操作提示相应从 message/stop 变为 follow-up. 具体按键和操作行为暂作示意, 在交互部分确定.
 
-**UIR02 已接受.** 运行中先看最新回复和当前活动, 完成后直接看报告, 辅助信息深入一层查看. 完整证据仍可读取, 首屏自身就有用. UIR06 已覆盖待答问题, 错误仍需单独出图梳理.
+**UIR02 已接受.** 运行中先看最新回复和当前活动, 完成后直接看报告, 辅助信息深入一层查看. 完整证据仍可读取, 首屏自身就有用. UIR06 已覆盖待答问题, UIR08 提议任务失败详情.
 
 ## UIR03: FleetView 与任务关系已接受
 
@@ -172,7 +172,7 @@ Enter 打开标为 Reply to lifecycle 的局部编辑器. 沿用 UIR05 的输入
 
 **UIR06 已接受.** 待答问题优先显示在子代理详情中, 用户可通过同一局部输入区介入回答, 父代理仍可正常回答. 填写时保留问题原文, 提交失败或该问题已不再等待时保留草稿.
 
-## UIR07: 停止子代理并保留已有工作
+## UIR07: 停止子代理并保留已有工作已接受
 
 场景: 用户在 lifecycle 完成调查前将其停止, 它最近的发现仍有用. Packages 独立工作, reviewer 需要 lifecycle 的完整结果. 三张图是同一详情的连续状态.
 
@@ -210,8 +210,46 @@ Stopped 与 Done、Failed 分开. 最后的子代理回复和工具证据继续�
 
 上游[恢复前提](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1352)要求整组任务结束且原会话存在. 条件不满足时说明实际原因, 不提供无法执行的操作. 恢复[只执行当前子代理](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1394-L1411), 不自动重启 reviewer. 已完成代理续聊仍由 RQ05 单独确定. 本轮不增加自动重试、回滚或整组流程重启.
 
-**UIR07 问题. 是否采用就地确认停止, 真正结束前显示 Stopping, 结束后在同一详情保留未完成内容并按条件提供恢复入口?** 推荐采用. 用户可以直接看清操作对象、影响、已有成果和下一步.
+**UIR07 已接受.** 在当前详情就地确认停止, 执行和本次任务收尾结束前显示 Stopping, 结束后保留未完成内容及真实依赖后果. 满足原有恢复条件时提供局部恢复输入区. 保留停止前的记录, 不自动重启后续依赖任务.
+
+## UIR08: 任务失败详情
+
+以下两个例子沿用同一种详情布局. 优先显示失败的操作、实际原因及有用的下一步, 后面保留已有输出. 它们是不同场景, 不是连续状态或两种查看模式.
+
+### 上游支持什么
+
+Arhen 同时处理 [assistant 的失败 stop reason](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L652-L710)及[执行抛出的异常](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1004-L1030). Provider 错误可能由最后一条 assistant 消息返回, 不一定表现为 prompt 调用 reject. 已产生的文字、用量和会话仍可保留, 界面不应丢掉它们, 也不把先前文字当作完整报告.
+
+恢复依据真实的[原会话和整组结束条件](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1352). 上游 [format helper](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/format.ts#L223-L244)用缺少最终文字来判断启动失败, 但子代理在产生文字前就可能已有可恢复会话. 这是待复现修正的源码发现: 输出为空不能决定会话是否存在.
+
+单次工具失败可以返回给模型, 任务继续进行. 它应显示在工具活动和 transcript 中, 不因一次读取或命令失败就将整个任务标为 Failed. 同样, 无效模型若在[创建 run 前就被拒绝](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1125-L1139), 就是主对话中的派发错误, 不为此虚构子代理行或 transcript.
+
+### 1. 已产生有用输出后执行失败
+
+![模型失败优先显示原因, 同时保留此前发现](../../assets/subagents-redevelopment-ui/18-model-failed.png)
+
+Lifecycle 已读取两次文件并发现可疑回退路径, 后续模型请求失败. 已结束的失败成为主要内容: Model request、示例 Connection error, 以及检查连接后恢复的建议. 显示实际报告的原因, 不另调模型编造诊断.
+
+此前发现留在 Last update 下, Transcript 提供完整证据. Reviewer 因前置任务失败而显示 skipped. 此例中整组已结束, 保存的会话可用, 因而 m resume 打开 UIR07 已接受的局部输入区. 恢复沿用原上下文, 不是悄悄创建另一个代理的通用重试.
+
+主对话仍按共享通知规则保留原生错误通知. 打开详情后提供上下文和可用操作, 不用短暂 toast 取代该通知.
+
+### 2. 子代理启动前 worktree 初始化失败
+
+![启动失败显示底层原因, 不提供不可用的恢复及 transcript 操作](../../assets/subagents-redevelopment-ui/19-launch-failed.png)
+
+这是另一个场景, 针对可写任务 implementer. 创建 worktree 目录时遇到权限错误. 它使用父代理当前模型, 尚未发送模型请求. 此时没有子代理会话或项目文件编辑, 详情显示启动原因, 提示修复权限后让主代理重新派发.
+
+不显示 Last update 占位、子代理 transcript 入口或恢复操作. Info 仍提供已有任务配置及完整启动错误. 图中错误路径、耗时和零 token 是该例中已知事实的示意, 实现不能将未知用量替换成零.
+
+这张图描述 RQ03 已接受的修复. 固定的 arhen 源码目前会[捕获 worktree 初始化错误并在源目录继续运行](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L768-L817). 必须复现并修复后, 才能将此图对应的行为作为运行证据. 本提案不增加自动重新派发或新的 Retry 操作.
+
+### 区分执行结果和代码保存结果
+
+模型任务完成后仍可能出现 [worktree 提交错误](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L957-L1001). 上游失败/中止后的[部分提交路径](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1041-L1052)在保存失败时保留目录, 但没有将该错误写入 worktreeError. 记录为待复现修复的源码发现; 单有分支名不证明改动已保存. 完成场景仍须单独出图, 包含已有报告与保存失败如何同时呈现.
+
+**UIR08 问题. 是否在失败详情中优先显示原因及下一步, 保留有用输出, 并按实际会话条件提供 Resume 和 Transcript?** 推荐采用. 同一布局能解释调查中断, 也能解释尚未执行模型就失败的启动.
 
 ## 验证与下一步
 
-UIR01-UIR06 在各自记录的范围内保持已接受, UIR07 为提案. 已目视检查三张停止概念图的确认范围、正在停止/已经停止区分、已有输出和依赖后果. 重新核对了 Ghostty 和 Pi 配置. 源码结论针对固定的 arhen 1.3.55; 本轮没有执行取消时机、部分成果保存或恢复测试. 图片由 ImageGen 生成, 不作为终端验收证据. 本轮仅更新文档和图片, 等待 UIR07 回答后再推进访谈.
+UIR01-UIR07 在各自记录的范围内保持已接受, UIR08 为提案. 已目视检查两张失败概念图的原因/下一步层级、已有输出、启动失败区别及可用操作. 重新核对了 Ghostty 和 Pi 配置. 源码结论针对固定的 arhen 1.3.55; 本轮没有执行 provider 失败、worktree 失败、分类或保存测试. 错误文本和路径仅作示例, 不是实际捕获的故障. 图片由 ImageGen 生成, 不作为终端验收证据. 本轮仅更新文档和图片, 等待 UIR08 回答后再推进访谈.

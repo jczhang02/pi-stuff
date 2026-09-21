@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-redevelopment-ui.md). English is authoritative.
 
-Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03, UIR04 local help, UIR05 and UIR06 accepted on 2026-09-21. UIR07 proposes stopping a child with its existing work visible and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
+Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03, UIR04 local help and UIR05-UIR07 accepted on 2026-09-21. UIR08 proposes failed-task details and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
 
 Discuss the UI one part at a time through real usage scenarios: main layout and transitions; FleetView and task structure; details and observability; interventions; completion and history; keyboard and visual consistency. The maintainer's feedback brings detail hierarchy into this round. The previous UI is a starting point, not a wholesale adoption of its old runtime requirements.
 
@@ -48,7 +48,7 @@ The same central area shows the final report directly. Its conclusion and suppor
 
 The working and completed images are states of one design. The local action hints change from message/stop to follow-up as appropriate. Key assignments and action behavior are illustrative until the interaction round.
 
-**Accepted UIR02.** Show the latest reply and current activity while working, then the report on completion, with supporting information one step deeper. Preserve access to full evidence while making the first screen useful on its own. UIR06 covers pending questions; errors still need their own design pass.
+**Accepted UIR02.** Show the latest reply and current activity while working, then the report on completion, with supporting information one step deeper. Preserve access to full evidence while making the first screen useful on its own. UIR06 covers pending questions; UIR08 proposes failed-task details.
 
 ## UIR03: FleetView and task relationships accepted
 
@@ -172,7 +172,7 @@ Bind submission to the question that was opened. If it has already been answered
 
 **Accepted UIR06.** Give a pending question priority in child detail and allow an optional human reply through the same local composer. The parent can still answer normally. Preserve the question while composing and retain the draft if submission fails or that question is no longer pending.
 
-## UIR07: stopping a child and retaining its work
+## UIR07: stopping a child and retaining its work, accepted
 
 Scenario: the user stops lifecycle before it finishes its investigation. Its latest finding remains useful. Packages is independent; reviewer needs lifecycle's completed result. The three images are consecutive states of the same detail.
 
@@ -210,8 +210,46 @@ In this last image, packages has also finished, reviewer has been skipped and th
 
 Upstream [resume prerequisites](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1352) require the run to settle and a retained session to exist. If those conditions are not met, explain the actual reason instead of offering an action that cannot run. Resume [executes only this child](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1394-L1411); it does not automatically restart reviewer. Completed-agent follow-up remains separately accepted in RQ05. This round adds no automatic retry, rollback or workflow restart.
 
-**UIR07 question. Use inline stop confirmation, show Stopping until the request has actually ended, then retain the incomplete output with a contextual resume entry in the same detail?** Recommendation: yes. The user can see the target, consequence, retained work and next action without changing pages.
+**Accepted UIR07.** Confirm stop within the current detail, show Stopping until execution and request finalization have ended, then retain the incomplete output and actual dependency consequences. Offer the local resume composer when the existing resume conditions are satisfied. Keep the stopped request and do not automatically restart its dependents.
+
+## UIR08: failed-task details
+
+Use the same detail layout for both examples below. Put the failed operation, actual cause and useful next step first, followed by any retained output. These are different scenarios, not consecutive states or separate viewing modes.
+
+### What upstream supports
+
+Arhen [handles assistant failure stop reasons](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L652-L710) as well as [exceptions from execution](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1004-L1030). A provider failure can arrive in the final assistant message rather than as a rejected prompt call. Existing text, usage and the session remain available when they were produced; the UI must not discard them or mistake the earlier text for a completed report.
+
+Resume uses the actual [retained-session and settled-run prerequisites](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1352). Upstream's [format helper](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/format.ts#L223-L244) treats missing final text as a startup failure, but a child can have a resumable session before producing any text. This is a source finding to reproduce and correct: output emptiness does not determine whether a session exists.
+
+A single tool error can return to the model while the task continues. It belongs in the tool activity and transcript; do not mark the whole task Failed merely because a read or command failed. Likewise, an invalid model [rejected before run creation](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1125-L1139) is a dispatch error in main, not a reason to fabricate a child row or transcript.
+
+### 1. Execution failed after producing useful output
+
+![Model failure shows the cause first and preserves the earlier finding](assets/subagents-redevelopment-ui/18-model-failed.png)
+
+Lifecycle has made two read calls and found a possible fallback problem. Its later model request fails. The settled failure is now the primary content: Model request, the illustrative Connection error, and a suggestion to check the connection before resuming. Show the actual reported cause; do not use a model call to invent a diagnosis.
+
+The prior finding stays visible under Last update, with full evidence available through Transcript. Reviewer is shown as skipped because its prerequisite failed. In this example the run has settled and the saved session is usable, so m resume opens the same local composer accepted in UIR07. Resume continues the retained context; it is not a generic retry that silently starts a different agent.
+
+The native error notice remains in the main chat, following the shared notification rules. The detail provides the context and available actions when opened; it does not replace that notice with a disappearing toast.
+
+### 2. Worktree setup failed before the child started
+
+![Startup failure shows the underlying cause and omits unavailable resume and transcript actions](assets/subagents-redevelopment-ui/19-launch-failed.png)
+
+This separate example concerns implementer, a write-capable task. Creating its worktree directory fails with a permission error. It uses the parent's current model and has made no model request. No child session or project-file edits exist, so the detail shows the startup cause and directs the user to fix the permissions before asking main to launch again.
+
+There is no Last update placeholder, child transcript link or resume action. Info still exposes the available task configuration and full launch error. The error path, elapsed time and zero-token count are illustrative known facts of this example; implementation must not substitute zero for unavailable usage.
+
+This image depicts the accepted RQ03 repair. Pinned arhen currently [catches worktree initialization errors and continues in the source directory](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L768-L817). That behavior must be reproduced and fixed before this image can become runtime evidence. The proposal adds no automatic relaunch or new Retry operation.
+
+### Preserve the distinction between execution and code preservation
+
+A finished model task can still have a [worktree commit error](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L957-L1001). Upstream's failed/aborted [partial-commit path](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1041-L1052) also leaves the directory when preservation fails without recording that error in worktreeError. Record this source finding for reproduction and repair; a branch name alone is not proof that edits were saved. The completed-work scenario still needs its own visual pass, including how to present preservation failure alongside an existing report.
+
+**UIR08 question. Give the cause and next step priority in failed-task detail, retain any useful output, and show Resume and Transcript only when the actual session supports them?** Recommendation: yes. The same layout explains both an interrupted investigation and a launch that never reached model execution.
 
 ## Verification and next step
 
-UIR01-UIR06 remain accepted within their recorded scope. UIR07 is a proposal. The three stop concepts were visually inspected for confirmation scope, distinct stopping/stopped states, retained output and dependency consequences. Ghostty and Pi configuration were rechecked. Source findings concern pinned arhen 1.3.55; cancellation timing, partial preservation and resume behavior were not executed this round. These are ImageGen concepts, not terminal acceptance evidence. This round changes documentation and images only. Await the UIR07 answer before advancing the interview.
+UIR01-UIR07 remain accepted within their recorded scope. UIR08 is a proposal. Both failure concepts were visually inspected for cause/next-step hierarchy, retained output, the startup distinction and available actions. Ghostty and Pi configuration were rechecked. Source findings concern pinned arhen 1.3.55; provider failure, worktree failure, classification and preservation were not executed this round. The error messages and paths are illustrative, not captured failures. These are ImageGen concepts, not terminal acceptance evidence. This round changes documentation and images only. Await the UIR08 answer before advancing the interview.
