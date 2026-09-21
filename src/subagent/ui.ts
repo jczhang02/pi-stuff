@@ -13,6 +13,7 @@ import {
 import {fleetLines, type FleetRow} from './fleet';
 import {mainFooter} from './main-footer';
 import {Inspection} from './inspection';
+import {GraphView} from './graph-view';
 import type {Runs} from './runs';
 
 class SubagentEditor extends CustomEditor {
@@ -104,9 +105,9 @@ export class SubagentUI {
   private unsubscribe: (() => void) | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private footer = false;
-  private focus: 'editor' | 'fleet' | 'detail' = 'editor';
+  private focus: 'editor' | 'fleet' | 'panel' = 'editor';
   private selected = 0;
-  private inspection: Inspection | undefined;
+  private readonly panels: (Inspection | GraphView)[] = [];
 
   constructor(private readonly runs: Runs) {}
 
@@ -157,7 +158,7 @@ export class SubagentUI {
           invalidate() {},
           dispose: off,
           render: width => {
-            if (this.focus === 'detail') return [];
+            if (this.focus === 'panel') return [];
             const theme = ctx.ui.theme;
             const all = this.rows();
             const budget = Math.max(
@@ -173,7 +174,7 @@ export class SubagentUI {
                 ? wrapTextWithAnsi(
                     theme.fg(
                       'dim',
-                      `${keyHint('tui.select.up', '')}/${keyHint('tui.select.down', 'select')} · ${keyHint('tui.select.confirm', 'view')} · esc back`,
+                      `${keyHint('tui.select.up', '')}/${keyHint('tui.select.down', 'select')} · ${keyHint('tui.select.confirm', 'view')}${all[this.selected - 1]?.run.tasks.some(task => task.needs.length) ? ' · g graph' : ''} · esc back`,
                     ),
                     width,
                   )
@@ -221,9 +222,9 @@ export class SubagentUI {
   handleInput(data: string, keys: KeybindingsManager): boolean {
     if (this.focus === 'editor') return false;
     if (matchesKey(data, 'escape')) {
-      if (this.focus === 'detail') {
-        this.inspection = undefined;
-        this.open();
+      if (this.focus === 'panel') {
+        this.panels.pop();
+        if (!this.panels.length) this.open();
       } else {
         this.focus = 'editor';
         if (this.editor) this.tui?.setFocus(this.editor);
@@ -231,21 +232,41 @@ export class SubagentUI {
       this.refresh();
       return true;
     }
-    if (this.focus === 'detail') {
-      this.inspection?.handleInput(data);
+    const panel = this.panels.at(-1);
+    if (this.focus === 'panel' && panel) {
+      if (panel instanceof GraphView) {
+        const task = panel.selectedTask();
+        if (task && keys.matches(data, 'tui.select.confirm'))
+          this.panels.push(new Inspection({run: panel.run, task}));
+        else panel.handleInput(data, keys);
+      } else if (
+        data === 'g' &&
+        panel.row.run.tasks.some(task => task.needs.length)
+      ) {
+        if (this.panels.at(-2) instanceof GraphView) this.panels.pop();
+        else this.panels.push(new GraphView(panel.row.run, panel.row.task.id));
+      } else panel.handleInput(data);
       this.refresh();
       return true;
     }
     const rows = this.rows();
-    if (keys.matches(data, 'tui.select.up'))
+    const selectedRow = rows[this.selected - 1];
+    if (
+      data === 'g' &&
+      selectedRow?.run.tasks.some(task => task.needs.length)
+    ) {
+      this.panels.push(new GraphView(selectedRow.run, selectedRow.task.id));
+      this.focus = 'panel';
+      this.ctx?.ui.setWorkingVisible(false);
+    } else if (keys.matches(data, 'tui.select.up'))
       this.selected = Math.max(0, this.selected - 1);
     else if (keys.matches(data, 'tui.select.down'))
       this.selected = Math.min(rows.length, this.selected + 1);
     else if (keys.matches(data, 'tui.select.confirm')) {
       const row = rows[this.selected - 1];
       if (row) {
-        this.inspection = new Inspection(row);
-        this.focus = 'detail';
+        this.panels.push(new Inspection(row));
+        this.focus = 'panel';
         this.ctx?.ui.setWorkingVisible(false);
       } else {
         this.focus = 'editor';
@@ -257,10 +278,28 @@ export class SubagentUI {
   }
 
   renderInspection(width: number): string[] | undefined {
-    if (this.focus !== 'detail' || !this.ctx || !this.tui) return undefined;
+    if (this.focus !== 'panel' || !this.ctx || !this.tui) return undefined;
     if (width < 40 || this.tui.terminal.rows < 16)
       return wrapTextWithAnsi('Resize terminal.\nesc back', Math.max(1, width));
-    return this.inspection?.render(
+    const panel = this.panels.at(-1);
+    if (panel instanceof GraphView) {
+      const help = wrapTextWithAnsi(
+        this.ctx.ui.theme.fg(
+          'dim',
+          `${keyHint('tui.select.up', '')}/${keyHint('tui.select.down', 'select')} · ${keyHint('tui.select.confirm', 'view')} · esc back`,
+        ),
+        width,
+      );
+      return [
+        ...panel.render(
+          width,
+          Math.floor(this.tui.terminal.rows / 2) - help.length,
+          this.ctx.ui.theme,
+        ),
+        ...help,
+      ];
+    }
+    return panel?.render(
       width,
       Math.floor(this.tui.terminal.rows / 2),
       this.ctx.ui.theme,
@@ -282,7 +321,7 @@ export class SubagentUI {
     this.keys = undefined;
     this.footer = false;
     this.focus = 'editor';
-    this.inspection = undefined;
+    this.panels.length = 0;
     this.selected = 0;
   }
 }

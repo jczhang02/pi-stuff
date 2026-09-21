@@ -122,7 +122,7 @@ export class Inspection {
     const help = wrapTextWithAnsi(
       theme.fg(
         'dim',
-        `p prompt · [/] page${this.frozen !== undefined ? ' · f latest' : ''} · esc back`,
+        `p prompt · [/] page${this.row.run.tasks.some(task => task.needs.length) ? ' · g graph' : ''}${this.frozen !== undefined ? ' · f latest' : ''} · esc back`,
       ),
       width,
     );
