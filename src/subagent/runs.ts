@@ -9,6 +9,11 @@ import {investigate, SubagentError} from './session';
 import type {Dispatch, TaskInput} from './protocol';
 import {Communication, type Question} from './communication';
 import {
+  resolveConfiguration,
+  preflightConfiguration,
+  type ResolvedConfiguration,
+} from './configuration';
+import {
   prepareWorkspace,
   saveWorkspace,
   releaseWorkspace,
@@ -40,6 +45,9 @@ export interface TaskSnapshot extends TaskInput {
   preservationError?: string;
   cleanupError?: string;
   finalizing?: boolean;
+  roleSource?: string;
+  configurationNotes: string[];
+  provider?: string;
 }
 
 export interface RunSnapshot {
@@ -61,6 +69,7 @@ interface Run {
   communication: Communication;
   children: Map<string, AgentSession>;
   waiters: Set<() => void>;
+  configurations: Map<string, ResolvedConfiguration>;
 }
 
 export class Runs {
@@ -74,7 +83,23 @@ export class Runs {
     ) => void,
   ) {}
 
-  dispatch(input: Dispatch, ctx: ExtensionContext): RunSnapshot {
+  async dispatch(
+    input: Dispatch,
+    ctx: ExtensionContext,
+    signal?: AbortSignal,
+  ): Promise<RunSnapshot> {
+    const configurations = new Map(
+      await Promise.all(
+        input.tasks.map(
+          async task =>
+            [
+              task.id,
+              await Effect.runPromise(resolveConfiguration(task, ctx, signal)),
+            ] as const,
+        ),
+      ),
+    );
+    signal?.throwIfAborted();
     const snapshot: RunSnapshot = {
       id: randomUUID(),
       mode: input.mode,
@@ -85,6 +110,7 @@ export class Runs {
         status: 'queued',
         finalText: '',
         pendingInstructions: [],
+        configurationNotes: [],
       })),
     };
     const waiters = new Set<() => void>();
@@ -121,6 +147,7 @@ export class Runs {
       communication,
       children: new Map(),
       waiters,
+      configurations,
     };
     this.runs.set(snapshot.id, run);
     run.completion = this.execute(run, input, ctx);
@@ -142,6 +169,22 @@ export class Runs {
           controller?.signal.throwIfAborted();
           task.status = 'starting';
           task.startedAt = Date.now();
+          const prepared = run.configurations.get(task.id);
+          if (!prepared)
+            throw new SubagentError({
+              message: `Missing task configuration: ${task.id}`,
+            });
+          const configuration = await Effect.runPromise(
+            preflightConfiguration(prepared, ctx, controller?.signal),
+          );
+          task.prompt = configuration.prompt;
+          task.write = configuration.write;
+          task.tools = configuration.tools;
+          task.model = configuration.model.id;
+          task.provider = configuration.model.provider;
+          task.configurationNotes = configuration.notes;
+          if (configuration.roleSource)
+            task.roleSource = configuration.roleSource;
           if (task.write) {
             const base = task.needs
               .map(id => run.snapshot.tasks.find(task => task.id === id))
@@ -159,6 +202,8 @@ export class Runs {
             investigate(
               {
                 ...task,
+                model: configuration.model,
+                thinking: configuration.thinking,
                 cwd: task.workspace?.cwd ?? task.cwd,
                 task: applyUpstream(task.task, task.needs, outputs),
               },
@@ -171,6 +216,7 @@ export class Runs {
                 task.sessionId = session.sessionId;
                 if (session.sessionFile) task.sessionFile = session.sessionFile;
                 task.tools = session.getActiveToolNames();
+                task.thinking = session.thinkingLevel;
                 unsubscribe = session.subscribe(event => {
                   if (
                     (event.type === 'message_update' ||
@@ -202,7 +248,6 @@ export class Runs {
             ),
           );
           task.finalText = result.finalText;
-          task.startedAt = result.startedAt;
           task.sessionId = result.sessionId;
           if (result.sessionFile !== undefined)
             task.sessionFile = result.sessionFile;

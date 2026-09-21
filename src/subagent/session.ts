@@ -7,9 +7,12 @@ import {
   type ExtensionContext,
   type AgentSession,
   type ToolDefinition,
+  type CreateAgentSessionOptions,
 } from '@earendil-works/pi-coding-agent';
 import {join} from 'node:path';
 import {Effect, Schema} from 'effect';
+import type {Api, Model} from '@earendil-works/pi-ai';
+import type {ThinkingLevel} from '@earendil-works/pi-agent-core';
 
 export class SubagentError extends Schema.TaggedError<SubagentError>()(
   'SubagentError',
@@ -24,6 +27,8 @@ export interface Investigation {
   write: boolean;
   tools: string[];
   maxRuntimeMs: number;
+  model: Model<Api>;
+  thinking: ThinkingLevel | undefined;
 }
 
 // Behavioral source: arhen/pi-extensions 676b11e, pi-core-subagent 1.3.55.
@@ -38,8 +43,6 @@ export function investigate(
   return Effect.tryPromise({
     async try() {
       signal?.throwIfAborted();
-      if (!parent.model)
-        throw new SubagentError({message: 'Select a parent model first.'});
       const agentDir = getAgentDir();
       const modelRuntime = await ModelRuntime.create({
         authPath: join(agentDir, 'auth.json'),
@@ -68,11 +71,11 @@ export function investigate(
       await resourceLoader.reload();
       signal?.throwIfAborted();
       const parentSession = parent.sessionManager.getSessionFile();
-      const {session} = await createAgentSession({
+      const options: CreateAgentSessionOptions = {
         cwd: input.cwd,
         agentDir,
         modelRuntime,
-        model: parent.model,
+        model: input.model,
         tools: [...input.tools, ...customTools.map(tool => tool.name)],
         customTools,
         resourceLoader,
@@ -81,13 +84,14 @@ export function investigate(
           undefined,
           parentSession === undefined ? undefined : {parentSession},
         ),
-      });
+      };
+      if (input.thinking !== undefined) options.thinkingLevel = input.thinking;
+      const {session} = await createAgentSession(options);
       let abort: Promise<void> | undefined;
       const cancel = () => {
         abort ??= session.abort();
       };
       signal?.addEventListener('abort', cancel, {once: true});
-      const startedAt = Date.now();
       let timer: ReturnType<typeof setTimeout> | undefined;
       let timedOut = false;
       try {
@@ -137,8 +141,6 @@ export function investigate(
           agent: input.agent,
           task: input.task,
           cwd: input.cwd,
-          startedAt,
-          endedAt: Date.now(),
           sessionId: session.sessionId,
           sessionFile: session.sessionFile,
           tools: session.getActiveToolNames(),

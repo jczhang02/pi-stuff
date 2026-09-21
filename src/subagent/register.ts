@@ -43,7 +43,7 @@ export function registerSubagent(
             validateParameters(input);
             if (input.command === 'dispatch') {
               const dispatch = dispatchInput(input, ctx.cwd);
-              const run = runs.dispatch(dispatch, ctx);
+              const run = await runs.dispatch(dispatch, ctx, signal);
               return dispatch.autoAwait ? runs.wait(run.id) : run;
             }
             if (!input.runId)

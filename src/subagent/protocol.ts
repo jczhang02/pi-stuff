@@ -4,6 +4,7 @@ import {Value} from 'typebox/value';
 import {resolve} from 'node:path';
 import {resolveNeeds, type RunMode} from './graph';
 import {SubagentError} from './session';
+import type {ThinkingLevel} from '@earendil-works/pi-agent-core';
 
 const taskFields = {
   id: Type.Optional(Type.String({pattern: '^[A-Za-z0-9_-]{1,64}$'})),
@@ -13,6 +14,18 @@ const taskFields = {
   prompt: Type.Optional(Type.String()),
   write: Type.Optional(Type.Boolean()),
   tools: Type.Optional(Type.Array(Type.String({minLength: 1}))),
+  model: Type.Optional(Type.String({minLength: 1})),
+  thinking: Type.Optional(
+    StringEnum([
+      'off',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ] as const),
+  ),
   needs: Type.Optional(Type.Array(Type.String())),
   maxRuntimeMs: Type.Optional(Type.Number({minimum: 1})),
 };
@@ -34,6 +47,8 @@ export const subagentParameters = Type.Object({
   prompt: taskFields.prompt,
   write: taskFields.write,
   tools: taskFields.tools,
+  model: taskFields.model,
+  thinking: taskFields.thinking,
   maxRuntimeMs: taskFields.maxRuntimeMs,
   tasks: Type.Optional(Type.Array(task, {minItems: 1, maxItems: 16})),
   chain: Type.Optional(Type.Array(task, {minItems: 1, maxItems: 16})),
@@ -56,6 +71,9 @@ export interface TaskInput {
   prompt: string;
   write: boolean;
   tools: string[];
+  explicitTools: boolean;
+  model: string | undefined;
+  thinking: ThinkingLevel | undefined;
   needs: string[];
   maxRuntimeMs: number;
 }
@@ -112,6 +130,9 @@ export function dispatchInput(
       task: task.task,
       cwd: resolve(parentCwd, task.cwd ?? input.cwd ?? '.'),
       prompt: task.prompt ?? '',
+      explicitTools: task.tools !== undefined,
+      model: task.model ?? input.model,
+      thinking: task.thinking ?? input.thinking,
       write:
         task.write === true ||
         (task.tools?.some(tool => ['bash', 'edit', 'write'].includes(tool)) ??

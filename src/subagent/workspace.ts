@@ -4,6 +4,7 @@ import {
   lstat,
   mkdir,
   readlink,
+  realpath,
   symlink,
   unlink,
 } from 'node:fs/promises';
@@ -283,7 +284,12 @@ function verifyWorkspace(
       resolve(root, common),
       workspace.branch,
     );
-    if (!location || !samePath(location.path, workspace.path)) {
+    if (
+      !location ||
+      !samePath(location.path, workspace.path) ||
+      (!samePath(workspace.cwd, workspace.path) &&
+        !pathInside(workspace.path, workspace.cwd))
+    ) {
       return yield* Effect.fail(
         new WorkspaceError({
           kind,
@@ -329,7 +335,7 @@ function verifyWorkspace(
       ...workspace,
       root,
       path: location.path,
-      cwd: location.path,
+      cwd: workspace.cwd,
       base,
     };
   });
@@ -360,6 +366,21 @@ export function prepareWorkspace(
       ['rev-parse', '--show-toplevel'],
       'repository',
     );
+    const offset = yield* Effect.tryPromise({
+      try: async () => relative(await realpath(root), await realpath(cwd)),
+      catch: error =>
+        new WorkspaceError({
+          kind: 'prepare',
+          message: `Could not resolve task directory: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+    });
+    if (offset === '..' || offset.startsWith('../') || isAbsolute(offset))
+      return yield* Effect.fail(
+        new WorkspaceError({
+          kind: 'prepare',
+          message: 'Task directory is outside the repository.',
+        }),
+      );
     const common = yield* runGit(
       root,
       ['rev-parse', '--git-common-dir'],
@@ -368,6 +389,7 @@ export function prepareWorkspace(
     const commonDir = resolve(root, common);
     const container = join(commonDir, 'subagents');
     const path = join(container, runId, taskId);
+    const childCwd = join(path, offset);
     const branch = `${BRANCH_PREFIX}${runId}/${taskId}`;
     if (!pathInside(container, path)) {
       return yield* Effect.fail(
@@ -401,7 +423,8 @@ export function prepareWorkspace(
       ['worktree', 'add', '-b', branch, path, base],
       'prepare',
     );
-    yield* ensureNodeModules(root, path, 'prepare').pipe(
+    yield* ensureDirectory(childCwd, 'prepare').pipe(
+      Effect.andThen(ensureNodeModules(root, path, 'prepare')),
       Effect.mapError(
         error =>
           new WorkspaceError({
@@ -410,7 +433,7 @@ export function prepareWorkspace(
           }),
       ),
     );
-    return {root, path, cwd: path, branch, base};
+    return {root, path, cwd: childCwd, branch, base};
   });
 }
 
@@ -433,7 +456,12 @@ export function attachWorkspace(
       resolve(root, common),
       workspace.branch,
     );
-    if (!location || !samePath(location.path, workspace.path)) {
+    if (
+      !location ||
+      !samePath(location.path, workspace.path) ||
+      (!samePath(workspace.cwd, workspace.path) &&
+        !pathInside(workspace.path, workspace.cwd))
+    ) {
       return yield* Effect.fail(
         new WorkspaceError({
           kind: 'attach',
@@ -497,11 +525,12 @@ export function attachWorkspace(
       }
     }
     yield* ensureNodeModules(root, workspacePath, 'attach');
+    yield* ensureDirectory(workspace.cwd, 'attach');
     return {
       ...workspace,
       root,
       path: workspacePath,
-      cwd: workspacePath,
+      cwd: workspace.cwd,
       base,
     };
   });

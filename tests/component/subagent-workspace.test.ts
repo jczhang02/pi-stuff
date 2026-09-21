@@ -181,6 +181,29 @@ test('attachWorkspace recovers its own saved branch', async () => {
   }
 });
 
+test('a task started in a subdirectory keeps that directory after reattachment', async () => {
+  const root = await makeRepository();
+  try {
+    const selected = join(root, 'packages', 'worker');
+    await mkdir(selected, {recursive: true});
+    const workspace = await Effect.runPromise(
+      prepareWorkspace(selected, 'run-subdir', 'task-subdir'),
+    );
+    expect(workspace.cwd).toBe(join(workspace.path, 'packages', 'worker'));
+    await writeFile(join(workspace.cwd, 'child.txt'), 'subdirectory result\n');
+    await Effect.runPromise(saveWorkspace(workspace, 'subdirectory change'));
+    await Effect.runPromise(releaseWorkspace(workspace));
+    const attached = await Effect.runPromise(attachWorkspace(workspace));
+    expect(attached.cwd).toBe(workspace.cwd);
+    expect(await readFile(join(attached.cwd, 'child.txt'), 'utf8')).toBe(
+      'subdirectory result\n',
+    );
+    await Effect.runPromise(releaseWorkspace(attached));
+  } finally {
+    await rm(root, {recursive: true, force: true});
+  }
+});
+
 test('independent writers stay separate and a selected base is visible', async () => {
   const root = await makeRepository();
   try {
