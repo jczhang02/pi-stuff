@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-redevelopment.md). English is authoritative.
 
-Status: runtime scope settled on 2026-09-20 through RQ01-RQ10; UI discussion comes next. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). This record supersedes the previous specification as the direction for the next implementation. It is not yet a complete specification or authorization to start implementation before the UI discussion is confirmed.
+Status: RQ01-RQ10 and UIR01-UIR09 are accepted. The [formal redevelopment specification](subagents-redevelopment-spec.md), published on 2026-09-21, is the current implementation contract. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). This record preserves the runtime decisions and their rationale. Read the formal specification for the consolidated scope and acceptance criteria.
 
 ## Confirmed direction
 
@@ -33,7 +33,7 @@ The first round resolved the redevelopment boundary:
 
 RQ01-RQ10 now settle the runtime scope. Follow upstream behavior for matters not changed by these decisions, and use the simplest repository-compliant implementation that satisfies them. The maintainer asked to stop introducing unnecessary boundary questions. Do not grow the interview with hypothetical cases or add mechanisms for them; raise a further runtime decision only when concrete source or verification evidence exposes a conflict that prevents the agreed behavior.
 
-Next, revisit the current UI through concrete launch, progress, inspection, communication, cancellation and follow-up scenarios. Acceptance must cover the real project with installed dependencies as well as controlled fixtures. Existing research remains supporting evidence, not a source of automatically added requirements.
+The UI review and formal specification now cover launch, progress, inspection, communication, cancellation and follow-up scenarios. Acceptance must cover the real project with installed dependencies as well as controlled fixtures. Existing research remains supporting evidence, not a source of automatically added requirements.
 
 ## Round 1 decisions, accepted on 2026-09-20
 
@@ -63,6 +63,4 @@ Next, revisit the current UI through concrete launch, progress, inspection, comm
 
 ## Current phase
 
-The runtime interview is closed with RQ01-RQ10 accepted. The next phase is to revisit the UI using the current design and agreed capabilities. Preserve the existing task owner, implementation branch and other worktrees. [PR #98](https://github.com/jczhang02/pi-stuff/pull/98) represents the previous implementation and is not a redevelopment acceptance candidate. Implementation and runtime acceptance remain pending; this documentation update does not authorize a merge or release.
-
-The [visual UI interview](subagents-redevelopment-ui.md) proceeds one part at a time. Its current layout proposals remain separate from the accepted runtime decisions above.
+The runtime and UI interviews are closed. The [formal specification](subagents-redevelopment-spec.md) consolidates RQ01-RQ10, UIR01-UIR09 and the [UI review](subagents-redevelopment-ui-review.md). Preserve the task owner, implementation branch and other worktrees. [PR #98](https://github.com/jczhang02/pi-stuff/pull/98) still contains the previous implementation and remains draft; its old runtime acceptance does not establish redevelopment acceptance. This publication completes specification work, not product implementation, merge or release.

@@ -1,10 +1,10 @@
-# Subagent UI redevelopment interview
+# Subagent UI redevelopment decisions
 
 [简体中文](i18n/zh-CN/subagents-redevelopment-ui.md). English is authoritative.
 
-Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03, UIR04 local help and UIR05-UIR08 accepted on 2026-09-21. UIR09 proposes completed-work and follow-up details and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
+Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03-UIR09 accepted on 2026-09-21. The [formal specification](subagents-redevelopment-spec.md) settles the remaining native-component, keyboard and reading details after the [UI review](subagents-redevelopment-ui-review.md). FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
 
-Discuss the UI one part at a time through real usage scenarios: main layout and transitions; FleetView and task structure; details and observability; interventions; completion and history; keyboard and visual consistency. The maintainer's feedback brings detail hierarchy into this round. The previous UI is a starting point, not a wholesale adoption of its old runtime requirements.
+This record preserves the completed visual discussion through real usage scenarios: main layout and transitions; FleetView and task structure; details and observability; interventions; completion and history; keyboard and visual consistency. The maintainer's feedback brings detail hierarchy into this round. The previous UI is a starting point, not a wholesale adoption of its old runtime requirements.
 
 ## Visual reference
 
@@ -38,7 +38,7 @@ Opening a child replaces the entire bottom interaction area, with the visible ma
 
 The header identifies the child and assignment once, with model and usage nearby. Prompt is a compact expandable line. The central content is the child's latest visible reply, followed by recent tool activity. The sample reply includes its own emphasized finding; the UI does not need another model call to invent a summary. The tool tree serves local activity, not a directory of every data category.
 
-Transcript opens full recorded output. Info provides access to supporting configuration, workspace, usage and history. Their exact organization belongs to later rounds.
+Transcript opens full recorded output. Info provides access to supporting configuration, workspace, usage and history. Their final organization is defined in the formal specification.
 
 ### After completion
 
@@ -52,7 +52,7 @@ The working and completed images are states of one design. The local action hint
 
 ## UIR03: FleetView and task relationships accepted
 
-FleetView remains the compact list accepted in UIR01. Its row layout does not change when a task has dependencies. Independent work needs no extra relationship diagram. When the selected task belongs to a dependency workflow, provide an entry to its actual dependency graph in the bottom inspection area. The exact entry key will be decided with keyboard interaction.
+FleetView remains the compact list accepted in UIR01. Its row layout does not change when a task has dependencies. Independent work needs no extra relationship diagram. When the selected task belongs to a dependency workflow, provide an entry to its actual dependency graph in the bottom inspection area. The formal specification assigns the local `g` entry.
 
 ### Independent investigations
 
@@ -250,7 +250,7 @@ A finished model task can still have a [worktree commit error](https://github.co
 
 **Accepted UIR08.** Give the cause and next step priority in failed-task detail, retain useful output, and show Resume and Transcript only when their actual prerequisites hold. The same layout covers interrupted work and launch failures before model execution.
 
-## UIR09: completed work and follow-up
+## UIR09: completed work and follow-up accepted
 
 Scenario: implementer fixes missing-branch recovery in its own worktree. The first two images show completion followed by an unsent follow-up. The third is an alternative outcome in which the same report finishes but Git cannot commit the edits.
 
@@ -276,7 +276,7 @@ The report and its test claim are illustrative child output. Render the real rep
 
 The m follow-up action opens the same local composer used by UIR05. Its label names implementer, and the earlier report remains visible. The draft asks for the underlying Git error to be included in the failure message. Until submission, Done and the header metrics still belong to the finished request.
 
-Use Pi's configured submit/newline bindings and Esc to return without sending. Preserve the draft on Esc or submission failure. While typing, letters belong to the editor and only composer help is shown. Once the new request is accepted, show its actual starting/working detail. Keep the earlier report, status, elapsed time and usage in history under RQ07; do not overwrite them or leave an old report labelled as the new request's output. History's reading layout remains for the Info round.
+Use Pi's configured submit/newline bindings and Esc to return without sending. Preserve the draft on Esc or submission failure. While typing, letters belong to the editor and only composer help is shown. Once the new request is accepted, show its actual starting/working detail. Keep the earlier report, status, elapsed time and usage in history under RQ07; do not overwrite them or leave an old report labelled as the new request's output. The formal specification defines the Info and history reading path.
 
 Offer follow-up when the run has settled, the child is no longer executing, and its saved session and required code state are usable. If a prerequisite fails, explain it and retain the draft. Continue the same context and own branch under RQ05-RQ08. No automatic rerun of prerequisites or downstream tasks follows from this action.
 
@@ -290,8 +290,10 @@ The example assumes finalization has ended and the session and own worktree rema
 
 Upstream still schedules from completed status after a commit failure. A downstream worktree may therefore lack those uncommitted edits. This source finding limits what Done can claim; the UI must not imply successful code handoff. This round does not change dependency scheduling or add a new runtime terminal state. The header presents the existing execution and preservation outcomes together.
 
-**UIR09 question. Keep the completed report visible during follow-up, and show code-preservation errors prominently without discarding that report?** Recommendation: yes. Reuse the accepted detail and composer, retain each request's record, and make the actual Git outcome visible.
+**Accepted UIR09.** Keep the completed report visible during follow-up, and show code-preservation errors prominently without discarding that report. Reuse the accepted detail and composer, retain each request's record, and make the actual Git outcome visible.
 
-## Verification and next step
+## Review and formal specification
 
-UIR01-UIR08 remain accepted within their recorded scope. UIR09 is a proposal. The three new concepts were visually inspected for report hierarchy, composer focus, retained output and the distinction between completion and commit failure. Ghostty/Pi configuration and pinned arhen 1.3.55 source were checked. No completion, follow-up, recovery or commit-failure runtime test was executed. Reports, test results, error text and metrics are illustrative. These are ImageGen concepts, not terminal acceptance evidence. Await the UIR09 answer before continuing to history, Transcript and Info.
+UIR01-UIR09 are accepted. The [UI review](subagents-redevelopment-ui-review.md) retains the visual direction and closes the remaining contract gaps through the [formal specification](subagents-redevelopment-spec.md): Pi-native composition, focus priority, complete Transcript/Info/history paths, bounded layouts and shared state/metric semantics. Historical key hints, exact picture geometry and proposal language above are design history, not unresolved decisions.
+
+The concepts were visually inspected, and Pi/arhen source and harness references were checked. No redevelopment completion, follow-up, recovery, commit-failure or terminal interaction test has run. Reports, test claims, errors and metrics remain illustrative. ImageGen concepts are not terminal acceptance evidence.

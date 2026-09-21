@@ -2,7 +2,7 @@
 
 [English](../../subagents-redevelopment.md). 以英文版为准.
 
-状态: 2026-09-20 通过 RQ01-RQ10 确定运行范围, 下一步讨论 UI. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 本记录取代旧规格, 作为下一版实现的方向. 它尚不是完整规格, 也不授权在 UI 讨论确认前开始实现.
+状态: RQ01-RQ10 和 UIR01-UIR09 全部接受. 2026-09-21 发布的[正式重新开发规格](subagents-redevelopment-spec.md)是当前实现合同. 沿用 [#97](https://github.com/jczhang02/pi-stuff/issues/97), 属于 [#64](https://github.com/jczhang02/pi-stuff/issues/64). 本记录保留运行决策及理由, 完整范围和验收以正式规格为准.
 
 ## 已确认方向
 
@@ -33,7 +33,7 @@
 
 RQ01-RQ10 已确定运行范围. 未被这些决定修改的行为沿用上游, 实现采用满足要求且符合仓库规范的最简单方案. 维护者要求停止引入多余的边界问题. 不因假设场景扩展访谈或增加机制; 只有具体源码或验证证据揭示冲突, 阻碍已约定行为时, 才提出新的运行决策.
 
-下一步按派发、进度、查看、通信、取消和续聊的真实场景重谈当前 UI. 验收须覆盖已安装依赖的真实项目和受控夹具. 既有 research 用作证据, 不自动增加要求.
+UI 审查和正式规格现已覆盖派发、进度、查看、通信、取消和续聊场景. 验收须覆盖已安装依赖的真实项目和受控夹具. 既有 research 用作证据, 不自动增加要求.
 
 ## 第一轮决定, 2026-09-20 已确认
 
@@ -63,6 +63,4 @@ RQ01-RQ10 已确定运行范围. 未被这些决定修改的行为沿用上游, 
 
 ## 当前阶段
 
-运行行为访谈以 RQ01-RQ10 全部接受收束. 下一阶段基于当前设计和已定能力重谈 UI. 保留既有负责人、实现分支及其他工作树. [PR #98](https://github.com/jczhang02/pi-stuff/pull/98) 代表旧实现, 不作为新版验收候选. 实现和运行验收仍待完成; 本次文档更新不授权合并或发布.
-
-[图示 UI 访谈](subagents-redevelopment-ui.md)按部分逐一推进. 其中当前布局提案不属于上方已接受的运行决策.
+运行与 UI 访谈均已结束. [正式规格](subagents-redevelopment-spec.md)整合 RQ01-RQ10、UIR01-UIR09 及 [UI 审查](subagents-redevelopment-ui-review.md). 保留任务负责人、实现分支及其他工作树. [PR #98](https://github.com/jczhang02/pi-stuff/pull/98)仍包含旧实现并保持草稿, 旧运行验收不能证明重新开发完成. 本轮完成规格发布, 不代表产品实现、合并或软件发布.
