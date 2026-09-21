@@ -70,3 +70,15 @@ Final interaction waits identify the owning tool result (`Added 2 lines, removed
 ## Follow-up: preserve native messages and statusline
 
 User feedback removes these surfaces from the redesign. Static and live user rows now instantiate Pi 0.85.1's exported `UserMessageComponent`, retaining its background, padding, Markdown behavior and terminal prompt markers. Surrounding prototype padding applies only to other entries. The extension no longer calls `setFooter`; Pi renders its actual isolated session context and `preview` model instead of a hardcoded branch/model. All retained terminal captures were regenerated. Both live paths still pass disclosure, history navigation and 60-column reflow; all six foreground palette checks pass.
+
+## Result connectors and terminology
+
+For this prototype, one result summary starts with one `⎿`; its wrapped continuation uses spaces, not another marker. Expanded output stays indented. Separate tool results each own a marker, so an expanded exploration group contains several. A single multiline result does not become several result blocks. The retained `investigate` group-open/read-open captures demonstrate that distinction.
+
+This exact continuation rule is verified in the local old snapshot `21b636e`: `packages/pi-stuff/src/tool-display/operation-block-renderer.ts`, `renderEvidence`, applies the child prefix only to the first source line's first wrapped row. Its `render.ts` and component-integration renderer tests also distinguish the first output prefix from continuation padding. The old project's `docs/research/pi-stuff-operation-block-dialog-study-20260829.md` calls the unit an **Operation Block**, explicitly as working project vocabulary.
+
+Claude Code's historical 2.1.220 PTY report establishes separate versus grouped operations, but its normalized rows omit some decorative glyphs. Earlier agent-activity sketches are not exact captures and do not prove that every current Claude tool emits a fixed number of markers. [Current fullscreen documentation](https://code.claude.com/docs/en/fullscreen#use-the-mouse) confirms that a tool call and its result expand together; it does not specify this glyph's layout. This research did not replay a current Claude provider fixture. The exact old-Pi continuation rule is therefore the prototype's chosen contract, not a universal Claude renderer guarantee.
+
+No official layout name was found in the checked Claude documentation. Use **tool invocation/result block** as a semantic description, or **Operation Block** as local vocabulary. [Anthropic's tool-use documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview#how-tool-use-works) names the protocol blocks `tool_use` and `tool_result`, not a visual two-line component. Hanging indentation describes the continuation alignment; progressive disclosure describes revealing retained detail. Neither names a mandatory two-physical-line layout.
+
+The character itself is U+23BF, [Unicode's Dentistry Symbol Light Vertical and Bottom Right](https://www.unicode.org/charts/nameslist/n_2300.html). That name identifies the glyph, not the tool UI pattern.
