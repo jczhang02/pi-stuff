@@ -176,7 +176,8 @@ export class SubagentUI {
     const ctx = this.ctx;
     if (!ctx) return;
     const panel = this.panels.at(-1);
-    if (panel instanceof TranscriptView) panel.refresh();
+    if (panel instanceof TranscriptView || panel instanceof Inspection)
+      panel.refresh();
     if (!this.footer && this.rows().length) {
       this.footer = true;
       ctx.ui.setFooter((tui, _theme, data) => {
@@ -251,7 +252,8 @@ export class SubagentUI {
     if (matchesKey(data, 'escape')) {
       if (this.focus === 'panel') {
         const closed = this.panels.pop();
-        if (closed instanceof TranscriptView) closed.dispose();
+        if (closed instanceof TranscriptView || closed instanceof Inspection)
+          closed.dispose();
         if (!this.panels.length) this.open();
       } else {
         this.focus = 'editor';
@@ -284,18 +286,16 @@ export class SubagentUI {
       } else if (panel instanceof GraphView) {
         const task = panel.selectedTask();
         if (task && keys.matches(data, 'tui.select.confirm'))
-          this.panels.push(
-            new Inspection({run: panel.run, task}, () =>
-              this.runs.queuedReason(panel.run.id, task.id),
-            ),
-          );
+          this.panels.push(this.inspect({run: panel.run, task}));
         else panel.handleInput(data, keys);
       } else if (
         data === 'g' &&
         panel.row.run.tasks.some(task => task.needs.length)
       ) {
-        if (this.panels.at(-2) instanceof GraphView) this.panels.pop();
-        else
+        if (this.panels.at(-2) instanceof GraphView) {
+          this.panels.pop();
+          panel.dispose();
+        } else
           this.panels.push(
             new GraphView(panel.row.run, panel.row.task.id, id =>
               this.runs.queuedReason(panel.row.run.id, id),
@@ -349,11 +349,7 @@ export class SubagentUI {
     else if (keys.matches(data, 'tui.select.confirm')) {
       const row = rows[this.selected - 1];
       if (row) {
-        this.panels.push(
-          new Inspection(row, () =>
-            this.runs.queuedReason(row.run.id, row.task.id),
-          ),
-        );
+        this.panels.push(this.inspect(row));
         this.focus = 'panel';
         this.ctx?.ui.setWorkingVisible(false);
       } else {
@@ -450,6 +446,14 @@ export class SubagentUI {
           : undefined;
   }
 
+  private inspect(row: FleetRow): Inspection {
+    return new Inspection(
+      row,
+      () => this.runs.queuedReason(row.run.id, row.task.id),
+      this.tui ? {runs: this.runs, tui: this.tui} : undefined,
+    );
+  }
+
   dispose(): void {
     this.intervention?.dispose();
     this.intervention = undefined;
@@ -468,7 +472,8 @@ export class SubagentUI {
     this.footer = false;
     this.focus = 'editor';
     for (const panel of this.panels)
-      if (panel instanceof TranscriptView) panel.dispose();
+      if (panel instanceof TranscriptView || panel instanceof Inspection)
+        panel.dispose();
     this.panels.length = 0;
     this.selected = 0;
   }

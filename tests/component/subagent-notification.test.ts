@@ -123,7 +123,12 @@ test('notification failures do not interrupt dependency execution or continuatio
     await session.bindExtensions({mode: 'json'});
     const context = session.extensionRunner.createContext();
     const notifications: string[] = [];
+    let completedNotice = Promise.withResolvers<void>();
     runs = new Runs((_run, task) => {
+      if (!task) {
+        completedNotice.resolve();
+        return;
+      }
       notifications.push(task.id);
       throw new Error(`notification failed for ${task.id}`);
     });
@@ -160,10 +165,11 @@ test('notification failures do not interrupt dependency execution or continuatio
         },
       ],
       concurrency: 1,
-      autoAwait: true,
+      autoAwait: false,
       notifyPerTask: true,
     };
     const initial = await runs.dispatch(dispatch, context);
+    await completedNotice.promise;
     const completed = await runs.wait(initial.id);
     expect(completed.status).toBe('completed');
     expect(taskById(completed.tasks, 'first').status).toBe('completed');
@@ -176,6 +182,7 @@ test('notification failures do not interrupt dependency execution or continuatio
       'notification failed for dependent',
     );
 
+    completedNotice = Promise.withResolvers<void>();
     const continued = await runs.continueTask(
       {
         command: 'follow-up',
@@ -185,6 +192,7 @@ test('notification failures do not interrupt dependency execution or continuatio
       },
       context,
     );
+    await completedNotice.promise;
     const continuedResult = await runs.wait(continued.id);
     expect(continuedResult.status).toBe('completed');
     const current = taskById(continuedResult.tasks, 'first');

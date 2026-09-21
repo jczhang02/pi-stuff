@@ -66,6 +66,7 @@ export const subagentParameters = Type.Object({
 export type SubagentParameters = Static<typeof subagentParameters>;
 
 export interface ContinuationInput {
+  autoAwait?: boolean;
   command: 'resume' | 'follow-up';
   runId: string;
   taskId: string;
@@ -110,6 +111,15 @@ export function dispatchInput(
   parentCwd: string,
   autoLimit = false,
 ): Dispatch {
+  if (input.tasks || input.chain) {
+    const stray = (
+      ['write', 'prompt', 'tools', 'model', 'thinking'] as const
+    ).filter(field => input[field] !== undefined);
+    if (stray.length)
+      throw new SubagentError({
+        message: `Set ${stray.join(', ')} on each item of ${input.chain ? 'chain' : 'tasks'}, not on the batch.`,
+      });
+  }
   const forms =
     Number(input.tasks !== undefined) +
     Number(input.chain !== undefined) +
@@ -144,8 +154,8 @@ export function dispatchInput(
       cwd: resolve(parentCwd, task.cwd ?? input.cwd ?? '.'),
       prompt: task.prompt ?? '',
       explicitTools: task.tools !== undefined,
-      model: task.model ?? input.model,
-      thinking: task.thinking ?? input.thinking,
+      model: task.model,
+      thinking: task.thinking,
       write:
         task.write === true ||
         (task.tools?.some(tool => ['bash', 'edit', 'write'].includes(tool)) ??

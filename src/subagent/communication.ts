@@ -43,7 +43,7 @@ export class Communication {
   private readonly mailboxes: Map<string, AgentMessage[]>;
 
   constructor(
-    taskIds: readonly string[],
+    private readonly tasks: readonly {id: string; agent: string}[],
     private readonly questionChanged: (
       taskId: string,
       question: Question | undefined,
@@ -54,7 +54,7 @@ export class Communication {
       level: 'info' | 'warning' | 'error',
     ) => void,
   ) {
-    this.mailboxes = new Map(taskIds.map(id => [id, []]));
+    this.mailboxes = new Map(tasks.map(task => [task.id, []]));
   }
 
   private async ask(
@@ -154,7 +154,13 @@ export class Communication {
         name: 'send_agent_message',
         label: 'Message sibling',
         description:
-          'Send a short message to a sibling task id in this run, or leader for the parent.',
+          'Send a short message to a sibling task id in this run, or leader for the parent. ' +
+          `Available siblings: ${
+            this.tasks
+              .filter(task => task.id !== taskId)
+              .map(task => `${task.id} (${task.agent})`)
+              .join(', ') || 'none'
+          }.`,
         parameters: sendParameters,
         execute: async (_id: string, input: Static<typeof sendParameters>) => {
           const text = boundedText(input.message, 500);

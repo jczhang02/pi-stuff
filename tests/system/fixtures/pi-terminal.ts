@@ -24,7 +24,12 @@ const Request = Schema.Struct({
   ),
   tools: Schema.optional(
     Schema.Array(
-      Schema.Struct({function: Schema.Struct({name: Schema.String})}),
+      Schema.Struct({
+        function: Schema.Struct({
+          name: Schema.String,
+          description: Schema.optional(Schema.String),
+        }),
+      }),
     ),
   ),
 });
@@ -32,6 +37,7 @@ const Request = Schema.Struct({
 export type PiFixtureRequest = Schema.Schema.Type<typeof Request>;
 
 export type PiFixtureResponse =
+  | {readonly type: 'error'; readonly message: string}
   | {
       readonly type: 'content';
       readonly content: string;
@@ -93,6 +99,16 @@ export async function launchPi(
       const callbackResponse = responseCallback
         ? await responseCallback(body)
         : undefined;
+      if (callbackResponse?.type === 'error')
+        return Response.json(
+          {
+            error: {
+              message: callbackResponse.message,
+              type: 'invalid_request_error',
+            },
+          },
+          {status: 400},
+        );
       const finished = callbackResponse
         ? callbackResponse.type === 'content'
         : issued || !currentTurn || last?.role === 'tool' || tool === '';

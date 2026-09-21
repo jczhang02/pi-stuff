@@ -22,13 +22,16 @@ export function registerSubagent(
       pi.sendMessage(
         {
           customType: 'subagent',
-          content: `${task.agent}: ${task.status}\n${message ?? task.question?.text ?? task.error ?? task.finalText}`,
+          content: task
+            ? `${task.agent}: ${task.status}\n${message ?? task.question?.text ?? task.error ?? task.finalText}`
+            : `Subagent run ${run.status}\n${run.tasks.map(child => `${child.agent}: ${child.status}\n${child.error ?? child.finalText}`).join('\n\n')}`,
           display: true,
-          details: {runId: run.id, taskId: task.id},
+          details: {runId: run.id, taskId: task?.id},
         },
         {
           triggerTurn: true,
-          deliverAs: task.status === 'failed' ? 'steer' : 'followUp',
+          deliverAs:
+            (task?.status ?? run.status) === 'failed' ? 'steer' : 'followUp',
         },
       );
     },

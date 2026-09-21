@@ -210,11 +210,11 @@ function componentsForMessage(
   return [messageFallback(message, theme)];
 }
 
-function requestEntries(
-  source: TranscriptSource,
+export function requestEntries(
+  sessionManager: SessionManager,
   request: RequestRecord,
 ): RequestEntries {
-  const currentFile = source.sessionManager.getSessionFile();
+  const currentFile = sessionManager.getSessionFile();
   if (
     request.sessionFile !== undefined &&
     currentFile !== undefined &&
@@ -228,8 +228,8 @@ function requestEntries(
   }
   try {
     const entries = request.endEntryId
-      ? source.sessionManager.getBranch(request.endEntryId)
-      : source.sessionManager.getBranch();
+      ? sessionManager.getBranch(request.endEntryId)
+      : sessionManager.getBranch();
     const endIndex =
       request.endEntryId === undefined
         ? entries.length - 1
@@ -278,7 +278,9 @@ export class Transcript {
     const selected = source.requests;
     const sections: RequestEntries[] =
       selected.length > 0
-        ? selected.map(request => requestEntries(source, request))
+        ? selected.map(request =>
+            requestEntries(source.sessionManager, request),
+          )
         : [
             {
               entries: source.sessionManager.getBranch(),

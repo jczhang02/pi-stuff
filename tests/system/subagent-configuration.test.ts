@@ -175,6 +175,15 @@ test('loads a project role, replaces inline prompt, and reports effective config
   );
   try {
     const rolePath = await writeReviewerRole(host.directory);
+    await mkdir(join(host.directory, '.pi'));
+    await writeFile(
+      join(host.directory, '.pi', 'APPEND_SYSTEM.md'),
+      'PROJECT_APPEND_INSTRUCTION',
+    );
+    await writeFile(
+      join(host.directory, 'agent', 'APPEND_SYSTEM.md'),
+      'GLOBAL_APPEND_INSTRUCTION',
+    );
     const run = await invokeRun(host, {
       command: 'dispatch',
       agent: 'reviewer',
@@ -206,6 +215,22 @@ test('loads a project role, replaces inline prompt, and reports effective config
     if (child === undefined)
       throw new Error('The role task did not reach the child provider.');
     expect(child.text).toContain(rolePrompt);
+    expect(child.text).toContain('PROJECT_APPEND_INSTRUCTION');
+    expect(child.text).not.toContain('GLOBAL_APPEND_INSTRUCTION');
+    const fallbackCwd = join(host.directory, 'global-fallback');
+    await mkdir(fallbackCwd);
+    await invokeRun(host, {
+      command: 'dispatch',
+      agent: 'researcher',
+      task: roleTask,
+      cwd: fallbackCwd,
+      autoAwait: true,
+      notifyPerTask: false,
+    });
+    expect(childRequests.at(-1)?.text).toContain('GLOBAL_APPEND_INSTRUCTION');
+    expect(childRequests.at(-1)?.text).not.toContain(
+      'PROJECT_APPEND_INSTRUCTION',
+    );
     expect(child.text).not.toContain(inlinePrompt);
     expect(child.tools).toContain('read');
     expect(child.tools).not.toContain('grep');

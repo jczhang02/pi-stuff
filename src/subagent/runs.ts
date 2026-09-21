@@ -31,6 +31,8 @@ interface Run {
   waiters: Set<() => void>;
   configurations: Map<string, ResolvedConfiguration>;
   continuing: boolean;
+  autoAwait: boolean;
+  taskNoticeSent: boolean;
   wave: Set<string>;
 }
 
@@ -52,7 +54,7 @@ export class Runs {
   constructor(
     private readonly notify: (
       run: RunSnapshot,
-      task: TaskSnapshot,
+      task: TaskSnapshot | undefined,
       message?: string,
     ) => void,
     private readonly parentTools: () => ToolInfo[] = () => [],
@@ -195,15 +197,16 @@ export class Runs {
 
   private notifyParent(
     run: RunSnapshot,
-    task: TaskSnapshot,
+    task: TaskSnapshot | undefined,
     message?: string,
   ): void {
     if (!this.accepting) return;
     try {
       this.notify(run, task, message);
     } catch (error) {
-      task.notificationError =
-        error instanceof Error ? error.message : String(error);
+      for (const target of task ? [task] : run.tasks)
+        target.notificationError =
+          error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -251,6 +254,7 @@ export class Runs {
     };
     if (this.storageError) snapshot.persistenceError = this.storageError;
     const run = this.createRun(snapshot, configurations);
+    run.autoAwait = input.autoAwait;
     this.runs.set(snapshot.id, run);
     this.changed();
     run.completion = this.execute(run, input, ctx);
@@ -263,7 +267,7 @@ export class Runs {
   ): Run {
     const waiters = new Set<() => void>();
     const communication = new Communication(
-      snapshot.tasks.map(task => task.id),
+      snapshot.tasks,
       (taskId, question) => {
         const task = snapshot.tasks.find(task => task.id === taskId);
         if (!task) return;
@@ -299,6 +303,8 @@ export class Runs {
       waiters,
       configurations,
       continuing: false,
+      autoAwait: false,
+      taskNoticeSent: false,
       wave: new Set(),
     };
   }
@@ -334,11 +340,20 @@ export class Runs {
       task.status = 'skipped';
       task.endedAt = Date.now();
       task.error = `Prerequisite did not complete: ${skipped.needs.join(', ')}`;
-      if (input.notifyPerTask) this.notifyParent(run.snapshot, task);
+      if (input.notifyPerTask && !run.autoAwait && run.waiters.size === 0)
+        this.notifyParent(run.snapshot, task);
     }
     this.settle(run);
     this.changed();
     await this.flush();
+    this.notifyCompletion(run);
+  }
+
+  private notifyCompletion(run: Run): void {
+    if (run.autoAwait || run.waiters.size > 0) return;
+    if (run.snapshot.tasks.length === 1 && run.taskNoticeSent) return;
+    this.notifyParent(run.snapshot, undefined);
+    this.changed();
   }
 
   private settle(run: Run): void {
@@ -384,7 +399,14 @@ export class Runs {
       });
     } finally {
       run.children.delete(task.id);
-      if (run.snapshot.notifyPerTask) this.notifyParent(run.snapshot, task);
+      if (
+        run.snapshot.notifyPerTask &&
+        !run.autoAwait &&
+        run.waiters.size === 0
+      ) {
+        this.notifyParent(run.snapshot, task);
+        run.taskNoticeSent = true;
+      }
       this.changed();
     }
   }
@@ -491,6 +513,8 @@ export class Runs {
         'endEntryId',
       ] as const)
         delete next[key];
+      const startEntryId = sessionManager.getLeafId();
+      if (startEntryId) next.startEntryId = startEntryId;
       if (workspace) next.workspace = workspace;
       if (cumulativeUsage) next.cumulativeUsage = cumulativeUsage;
       run.snapshot.tasks[run.snapshot.tasks.indexOf(task)] = next;
@@ -505,6 +529,8 @@ export class Runs {
         notes: [],
       });
       run.snapshot.status = 'running';
+      run.autoAwait = input.autoAwait ?? false;
+      run.taskNoticeSent = false;
       run.completion = this.executeTask(
         run,
         next,
@@ -518,6 +544,7 @@ export class Runs {
           this.settle(run);
           this.changed();
           await this.flush();
+          this.notifyCompletion(run);
         });
       this.changed();
       return run.snapshot;
@@ -569,14 +596,17 @@ export class Runs {
       child?.sessionManager ?? (await this.savedSession(task));
     return {
       sessionManager,
+      pendingToolCalls: new Set(child?.state.pendingToolCalls),
       getToolDefinition: (name: string) => child?.getToolDefinition(name),
     };
   }
 
   async wait(runId: string, timeoutMs?: number): Promise<RunSnapshot> {
     const run = this.get(runId);
-    if (run.snapshot.tasks.some(task => task.question !== undefined))
+    if (run.snapshot.tasks.some(task => task.question !== undefined)) {
+      run.autoAwait = false;
       return run.snapshot;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     const wake = Promise.withResolvers<void>();
     run.waiters.add(wake.resolve);
@@ -586,6 +616,7 @@ export class Runs {
     } finally {
       clearTimeout(timer);
       run.waiters.delete(wake.resolve);
+      run.autoAwait = false;
     }
     return run.snapshot;
   }

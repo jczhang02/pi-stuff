@@ -159,7 +159,9 @@ export async function executeRequest(input: RequestExecution) {
             if (
               event.type === 'message_update' ||
               event.type === 'message_end' ||
-              event.type === 'message_start'
+              event.type === 'message_start' ||
+              event.type === 'tool_execution_start' ||
+              event.type === 'tool_execution_end'
             )
               input.changed();
           });
@@ -190,6 +192,10 @@ export async function executeRequest(input: RequestExecution) {
     task.error = error instanceof Error ? error.message : String(error);
   } finally {
     unsubscribe?.();
+    if (!task.endEntryId) {
+      const endEntryId = input.sessionManager?.getLeafId();
+      if (endEntryId) task.endEntryId = endEntryId;
+    }
     if (task.workspace) {
       task.finalizing = true;
       if (signal.aborted) task.status = 'stopping';

@@ -36,6 +36,8 @@ const TaskSnapshot = Schema.Struct({
   status: Schema.String,
   finalText: Schema.String,
   finalizing: Schema.optional(Schema.Boolean),
+  error: Schema.optional(Schema.String),
+  preservationError: Schema.optional(Schema.String),
   pendingInstructions: Schema.Array(Schema.String),
   question: Schema.optional(Question),
   workspace: Schema.optional(Workspace),
@@ -51,7 +53,14 @@ const RunSnapshot = Schema.Struct({
 type RunSnapshot = Schema.Schema.Type<typeof RunSnapshot>;
 type PiMessage = PiFixtureRequest['messages'][number];
 type SubagentInput = Readonly<{
-  command: 'dispatch' | 'status' | 'result' | 'steer' | 'reply' | 'wait';
+  command:
+    | 'dispatch'
+    | 'status'
+    | 'result'
+    | 'steer'
+    | 'reply'
+    | 'wait'
+    | 'cancel';
   runId?: string;
   taskId?: string;
   questionId?: string;
@@ -110,6 +119,19 @@ async function waitForRun(
     run = await invokeRun(host, {command: 'result', runId});
   }
   return run;
+}
+
+async function waitForFile(path: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await readFile(path);
+      return;
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+  throw new Error(`Timed out waiting for ${path}.`);
 }
 
 async function createRepository(directory: string): Promise<string> {
@@ -315,6 +337,117 @@ test('whole-run steer skips a writer finalizing Git while steering its active si
   } finally {
     if (root)
       await writeFile(join(root, '.git', 'release-finalizing'), 'release');
+    await host.close();
+  }
+}, 60000);
+
+test('cancelled writer stays finalizing until a failing prepare-commit hook is released', async () => {
+  const writerPrompts: string[] = [];
+  const host = await launchPi(
+    '{}',
+    undefined,
+    'subagent',
+    'fullscreen',
+    fixtureCallback(writerPrompts, []),
+  );
+  let root: string | undefined;
+  try {
+    root = await createRepository(host.directory);
+    const common = join(root, '.git');
+    await writeFile(
+      join(root, '.git', 'hooks', 'post-commit'),
+      '#!/bin/sh\nexit 0\n',
+      {mode: 0o755},
+    );
+    await writeFile(
+      join(root, '.git', 'hooks', 'prepare-commit-msg'),
+      '#!/bin/sh\ncommon=$(git rev-parse --git-common-dir)\ntouch "$common/prepare-commit-started"\nwhile [ ! -f "$common/release-prepare-commit" ]; do sleep 0.05; done\nprintf "prepare-commit gate failed\\n" >&2\nexit 1\n',
+      {mode: 0o755},
+    );
+
+    const dispatched = await invokeRun(host, {
+      command: 'dispatch',
+      tasks: [
+        {
+          id: 'writer',
+          agent: 'writer',
+          task: WRITER_MARKER,
+          cwd: root,
+          write: true,
+        },
+      ],
+      autoAwait: false,
+      notifyPerTask: false,
+    });
+    const prepareCommitStarted = join(common, 'prepare-commit-started');
+    const releasePrepareCommit = join(common, 'release-prepare-commit');
+    await waitForFile(prepareCommitStarted, 5000);
+
+    const cancelling = await invokeRun(host, {
+      command: 'cancel',
+      runId: dispatched.id,
+      taskId: 'writer',
+    });
+    expect(taskById(cancelling, 'writer').status).toBe('stopping');
+    const blocked = await waitForRun(
+      host,
+      dispatched.id,
+      run => {
+        const writer = taskById(run, 'writer');
+        return writer.status === 'stopping' && writer.finalizing === true;
+      },
+      5000,
+    );
+    const blockedWriter = taskById(blocked, 'writer');
+    expect(blockedWriter.status).toBe('stopping');
+    expect(blockedWriter.finalizing).toBe(true);
+
+    const stillBlocked = await invokeRun(host, {
+      command: 'result',
+      runId: dispatched.id,
+    });
+    expect(taskById(stillBlocked, 'writer').status).toBe('stopping');
+    expect(taskById(stillBlocked, 'writer').finalizing).toBe(true);
+
+    await writeFile(releasePrepareCommit, 'release');
+    const stopped = await waitForRun(
+      host,
+      dispatched.id,
+      run => {
+        const writer = taskById(run, 'writer');
+        return (
+          run.status === 'stopped' &&
+          writer.status === 'stopped' &&
+          writer.finalizing === false &&
+          writer.preservationError !== undefined
+        );
+      },
+      10000,
+    );
+    const stoppedWriter = taskById(stopped, 'writer');
+    expect(stopped.status).toBe('stopped');
+    expect(stoppedWriter.status).toBe('stopped');
+    expect(stoppedWriter.finalizing).toBe(false);
+    expect(stoppedWriter.preservationError).toMatch(
+      /prepare-commit|gate|commit|save/i,
+    );
+    expect(stoppedWriter.finalText).toContain('WRITER_REPORT');
+    expect(stoppedWriter.workspace?.path).toBeDefined();
+    const workspacePath = stoppedWriter.workspace?.path;
+    if (workspacePath === undefined)
+      throw new Error('Stopped writer omitted its workspace path.');
+    expect(await readFile(join(workspacePath, 'writer.txt'), 'utf8')).toBe(
+      'writer change\n',
+    );
+    expect(writerPrompts.some(prompt => prompt.includes(WRITER_MARKER))).toBe(
+      true,
+    );
+  } finally {
+    if (root)
+      await writeFile(
+        join(root, '.git', 'release-prepare-commit'),
+        'release',
+      ).catch(() => undefined);
     await host.close();
   }
 }, 60000);

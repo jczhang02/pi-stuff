@@ -190,7 +190,11 @@ test('a wrapped quotation retains its content anchor across repeated resizing', 
     await host.terminal.keyboard.type(']');
     await host.terminal.screen.waitForText('f latest', {timeoutMs: 5000});
     await host.terminal.resize({cols: 80, rows: 24});
-    await host.terminal.screen.waitForText('/ 106', {timeoutMs: 5000});
+    await host.terminal.screen.waitUntil(
+      snapshot =>
+        snapshot.frame.cols === 80 && snapshot.text.includes('f latest'),
+      {timeoutMs: 5000},
+    );
     const narrow = await host.terminal.screen.text();
     await host.terminal.keyboard.type(']');
     await host.terminal.screen.waitUntil(snapshot => snapshot.text !== narrow, {
@@ -204,7 +208,10 @@ test('a wrapped quotation retains its content anchor across repeated resizing', 
       .trim();
     expect(fragment).toBeDefined();
     await host.terminal.resize({cols: 120, rows: 36});
-    await host.terminal.screen.waitForText('/ 71', {timeoutMs: 5000});
+    await host.terminal.screen.waitUntil(
+      snapshot => snapshot.frame.cols === 120 && snapshot.text !== before,
+      {timeoutMs: 5000},
+    );
     const after = await host.terminal.screen.text();
     const firstContent = after
       .split('\n')
@@ -257,10 +264,17 @@ test('table cell wrapping keeps the selected reading row', async () => {
     const row = before.match(/ROW_\d+/)?.[0];
     expect(row).toBeDefined();
     await host.terminal.resize({cols: 80, rows: 24});
-    await host.terminal.screen.waitForText('/ 110', {timeoutMs: 5000});
+    await host.terminal.screen.waitUntil(
+      snapshot => snapshot.frame.cols === 80 && snapshot.text !== before,
+      {timeoutMs: 5000},
+    );
     expect((await host.terminal.screen.text()).match(/ROW_\d+/)?.[0]).toBe(row);
+    const narrow = await host.terminal.screen.text();
     await host.terminal.resize({cols: 120, rows: 36});
-    await host.terminal.screen.waitForText('/ 75', {timeoutMs: 5000});
+    await host.terminal.screen.waitUntil(
+      snapshot => snapshot.frame.cols === 120 && snapshot.text !== narrow,
+      {timeoutMs: 5000},
+    );
     expect((await host.terminal.screen.text()).match(/ROW_\d+/)?.[0]).toBe(row);
   } finally {
     await host.close();

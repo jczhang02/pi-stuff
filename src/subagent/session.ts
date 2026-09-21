@@ -166,7 +166,8 @@ export function investigate(
         agentDir,
         noExtensions: true,
         additionalExtensionPaths: input.extensionPaths,
-        appendSystemPrompt: [
+        appendSystemPromptOverride: base => [
+          ...base,
           input.write
             ? 'You are a subagent working in your own Git worktree. Return your findings and changes to the parent. Do not delegate. node_modules is shared with the parent project: do not install, delete, or modify dependencies.'
             : 'You are a read-only subagent. Inspect the assigned working directory and return your findings to the parent. Do not delegate.',
