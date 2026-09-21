@@ -1,4 +1,4 @@
-import type {ExtensionAPI} from '@earendil-works/pi-coding-agent';
+import {getAgentDir, type ExtensionAPI} from '@earendil-works/pi-coding-agent';
 import {Effect} from 'effect';
 import {registerTool, type ToolSwitches} from '../pi/tool-switches';
 import {SubagentError} from './session';
@@ -8,6 +8,7 @@ import {
   validateParameters,
 } from './protocol';
 import {Runs} from './runs';
+import {readAutoLimit, setAutoLimit} from './settings';
 
 export function registerSubagent(
   pi: ExtensionAPI,
@@ -27,6 +28,37 @@ export function registerSubagent(
       },
     );
   });
+  pi.registerCommand('subagents', {
+    description:
+      'Manage subagents. Use auto-limit on|off for a 1 h or 6 h default runtime.',
+    async handler(args, ctx) {
+      const parts = args.trim().toLowerCase().split(/\s+/);
+      if (
+        parts[0] !== 'auto-limit' ||
+        parts.length > 2 ||
+        (parts[1] !== undefined && !['on', 'off'].includes(parts[1]))
+      ) {
+        ctx.ui.notify('Usage: /subagents auto-limit [on|off]', 'info');
+        return;
+      }
+      try {
+        const autoLimit = await Effect.runPromise(
+          parts[1] === undefined
+            ? readAutoLimit(getAgentDir())
+            : setAutoLimit(getAgentDir(), parts[1] === 'on'),
+        );
+        ctx.ui.notify(
+          `Auto-limit ${autoLimit ? 'on' : 'off'}: default runtime ${autoLimit ? '1 h' : '6 h'}.`,
+          'info',
+        );
+      } catch (error) {
+        ctx.ui.notify(
+          error instanceof Error ? error.message : String(error),
+          'error',
+        );
+      }
+    },
+  });
   pi.on('session_shutdown', () => runs.close());
   pi.on('session_start', () => runs.close());
   registerTool(pi, switches, {
@@ -42,7 +74,10 @@ export function registerSubagent(
             signal?.throwIfAborted();
             validateParameters(input);
             if (input.command === 'dispatch') {
-              const dispatch = dispatchInput(input, ctx.cwd);
+              const autoLimit = await Effect.runPromise(
+                readAutoLimit(getAgentDir()),
+              );
+              const dispatch = dispatchInput(input, ctx.cwd, autoLimit);
               const run = await runs.dispatch(dispatch, ctx, signal);
               return dispatch.autoAwait ? runs.wait(run.id) : run;
             }

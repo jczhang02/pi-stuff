@@ -96,6 +96,7 @@ export function validateParameters(input: SubagentParameters): void {
 export function dispatchInput(
   input: SubagentParameters,
   parentCwd: string,
+  autoLimit = false,
 ): Dispatch {
   const forms =
     Number(input.tasks !== undefined) +
@@ -143,7 +144,10 @@ export function dispatchInput(
           ? ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write']
           : ['read', 'grep', 'find', 'ls']),
       needs: edges[index] ?? [],
-      maxRuntimeMs: task.maxRuntimeMs ?? input.maxRuntimeMs ?? 21_600_000,
+      maxRuntimeMs:
+        task.maxRuntimeMs ??
+        input.maxRuntimeMs ??
+        (autoLimit ? 3_600_000 : 21_600_000),
     })),
     concurrency: input.concurrency ?? 3,
     autoAwait: input.autoAwait ?? false,
