@@ -76,7 +76,7 @@ bun run check
 git diff --check
 ```
 
-`capture.ts` starts real Pi 0.85.1 under Bun with custom-message renderers, exports PNG/ANSI/text and closes the owned session and driver on all paths. It checks visible text, palette and cell clipping. Interactive cases preserve a Chinese editor draft through mouse disclosure and native Ctrl+O. Replay cancellation also waits past the would-be completion time. The screenshot index leaves test controls and explanations outside the evaluated TUI.
+`capture.ts` starts real Pi 0.85.1 under Bun with custom-message renderers, exports PNG/ANSI/text and closes the owned session and driver on all paths. It checks visible text, palette and cell clipping. Interactive cases preserve a Chinese editor draft through mouse disclosure and native Ctrl+O. Replay cancellation also waits past the would-be completion time. The foreground protocol probe also sends Kitty-encoded Escape to live and replay, in addition to legacy Escape. The screenshot index leaves test controls and explanations outside the evaluated TUI.
 
 The evidence does not establish production message overrides, general diff generation, real providers/tools, image protocols, persistence/replay or a native desktop compositor. Diff rows are explicitly authored context/add/remove fixtures with true line numbers, not an implementation of a general diff algorithm. No production dependencies or entrypoints changed.
 

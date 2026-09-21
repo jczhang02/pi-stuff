@@ -16,7 +16,7 @@
  • 新增测试复现了跨页重复. 现在只修改 item 过滤, 保留 provider 的 cursor.
 
  • Edit(src/search/paginate.ts)
-   ⎿  Added 2 lines, removed 1 line
+   ⎿  Added 2 lines, removed 1 line · collapse
      20    - │   return {items: page.items, nextCursor: page.cursor};
         20 + │   const items = page.items.filter(item => !seen.has(item.id));
         21 + │   return {items, nextCursor: page.cursor};

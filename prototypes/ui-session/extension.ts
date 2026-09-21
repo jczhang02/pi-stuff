@@ -3,7 +3,14 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from '@earendil-works/pi-coding-agent';
-import {Box, Text, truncateToWidth, type TUI} from '@earendil-works/pi-tui';
+import {
+  Box,
+  Text,
+  truncateToWidth,
+  matchesKey,
+  Key,
+  type TUI,
+} from '@earendil-works/pi-tui';
 import {getEntries, replayResult} from './fixtures';
 import {welcomeLines} from '../ui-direction/welcome';
 import {entryComponent, expansionFor, expandAll} from './render';
@@ -91,7 +98,10 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
       host?.requestRender();
     };
     removeInput = ctx.ui.onTerminalInput(data => {
-      if (!replayDone && (data === '\u001b' || data === '\u0003')) {
+      if (
+        !replayDone &&
+        (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl('c')))
+      ) {
         cancel();
         return {consume: true};
       }
@@ -146,7 +156,10 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
         '分页边界会出现重复结果. 请保留第一次出现的记录, 不要改变下一页游标, 并补测试.',
       );
       removeInput = ctx.ui.onTerminalInput(data => {
-        if ((data === '\u001b' || data === '\u0003') && live.cancel())
+        if (
+          (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl('c'))) &&
+          live.cancel()
+        )
           return {consume: true};
         return undefined;
       });

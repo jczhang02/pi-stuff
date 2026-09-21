@@ -48,8 +48,14 @@ export async function captureLive(
   const editLine = firstScreen.findIndex(line => line.includes('• Edit('));
   if (editLine < 0) throw new Error('Edit not visible for live mouse probe');
   await session.mouse({action: 'click', x: 3, y: editLine, button: 'left'});
-  await session.screen.waitForText('collapse', wait);
-  await save('edit-clicked', ['collapse', '8 项测试通过']);
+  await session.screen.waitForText(
+    'Added 2 lines, removed 1 line · collapse',
+    wait,
+  );
+  await save('edit-clicked', [
+    'Added 2 lines, removed 1 line · collapse',
+    '8 项测试通过',
+  ]);
   await session.keyboard.type('补充页内重复和全空过滤页, 展示完整测试结果.');
   await session.keyboard.press('Enter');
   await session.screen.waitForText('10 项测试通过', wait);
@@ -59,9 +65,15 @@ export async function captureLive(
   await session.keyboard.press('Control+O');
   await session.screen.waitForText('Tool output: expanded', wait);
   await save('expanded-tail', ['下一条草稿', '10 项测试通过']);
+  const beforeScroll = await session.screen.text();
   await session.keyboard.press('PageUp');
-  await session.screen.waitForText('Ran 10 tests across 3 files.', wait);
-  await save('output-scrolled', ['Ran 10 tests across 3 files.']);
+  await session.screen.waitUntil(
+    screen =>
+      screen.text !== beforeScroll &&
+      screen.text.includes('[pass] preserves the cursor'),
+    wait,
+  );
+  await save('output-scrolled', ['[pass] preserves the cursor']);
   const wide = (await session.screen.frame()).cols;
   await session.resize({cols: 60, rows: 40});
   await session.screen.waitUntil(

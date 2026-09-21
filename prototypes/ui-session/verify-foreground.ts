@@ -5,13 +5,22 @@ import {terminalBinary, root, runEffect} from './launch';
 await runEffect(async () => {
   const driver = await TerminalControl.make({binaryPath: terminalBinary});
   try {
-    for (const mode of ['inherited', 'light', 'dark', 'cancel'] as const) {
+    for (const mode of [
+      'inherited',
+      'light',
+      'dark',
+      'cancel',
+      'kitty-live',
+      'kitty-replay',
+    ] as const) {
+      const live = mode === 'kitty-live';
+      const replay = mode === 'cancel' || mode === 'kitty-replay';
       const name = `pi-palette-${process.pid}-${mode}`;
       const session = await driver.launch({
         command: [
           process.execPath,
           join(import.meta.dir, 'run.ts'),
-          mode === 'cancel' ? 'replay' : 'thoughts',
+          live ? 'live' : replay ? 'replay' : 'thoughts',
           '--name',
           name,
           ...(mode === 'inherited'
@@ -26,12 +35,20 @@ await runEffect(async () => {
         viewport: {cols: 100, rows: 36},
       });
       try {
+        if (live) {
+          await session.screen.waitForText('Welcome back!', {timeoutMs: 15000});
+          await session.keyboard.press('Enter');
+        }
         await session.screen.waitForText(
-          mode === 'cancel' ? 'Checking pagination' : 'Thoughts for 4s',
+          live ? 'Running' : replay ? 'Checking pagination' : 'Thoughts for 4s',
           {timeoutMs: 15000},
         );
-        if (mode === 'cancel') {
-          await session.keyboard.press('Escape');
+        if (live || replay) {
+          if (mode.startsWith('kitty'))
+            await session.keyboard.write(
+              new TextEncoder().encode('\u001b[27u'),
+            );
+          else await session.keyboard.press('Escape');
           await session.screen.waitForText('Response interrupted', {
             timeoutMs: 5000,
           });
