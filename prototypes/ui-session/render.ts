@@ -258,18 +258,24 @@ function textRows(
       : open
         ? 'Thoughts:'
         : `Thoughts for ${entry.seconds}s`;
-    const rows = [theme.fg('muted', '• ' + label)];
-    if (open)
-      rows.push(
-        ...indent(
-          new Markdown(entry.text, 0, 0, getMarkdownTheme(), {
-            color: t => theme.fg('thinkingText', t),
-            italic: true,
-          }).render(Math.max(1, width - 2)),
-          '  ',
-        ),
+    const available = Math.max(1, width - 2);
+    if (!open)
+      return wrapTextWithAnsi(theme.fg('muted', label), available).map(
+        (line, i) => (i ? '  ' : theme.fg('muted', '• ')) + line,
       );
-    return rows;
+    // Reserve the inline label without changing Markdown source or block syntax.
+    const rows = new Markdown(entry.text, 0, 0, getMarkdownTheme(), {
+      color: t => theme.fg('thinkingText', t),
+    }).render(Math.max(1, available - visibleWidth(label) - 1));
+    rows[0] = theme.fg('muted', label + ' ') + (rows[0] ?? '');
+    if (!entry.running) {
+      const last = rows.length - 1;
+      rows[last] =
+        (rows[last] ?? '') + theme.fg('muted', `  ${entry.seconds}s`);
+    }
+    return rows
+      .flatMap(line => wrapTextWithAnsi(line, available))
+      .map((line, i) => (i ? '  ' : theme.fg('muted', '• ')) + line);
   }
   const marker = theme.fg('accent', '• ');
   const lines = new Markdown(entry.text, 0, 0, getMarkdownTheme()).render(

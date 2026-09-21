@@ -37,6 +37,8 @@ Click a tool for its full retained output. Click the activity summary to reveal 
 
 User messages use Pi 0.85.1's exported `UserMessageComponent` with its native background, padding and Markdown behavior. The prototype does not install a footer; Pi renders the real isolated session status, including the `preview` model and context usage. These surfaces are outside the redesign.
 
+Thoughts uses a muted leading dot in both states. Hidden: `• Thoughts for 4s`. Visible: `• Thoughts: The cursor already...  4s`, with the prefix and upright Markdown body on the same line; continuation lines align with message text. There is no separate heading or container. Compare the gallery's `Thoughts · hidden` and `Thoughts · no hidden` sections: captures set the isolated Pi preference explicitly. Foreground launches still inherit your setting; Ctrl+T changes it only inside the temporary preview host.
+
 The scenario is a pagination repair with coherent read, search, Web, edit, write and test steps. All results, Web pages, model labels and durations are samples. The replay has real elapsed animation but simulated execution. In static scenes, ordinary text submission returns the text to the editor. In live scenes, it drives the fixed offline script. Other native Pi commands are outside this preview's acceptance.
 
 ## Scenes
@@ -91,6 +93,8 @@ The evidence does not establish production message overrides, general diff gener
 在新 worktree 执行 `bun prototypes/ui-session/run.ts`, 即可进入连续交互会话. 欢迎页输入框有可编辑的分页请求, 按 Enter 启动第一轮; 完成后输入 "补充页内重复和全空过滤页, 展示完整测试结果." 进入第二轮. Esc 中断后再提交可继续未完成步骤, 运行中提交会先中断当前回答. 两轮完成后继续提交只回顾现有结果. `live-error` 首次提交会遇到 HTTP 503, 再提交可重试. `session` 保留静态总览. `investigate` 适合逐项点击, `web` 查看统一 Web 样式, `replay` 演示思考、执行和完成, 可按 Esc 中断. 其他场景名见上表. 空输入时 Ctrl+D 退出并清理临时目录.
 
 用户消息直接复用 Pi 0.85.1 的原生 `UserMessageComponent`, 保留背景、留白和 Markdown 行为. 原型不再覆盖 footer, 状态栏由 Pi 显示隔离会话的实际信息, 包括 `preview` 模型和上下文用量. 这两部分不属于本轮改版.
+
+Thoughts 两种状态都保留灰色前导点. hidden 显示 `• Thoughts for 4s`; no hidden 显示 `• Thoughts: The cursor already...  4s`, 前缀与正体 Markdown 正文同一行, 续行与消息正文对齐, 不增加独立标题或容器. 画廊的 `Thoughts · hidden` 和 `Thoughts · no hidden` 分别在隔离 Pi 中设置对应默认值并截图. 前台启动仍继承你的设置, Ctrl+T 只修改临时原型环境.
 
 点击活动摘要 展开调用清单, 再点一项看正文; Thoughts 独立显示, 默认服从 Pi 的 Hide thinking, 点击可单独切换; 原生 Ctrl+T 或 /settings 修改默认显示, Ctrl+O 只切换工具详情. 输入框由 Pi 管理. 前台终端尺寸随外层终端变化, 完整会话用 Pi 原生滚动查看. 可在另一个终端用 `bun run tui show pi-ui-session` 检查同一会话.
 

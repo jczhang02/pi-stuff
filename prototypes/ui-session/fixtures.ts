@@ -333,14 +333,14 @@ export const scenes = [
   },
   {
     name: 'thoughts',
-    title: '思考过程',
-    note: '收起显示 Thoughts for 4s, 展开显示 Thoughts: 和正文.',
+    title: 'Thoughts · hidden',
+    note: 'hideThinkingBlock=true: 默认显示 • Thoughts for 4s. 点击后显示 • Thoughts: 正文, 前缀与正文同一行.',
     tokens: ['Thoughts for 4s'],
   },
   {
     name: 'thoughts-visible',
-    title: '显示思考正文',
-    note: 'hideThinkingBlock=false 时默认显示正文; 原生 Ctrl+T 或设置菜单切换默认样式.',
+    title: 'Thoughts · no hidden',
+    note: 'hideThinkingBlock=false: 默认显示 • Thoughts: 正文, 耗时在末尾. 续行与消息正文对齐, 不用斜体或容器. 原生 Ctrl+T 切换默认显示.',
     tokens: ['Thoughts:', 'previousIds'],
   },
   {
@@ -477,7 +477,7 @@ function scenarioEntries(name: string): Entry[] {
       ];
     case 'thoughts-visible':
     case 'thoughts':
-      return [user, thoughts, plan];
+      return [user, thoughts, plan, read, edit];
     case 'interrupted':
       return [
         user,

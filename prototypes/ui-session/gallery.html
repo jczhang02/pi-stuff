@@ -130,9 +130,10 @@
       WebSearch / WebFetch / WebRead 在组内保留动作名称; 元数据只在展开后显示.
     </li>
     <li>
-      Thoughts 服从 Pi hideThinkingBlock: 隐藏时显示耗时, 显示时呈现正文. 原生
-      Ctrl+T 或 /settings 可切换, 点击只改变单条思考, Ctrl+O 不覆盖思考设置.
-      回答失败或中断保持普通文字.
+      Thoughts 服从 Pi hideThinkingBlock: hidden 显示 • Thoughts for 4s; no
+      hidden 显示 • Thoughts: 正文, 前缀与正体正文同一行, 耗时在末尾,
+      续行与消息正文对齐. 原生 Ctrl+T 或 /settings 可切换, 点击只改变单条思考,
+      Ctrl+O 不覆盖思考设置. 回答失败或中断保持普通文字.
     </li>
   </ul>
   <nav>
@@ -142,8 +143,8 @@
     ><a href="#folding">折叠边界</a><a href="#tools">检索工具</a
     ><a href="#web">Web 家族</a><a href="#changes">修改与验证</a
     ><a href="#running">执行中</a><a href="#failures">工具失败与空结果</a
-    ><a href="#long-output">长输出</a><a href="#thoughts">思考过程</a
-    ><a href="#thoughts-visible">显示思考正文</a
+    ><a href="#long-output">长输出</a><a href="#thoughts">Thoughts · hidden</a
+    ><a href="#thoughts-visible">Thoughts · no hidden</a
     ><a href="#interrupted">回答中断</a><a href="#response-error">回答失败</a
     ><a href="#empty">无输出与取消</a><a href="#replay">动态执行</a>
   </nav>
@@ -1120,8 +1121,11 @@
     </div>
   </section>
   <section id="thoughts">
-    <h2>思考过程</h2>
-    <p>收起显示 Thoughts for 4s, 展开显示 Thoughts: 和正文.</p>
+    <h2>Thoughts · hidden</h2>
+    <p>
+      hideThinkingBlock=true: 默认显示 • Thoughts for 4s. 点击后显示 • Thoughts:
+      正文, 前缀与正文同一行.
+    </p>
     <code>bun prototypes/ui-session/run.ts thoughts</code>
     <div class="grid">
       <figure>
@@ -1130,7 +1134,7 @@
           ><img
             loading="lazy"
             src="captures/thoughts-catppuccin-latte-120-main.png"
-            alt="思考过程 / 默认状态 · 浅色 · 120 列"
+            alt="Thoughts · hidden / 默认状态 · 浅色 · 120 列"
         /></a>
         <p>
           <a href="captures/thoughts-catppuccin-latte-120-main.txt">文本</a> ·
@@ -1143,7 +1147,7 @@
           ><img
             loading="lazy"
             src="captures/thoughts-catppuccin-latte-120-open.png"
-            alt="思考过程 / 点击切换思考正文 · 浅色 · 120 列"
+            alt="Thoughts · hidden / 点击切换思考正文 · 浅色 · 120 列"
         /></a>
         <p>
           <a href="captures/thoughts-catppuccin-latte-120-open.txt">文本</a> ·
@@ -1156,7 +1160,7 @@
           ><img
             loading="lazy"
             src="captures/thoughts-catppuccin-latte-120-setting-toggled.png"
-            alt="思考过程 / 原生 Ctrl+T 切换 Hide thinking · 浅色 · 120 列"
+            alt="Thoughts · hidden / 原生 Ctrl+T 切换 Hide thinking · 浅色 · 120 列"
         /></a>
         <p>
           <a href="captures/thoughts-catppuccin-latte-120-setting-toggled.txt"
@@ -1168,13 +1172,57 @@
           >
         </p>
       </figure>
+      <figure>
+        <figcaption>默认状态 · 浅色 · 60 列</figcaption>
+        <a href="captures/thoughts-catppuccin-latte-60-main.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-catppuccin-latte-60-main.png"
+            alt="Thoughts · hidden / 默认状态 · 浅色 · 60 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-catppuccin-latte-60-main.txt">文本</a> ·
+          <a href="captures/thoughts-catppuccin-latte-60-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>点击切换思考正文 · 浅色 · 60 列</figcaption>
+        <a href="captures/thoughts-catppuccin-latte-60-open.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-catppuccin-latte-60-open.png"
+            alt="Thoughts · hidden / 点击切换思考正文 · 浅色 · 60 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-catppuccin-latte-60-open.txt">文本</a> ·
+          <a href="captures/thoughts-catppuccin-latte-60-open.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>原生 Ctrl+T 切换 Hide thinking · 浅色 · 60 列</figcaption>
+        <a href="captures/thoughts-catppuccin-latte-60-setting-toggled.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-catppuccin-latte-60-setting-toggled.png"
+            alt="Thoughts · hidden / 原生 Ctrl+T 切换 Hide thinking · 浅色 · 60 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-catppuccin-latte-60-setting-toggled.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/thoughts-catppuccin-latte-60-setting-toggled.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
     </div>
   </section>
   <section id="thoughts-visible">
-    <h2>显示思考正文</h2>
+    <h2>Thoughts · no hidden</h2>
     <p>
-      hideThinkingBlock=false 时默认显示正文; 原生 Ctrl+T
-      或设置菜单切换默认样式.
+      hideThinkingBlock=false: 默认显示 • Thoughts: 正文, 耗时在末尾.
+      续行与消息正文对齐, 不用斜体或容器. 原生 Ctrl+T 切换默认显示.
     </p>
     <code>bun prototypes/ui-session/run.ts thoughts-visible</code>
     <div class="grid">
@@ -1184,7 +1232,7 @@
           ><img
             loading="lazy"
             src="captures/thoughts-visible-catppuccin-latte-120-main.png"
-            alt="显示思考正文 / 默认状态 · 浅色 · 120 列"
+            alt="Thoughts · no hidden / 默认状态 · 浅色 · 120 列"
         /></a>
         <p>
           <a href="captures/thoughts-visible-catppuccin-latte-120-main.txt"
@@ -1202,7 +1250,7 @@
           ><img
             loading="lazy"
             src="captures/thoughts-visible-catppuccin-latte-120-open.png"
-            alt="显示思考正文 / 点击切换思考正文 · 浅色 · 120 列"
+            alt="Thoughts · no hidden / 点击切换思考正文 · 浅色 · 120 列"
         /></a>
         <p>
           <a href="captures/thoughts-visible-catppuccin-latte-120-open.txt"
@@ -1221,7 +1269,7 @@
           ><img
             loading="lazy"
             src="captures/thoughts-visible-catppuccin-latte-120-setting-toggled.png"
-            alt="显示思考正文 / 原生 Ctrl+T 切换 Hide thinking · 浅色 · 120 列"
+            alt="Thoughts · no hidden / 原生 Ctrl+T 切换 Hide thinking · 浅色 · 120 列"
         /></a>
         <p>
           <a
@@ -1241,7 +1289,7 @@
           ><img
             loading="lazy"
             src="captures/thoughts-visible-catppuccin-mocha-80-main.png"
-            alt="显示思考正文 / 默认状态 · 深色 · 80 列"
+            alt="Thoughts · no hidden / 默认状态 · 深色 · 80 列"
         /></a>
         <p>
           <a href="captures/thoughts-visible-catppuccin-mocha-80-main.txt"
@@ -1259,7 +1307,7 @@
           ><img
             loading="lazy"
             src="captures/thoughts-visible-catppuccin-mocha-80-open.png"
-            alt="显示思考正文 / 点击切换思考正文 · 深色 · 80 列"
+            alt="Thoughts · no hidden / 点击切换思考正文 · 深色 · 80 列"
         /></a>
         <p>
           <a href="captures/thoughts-visible-catppuccin-mocha-80-open.txt"
@@ -1278,7 +1326,7 @@
           ><img
             loading="lazy"
             src="captures/thoughts-visible-catppuccin-mocha-80-setting-toggled.png"
-            alt="显示思考正文 / 原生 Ctrl+T 切换 Hide thinking · 深色 · 80 列"
+            alt="Thoughts · no hidden / 原生 Ctrl+T 切换 Hide thinking · 深色 · 80 列"
         /></a>
         <p>
           <a
