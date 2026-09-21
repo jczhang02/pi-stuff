@@ -87,6 +87,7 @@ const requestFields = {
   preservationError: Schema.optional(Schema.String),
   cleanupError: Schema.optional(Schema.String),
   notificationError: Schema.optional(Schema.String),
+  extensionErrors: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
   finalizing: Schema.optional(Schema.Boolean),
   roleSource: Schema.optional(Schema.String),
   configurationNotes: Schema.mutable(Schema.Array(Schema.String)),

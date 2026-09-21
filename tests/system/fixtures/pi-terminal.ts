@@ -54,6 +54,7 @@ export async function launchPi(
   profile: 'rtk' | 'web' | 'subagent' = 'rtk',
   mode: 'regular' | 'fullscreen' = 'fullscreen',
   responseCallback?: PiFixtureResponseCallback,
+  extraTools: readonly string[] = [],
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
   const agent = join(directory, 'agent');
@@ -225,7 +226,9 @@ export async function launchPi(
           ? ['--no-builtin-tools']
           : [
               '--tools',
-              profile === 'subagent' ? 'bash,read,subagent' : 'bash,read',
+              profile === 'subagent'
+                ? ['bash', 'read', 'subagent', ...extraTools].join(',')
+                : 'bash,read',
             ]),
         '--provider',
         'fixture',

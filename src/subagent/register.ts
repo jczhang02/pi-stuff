@@ -14,20 +14,26 @@ export function registerSubagent(
   pi: ExtensionAPI,
   switches: ToolSwitches | undefined,
 ) {
-  const runs = new Runs((run, task, message) => {
-    pi.sendMessage(
-      {
-        customType: 'subagent',
-        content: `${task.agent}: ${task.status}\n${message ?? task.question?.text ?? task.error ?? task.finalText}`,
-        display: true,
-        details: {runId: run.id, taskId: task.id},
-      },
-      {
-        triggerTurn: true,
-        deliverAs: task.status === 'failed' ? 'steer' : 'followUp',
-      },
-    );
-  });
+  const runs = new Runs(
+    (run, task, message) => {
+      pi.sendMessage(
+        {
+          customType: 'subagent',
+          content: `${task.agent}: ${task.status}\n${message ?? task.question?.text ?? task.error ?? task.finalText}`,
+          display: true,
+          details: {runId: run.id, taskId: task.id},
+        },
+        {
+          triggerTurn: true,
+          deliverAs: task.status === 'failed' ? 'steer' : 'followUp',
+        },
+      );
+    },
+    () => {
+      const active = new Set(pi.getActiveTools());
+      return pi.getAllTools().filter(tool => active.has(tool.name));
+    },
+  );
   pi.registerCommand('subagents', {
     description:
       'Manage subagents. Use auto-limit on|off for a 1 h or 6 h default runtime.',

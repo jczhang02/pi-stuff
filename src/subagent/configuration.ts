@@ -1,4 +1,4 @@
-import type {ExtensionContext} from '@earendil-works/pi-coding-agent';
+import type {ExtensionContext, ToolInfo} from '@earendil-works/pi-coding-agent';
 import {getAgentDir} from '@earendil-works/pi-coding-agent';
 import type {Api, Model, ModelsApiStreamOptions} from '@earendil-works/pi-ai';
 import {getSupportedThinkingLevels} from '@earendil-works/pi-ai';
@@ -7,6 +7,7 @@ import {Effect} from 'effect';
 import type {TaskInput} from './protocol';
 import {resolveRole} from './roles';
 import {SubagentError} from './session';
+import {extensionPaths, inheritedTools} from './extensions';
 
 const readonlyTools = ['read', 'grep', 'find', 'ls'];
 const writerTools = [...readonlyTools, 'bash', 'edit', 'write'];
@@ -63,6 +64,7 @@ export function resolveConfiguration(
   input: TaskInput,
   ctx: ExtensionContext,
   signal: AbortSignal | undefined,
+  parentTools: readonly ToolInfo[],
 ) {
   return Effect.gen(function* () {
     const role = yield* resolveRole(
@@ -72,11 +74,18 @@ export function resolveConfiguration(
       getAgentDir(),
     );
     const notes: string[] = [];
-    const allowed = input.write ? writerTools : readonlyTools;
+    const extensions = inheritedTools(parentTools);
+    const inherited = extensions.filter(
+      tool => role?.tools === undefined || role.tools.includes(tool),
+    );
+    const allowed = [
+      ...(input.write ? writerTools : readonlyTools),
+      ...inherited,
+    ];
     const fileTools = role?.tools?.filter(tool => allowed.includes(tool));
     const explicit = input.explicitTools || input.write;
     const tools = explicit
-      ? input.tools
+      ? [...input.tools, ...(input.explicitTools ? [] : inherited)]
       : fileTools?.length
         ? fileTools
         : allowed;
@@ -90,6 +99,22 @@ export function resolveConfiguration(
       notes.push(
         `Agent-file model ${role.model} replaced requested model ${input.model}.`,
       );
+    yield* Effect.try({
+      try() {
+        const denied = tools.find(
+          tool =>
+            extensions.includes(tool) &&
+            role?.tools !== undefined &&
+            !role.tools.includes(tool),
+        );
+        if (denied)
+          throw new Error(
+            `Agent-file tools do not allow extension tool: ${denied}`,
+          );
+        return extensionPaths(tools, parentTools);
+      },
+      catch: error => new SubagentError({message: String(error)}),
+    });
     const model = yield* Effect.try({
       try() {
         signal?.throwIfAborted();

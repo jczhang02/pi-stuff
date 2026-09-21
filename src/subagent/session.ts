@@ -14,6 +14,7 @@ import {readFile, stat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Effect, Schema} from 'effect';
 import type {Api, Model} from '@earendil-works/pi-ai';
+import {childUI} from './extensions';
 import type {ThinkingLevel} from '@earendil-works/pi-agent-core';
 
 export class SubagentError extends Schema.TaggedError<SubagentError>()(
@@ -44,6 +45,7 @@ export interface Investigation {
   prompt?: string;
   write: boolean;
   tools: string[];
+  extensionPaths: string[];
   maxRuntimeMs: number;
   model: Model<Api>;
   thinking: ThinkingLevel | undefined;
@@ -139,7 +141,8 @@ export function investigate(
   signal: AbortSignal | undefined,
   customTools: ToolDefinition[],
   ready: (session: AgentSession) => void,
-  finished?: (session: AgentSession) => void,
+  finished: (session: AgentSession) => void,
+  extensionError: (message: string) => void,
 ) {
   return Effect.tryPromise({
     async try() {
@@ -162,6 +165,7 @@ export function investigate(
         cwd: input.cwd,
         agentDir,
         noExtensions: true,
+        additionalExtensionPaths: input.extensionPaths,
         appendSystemPrompt: [
           input.write
             ? 'You are a subagent working in your own Git worktree. Return your findings and changes to the parent. Do not delegate. node_modules is shared with the parent project: do not install, delete, or modify dependencies.'
@@ -170,6 +174,11 @@ export function investigate(
         ],
       });
       await resourceLoader.reload();
+      const loadErrors = resourceLoader.getExtensions().errors;
+      if (loadErrors.length)
+        throw new Error(
+          `Required child extensions failed to load: ${loadErrors.map(error => `${error.path}: ${error.error}`).join('; ')}`,
+        );
       signal?.throwIfAborted();
       const parentSession = parent.sessionManager.getSessionFile();
       const options: CreateAgentSessionOptions = {
@@ -199,7 +208,22 @@ export function investigate(
       let timedOut = false;
       try {
         session.setSessionName(input.agent);
-        await session.bindExtensions({mode: 'json'});
+        const bindingErrors: string[] = [];
+        let binding = true;
+        await session.bindExtensions({
+          mode: 'json',
+          uiContext: childUI(parent.ui.theme),
+          onError: error => {
+            const message = `${error.extensionPath} (${error.event}): ${error.error}`;
+            if (binding) bindingErrors.push(message);
+            else extensionError(message);
+          },
+        });
+        if (bindingErrors.length)
+          throw new Error(
+            `Required child extensions failed to bind: ${bindingErrors.join('; ')}`,
+          );
+        binding = false;
         for (const tool of input.tools) {
           if (!session.getActiveToolNames().includes(tool))
             throw new SubagentError({
@@ -262,7 +286,7 @@ export function investigate(
           await (abort ?? session.abort());
         } finally {
           try {
-            finished?.(session);
+            finished(session);
           } finally {
             session.dispose();
           }

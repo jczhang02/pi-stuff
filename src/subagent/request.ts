@@ -4,6 +4,7 @@ import type {
   SessionManager,
   SessionStats,
   ToolDefinition,
+  ToolInfo,
 } from '@earendil-works/pi-coding-agent';
 import {Effect} from 'effect';
 import {investigate, type Investigation} from './session';
@@ -11,6 +12,7 @@ import {
   preflightConfiguration,
   type ResolvedConfiguration,
 } from './configuration';
+import {extensionPaths} from './extensions';
 import {SchedulerTaskFailure} from './graph';
 import type {TaskSnapshot, Usage} from './records';
 import {prepareWorkspace, saveWorkspace, releaseWorkspace} from './workspace';
@@ -18,6 +20,7 @@ import {prepareWorkspace, saveWorkspace, releaseWorkspace} from './workspace';
 interface RequestExecution {
   task: TaskSnapshot;
   configuration: ResolvedConfiguration;
+  parentTools: () => ToolInfo[];
   parent: ExtensionContext;
   signal: AbortSignal;
   runId: string;
@@ -93,6 +96,7 @@ export async function executeRequest(input: RequestExecution) {
     task.provider = configuration.model.provider;
     task.configurationNotes = configuration.notes;
     if (configuration.roleSource) task.roleSource = configuration.roleSource;
+    const paths = extensionPaths(configuration.tools, input.parentTools());
     if (task.write && !input.sessionManager) {
       task.workspace = await Effect.runPromise(
         prepareWorkspace(task.cwd, input.runId, task.id, input.baseBranch),
@@ -100,6 +104,7 @@ export async function executeRequest(input: RequestExecution) {
     }
     const investigation: Investigation = {
       ...task,
+      extensionPaths: paths,
       model: configuration.model,
       thinking: configuration.thinking,
       cwd: task.workspace?.cwd ?? task.cwd,
@@ -168,6 +173,11 @@ export async function executeRequest(input: RequestExecution) {
             task.provider = session.model.provider;
           }
           task.thinking = session.thinkingLevel;
+        },
+        message => {
+          task.extensionErrors ??= [];
+          task.extensionErrors.push(message);
+          input.changed();
         },
       ),
     );

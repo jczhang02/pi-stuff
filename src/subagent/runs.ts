@@ -2,6 +2,7 @@ import type {
   AgentSession,
   ExtensionContext,
   SessionManager,
+  ToolInfo,
 } from '@earendil-works/pi-coding-agent';
 import {randomUUID} from 'node:crypto';
 import {Effect} from 'effect';
@@ -19,6 +20,7 @@ import {
 } from './configuration';
 import {attachWorkspace} from './workspace';
 import {loadRuns, saveRuns} from './store';
+import {extensionPaths} from './extensions';
 
 interface Run {
   snapshot: RunSnapshot;
@@ -33,6 +35,7 @@ interface Run {
 
 export class Runs {
   private readonly runs = new Map<string, Run>();
+  private readonly steering = new Set<AgentSession>();
   private generation = 0;
   private accepting = true;
   private parentFile: string | undefined;
@@ -50,6 +53,7 @@ export class Runs {
       task: TaskSnapshot,
       message?: string,
     ) => void,
+    private readonly parentTools: () => ToolInfo[] = () => [],
   ) {}
 
   private changed(): void {
@@ -205,7 +209,9 @@ export class Runs {
           async task =>
             [
               task.id,
-              await Effect.runPromise(resolveConfiguration(task, ctx, signal)),
+              await Effect.runPromise(
+                resolveConfiguration(task, ctx, signal, this.parentTools()),
+              ),
             ] as const,
         ),
       ),
@@ -346,6 +352,7 @@ export class Runs {
       return await executeRequest({
         task,
         configuration,
+        parentTools: this.parentTools,
         parent: ctx,
         signal: controller.signal,
         runId: run.snapshot.id,
@@ -423,6 +430,7 @@ export class Runs {
             ? `${task.provider}/${task.model}`
             : undefined),
       );
+      extensionPaths(task.tools, this.parentTools());
       const thinking = input.thinking ?? task.thinking;
       validateThinking(model, thinking);
       let workspace = task.workspace;
@@ -459,6 +467,7 @@ export class Runs {
         'preservationError',
         'cleanupError',
         'notificationError',
+        'extensionErrors',
         'finalizing',
         'usage',
         'startEntryId',
@@ -564,23 +573,47 @@ export class Runs {
       });
     for (const task of live) {
       const child = run.children.get(task.id);
-      if (!child || !child.isStreaming)
+      if (
+        !child ||
+        !child.isStreaming ||
+        run.controllers.get(task.id)?.signal.aborted
+      )
         throw new SubagentError({
           message: `${task.agent} is no longer executing.`,
         });
-      task.pendingInstructions.push(message);
-      this.changed();
-      try {
-        await child.prompt(message, {
-          source: 'extension',
-          expandPromptTemplates: false,
-          streamingBehavior: 'steer',
+      if (this.steering.has(child))
+        throw new SubagentError({
+          message: `${task.agent} is still accepting another instruction. Try again after it finishes.`,
         });
-      } catch (error) {
-        const index = task.pendingInstructions.lastIndexOf(message);
-        if (index !== -1) task.pendingInstructions.splice(index, 1);
+      this.steering.add(child);
+      let queueLength = child.getSteeringMessages().length;
+      let queued = false;
+      const unsubscribe = child.subscribe(event => {
+        if (event.type !== 'queue_update') return;
+        const grew = event.steering.length > queueLength;
+        queueLength = event.steering.length;
+        if (
+          queued ||
+          !child.isStreaming ||
+          run.controllers.get(task.id)?.signal.aborted ||
+          !grew
+        )
+          return;
+        const accepted = event.steering.at(-1);
+        if (accepted === undefined) return;
+        queued = true;
+        task.pendingInstructions.push(accepted);
         this.changed();
-        throw error;
+      });
+      try {
+        await child.steer(message);
+        if (!queued)
+          throw new SubagentError({
+            message: `${task.agent} did not queue this instruction.`,
+          });
+      } finally {
+        unsubscribe();
+        this.steering.delete(child);
       }
     }
     return run.snapshot;
