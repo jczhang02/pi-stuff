@@ -1,6 +1,6 @@
 # Claude Code detailed UI observations
 
-This report answers two questions for the Pi Stuff conversation UI: what happens after `Esc`, and whether a separate collapse/expand marker is needed. The [capture gallery](../../prototypes/ui-session/detail-reference/index.html) contains the corresponding images, text captures, compressed ANSI streams and fixture exchanges. [简体中文](../i18n/zh-CN/research/claude-code-ui-details-2026-09-22.md)
+This report answers two questions for the Pi Stuff conversation UI: what happens after `Esc`, and whether a separate collapse/expand marker is needed. The [capture gallery](../../prototypes/ui-session/detail-reference/README.md) contains the corresponding images, text captures, compressed ANSI streams and fixture exchanges. [简体中文](../i18n/zh-CN/research/claude-code-ui-details-2026-09-22.md)
 
 ## Scope and method
 

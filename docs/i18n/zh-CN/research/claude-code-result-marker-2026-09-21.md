@@ -1,6 +1,6 @@
 # Claude Code 结果枝线实测
 
-[English](../../../research/claude-code-result-marker-2026-09-21.md) · [真实截图画廊](../../../../prototypes/ui-session/claude-reference/index.html)
+[English](../../../research/claude-code-result-marker-2026-09-21.md) · [真实截图画廊](../../../../prototypes/ui-session/claude-reference/README.md)
 
 ## 结论
 
@@ -43,8 +43,6 @@ classic 使用 `CLAUDE_CODE_NO_FLICKER=0`, fullscreen 使用 `1`. 两者均为 C
 
 以以上模式变量、隔离配置和本地 Messages endpoint 启动新的交互式发布版. 通过 endpoint 返回保留的工具调用块, 让客户端执行, 收到结果后返回最终文本. 发送 Ctrl+O 查看详情. 运行态 Python 先打印两行, 等二十秒再打印最后一行; 最后一行前发送 Escape. 无需永久安装测试框架或依赖.
 
-## 对 Pi 原型的影响
+## 与当前规格的关系
 
-保留原型已声明的 classic/旧 Pi 风格: 可见子结果摘要开头一个标记, 正文保持缩进, 展开子工具各有自己的标记. 原型 `Explored` 父摘要仍有枝线, 与 Claude 实测的收起检索摘要不同; 这是已有设计选择, 不再称为精确复刻. assistant 失败/中断仍遵守用户要求的普通文字策略. 观察到 Claude 的工具中断提示带枝线, 不等于授权改变该策略.
-
-本轮确定的是这些 Bash/Read/Edit 路径, 未覆盖 Web、MCP、agents、hooks、权限弹窗、纯 assistant 提供方失败或所有主题配置. 布局仍用描述性名称 "工具调用/结果块", 或旧项目的 Operation Block. 对字形作用, "从属内容连接符" 比 "已完成结果标记" 更准确; 这是我们的描述, 不是 Claude 官方组件名.
+研究确定连接符的作用与适用范围. 当前组摘要不使用 ⎿, 工具子结果使用一个, Esc 保留 Pi 原生展示. 统一规则见 [UI spec](../ui-spec.md); 不保留早期原型的过期差异描述.

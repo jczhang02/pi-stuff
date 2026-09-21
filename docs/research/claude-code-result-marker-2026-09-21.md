@@ -1,6 +1,6 @@
 # Claude Code result-marker execution study
 
-[简体中文](../i18n/zh-CN/research/claude-code-result-marker-2026-09-21.md) · [Actual capture gallery](../../prototypes/ui-session/claude-reference/index.html)
+[简体中文](../i18n/zh-CN/research/claude-code-result-marker-2026-09-21.md) · [Actual capture gallery](../../prototypes/ui-session/claude-reference/README.md)
 
 ## Finding
 
@@ -43,8 +43,6 @@ Create `a.txt` with `alpha`, `beta`, `gamma` and `b.txt` with `delta`, `epsilon`
 
 Start a fresh interactive release binary with the mode environment variable above, isolated config and a localhost Messages endpoint. Deliver the retained tool-use blocks through the endpoint, let the client execute them, then return the final text after receiving the tool results. Send Ctrl+O for the detailed view. For the running probe, the Python process prints two lines and sleeps twenty seconds; Escape is sent before its last print. No permanently installed harness or dependency is needed.
 
-## Implication for the Pi prototype
+## Relationship to the current spec
 
-Keep the prototype's declared classic/old-Pi-inspired hierarchy: one marker at the beginning of its visible child result summary, continued indentation for body rows, and separate markers for expanded children. Its `Explored` parent summary still has a marker, unlike the observed Claude collapsed retrieval summary; this is an existing design choice, not an exact Claude reproduction. Its plain assistant error/interruption policy remains the user's requested policy. Observing Claude's tool-attached interruption annotation does not authorize changing that policy.
-
-This run establishes the marker behavior of the named Bash/Read/Edit paths. It does not cover Web, MCP, agents, hooks, permissions, assistant-only provider failures or every theme/configuration. The layout terminology remains descriptive: tool invocation/result block, or the old project's Operation Block. For the glyph's role, "child-content connector" is more accurate than "completed-result marker"; it is our description, not an official Claude component name.
+This study establishes connector semantics and evidence limits. Current group summaries have no ⎿, tool child results have one, and Esc retains native Pi presentation. See the [UI spec](../ui-spec.md); obsolete differences from earlier prototypes are no longer requirements.

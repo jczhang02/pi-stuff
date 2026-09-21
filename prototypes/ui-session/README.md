@@ -1,49 +1,36 @@
-# Compact conversation TUI prototype
+# Pi Stuff conversation prototype
 
-[Gallery](gallery.html) · [Claude UI details, 09-22](detail-reference/index.html) · [Rules and sources](../../docs/research/ui-session-prototype-2026-09-21.md) · [中文规则](../../docs/i18n/zh-CN/research/ui-session-prototype-2026-09-21.md)
+[UI spec](../../docs/ui-spec.md) · [中文 UI spec](../../docs/i18n/zh-CN/ui-spec.md) · [Research](../../docs/research/README.md) · [中文 research](../../docs/i18n/zh-CN/research/README.md) · [All captures / 全部截图](captures/README.md)
 
-This isolated, throwaway prototype answers the five UI corrections in [#101](https://github.com/jczhang02/pi-stuff/issues/101). It starts from `d8ff7be` on a new `codex/ui-session-prototype` worktree. Previous previews are retained. Nothing loads this directory from the production entrypoint.
+This is the runnable, offline prototype for issue #101 and draft PR #102. Current design rules and selected screenshots live in the UI spec. This directory owns its welcome renderer, fixtures, interaction code and verification tools. No production entrypoint loads it.
 
-## Run
+这是 #101 / 草稿 PR #102 的可运行离线原型. 当前设计规则与精选截图统一在 UI spec. 本目录包含欢迎页、样例、交互代码及验证工具, 生产入口不加载.
 
-From the new worktree, with pinned Bun 1.4.0 dependencies installed:
+## Run / 启动
+
+From the `codex/ui-session-prototype` worktree, with pinned Bun 1.4.0 dependencies installed:
 
 ```sh
-bun prototypes/ui-session/run.ts
+bun prototypes/ui-session/run.ts --theme catppuccin-latte
 ```
 
-The default `live` scene begins at the retained welcome screen with an editable pagination request. Press Enter to run the first turn. After completion, submit `补充页内重复和全空过滤页, 展示完整测试结果.` for the second turn. Esc interrupts; a new submission resumes the interrupted step. Submitting during execution interrupts that response and resumes under the new user turn. Completed work remains in the transcript. After two completed turns, later submissions recap the retained result without claiming another tool run.
+Press Enter for the first turn, then submit `补充页内重复和全空过滤页, 展示完整测试结果.` for the second. Esc interrupts, a new submission resumes; input during execution first interrupts the current response. Later submissions after the second turn recap retained results. Empty editor + Ctrl+D exits and cleans temporary state.
 
-The responses follow this fixed two-turn script, not arbitrary language understanding. Input, streaming presentation, disclosure, cancellation, continuation and scrolling are real interactions. `live-error` injects one HTTP 503 before the first turn; submit again to retry. The older `session` scene remains a static overview.
-
-The launcher inherits the concrete `theme` and `hideThinkingBlock` fields from the current Pi agent settings. It supports the bundled Catppuccin Latte/Mocha themes; use `--theme` explicitly when settings are absent or use another theme or automatic pair. It never sends terminal palette setters or resets. Screenshot palette commands run only inside the separate headless capture PTY. It does not change Ghostty configuration or runtime default colors. A terminal previously recolored by the old launcher may need its theme reloaded separately; this launcher does not overwrite that existing state.
-
-The launcher uses the pinned Terminal Control foreground `run` command, named `pi-ui-session`, so the screen is shared from startup. It creates temporary Pi settings, session and working directories; exiting deletes them. No model account, network provider or real shell tool is used. Use an empty editor and Ctrl+D to exit. The terminal's live font comes from its settings; PNG exports use the explicitly pinned font stack in `launch.ts`.
+按 Enter 执行第一轮, 完成后提交上述请求进入第二轮. Esc 中断, 再提交恢复; 运行中提交先中断当前回答. 两轮后仅回顾既有结果. 空输入框按 Ctrl+D 退出并清理临时状态.
 
 ```sh
-# A shorter starting point for click exploration.
-bun prototypes/ui-session/run.ts investigate
-# Dynamic thinking -> running -> completion. Esc cancels.
-bun prototypes/ui-session/run.ts replay
-# Separate session names can coexist.
-bun prototypes/ui-session/run.ts web --theme catppuccin-latte --name pi-ui-web
-# Inspect or drive the foreground session from another terminal.
+bun prototypes/ui-session/run.ts investigate --theme catppuccin-latte
+bun prototypes/ui-session/run.ts web --theme catppuccin-mocha --name pi-ui-web
+bun prototypes/ui-session/run.ts replay --theme catppuccin-latte
 bun run tui show pi-ui-session
-bun run tui send pi-ui-session ctrl-o
 bun run tui stop pi-ui-session
 ```
 
-Click a tool for its full retained output. Click the activity summary to reveal compact children, then click one child to inspect it. Thoughts defaults follow Pi Hide thinking and can be clicked independently. Native Ctrl+T or /settings updates that default; Ctrl+O toggles tool detail; input stays editable. Pi's native scroll controls navigate the complete conversation. Resizing the outer foreground terminal updates the child; the CLI's `resize` command does not resize foreground `run` sessions.
+Click a group, tool or Thoughts to toggle that entry. Ctrl+O toggles tools only; native Ctrl+T or /settings controls Hide thinking. Drafts and native history scrolling remain available. Resize the outer terminal for foreground reflow; Terminal Control CLI resize does not resize a foreground run.
 
-User messages use Pi 0.85.1's exported `UserMessageComponent` with its native background, padding and Markdown behavior. The prototype does not install a footer; Pi renders the real isolated session status, including the `preview` model and context usage. These surfaces are outside the redesign. Esc interruption now also reuses the native `AssistantMessageComponent` aborted state, including its `Operation aborted` text, error color and padding. The offline timeline still simulates cancellation; this is native presentation, not a real provider abort.
+点击组、工具或 Thoughts 切换单项. Ctrl+O 只切换工具, 原生 Ctrl+T 或 /settings 控制 Hide thinking. 保留草稿与原生历史滚动. 前台缩放需调整外层终端, CLI resize 不调整 foreground run.
 
-Thoughts uses a muted leading dot in both states. Hidden: `• Thoughts for 4s`. Visible: `• Thoughts: The cursor already...  4s`, with the prefix and upright Markdown body on the same line; continuation lines align with message text. There is no separate heading or container. Compare the gallery's `Thoughts · hidden` and `Thoughts · no hidden` sections: captures set the isolated Pi preference explicitly. Foreground launches still inherit your setting; Ctrl+T changes it only inside the temporary preview host.
-
-The scenario is a pagination repair with coherent read, search, Web, edit, write and test steps. All results, Web pages, model labels and durations are samples. The replay has real elapsed animation but simulated execution. In static scenes, ordinary text submission returns the text to the editor. In live scenes, it drives the fixed offline script. Other native Pi commands are outside this preview's acceptance.
-
-## Scenes
-
-Pass a name as the first argument. Scene selection remains outside the evaluated UI.
+## Scenes / 场景
 
 | Name                            | Question                                                                                                      |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -65,39 +52,32 @@ Pass a name as the first argument. Scene selection remains outside the evaluated
 | `empty`                         | Are no output, command cancellation and image fallback honest?                                                |
 | `replay`                        | Does execution settle into compact output, and does Esc stop it?                                              |
 
-The current [folding study](../../docs/research/claude-code-tool-folding-2026-09-21.md) separates real Claude observations from the selected prototype rules. Successful local and Web retrieval starts a one-line summary from the first call. Expanded children align with ordinary tool rows. Thoughts stays independent and follows Pi hideThinkingBlock; visible prose, user turns, Thoughts, ordinary Bash, writes, failures, cancellation and warnings separate groups. Running calls remain visible until success. Bash retains three output rows; Edit retains six changed rows with one line-number column, +/- signs, semantic backgrounds and syntax highlighting. Old and new source are highlighted separately. Activity summaries have no result connector.
+## Environment and limits / 环境与边界
 
-## Capture and verification
+Pi 0.85.1 / Bun 1.4.0 / Terminal Control 1.2.1. The launcher inherits Pi theme and hideThinkingBlock, supports Catppuccin Latte/Mocha, and requires an explicit supported theme for other/automatic themes. It emits no terminal palette setters or resets and does not change Ghostty configuration. Isolated settings, working and session directories are deleted on exit. Only headless captures set their own PTY palette.
+
+启动继承 Pi theme 与 hideThinkingBlock, 支持 Catppuccin Latte/Mocha, 其他或自动主题须显式指定受支持主题. 不发送终端配色设置或重置指令, 不修改 Ghostty. 隔离配置、工作与会话目录在退出后删除, 只有无头截图设置自己的 PTY 配色.
+
+The editor, display, mouse, scrolling, timers and cancellation controls run in real Pi. Model replies, tools, Web pages, tests, labels and timings are fixed samples. This is not arbitrary language understanding, real provider execution, a general diff algorithm, production persistence or native desktop-compositor acceptance. Native aborted presentation is reused; provider/tool cancellation remains simulated.
+
+编辑器、显示、鼠标、滚动、计时和取消控制在真实 Pi 中运行. 模型回复、工具、网页、测试、标签及耗时为固定样例. 不代表任意自然语言理解、真实提供方执行、通用 diff 算法、生产持久化或原生桌面验收. 中断复用原生展示, 提供方/工具取消仍为模拟.
+
+## Capture and verification / 截图与验证
 
 ```sh
-bun prototypes/ui-session/verify-foreground.ts
+bun prototypes/ui-session/capture.ts welcome
+bun prototypes/ui-session/capture.ts investigate --interact
 bun prototypes/ui-session/capture.ts live --cancel
 bun prototypes/ui-session/capture.ts live-error --cols 80 --theme catppuccin-mocha
-bun prototypes/ui-session/capture.ts investigate --interact
-bun prototypes/ui-session/capture.ts web --interact
-bun prototypes/ui-session/capture.ts failures --interact
 bun prototypes/ui-session/capture.ts long-diff --interact --cols 80 --theme catppuccin-mocha
-bun prototypes/ui-session/capture.ts replay
 bun prototypes/ui-session/capture.ts replay --cancel
-bun prototypes/ui-session/build-gallery.ts
+bun prototypes/ui-session/verify-foreground.ts
 bun run check
 git diff --check
 ```
 
-`capture.ts` starts real Pi 0.85.1 under Bun with custom-message renderers, exports PNG/ANSI/text and closes the owned session and driver on all paths. It checks visible text, palette and cell clipping. Interactive cases preserve a Chinese editor draft through mouse disclosure and native Ctrl+O. Replay cancellation also waits past the would-be completion time. The foreground protocol probe also sends Kitty-encoded Escape to live and replay, in addition to legacy Escape. The screenshot index leaves test controls and explanations outside the evaluated TUI.
+The foreground verifier's inherited-theme case requires supported Pi settings; use disposable Catppuccin settings if the host uses another theme. The capture driver checks text, palette, clipping and selected interactions, exports PNG/ANSI/TXT and closes owned sessions. Update the Markdown capture appendix when adding states. No HTML generator is retained.
 
-The evidence does not establish production message overrides, general diff generation, real providers/tools, image protocols, persistence/replay or a native desktop compositor. Diff rows are explicitly authored context/add/remove fixtures with true line numbers, not an implementation of a general diff algorithm. No production dependencies or entrypoints changed.
+前台验证的继承主题场景要求受支持的 Pi 设置; 宿主使用其他主题时用临时 Catppuccin 设置验证. 截图驱动检查文本、配色、裁切和所选交互, 导出 PNG/ANSI/TXT 后关闭自建会话. 新增状态后更新 Markdown 截图附录. 不再保留 HTML 生成器.
 
-## 中文使用说明
-
-在新 worktree 执行 `bun prototypes/ui-session/run.ts`, 即可进入连续交互会话. 欢迎页输入框有可编辑的分页请求, 按 Enter 启动第一轮; 完成后输入 "补充页内重复和全空过滤页, 展示完整测试结果." 进入第二轮. Esc 中断后再提交可继续未完成步骤, 运行中提交会先中断当前回答. 两轮完成后继续提交只回顾现有结果. `live-error` 首次提交会遇到 HTTP 503, 再提交可重试. `session` 保留静态总览. `investigate` 适合逐项点击, `web` 查看统一 Web 样式, `replay` 演示思考、执行和完成, 可按 Esc 中断. 其他场景名见上表. 空输入时 Ctrl+D 退出并清理临时目录.
-
-用户消息直接复用 Pi 0.85.1 的原生 `UserMessageComponent`, 保留背景、留白和 Markdown 行为. 原型不再覆盖 footer, 状态栏由 Pi 显示隔离会话的实际信息, 包括 `preview` 模型和上下文用量. 这两部分不属于本轮改版. Esc 中断也复用原生 `AssistantMessageComponent` 的 aborted 状态, 保留 `Operation aborted` 文案、错误色和边距. 离线时间线仍模拟取消执行, 此处复用原生展示, 不代表真实提供方中断.
-
-Thoughts 两种状态都保留灰色前导点. hidden 显示 `• Thoughts for 4s`; no hidden 显示 `• Thoughts: The cursor already...  4s`, 前缀与正体 Markdown 正文同一行, 续行与消息正文对齐, 不增加独立标题或容器. 画廊的 `Thoughts · hidden` 和 `Thoughts · no hidden` 分别在隔离 Pi 中设置对应默认值并截图. 前台启动仍继承你的设置, Ctrl+T 只修改临时原型环境.
-
-点击活动摘要 展开调用清单, 再点一项看正文; Thoughts 独立显示, 默认服从 Pi 的 Hide thinking, 点击可单独切换; 原生 Ctrl+T 或 /settings 修改默认显示, Ctrl+O 只切换工具详情. 输入框由 Pi 管理. 前台终端尺寸随外层终端变化, 完整会话用 Pi 原生滚动查看. 可在另一个终端用 `bun run tui show pi-ui-session` 检查同一会话.
-
-执行、网页、模型标签、测试及耗时均为样例, 动态场景按实际计时播放. 静态场景的普通提交保留为草稿; 连续场景按固定两轮脚本响应, 不理解任意自然语言, 不调用模型. 本轮只验证原型展示和交互, 不代表生产实现已采纳. 截图来自真实终端输出, 配色和字体明确设置, 没有在图片上重绘界面.
-
-交互启动继承当前 Pi 的 theme 与 hideThinkingBlock 字段, 支持内置的 Catppuccin Latte/Mocha; 没有设置或使用其他主题/自动主题对时, 请显式传入 `--theme`. 前台不会发送终端颜色设置或重置指令, 不修改 Ghostty 配置及动态默认颜色. 固定截图配色只作用于独立的无头 PTY. 旧启动器已经改变的终端颜色需要单独重新加载主题; 新启动器不会覆盖已有状态.
+Export font: `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`.

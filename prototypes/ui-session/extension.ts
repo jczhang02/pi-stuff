@@ -8,7 +8,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import {Box, Text, matchesKey, Key, type TUI} from '@earendil-works/pi-tui';
 import {getEntries, replayResult} from './fixtures';
-import {welcomeLines} from '../ui-direction/welcome';
+import {welcomeLines} from './welcome';
 import {entryComponent, expansionFor, expandAll} from './render';
 import {LiveSession} from './live-session';
 

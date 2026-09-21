@@ -1,6 +1,6 @@
 # Claude Code 详细 UI 观察
 
-这份报告回答 Pi Stuff conversation UI 的两个问题: `Esc` 中断后应该怎么显示, 以及是否需要单独的 collapse/expand 标识. 对应截图, 文本捕获, 压缩 ANSI 和 fixture exchange 保存在[捕获画廊](../../../../prototypes/ui-session/detail-reference/index.html). [English](../../../research/claude-code-ui-details-2026-09-22.md)
+这份报告回答 Pi Stuff conversation UI 的两个问题: `Esc` 中断后应该怎么显示, 以及是否需要单独的 collapse/expand 标识. 对应截图, 文本捕获, 压缩 ANSI 和 fixture exchange 保存在[捕获画廊](../../../../prototypes/ui-session/detail-reference/README.md). [English](../../../research/claude-code-ui-details-2026-09-22.md)
 
 ## 范围和方法
 
