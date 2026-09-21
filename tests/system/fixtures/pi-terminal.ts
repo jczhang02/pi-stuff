@@ -29,12 +29,27 @@ const Request = Schema.Struct({
   ),
 });
 
+export type PiFixtureRequest = Schema.Schema.Type<typeof Request>;
+
+export type PiFixtureResponse =
+  | {readonly type: 'content'; readonly content: string}
+  | {
+      readonly type: 'tool_call';
+      readonly name: string;
+      readonly arguments: string;
+    };
+
+export type PiFixtureResponseCallback = (
+  request: PiFixtureRequest,
+) => PiFixtureResponse | undefined | Promise<PiFixtureResponse | undefined>;
+
 // The real host loads the product entrypoint. Only the external model is deterministic.
 export async function launchPi(
   configuration = '{}',
   extraExtension?: string,
-  profile: 'rtk' | 'web' = 'rtk',
+  profile: 'rtk' | 'web' | 'subagent' = 'rtk',
   mode: 'regular' | 'fullscreen' = 'fullscreen',
+  responseCallback?: PiFixtureResponseCallback,
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
   const agent = join(directory, 'agent');
@@ -57,23 +72,44 @@ export async function launchPi(
       const body = Schema.decodeUnknownSync(Request)(await request.json());
       offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
-      const finished = last?.role === 'tool' || tool === '';
       if (last?.role === 'tool')
         result = Schema.is(Schema.String)(last.content)
           ? last.content
           : JSON.stringify(last.content);
-      const delta = finished
-        ? {content: `RTK_TURN_${turn}_DONE`}
-        : {
-            tool_calls: [
-              {
-                index: 0,
-                id: `rtk_${turn}`,
-                type: 'function',
-                function: {name: tool, arguments: args},
-              },
-            ],
-          };
+      const callbackResponse = responseCallback
+        ? await responseCallback(body)
+        : undefined;
+      const finished = callbackResponse
+        ? callbackResponse.type === 'content'
+        : last?.role === 'tool' || tool === '';
+      const delta = callbackResponse
+        ? callbackResponse.type === 'content'
+          ? {content: callbackResponse.content}
+          : {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: `fixture_${turn}_${body.messages.length}`,
+                  type: 'function',
+                  function: {
+                    name: callbackResponse.name,
+                    arguments: callbackResponse.arguments,
+                  },
+                },
+              ],
+            }
+        : finished
+          ? {content: `RTK_TURN_${turn}_DONE`}
+          : {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: `rtk_${turn}`,
+                  type: 'function',
+                  function: {name: tool, arguments: args},
+                },
+              ],
+            };
       const chunk = {
         id: `chat_${turn}`,
         object: 'chat.completion.chunk',
@@ -158,7 +194,10 @@ export async function launchPi(
         '--no-approve',
         ...(profile === 'web'
           ? ['--no-builtin-tools']
-          : ['--tools', 'bash,read']),
+          : [
+              '--tools',
+              profile === 'subagent' ? 'bash,read,subagent' : 'bash,read',
+            ]),
         '--provider',
         'fixture',
         '--model',
