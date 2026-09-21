@@ -14,6 +14,10 @@ import {fleetLines, type FleetRow} from './fleet';
 import {mainFooter} from './main-footer';
 import {Inspection} from './inspection';
 import {GraphView} from './graph-view';
+import {Intervention, type InterventionAction} from './intervention';
+import {DocumentView} from './document-view';
+import {HistoryView} from './history-view';
+import {TranscriptView} from './transcript-view';
 import type {Runs} from './runs';
 
 class SubagentEditor extends CustomEditor {
@@ -107,7 +111,14 @@ export class SubagentUI {
   private footer = false;
   private focus: 'editor' | 'fleet' | 'panel' = 'editor';
   private selected = 0;
-  private readonly panels: (Inspection | GraphView)[] = [];
+  private readonly panels: (
+    | Inspection
+    | GraphView
+    | DocumentView
+    | HistoryView
+    | TranscriptView
+  )[] = [];
+  private intervention: Intervention | undefined;
 
   constructor(private readonly runs: Runs) {}
 
@@ -125,6 +136,20 @@ export class SubagentUI {
     ctx.ui.setEditorComponent((tui, theme, keys) => {
       this.tui = tui;
       this.keys = keys;
+      this.intervention = new Intervention(
+        tui,
+        theme,
+        keys,
+        this.runs,
+        ctx,
+        accepted => {
+          if (this.ctx !== ctx) return;
+          const panel = this.panels.at(-1);
+          if (accepted && panel instanceof Inspection) panel.handleInput('f');
+          tui.setFocus(this.input);
+          this.refresh();
+        },
+      );
       this.editor = new SubagentEditor(tui, theme, keys, this);
       for (const entry of ctx.sessionManager.getBranch()) {
         if (entry.type !== 'message' || entry.message.role !== 'user') continue;
@@ -150,6 +175,8 @@ export class SubagentUI {
   private refresh(): void {
     const ctx = this.ctx;
     if (!ctx) return;
+    const panel = this.panels.at(-1);
+    if (panel instanceof TranscriptView) panel.refresh();
     if (!this.footer && this.rows().length) {
       this.footer = true;
       ctx.ui.setFooter((tui, _theme, data) => {
@@ -223,7 +250,8 @@ export class SubagentUI {
     if (this.focus === 'editor') return false;
     if (matchesKey(data, 'escape')) {
       if (this.focus === 'panel') {
-        this.panels.pop();
+        const closed = this.panels.pop();
+        if (closed instanceof TranscriptView) closed.dispose();
         if (!this.panels.length) this.open();
       } else {
         this.focus = 'editor';
@@ -234,18 +262,70 @@ export class SubagentUI {
     }
     const panel = this.panels.at(-1);
     if (this.focus === 'panel' && panel) {
-      if (panel instanceof GraphView) {
+      if (panel instanceof TranscriptView) {
+        panel.handleInput(data);
+      } else if (panel instanceof DocumentView) {
+        if (data === 'h' && !panel.request)
+          this.panels.push(new HistoryView(panel.row));
+        else if (
+          data === 't' &&
+          this.tui &&
+          (panel.request ?? panel.row.task).sessionFile
+        )
+          this.panels.push(
+            new TranscriptView(panel.row, this.runs, this.tui, panel.request),
+          );
+        else panel.handleInput(data);
+      } else if (panel instanceof HistoryView) {
+        const request = panel.selectedRecord();
+        if (request && keys.matches(data, 'tui.select.confirm'))
+          this.panels.push(new DocumentView(panel.row, request));
+        else panel.handleInput(data);
+      } else if (panel instanceof GraphView) {
         const task = panel.selectedTask();
         if (task && keys.matches(data, 'tui.select.confirm'))
-          this.panels.push(new Inspection({run: panel.run, task}));
+          this.panels.push(
+            new Inspection({run: panel.run, task}, () =>
+              this.runs.queuedReason(panel.run.id, task.id),
+            ),
+          );
         else panel.handleInput(data, keys);
       } else if (
         data === 'g' &&
         panel.row.run.tasks.some(task => task.needs.length)
       ) {
         if (this.panels.at(-2) instanceof GraphView) this.panels.pop();
-        else this.panels.push(new GraphView(panel.row.run, panel.row.task.id));
-      } else panel.handleInput(data);
+        else
+          this.panels.push(
+            new GraphView(panel.row.run, panel.row.task.id, id =>
+              this.runs.queuedReason(panel.row.run.id, id),
+            ),
+          );
+      } else if (data === 'i') {
+        this.panels.push(new DocumentView(panel.currentRow()));
+      } else if (
+        data === 't' &&
+        panel.currentRow().task.sessionFile &&
+        this.tui
+      ) {
+        this.panels.push(
+          new TranscriptView(panel.currentRow(), this.runs, this.tui),
+        );
+      } else {
+        const row = panel.currentRow();
+        const action =
+          data === 'x'
+            ? 'stop'
+            : keys.matches(data, 'tui.select.confirm') && row.task.question
+              ? 'reply'
+              : data === 'm'
+                ? this.primaryAction(row)
+                : undefined;
+        if (action && this.intervention) {
+          panel.freeze();
+          this.intervention.open(row, action);
+        } else panel.handleInput(data);
+      }
       this.refresh();
       return true;
     }
@@ -255,7 +335,11 @@ export class SubagentUI {
       data === 'g' &&
       selectedRow?.run.tasks.some(task => task.needs.length)
     ) {
-      this.panels.push(new GraphView(selectedRow.run, selectedRow.task.id));
+      this.panels.push(
+        new GraphView(selectedRow.run, selectedRow.task.id, id =>
+          this.runs.queuedReason(selectedRow.run.id, id),
+        ),
+      );
       this.focus = 'panel';
       this.ctx?.ui.setWorkingVisible(false);
     } else if (keys.matches(data, 'tui.select.up'))
@@ -265,7 +349,11 @@ export class SubagentUI {
     else if (keys.matches(data, 'tui.select.confirm')) {
       const row = rows[this.selected - 1];
       if (row) {
-        this.panels.push(new Inspection(row));
+        this.panels.push(
+          new Inspection(row, () =>
+            this.runs.queuedReason(row.run.id, row.task.id),
+          ),
+        );
         this.focus = 'panel';
         this.ctx?.ui.setWorkingVisible(false);
       } else {
@@ -282,6 +370,16 @@ export class SubagentUI {
     if (width < 40 || this.tui.terminal.rows < 16)
       return wrapTextWithAnsi('Resize terminal.\nesc back', Math.max(1, width));
     const panel = this.panels.at(-1);
+    if (
+      panel instanceof DocumentView ||
+      panel instanceof HistoryView ||
+      panel instanceof TranscriptView
+    )
+      return panel.render(
+        width,
+        Math.floor(this.tui.terminal.rows / 2),
+        this.ctx.ui.theme,
+      );
     if (panel instanceof GraphView) {
       const help = wrapTextWithAnsi(
         this.ctx.ui.theme.fg(
@@ -299,14 +397,62 @@ export class SubagentUI {
         ...help,
       ];
     }
-    return panel?.render(
-      width,
-      Math.floor(this.tui.terminal.rows / 2),
-      this.ctx.ui.theme,
-    );
+    if (!panel) return [];
+    const composer = this.intervention?.active
+      ? this.intervention.render(width, this.tui.terminal.rows - 10)
+      : [];
+    if (composer.length && composer.length + 6 > this.tui.terminal.rows - 6)
+      return wrapTextWithAnsi(
+        'Resize terminal to edit this message.\nesc back',
+        width,
+      );
+    const row = panel.currentRow();
+    const primary = this.primaryAction(row);
+    const actions = [
+      row.task.question && !this.intervention?.unavailable(row, 'reply')
+        ? keyHint('tui.select.confirm', 'reply')
+        : '',
+      primary && !this.intervention?.unavailable(row, primary)
+        ? `m ${primary}`
+        : '',
+      !this.intervention?.unavailable(row, 'stop') ? 'x stop' : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return [
+      ...panel.render(
+        width,
+        Math.max(
+          4,
+          Math.min(
+            this.tui.terminal.rows - 6,
+            Math.max(
+              Math.floor(this.tui.terminal.rows / 2),
+              composer.length + 6,
+            ),
+          ) - composer.length,
+        ),
+        this.ctx.ui.theme,
+        actions,
+        composer.length > 0,
+      ),
+      ...composer,
+    ];
+  }
+
+  private primaryAction(row: FleetRow): InterventionAction | undefined {
+    return row.task.status === 'running'
+      ? 'message'
+      : row.task.status === 'completed'
+        ? 'follow-up'
+        : row.task.status === 'failed' || row.task.status === 'stopped'
+          ? 'resume'
+          : undefined;
   }
 
   dispose(): void {
+    this.intervention?.dispose();
+    this.intervention = undefined;
     clearInterval(this.timer);
     this.unsubscribe?.();
     this.unsubscribe = undefined;
@@ -321,6 +467,8 @@ export class SubagentUI {
     this.keys = undefined;
     this.footer = false;
     this.focus = 'editor';
+    for (const panel of this.panels)
+      if (panel instanceof TranscriptView) panel.dispose();
     this.panels.length = 0;
     this.selected = 0;
   }

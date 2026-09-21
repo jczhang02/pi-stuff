@@ -232,3 +232,42 @@ test('concurrency bounds each ready wave', async () => {
   expect(maximum).toBe(2);
   expect(result.outcomes).toHaveLength(3);
 });
+
+test('observes runnable waves and clears after each wave', async () => {
+  const waveEvents: string[][] = [];
+  let active = 0;
+  let maximum = 0;
+  const result = await runWaveScheduler(
+    [
+      {id: 'first'},
+      {id: 'second'},
+      {id: 'third'},
+      {id: 'review', needs: ['first']},
+    ],
+    2,
+    new Map<string, string>(),
+    new Set<string>(),
+    async task => {
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      active--;
+      return {status: 'completed', output: `${task.id} output`};
+    },
+    ids => waveEvents.push([...ids]),
+  );
+
+  expect(waveEvents).toEqual([
+    ['first', 'second', 'third'],
+    [],
+    ['review'],
+    [],
+  ]);
+  expect(maximum).toBe(2);
+  expect(result.outcomes.map(outcome => outcome.id)).toEqual([
+    'first',
+    'second',
+    'third',
+    'review',
+  ]);
+});

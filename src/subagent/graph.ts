@@ -196,6 +196,8 @@ export interface SchedulerResult {
   readonly skipped: readonly SkippedTask[];
 }
 
+export type WaveObserver = (ids: readonly string[]) => void;
+
 interface IndexedTask<T extends SchedulerTask> {
   readonly task: T;
   readonly index: number;
@@ -254,6 +256,7 @@ function schedule<T extends SchedulerTask>(
   outputs: Map<string, string>,
   settled: Set<string>,
   run: (task: T, index: number) => Promise<SchedulerTaskOutcome>,
+  onWave: WaveObserver | undefined,
 ): Effect.Effect<SchedulerResult> {
   return Effect.gen(function* () {
     const outcomes: SchedulerTaskResult[] = [];
@@ -301,7 +304,14 @@ function schedule<T extends SchedulerTask>(
         runnable.push(item);
       }
 
-      const waveOutcomes = yield* runWave(runnable, limit, run);
+      if (runnable.length === 0) continue;
+      let waveOutcomes: readonly IndexedOutcome[];
+      try {
+        onWave?.(runnable.map(item => item.task.id));
+        waveOutcomes = yield* runWave(runnable, limit, run);
+      } finally {
+        onWave?.([]);
+      }
       for (const item of waveOutcomes) {
         const task = tasks[item.index];
         if (!task) continue;
@@ -327,6 +337,7 @@ export async function runWaveScheduler<T extends SchedulerTask>(
   outputs: Map<string, string>,
   settled: Set<string>,
   run: (task: T, index: number) => Promise<SchedulerTaskOutcome>,
+  onWave?: WaveObserver,
 ): Promise<SchedulerResult> {
   const external = new Set([...settled, ...outputs.keys()]);
   const nodes = buildGraph(tasks, 'parallel', external);
@@ -339,6 +350,7 @@ export async function runWaveScheduler<T extends SchedulerTask>(
       outputs,
       settled,
       run,
+      onWave,
     ),
   );
 }

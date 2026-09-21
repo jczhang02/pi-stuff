@@ -31,6 +31,7 @@ interface Run {
   waiters: Set<() => void>;
   configurations: Map<string, ResolvedConfiguration>;
   continuing: boolean;
+  wave: Set<string>;
 }
 
 export class Runs {
@@ -298,6 +299,7 @@ export class Runs {
       waiters,
       configurations,
       continuing: false,
+      wave: new Set(),
     };
   }
 
@@ -320,6 +322,10 @@ export class Runs {
           applyUpstream(task.task, task.needs, outputs),
           base?.workspace?.branch,
         );
+      },
+      ids => {
+        run.wave = new Set(ids);
+        this.changed();
       },
     );
     for (const skipped of result.skipped) {
@@ -532,6 +538,39 @@ export class Runs {
     const task = run.tasks.find(task => task.id === taskId);
     if (!task) throw new SubagentError({message: `Unknown task: ${taskId}`});
     return task;
+  }
+
+  queuedReason(runId: string, taskId: string): string | undefined {
+    const run = this.get(runId);
+    const task = run.snapshot.tasks.find(task => task.id === taskId);
+    if (!task || task.status !== 'queued') return undefined;
+    const pending = task.needs
+      .map(id => run.snapshot.tasks.find(task => task.id === id))
+      .filter(
+        prerequisite =>
+          prerequisite &&
+          (prerequisite.status !== 'completed' || prerequisite.finalizing),
+      );
+    if (pending.length)
+      return `Waiting for ${pending.map(task => `${task?.agent} (${task?.status})`).join(', ')}`;
+    if (run.wave.has(taskId))
+      return 'Waiting for available concurrency in the current wave.';
+    if (run.wave.size) return 'Waiting for the current wave to finish.';
+    return 'Waiting for the scheduler to start this request.';
+  }
+
+  /** Public native inputs for read-only child evidence rendering. */
+  async readSession(runId: string, taskId: string) {
+    const run = this.get(runId);
+    const task = run.snapshot.tasks.find(task => task.id === taskId);
+    if (!task) throw new SubagentError({message: `Unknown task: ${taskId}`});
+    const child = run.children.get(taskId);
+    const sessionManager =
+      child?.sessionManager ?? (await this.savedSession(task));
+    return {
+      sessionManager,
+      getToolDefinition: (name: string) => child?.getToolDefinition(name),
+    };
   }
 
   async wait(runId: string, timeoutMs?: number): Promise<RunSnapshot> {

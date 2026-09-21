@@ -60,6 +60,7 @@ export class GraphView {
   constructor(
     readonly run: RunSnapshot,
     selectedTaskId: string,
+    private readonly queuedReason?: (taskId: string) => string | undefined,
   ) {
     this.selected = run.tasks.some(task => task.id === selectedTaskId)
       ? selectedTaskId
@@ -244,9 +245,10 @@ export class GraphView {
       .map(id => this.run.tasks.find(task => task.id === id))
       .filter(task => task && (task.status !== 'completed' || task.finalizing));
     const detail =
-      selected.task.status === 'queued' && pending.length
+      this.queuedReason?.(selected.task.id) ??
+      (selected.task.status === 'queued' && pending.length
         ? `Waiting for ${pending.map(task => task?.agent).join(', ')} · ${selected.task.agent}`
-        : `${state} · ${selected.task.agent} · ${requestTime(selected.task, Date.now())} · ${requestTokens(selected.task)}`;
+        : `${state} · ${selected.task.agent} · ${requestTime(selected.task, Date.now())} · ${requestTokens(selected.task)}`);
     return [
       theme.fg(
         'accent',

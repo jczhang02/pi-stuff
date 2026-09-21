@@ -159,7 +159,7 @@ test('a wrapped quotation retains its content anchor across repeated resizing', 
   const report = Array.from(
     {length: 35},
     (_, index) =>
-      `> PARA_${String(index).padStart(2, '0')} Read the cancellation boundary and preserve the previous task report for later review.`,
+      `> PARA_${String(index).padStart(2, '0')} Read the cancellation boundary and preserve the previous task report for ref${String(index).padStart(2, '0')} review.`,
   ).join('\n>\n');
   const host = await launchPi(
     '{}',
@@ -197,12 +197,19 @@ test('a wrapped quotation retains its content anchor across repeated resizing', 
       timeoutMs: 5000,
     });
     const before = await host.terminal.screen.text();
-    const paragraph = before.match(/PARA_\d+/)?.[0];
-    expect(paragraph).toBeDefined();
+    const fragment = before
+      .split('\n')
+      .find(line => line.trim().startsWith('│') && line.includes('ref'))
+      ?.replace(/^\s*│\s*/, '')
+      .trim();
+    expect(fragment).toBeDefined();
     await host.terminal.resize({cols: 120, rows: 36});
     await host.terminal.screen.waitForText('/ 71', {timeoutMs: 5000});
     const after = await host.terminal.screen.text();
-    expect(after.match(/PARA_\d+/)?.[0]).toBe(paragraph);
+    const firstContent = after
+      .split('\n')
+      .find(line => line.trim().startsWith('│') && line.trim() !== '│');
+    expect(firstContent).toContain(fragment ?? 'missing reading fragment');
   } finally {
     await host.close();
   }
