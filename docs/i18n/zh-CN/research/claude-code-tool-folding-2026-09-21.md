@@ -2,7 +2,7 @@
 
 [English](../../../research/claude-code-tool-folding-2026-09-21.md)
 
-本轮更新 [#101](https://github.com/jczhang02/pi-stuff/issues/101), 将连续活动聚合与单个工具的输出预览分开讨论. [可运行原型](../../../../prototypes/ui-session/README.md)已实现下方选定规则. 先前的“两次起聚合”和 Thoughts 切断规则被本轮取代.
+本轮更新 [#101](https://github.com/jczhang02/pi-stuff/issues/101), 将连续活动聚合与单个工具的输出预览分开讨论. [可运行原型](../../../../prototypes/ui-session/README.md)已实现下方选定规则. 先前的"两次起聚合"和 Thoughts 切断规则被本轮取代.
 
 ## 真实客户端证据
 
