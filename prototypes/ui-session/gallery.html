@@ -116,17 +116,24 @@
       preview 模型与上下文用量.
     </li>
     <li>
-      成功的 Read/Grep/Find/Ls 从一次起显示活动摘要, 后续连续调用合并; Thinking
-      不切断组, 正文、普通 Bash、写入、Web 与失败切断. 点击组查看调用,
-      再点一项查看内容.
+      成功的 Read/Grep/Find/Ls 与 WebSearch/WebFetch/WebRead 参与活动聚合.
+      点击展开后, 子工具与普通消息左侧对齐. Thoughts、正文、普通
+      Bash、写入与失败保留独立位置.
     </li>
     <li>
       工具采用 "操作与目标 / 结果" 两层, 称为工具调用/结果块. 每个结果摘要一个
       ⎿, 续行只缩进; 展开的独立子工具各有自己的标记. Write、Web 默认收起, Bash
-      保留三行输出, Edit 保留三行短 diff. 活动摘要不用 ⎿.
+      保留三行输出, Edit 保留六行 diff, 使用单列行号、增删底色及语法高亮.
+      活动摘要不用 ⎿.
     </li>
-    <li>WebSearch / WebFetch / WebRead 共用相同样式; 元数据只在展开后显示.</li>
-    <li>Thoughts 显示耗时, 点击阅读正文. 回答失败或中断保持普通文字.</li>
+    <li>
+      WebSearch / WebFetch / WebRead 在组内保留动作名称; 元数据只在展开后显示.
+    </li>
+    <li>
+      Thoughts 服从 Pi hideThinkingBlock: 隐藏时显示耗时, 显示时呈现正文. 原生
+      Ctrl+T 或 /settings 可切换, 点击只改变单条思考, Ctrl+O 不覆盖思考设置.
+      回答失败或中断保持普通文字.
+    </li>
   </ul>
   <nav>
     <a href="#live">连续交互会话</a><a href="#live-error">回答失败后重试</a
@@ -136,6 +143,7 @@
     ><a href="#web">Web 家族</a><a href="#changes">修改与验证</a
     ><a href="#running">执行中</a><a href="#failures">工具失败与空结果</a
     ><a href="#long-output">长输出</a><a href="#thoughts">思考过程</a
+    ><a href="#thoughts-visible">显示思考正文</a
     ><a href="#interrupted">回答中断</a><a href="#response-error">回答失败</a
     ><a href="#empty">无输出与取消</a><a href="#replay">动态执行</a>
   </nav>
@@ -784,10 +792,7 @@
   </section>
   <section id="folding">
     <h2>折叠边界</h2>
-    <p>
-      Thinking 不切断检索组; 正文、普通 Bash 和失败调用保留独立位置.
-      展开按原始顺序查看.
-    </p>
+    <p>展开工具与普通消息对齐; Thoughts 独立服从 Pi 设置, 失败调用仍可见.</p>
     <code>bun prototypes/ui-session/run.ts folding</code>
     <div class="grid">
       <figure>
@@ -822,12 +827,12 @@
         </p>
       </figure>
       <figure>
-        <figcaption>按原始顺序展开组内思考 · 浅色 · 120 列</figcaption>
+        <figcaption>独立展开思考正文 · 浅色 · 120 列</figcaption>
         <a href="captures/folding-catppuccin-latte-120-thought-open.png"
           ><img
             loading="lazy"
             src="captures/folding-catppuccin-latte-120-thought-open.png"
-            alt="折叠边界 / 按原始顺序展开组内思考 · 浅色 · 120 列"
+            alt="折叠边界 / 独立展开思考正文 · 浅色 · 120 列"
         /></a>
         <p>
           <a href="captures/folding-catppuccin-latte-120-thought-open.txt"
@@ -869,12 +874,12 @@
         </p>
       </figure>
       <figure>
-        <figcaption>按原始顺序展开组内思考 · 深色 · 80 列</figcaption>
+        <figcaption>独立展开思考正文 · 深色 · 80 列</figcaption>
         <a href="captures/folding-catppuccin-mocha-80-thought-open.png"
           ><img
             loading="lazy"
             src="captures/folding-catppuccin-mocha-80-thought-open.png"
-            alt="折叠边界 / 按原始顺序展开组内思考 · 深色 · 80 列"
+            alt="折叠边界 / 独立展开思考正文 · 深色 · 80 列"
         /></a>
         <p>
           <a href="captures/folding-catppuccin-mocha-80-thought-open.txt"
@@ -927,6 +932,19 @@
         </p>
       </figure>
       <figure>
+        <figcaption>展开探索组 · 浅色 · 120 列</figcaption>
+        <a href="captures/web-catppuccin-latte-120-group-open.png"
+          ><img
+            loading="lazy"
+            src="captures/web-catppuccin-latte-120-group-open.png"
+            alt="Web 家族 / 展开探索组 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/web-catppuccin-latte-120-group-open.txt">文本</a> ·
+          <a href="captures/web-catppuccin-latte-120-group-open.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
         <figcaption>默认状态 · 浅色 · 120 列</figcaption>
         <a href="captures/web-catppuccin-latte-120-main.png"
           ><img
@@ -956,7 +974,7 @@
   </section>
   <section id="changes">
     <h2>修改与验证</h2>
-    <p>Edit 默认展示最多 3 行差异; Write 只报写入结果, 点击查看高亮代码.</p>
+    <p>Edit 默认展示最多 6 行高亮差异; Write 只报写入结果, 点击查看高亮代码.</p>
     <code>bun prototypes/ui-session/run.ts changes</code>
     <div class="grid">
       <figure>
@@ -1120,16 +1138,158 @@
         </p>
       </figure>
       <figure>
-        <figcaption>展开 Thoughts · 浅色 · 120 列</figcaption>
+        <figcaption>点击切换思考正文 · 浅色 · 120 列</figcaption>
         <a href="captures/thoughts-catppuccin-latte-120-open.png"
           ><img
             loading="lazy"
             src="captures/thoughts-catppuccin-latte-120-open.png"
-            alt="思考过程 / 展开 Thoughts · 浅色 · 120 列"
+            alt="思考过程 / 点击切换思考正文 · 浅色 · 120 列"
         /></a>
         <p>
           <a href="captures/thoughts-catppuccin-latte-120-open.txt">文本</a> ·
           <a href="captures/thoughts-catppuccin-latte-120-open.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>原生 Ctrl+T 切换 Hide thinking · 浅色 · 120 列</figcaption>
+        <a href="captures/thoughts-catppuccin-latte-120-setting-toggled.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-catppuccin-latte-120-setting-toggled.png"
+            alt="思考过程 / 原生 Ctrl+T 切换 Hide thinking · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-catppuccin-latte-120-setting-toggled.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/thoughts-catppuccin-latte-120-setting-toggled.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+    </div>
+  </section>
+  <section id="thoughts-visible">
+    <h2>显示思考正文</h2>
+    <p>
+      hideThinkingBlock=false 时默认显示正文; 原生 Ctrl+T
+      或设置菜单切换默认样式.
+    </p>
+    <code>bun prototypes/ui-session/run.ts thoughts-visible</code>
+    <div class="grid">
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/thoughts-visible-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-visible-catppuccin-latte-120-main.png"
+            alt="显示思考正文 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-visible-catppuccin-latte-120-main.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/thoughts-visible-catppuccin-latte-120-main.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>点击切换思考正文 · 浅色 · 120 列</figcaption>
+        <a href="captures/thoughts-visible-catppuccin-latte-120-open.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-visible-catppuccin-latte-120-open.png"
+            alt="显示思考正文 / 点击切换思考正文 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-visible-catppuccin-latte-120-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/thoughts-visible-catppuccin-latte-120-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>原生 Ctrl+T 切换 Hide thinking · 浅色 · 120 列</figcaption>
+        <a
+          href="captures/thoughts-visible-catppuccin-latte-120-setting-toggled.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-visible-catppuccin-latte-120-setting-toggled.png"
+            alt="显示思考正文 / 原生 Ctrl+T 切换 Hide thinking · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a
+            href="captures/thoughts-visible-catppuccin-latte-120-setting-toggled.txt"
+            >文本</a
+          >
+          ·
+          <a
+            href="captures/thoughts-visible-catppuccin-latte-120-setting-toggled.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 深色 · 80 列</figcaption>
+        <a href="captures/thoughts-visible-catppuccin-mocha-80-main.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-visible-catppuccin-mocha-80-main.png"
+            alt="显示思考正文 / 默认状态 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-visible-catppuccin-mocha-80-main.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/thoughts-visible-catppuccin-mocha-80-main.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>点击切换思考正文 · 深色 · 80 列</figcaption>
+        <a href="captures/thoughts-visible-catppuccin-mocha-80-open.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-visible-catppuccin-mocha-80-open.png"
+            alt="显示思考正文 / 点击切换思考正文 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/thoughts-visible-catppuccin-mocha-80-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/thoughts-visible-catppuccin-mocha-80-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>原生 Ctrl+T 切换 Hide thinking · 深色 · 80 列</figcaption>
+        <a
+          href="captures/thoughts-visible-catppuccin-mocha-80-setting-toggled.png"
+          ><img
+            loading="lazy"
+            src="captures/thoughts-visible-catppuccin-mocha-80-setting-toggled.png"
+            alt="显示思考正文 / 原生 Ctrl+T 切换 Hide thinking · 深色 · 80 列"
+        /></a>
+        <p>
+          <a
+            href="captures/thoughts-visible-catppuccin-mocha-80-setting-toggled.txt"
+            >文本</a
+          >
+          ·
+          <a
+            href="captures/thoughts-visible-catppuccin-mocha-80-setting-toggled.ansi"
+            >ANSI</a
+          >
         </p>
       </figure>
     </div>
@@ -1299,7 +1459,7 @@
   </section>
   <footer>
     <p>
-      点击工具或 Thoughts 展开, Ctrl+O 切换全部详情. live 按 Enter 提交初始请求,
+      点击工具或 Thoughts 展开, Ctrl+O 切换工具详情. live 按 Enter 提交初始请求,
       完成后再提交边界测试请求; Esc 中断后可继续. live-error 展示回答失败与重试.
       replay 保留短动态对照. 完整会话用 Pi 原生滚动查看. 截图使用 Catppuccin
       与指定 Nerd Font 字体栈; 尚未生产采纳.

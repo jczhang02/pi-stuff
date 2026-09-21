@@ -1,19 +1,19 @@
 
  • 实现读取了 previousIds, 但没有过滤结果. 我再确认空页时应如何保留游标.
 
- • WebSearch("cursor pagination duplicate results")
-   ⎿  Found 3 results · expand
-
- • WebFetch(docs.example.com/pagination)
-   ⎿  Retrieved pagination guide · 6 lines · expand
-
- • WebRead(docs.example.com/pagination · find "cursor")
-   ⎿  Found 2 matches · expand
-
- • WebRead(docs.example.com/pagination · continue)
-   ⎿  Read next 3 lines · more available · expand
+ • Searched web 1 time · Read web content 3 times · expand
 
  Tool output: collapsed
+
+
+
+
+
+
+
+
+
+
 
 
 

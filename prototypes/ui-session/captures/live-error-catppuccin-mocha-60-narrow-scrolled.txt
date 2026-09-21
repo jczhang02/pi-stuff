@@ -1,3 +1,4 @@
+   ⎿  Wrote 10 lines · 2 additional boundary tests ·       │
       collapse                                             │
       1 │ test("keeps cursor when every item is filtered", │
         │ () => {                                          │
@@ -20,18 +21,17 @@
    ⎿  9 passed · 1 failed · duplicate within page ·        │
       collapse                                             │
      FAIL keeps first occurrence within the same page      │
-     Expected: [{id: "a", title: "first"}]                 │
+     Expected: [{id: "a", title: "first"}]                 ┃
      Received: [{id: "a", title: "first"}, {id: "a", title:┃
      "later"}]                                             ┃
                                                            ┃
-     9 pass                                                ┃
+     9 pass                                                │
      1 fail                                                │
                                                            │
  • Edit(src/search/paginate.ts)                            │
    ⎿  Added 5 lines, removed 1 line · collapse             │
-     19 19   │   const seen = new Set(previousIds);        │
-     20    - │   const items = page.items.filter(item =>   │
-           -  ↓ Jump to latest message · End               │
+     19     const seen = new Set(previousIds);             │
+     20 -   c ↓ Jump to latest message · End tem =>        │
 
 ────────────────────────────────────────────────────────────
 下一条草稿不会被展开操作覆盖

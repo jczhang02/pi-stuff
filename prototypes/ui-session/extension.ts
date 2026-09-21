@@ -1,4 +1,7 @@
 // Throwaway custom-message UI inside real Pi, with isolated simulated execution.
+import {watchFile, unwatchFile} from 'node:fs';
+import {join} from 'node:path';
+import {SettingsManager, getAgentDir} from '@earendil-works/pi-coding-agent';
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -14,6 +17,8 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
   const entries = getEntries(scene);
   const states = entries.map(expansionFor);
   let host: TUI | undefined;
+  let hideThinking = true;
+  let stopSettings: (() => void) | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let removeInput: (() => void) | undefined;
   let globalExpanded = false;
@@ -133,6 +138,21 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
     }, 200);
   }
   pi.on('session_start', (_event, ctx) => {
+    const settingsPath = join(getAgentDir(), 'settings.json');
+    const readThinkingSetting = () => {
+      const hidden = SettingsManager.create(ctx.cwd).getHideThinkingBlock();
+      if (hidden === hideThinking) return;
+      hideThinking = hidden;
+      states.forEach(state => {
+        if (state.thinking) state.open = !hidden;
+      });
+      live?.setThinkingHidden(hidden);
+      host?.requestRender();
+    };
+    readThinkingSetting();
+    // Observe Pi's own settings writes, including Ctrl+T and /settings, without intercepting keys.
+    watchFile(settingsPath, {interval: 100}, readThinkingSetting);
+    stopSettings = () => unwatchFile(settingsPath, readThinkingSetting);
     ctx.ui.setHeader((tui, theme) => {
       host = tui;
       return scene === 'welcome' || live
@@ -178,5 +198,8 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
     ctx.ui.setEditorText(event.text);
     return {action: 'handled'};
   });
-  pi.on('session_shutdown', () => stop());
+  pi.on('session_shutdown', () => {
+    stop();
+    stopSettings?.();
+  });
 }

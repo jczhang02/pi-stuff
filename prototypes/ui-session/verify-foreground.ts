@@ -1,6 +1,7 @@
 // Protocol regression: the foreground mirror must never write palette mutations.
 import {TerminalControl} from '@kitlangton/terminal-control';
 import {join} from 'node:path';
+import {SettingsManager} from '@earendil-works/pi-coding-agent';
 import {terminalBinary, root, runEffect} from './launch';
 await runEffect(async () => {
   const driver = await TerminalControl.make({binaryPath: terminalBinary});
@@ -40,7 +41,13 @@ await runEffect(async () => {
           await session.keyboard.press('Enter');
         }
         await session.screen.waitForText(
-          live ? 'Running' : replay ? 'Checking pagination' : 'Thoughts for 4s',
+          live
+            ? 'Running'
+            : replay
+              ? 'Checking pagination'
+              : SettingsManager.create(root).getHideThinkingBlock()
+                ? 'Thoughts for 4s'
+                : 'Thoughts:',
           {timeoutMs: 15000},
         );
         if (live || replay) {

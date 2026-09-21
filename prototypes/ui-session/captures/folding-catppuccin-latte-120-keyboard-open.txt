@@ -1,5 +1,5 @@
-     ⎿  Found 1 file · collapse
-       tests/search/paginate.test.ts
+   ⎿  Found 1 file · collapse
+     tests/search/paginate.test.ts
 
  • Read(src/search/cursor.ts)
    ⎿  File not found · src/search/cursor.ts · collapse
@@ -7,11 +7,11 @@
 
  • Read 1 file · collapse
 
-   • Read(tests/search/paginate.test.ts)
-     ⎿  Read 3 lines · collapse
-       1 │ test("preserves the cursor", () => {
-       2 │   expect(paginate(page, []).nextCursor).toBe(page.cursor);
-       3 │ });
+ • Read(tests/search/paginate.test.ts)
+   ⎿  Read 3 lines · collapse
+     1 │ test("preserves the cursor", () => {
+     2 │   expect(paginate(page, []).nextCursor).toBe(page.cursor);
+     3 │ });
 
  • Bash(bun test tests/search)
    ⎿  8 passed · 0 failed · 0.4s · collapse

@@ -2,7 +2,7 @@
 
 [简体中文](../i18n/zh-CN/research/ui-session-prototype-2026-09-21.md)
 
-Current folding rules and new real-client evidence are in the [folding revision](claude-code-tool-folding-2026-09-21.md). The initial rules below are retained as design history; the two-call threshold, visible-Thoughts boundary and fully hidden Bash output no longer describe the prototype.
+Current folding rules and new real-client evidence are in the [folding revision](claude-code-tool-folding-2026-09-21.md). The initial rules below are retained as design history; current behavior is defined by that revision.
 
 This follow-up to [#99](https://github.com/jczhang02/pi-stuff/issues/99) evaluates the five corrections in [#101](https://github.com/jczhang02/pi-stuff/issues/101). Baseline: `d8ff7be`, product baseline `cd0f174`, Pi 0.85.1, Bun 1.4.0. The separate branch is `codex/ui-session-prototype`. [Run instructions and gallery](../../prototypes/ui-session/README.md).
 

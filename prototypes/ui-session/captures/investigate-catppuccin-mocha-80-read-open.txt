@@ -9,24 +9,24 @@
 
  • Read 2 files · Searched 2 patterns · Listed 1 directory · collapse
 
-   • Ls(src/search)
-     ⎿  Listed 3 entries · expand
+ • Ls(src/search)
+   ⎿  Listed 3 entries · expand
 
-   • Grep("previousIds" in src/search)
-     ⎿  Found 3 matches in 2 files · expand
+ • Grep("previousIds" in src/search)
+   ⎿  Found 3 matches in 2 files · expand
 
-   • Read(src/search/paginate.ts)
-     ⎿  Read 4 lines · collapse
-       18 │ export function paginate(page, previousIds) {
-       19 │   const seen = new Set(previousIds);
-       20 │   return {items: page.items, nextCursor: page.cursor};
-       21 │ }
+ • Read(src/search/paginate.ts)
+   ⎿  Read 4 lines · collapse
+     18 │ export function paginate(page, previousIds) {
+     19 │   const seen = new Set(previousIds);
+     20 │   return {items: page.items, nextCursor: page.cursor};
+     21 │ }
 
-   • Find("*paginate*" in tests)
-     ⎿  Found 1 file · expand
+ • Find("*paginate*" in tests)
+   ⎿  Found 1 file · expand
 
-   • Read(tests/search/paginate.test.ts)
-     ⎿  Read 3 lines · expand
+ • Read(tests/search/paginate.test.ts)
+   ⎿  Read 3 lines · expand
 
 
 

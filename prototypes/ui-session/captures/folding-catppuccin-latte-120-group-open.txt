@@ -1,13 +1,12 @@
 
- • Thoughts for 4s · Read 1 file · Searched 1 pattern · collapse
+ • Read 1 file · collapse
 
-   • Read(src/search/paginate.ts)
-     ⎿  Read 4 lines · expand
+ • Read(src/search/paginate.ts)
+   ⎿  Read 4 lines · expand
 
-   • Thoughts for 4s
+ • Thoughts for 4s
 
-   • Grep("previousIds" in src/search)
-     ⎿  Found 3 matches in 2 files · expand
+ • Searched 1 pattern · expand
 
  • 过滤没有使用 previousIds. 接着检查测试入口.
 
@@ -25,6 +24,7 @@
      [pass] skips IDs from the previous page
 
  • 现有 8 项测试通过, 但还没有覆盖跨页重复.
+
 
 
 

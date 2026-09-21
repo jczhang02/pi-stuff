@@ -1,5 +1,5 @@
- • WebRead(docs.example.com/pagination · continue)
-   ⎿  Read next 3 lines · more available · expand
+
+ • Read web content 3 times · expand
 
  • Write(tests/search/pagination-boundary.test.ts)
    ⎿  Wrote 7 lines · expand
@@ -14,9 +14,9 @@
 
  • Edit(src/search/paginate.ts)
    ⎿  Added 2 lines, removed 1 line · collapse
-     20    - │   return {items: page.items, nextCursor: page.cursor};
-        20 + │   const items = page.items.filter(item => !seen.has(item.id));
-        21 + │   return {items, nextCursor: page.cursor};
+     20 -   return {items: page.items, nextCursor: page.cursor};
+     20 +   const items = page.items.filter(item => !seen.has(item.id));
+     21 +   return {items, nextCursor: page.cursor};
 
  • Bash(bun test tests/search)
    ⎿  8 passed · 0 failed · 1.2s · 10 more lines · expand

@@ -292,7 +292,7 @@ export const scenes = [
   {
     name: 'folding',
     title: '折叠边界',
-    note: 'Thinking 不切断检索组; 正文、普通 Bash 和失败调用保留独立位置. 展开按原始顺序查看.',
+    note: '展开工具与普通消息对齐; Thoughts 独立服从 Pi 设置, 失败调用仍可见.',
     tokens: ['Thoughts for 4s', 'File not found', '8 passed'],
   },
   {
@@ -305,12 +305,12 @@ export const scenes = [
     name: 'web',
     title: 'Web 家族',
     note: '搜索、取网页、内容查找和续读共用相同层级, 技术元数据仅在展开时出现.',
-    tokens: ['WebSearch', 'WebFetch', 'WebRead'],
+    tokens: ['Searched web 1 time', 'Read web content 3 times'],
   },
   {
     name: 'changes',
     title: '修改与验证',
-    note: 'Edit 默认展示最多 3 行差异; Write 只报写入结果, 点击查看高亮代码.',
+    note: 'Edit 默认展示最多 6 行高亮差异; Write 只报写入结果, 点击查看高亮代码.',
     tokens: ['Added 2 lines', '8 passed'],
   },
   {
@@ -336,6 +336,12 @@ export const scenes = [
     title: '思考过程',
     note: '收起显示 Thoughts for 4s, 展开显示 Thoughts: 和正文.',
     tokens: ['Thoughts for 4s'],
+  },
+  {
+    name: 'thoughts-visible',
+    title: '显示思考正文',
+    note: 'hideThinkingBlock=false 时默认显示正文; 原生 Ctrl+T 或设置菜单切换默认样式.',
+    tokens: ['Thoughts:', 'previousIds'],
   },
   {
     name: 'interrupted',
@@ -469,6 +475,7 @@ function scenarioEntries(name: string): Entry[] {
         truncated,
         {kind: 'assistant', text: '测试通过. 详细输出保留在日志里.'},
       ];
+    case 'thoughts-visible':
     case 'thoughts':
       return [user, thoughts, plan];
     case 'interrupted':

@@ -1,5 +1,5 @@
-        20 + │   const items = page.items.filter(item => !seen.has(item.id));
-        21 + │   return {items, nextCursor: page.cursor};
+     20 +   const items = page.items.filter(item => !seen.has(item.id));
+     21 +   return {items, nextCursor: page.cursor};
 
  • Write(tests/search/pagination-boundary.test.ts)
    ⎿  Wrote 7 lines · collapse

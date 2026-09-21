@@ -16,7 +16,7 @@ The default `live` scene begins at the retained welcome screen with an editable 
 
 The responses follow this fixed two-turn script, not arbitrary language understanding. Input, streaming presentation, disclosure, cancellation, continuation and scrolling are real interactions. `live-error` injects one HTTP 503 before the first turn; submit again to retry. The older `session` scene remains a static overview.
 
-The launcher reads only the concrete `theme` field from the current Pi agent settings. It supports the bundled Catppuccin Latte/Mocha themes; use `--theme` explicitly when settings are absent or use another theme or automatic pair. It never sends terminal palette setters or resets. Screenshot palette commands run only inside the separate headless capture PTY. It does not change Ghostty configuration or runtime default colors. A terminal previously recolored by the old launcher may need its theme reloaded separately; this launcher does not overwrite that existing state.
+The launcher inherits the concrete `theme` and `hideThinkingBlock` fields from the current Pi agent settings. It supports the bundled Catppuccin Latte/Mocha themes; use `--theme` explicitly when settings are absent or use another theme or automatic pair. It never sends terminal palette setters or resets. Screenshot palette commands run only inside the separate headless capture PTY. It does not change Ghostty configuration or runtime default colors. A terminal previously recolored by the old launcher may need its theme reloaded separately; this launcher does not overwrite that existing state.
 
 The launcher uses the pinned Terminal Control foreground `run` command, named `pi-ui-session`, so the screen is shared from startup. It creates temporary Pi settings, session and working directories; exiting deletes them. No model account, network provider or real shell tool is used. Use an empty editor and Ctrl+D to exit. The terminal's live font comes from its settings; PNG exports use the explicitly pinned font stack in `launch.ts`.
 
@@ -33,7 +33,7 @@ bun run tui send pi-ui-session ctrl-o
 bun run tui stop pi-ui-session
 ```
 
-Click a tool for its full retained output. Click the activity summary to reveal compact children, then click one child to inspect it. Click Thoughts for its content. Ctrl+O toggles all detail; input stays editable. Pi's native scroll controls navigate the complete conversation. Resizing the outer foreground terminal updates the child; the CLI's `resize` command does not resize foreground `run` sessions.
+Click a tool for its full retained output. Click the activity summary to reveal compact children, then click one child to inspect it. Thoughts defaults follow Pi Hide thinking and can be clicked independently. Native Ctrl+T or /settings updates that default; Ctrl+O toggles tool detail; input stays editable. Pi's native scroll controls navigate the complete conversation. Resizing the outer foreground terminal updates the child; the CLI's `resize` command does not resize foreground `run` sessions.
 
 User messages use Pi 0.85.1's exported `UserMessageComponent` with its native background, padding and Markdown behavior. The prototype does not install a footer; Pi renders the real isolated session status, including the `preview` model and context usage. These surfaces are outside the redesign.
 
@@ -49,20 +49,21 @@ Pass a name as the first argument. Scene selection remains outside the evaluated
 | `session`                       | How does the entire compact conversation read?                                                                |
 | `welcome`                       | Does the retained old welcome fit?                                                                            |
 | `investigate`                   | Can a grouped exploration expand into individually inspectable calls?                                         |
-| `folding`                       | Do Thoughts preserve retrieval continuity while prose, Bash and failures close groups?                        |
+| `folding`                       | Do expanded children align while Thoughts and failures retain independent positions?                          |
 | `tools`                         | Do Read/Grep/Find/Ls share one summary and retain inspectable children?                                       |
-| `web`                           | Do all current Web actions share a layout without exposing metadata by default?                               |
+| `web`                           | Do successful Web actions join retrieval while retaining their semantic names on expansion?                   |
 | `changes`                       | Are changes visible while Write folds and Bash retains three output rows?                                     |
 | `long-diff`                     | Are context, true changes, hidden rows and the full long target preserved?                                    |
 | `running`                       | Is the active operation clear with a two-row tail?                                                            |
 | `failures`                      | Are no matches, missing files, failed Web requests and failed tests distinct?                                 |
 | `long-output`                   | Is UI folding distinct from upstream output truncation?                                                       |
-| `thoughts`                      | Does elapsed-time disclosure work without a tool card?                                                        |
+| `thoughts`                      | Does Hide thinking control the default, with independent mouse disclosure?                                    |
+| `thoughts-visible`              | Capture with Hide thinking disabled; foreground launch still inherits your own setting.                       |
 | `interrupted`, `response-error` | Are response statuses plain text?                                                                             |
 | `empty`                         | Are no output, command cancellation and image fallback honest?                                                |
 | `replay`                        | Does execution settle into compact output, and does Esc stop it?                                              |
 
-The current [folding study](../../docs/research/claude-code-tool-folding-2026-09-21.md) separates real Claude observations from the selected prototype rules. Successful retrieval starts a one-line summary from the first call. Completed Thoughts join that summary in chronological order. Visible prose, user turns, ordinary Bash, writes, Web, failures, cancellation and warnings separate groups. Running calls remain visible until success. Bash retains three output rows; Edit retains three changed rows. Activity summaries have no result connector.
+The current [folding study](../../docs/research/claude-code-tool-folding-2026-09-21.md) separates real Claude observations from the selected prototype rules. Successful local and Web retrieval starts a one-line summary from the first call. Expanded children align with ordinary tool rows. Thoughts stays independent and follows Pi hideThinkingBlock; visible prose, user turns, Thoughts, ordinary Bash, writes, failures, cancellation and warnings separate groups. Running calls remain visible until success. Bash retains three output rows; Edit retains six changed rows with one line-number column, +/- signs, semantic backgrounds and syntax highlighting. Old and new source are highlighted separately. Activity summaries have no result connector.
 
 ## Capture and verification
 
@@ -91,8 +92,8 @@ The evidence does not establish production message overrides, general diff gener
 
 用户消息直接复用 Pi 0.85.1 的原生 `UserMessageComponent`, 保留背景、留白和 Markdown 行为. 原型不再覆盖 footer, 状态栏由 Pi 显示隔离会话的实际信息, 包括 `preview` 模型和上下文用量. 这两部分不属于本轮改版.
 
-点击活动摘要 展开调用清单, 再点一项看正文; 点击 Thoughts 查看思考内容; Ctrl+O 切换全部详情. 输入框由 Pi 管理. 前台终端尺寸随外层终端变化, 完整会话用 Pi 原生滚动查看. 可在另一个终端用 `bun run tui show pi-ui-session` 检查同一会话.
+点击活动摘要 展开调用清单, 再点一项看正文; Thoughts 独立显示, 默认服从 Pi 的 Hide thinking, 点击可单独切换; 原生 Ctrl+T 或 /settings 修改默认显示, Ctrl+O 只切换工具详情. 输入框由 Pi 管理. 前台终端尺寸随外层终端变化, 完整会话用 Pi 原生滚动查看. 可在另一个终端用 `bun run tui show pi-ui-session` 检查同一会话.
 
 执行、网页、模型标签、测试及耗时均为样例, 动态场景按实际计时播放. 静态场景的普通提交保留为草稿; 连续场景按固定两轮脚本响应, 不理解任意自然语言, 不调用模型. 本轮只验证原型展示和交互, 不代表生产实现已采纳. 截图来自真实终端输出, 配色和字体明确设置, 没有在图片上重绘界面.
 
-交互启动只读取当前 Pi 的 theme 字段, 支持内置的 Catppuccin Latte/Mocha; 没有设置或使用其他主题/自动主题对时, 请显式传入 `--theme`. 前台不会发送终端颜色设置或重置指令, 不修改 Ghostty 配置及动态默认颜色. 固定截图配色只作用于独立的无头 PTY. 旧启动器已经改变的终端颜色需要单独重新加载主题; 新启动器不会覆盖已有状态.
+交互启动继承当前 Pi 的 theme 与 hideThinkingBlock 字段, 支持内置的 Catppuccin Latte/Mocha; 没有设置或使用其他主题/自动主题对时, 请显式传入 `--theme`. 前台不会发送终端颜色设置或重置指令, 不修改 Ghostty 配置及动态默认颜色. 固定截图配色只作用于独立的无头 PTY. 旧启动器已经改变的终端颜色需要单独重新加载主题; 新启动器不会覆盖已有状态.

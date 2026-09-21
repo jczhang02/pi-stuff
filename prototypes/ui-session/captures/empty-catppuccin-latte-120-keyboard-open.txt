@@ -8,9 +8,9 @@
 
  • Read 1 file · collapse
 
-   • Read(docs/pagination.png)
-     ⎿  Image · image/png · collapse
-       [image/png: terminal text fallback]
+ • Read(docs/pagination.png)
+   ⎿  Image · image/png · collapse
+     [image/png: terminal text fallback]
 
  Tool output: expanded
 

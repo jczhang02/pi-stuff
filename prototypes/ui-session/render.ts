@@ -7,7 +7,6 @@ import {
   type Theme,
 } from '@earendil-works/pi-coding-agent';
 import {
-  Box,
   Spacer,
   Container,
   MouseRegion,
@@ -17,16 +16,22 @@ import {
   wrapTextWithAnsi,
   type Component,
 } from '@earendil-works/pi-tui';
-import type {Activity, Entry, Tool, ToolBody} from './model';
+import type {Entry, Tool, ToolBody} from './model';
 
-export type Expansion = {open: boolean; children: Expansion[]};
+export type Expansion = {
+  open: boolean;
+  children: Expansion[];
+  thinking?: boolean;
+};
 export function expansionFor(entry: Entry): Expansion {
   return {
     open: false,
+    thinking: entry.kind === 'thoughts',
     children: entry.kind === 'explore' ? entry.tools.map(expansionFor) : [],
   };
 }
 export function expandAll(state: Expansion, open: boolean): void {
+  if (state.thinking) return;
   state.open = open;
   state.children.forEach(child => expandAll(child, open));
 }
@@ -34,7 +39,12 @@ function indent(lines: readonly string[], prefix: string): string[] {
   return lines.map(line => prefix + line);
 }
 function code(text: string, path: string): string[] {
-  return highlightCode(text, getLanguageFromPath(path));
+  const lines = highlightCode(text, getLanguageFromPath(path));
+  // Pi preserves token color across literal newlines; restore it before adding gutters.
+  return wrapTextWithAnsi(
+    lines.join('\n'),
+    Math.max(1, ...lines.map(visibleWidth)),
+  );
 }
 function codeRows(
   lines: readonly string[],
@@ -51,7 +61,12 @@ function codeRows(
     ),
   );
 }
-function bodyRows(body: ToolBody, width: number, theme: Theme): string[] {
+function bodyRows(
+  body: ToolBody,
+  width: number,
+  theme: Theme,
+  changesOnly = false,
+): string[] {
   switch (body.kind) {
     case 'text':
       return body.text
@@ -64,34 +79,71 @@ function bodyRows(body: ToolBody, width: number, theme: Theme): string[] {
     case 'code':
       return codeRows(code(body.text, body.path), body.start, width, theme);
     case 'diff': {
-      const source = code(body.rows.map(row => row.text).join('\n'), body.path);
+      // Highlight old and new code independently; adjacent +/- rows are not one source file.
+      const oldCode = code(
+        body.rows
+          .filter(row => row.kind !== 'add')
+          .map(row => row.text)
+          .join('\n'),
+        body.path,
+      );
+      const newCode = code(
+        body.rows
+          .filter(row => row.kind !== 'remove')
+          .map(row => row.text)
+          .join('\n'),
+        body.path,
+      );
+      let oldIndex = 0;
+      let newIndex = 0;
       const digits = Math.max(
         1,
         ...body.rows.map(
           row => String(row.oldLine ?? row.newLine ?? '').length,
         ),
       );
-      const gutter = digits * 2 + 6;
-      return body.rows.flatMap((row, index) =>
-        wrapTextWithAnsi(
-          source[index] ?? row.text,
-          Math.max(1, width - gutter),
+      return body.rows.flatMap(row => {
+        const source =
+          row.kind === 'remove' ? oldCode[oldIndex] : newCode[newIndex];
+        if (row.kind !== 'add') oldIndex++;
+        if (row.kind !== 'remove') newIndex++;
+        if (changesOnly && row.kind === 'context') return [];
+        const color =
+          row.kind === 'add'
+            ? 'toolDiffAdded'
+            : row.kind === 'remove'
+              ? 'toolDiffRemoved'
+              : 'toolDiffContext';
+        return wrapTextWithAnsi(
+          source ?? row.text,
+          Math.max(1, width - digits - 4),
         ).map((part, wrapped) => {
-          const old = String(wrapped ? '' : (row.oldLine ?? '')).padStart(
-            digits,
-          );
-          const next = String(wrapped ? '' : (row.newLine ?? '')).padStart(
-            digits,
-          );
-          const sign =
-            row.kind === 'add'
-              ? theme.fg('toolDiffAdded', '+')
+          const number = wrapped
+            ? ''
+            : String(
+                row.kind === 'remove'
+                  ? (row.oldLine ?? '')
+                  : (row.newLine ?? ''),
+              );
+          const sign = wrapped
+            ? ' '
+            : row.kind === 'add'
+              ? '+'
               : row.kind === 'remove'
-                ? theme.fg('toolDiffRemoved', '-')
+                ? '-'
                 : ' ';
-          return `${theme.fg('muted', old + ' ' + next)} ${sign}${theme.fg('dim', ' │ ')}${part}`;
-        }),
-      );
+          const line =
+            theme.fg(color, `${number.padStart(digits)} ${sign} `) + part;
+          const padded =
+            line + ' '.repeat(Math.max(0, width - visibleWidth(line)));
+          return row.kind === 'context'
+            ? padded
+            : theme.bg(
+                row.kind === 'add' ? 'toolSuccessBg' : 'toolErrorBg',
+                padded,
+              );
+        });
+      });
     }
   }
 }
@@ -124,16 +176,7 @@ function toolRows(
       : tool.name === 'Bash'
         ? detail.slice(0, 3)
         : tool.name === 'Edit' && tool.state === 'done'
-          ? bodyRows(
-              tool.body.kind === 'diff'
-                ? {
-                    ...tool.body,
-                    rows: tool.body.rows.filter(row => row.kind !== 'context'),
-                  }
-                : tool.body,
-              Math.max(1, width - 4),
-              theme,
-            ).slice(0, 3)
+          ? bodyRows(tool.body, Math.max(1, width - 4), theme, true).slice(0, 6)
           : [];
   const hidden = detail.length > shown.length;
   const hint =
@@ -175,30 +218,30 @@ function toolRows(
     );
   return rows;
 }
-function explorationSummary(entries: readonly Activity[]): string {
-  const tools = entries.filter((entry): entry is Tool => entry.kind === 'tool');
-  const seconds = entries.reduce(
-    (total, entry) => total + (entry.kind === 'thoughts' ? entry.seconds : 0),
-    0,
-  );
+function explorationSummary(tools: readonly Tool[]): string {
   const reads = tools.filter(t => t.name === 'Read').length;
   const searches = tools.filter(
     t => t.name === 'Grep' || t.name === 'Find',
   ).length;
   const lists = tools.filter(t => t.name === 'Ls').length;
+  const webSearches = tools.filter(t => t.name === 'WebSearch').length;
+  const pages = tools.filter(
+    t => t.name === 'WebFetch' || t.name === 'WebRead',
+  ).length;
   return [
-    entries.some(entry => entry.kind === 'thoughts')
-      ? `Thoughts for ${seconds}s`
-      : '',
     reads ? `Read ${reads} file${reads === 1 ? '' : 's'}` : '',
     searches ? `Searched ${searches} pattern${searches === 1 ? '' : 's'}` : '',
     lists ? `Listed ${lists} director${lists === 1 ? 'y' : 'ies'}` : '',
+    webSearches
+      ? `Searched web ${webSearches} time${webSearches === 1 ? '' : 's'}`
+      : '',
+    pages ? `Read web content ${pages} time${pages === 1 ? '' : 's'}` : '',
   ]
     .filter(Boolean)
     .join(' · ');
 }
 function textRows(
-  entry: Exclude<Entry, Tool | {kind: 'explore'; tools: readonly Activity[]}>,
+  entry: Exclude<Entry, Tool | {kind: 'explore'; tools: readonly Tool[]}>,
   state: Expansion,
   theme: Theme,
   width: number,
@@ -209,13 +252,14 @@ function textRows(
       width,
     );
   if (entry.kind === 'thoughts') {
+    const open = state.open;
     const label = entry.running
       ? `Thinking · ${entry.seconds}s`
-      : state.open
+      : open
         ? 'Thoughts:'
         : `Thoughts for ${entry.seconds}s`;
     const rows = [theme.fg('muted', '• ' + label)];
-    if (state.open)
+    if (open)
       rows.push(
         ...indent(
           new Markdown(entry.text, 0, 0, getMarkdownTheme(), {
@@ -271,9 +315,7 @@ export function entryComponent(
             const child = state.children[i];
             if (!child) throw new Error('Missing exploration expansion state');
             container.addChild(new Spacer(1));
-            const inset = new Box(2, 0);
-            inset.addChild(entryComponent(tool, child, theme, repaint));
-            container.addChild(inset);
+            container.addChild(entryComponent(tool, child, theme, repaint));
           });
         return container.render(width);
       },

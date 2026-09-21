@@ -2,7 +2,7 @@
 
 [English](../../../research/ui-session-prototype-2026-09-21.md)
 
-当前折叠规则与新增真实客户端证据见[折叠修订](claude-code-tool-folding-2026-09-21.md). 下方初始规则作为设计历史保留; 两次阈值、Thoughts 切断和完全隐藏 Bash 输出已不再描述当前原型.
+当前折叠规则与新增真实客户端证据见[折叠修订](claude-code-tool-folding-2026-09-21.md). 下方初始规则仅作设计历史保留, 当前行为以该修订为准.
 
 本轮承接 [#99](https://github.com/jczhang02/pi-stuff/issues/99), 验证 [#101](https://github.com/jczhang02/pi-stuff/issues/101) 的五项修正. 起点 `d8ff7be`, 产品基线 `cd0f174`, Pi 0.85.1, Bun 1.4.0. 独立分支为 `codex/ui-session-prototype`. [启动说明与画廊](../../../../prototypes/ui-session/README.md).
 

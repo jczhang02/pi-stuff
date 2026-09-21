@@ -8,7 +8,7 @@ import {
   type Expansion,
 } from './render';
 import {repairPlan, followupPlan, type Step} from './live-plan';
-import {isActivity, isExploration, type Entry} from './model';
+import {isExploration, type Entry} from './model';
 type Row = {entry: Entry; expansion: Expansion};
 export class LiveSession {
   private rows: Row[] = [];
@@ -18,6 +18,14 @@ export class LiveSession {
   private timer: ReturnType<typeof setInterval> | undefined;
   private active: Row | undefined;
   private expanded = false;
+  private hideThinking = true;
+  setThinkingHidden(hidden: boolean): void {
+    if (this.hideThinking === hidden) return;
+    this.hideThinking = hidden;
+    this.rows.forEach(row => {
+      if (row.expansion.thinking) row.expansion.open = !hidden;
+    });
+  }
   private firstFailure: boolean;
   private stopped = false;
   get empty(): boolean {
@@ -32,6 +40,7 @@ export class LiveSession {
   private append(entry: Entry): Row {
     const row = {entry, expansion: expansionFor(entry)};
     expandAll(row.expansion, this.expanded);
+    if (row.expansion.thinking) row.expansion.open = !this.hideThinking;
     this.rows.push(row);
     this.repaint();
     return row;
@@ -134,7 +143,6 @@ export class LiveSession {
         this.clearTimer();
         if (entry.kind === 'thoughts') {
           entry.running = false;
-          this.fold(row);
         }
         if (step.kind === 'tool') {
           row.entry = structuredClone(step.tool);
@@ -154,7 +162,7 @@ export class LiveSession {
   }
   private fold(row: Row): void {
     const tool = row.entry;
-    if (!isActivity(tool)) return;
+    if (!isExploration(tool)) return;
     const previous = this.rows.at(-2);
 
     if (previous?.entry.kind === 'explore') {
@@ -163,24 +171,12 @@ export class LiveSession {
         tools: [...previous.entry.tools, tool],
       };
       previous.expansion.children.push(row.expansion);
-    } else if (
-      previous &&
-      isActivity(previous.entry) &&
-      (isExploration(previous.entry) || isExploration(tool))
-    ) {
-      previous.entry = {kind: 'explore', tools: [previous.entry, tool]};
-      previous.expansion = {
-        open: this.expanded || previous.expansion.open || row.expansion.open,
-        children: [previous.expansion, row.expansion],
-      };
     } else {
-      if (isExploration(tool)) {
-        row.entry = {kind: 'explore', tools: [tool]};
-        row.expansion = {
-          open: this.expanded || row.expansion.open,
-          children: [row.expansion],
-        };
-      }
+      row.entry = {kind: 'explore', tools: [tool]};
+      row.expansion = {
+        open: this.expanded || row.expansion.open,
+        children: [row.expansion],
+      };
       return;
     }
     this.rows.pop();

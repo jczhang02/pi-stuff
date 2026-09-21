@@ -16,6 +16,7 @@ export async function sandbox(
   scene: string,
   theme: Palette,
   paletteTarget: 'capture' | 'interactive' = 'interactive',
+  hideThinkingBlock = true,
 ) {
   if (!scenes.some(s => s.name === scene))
     throw new Error(`Unknown scene: ${scene}`);
@@ -27,7 +28,7 @@ export async function sandbox(
     await mkdir(sessions);
     await writeFile(
       join(agent, 'settings.json'),
-      JSON.stringify({quietStartup: true, theme}),
+      JSON.stringify({quietStartup: true, theme, hideThinkingBlock}),
     );
     await writeFile(
       join(agent, 'models.json'),

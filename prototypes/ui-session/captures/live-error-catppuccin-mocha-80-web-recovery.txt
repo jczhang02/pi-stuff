@@ -1,6 +1,4 @@
 
- • Thoughts for 2s
-
  Request failed: HTTP 503. Please try again.
 
 
@@ -16,13 +14,15 @@
 
  • 没有独立的 cursor.ts. 回到当前 paginate.ts 与测试入口.
 
- • Thoughts for 2s · Read 1 file · Searched 2 patterns · Listed 1 directory ·
-   expand
+ • Read 1 file · expand
+
+ • Thoughts for 2s
+
+ • Searched 2 patterns · Listed 1 directory · expand
 
  • previousIds 没有参与过滤. 我再核对空页与续读规则.
 
- • WebSearch("cursor pagination duplicate results")
-   ⎿  Found 3 results · expand
+ • Searched web 1 time · expand
 
  • WebFetch(docs.example.com/old-pagination)
    ⎿  HTTP 404 · page not found · expand

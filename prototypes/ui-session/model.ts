@@ -35,37 +35,33 @@ export type Thoughts = {
   seconds: number;
   running?: boolean;
 };
-export type Activity = Tool | Thoughts;
 export type Entry =
   | Tool
   | {kind: 'user' | 'assistant'; text: string}
   | Thoughts
   | {kind: 'status'; text: string; error?: boolean}
-  | {kind: 'explore'; tools: readonly Activity[]};
+  | {kind: 'explore'; tools: readonly Tool[]};
 
 export function isExploration(entry: Entry): entry is Tool {
   return (
     entry.kind === 'tool' &&
     entry.state === 'done' &&
     !entry.warning &&
-    ['Read', 'Grep', 'Find', 'Ls'].includes(entry.name)
+    ['Read', 'Grep', 'Find', 'Ls', 'WebSearch', 'WebFetch', 'WebRead'].includes(
+      entry.name,
+    )
   );
-}
-export function isActivity(entry: Entry): entry is Activity {
-  return isExploration(entry) || (entry.kind === 'thoughts' && !entry.running);
 }
 export function groupExploration(entries: readonly Entry[]): Entry[] {
   const result: Entry[] = [];
-  let pending: Activity[] = [];
+  let pending: Tool[] = [];
   const flush = () => {
-    if (pending.some(isExploration))
-      result.push({kind: 'explore', tools: pending});
-    else result.push(...pending);
+    if (pending.length) result.push({kind: 'explore', tools: pending});
     pending = [];
   };
   for (const entry of entries) {
     if (entry.kind === 'assistant' && !entry.text.trim()) continue;
-    if (isActivity(entry)) pending.push(entry);
+    if (isExploration(entry)) pending.push(entry);
     else {
       flush();
       result.push(entry);

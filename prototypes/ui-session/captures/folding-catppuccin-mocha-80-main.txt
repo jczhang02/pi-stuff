@@ -1,5 +1,9 @@
 
- • Thoughts for 4s · Read 1 file · Searched 1 pattern · expand
+ • Read 1 file · expand
+
+ • Thoughts for 4s
+
+ • Searched 1 pattern · expand
 
  • 过滤没有使用 previousIds. 接着检查测试入口.
 
@@ -17,10 +21,6 @@
      [pass] skips IDs from the previous page
 
  • 现有 8 项测试通过, 但还没有覆盖跨页重复.
-
-
-
-
 
 
 

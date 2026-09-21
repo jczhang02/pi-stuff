@@ -120,7 +120,12 @@ async function save(
 }
 await runEffect(async () => {
   await mkdir(out, {recursive: true});
-  const host = await sandbox(scene.name, theme, 'capture');
+  const host = await sandbox(
+    scene.name,
+    theme,
+    'capture',
+    scene.name !== 'thoughts-visible',
+  );
   let terminal: TerminalControl | undefined;
   let session: Session | undefined;
   try {
@@ -223,17 +228,17 @@ await runEffect(async () => {
             theme,
           );
         } else if (scene.name === 'folding') {
-          await click(session, 'Thoughts for 4s');
+          await click(session, 'Read 1 file');
           await session.screen.waitForText('Read 4 lines', wait);
-          const order = await session.screen.text();
-          if (
-            !(
-              order.indexOf('Read 4 lines') <
-                order.indexOf('   • Thoughts for 4s') &&
-              order.indexOf('   • Thoughts for 4s') < order.indexOf('Grep(')
-            )
-          )
-            throw new Error('Group changed chronological order');
+          const lines = (await session.screen.text()).split('\n');
+          const read = lines.find(line =>
+            line.includes('Read(src/search/paginate.ts)'),
+          );
+          const failure = lines.find(line =>
+            line.includes('Read(src/search/cursor.ts)'),
+          );
+          if (!read || !failure || read.indexOf('•') !== failure.indexOf('•'))
+            throw new Error('Expanded group member is misaligned');
           await save(
             session,
             'group-open',
@@ -241,7 +246,7 @@ await runEffect(async () => {
             host.palette,
             theme,
           );
-          await click(session, '   • Thoughts for 4s');
+          await click(session, 'Thoughts for 4s');
           await session.screen.waitForText('Thoughts:', wait);
           await save(
             session,
@@ -250,19 +255,54 @@ await runEffect(async () => {
             host.palette,
             theme,
           );
-        } else if (scene.name === 'thoughts') {
-          await click(session, 'Thoughts for 4s');
-          await session.screen.waitForText('Thoughts:', wait);
+        } else if (
+          scene.name === 'thoughts' ||
+          scene.name === 'thoughts-visible'
+        ) {
+          const hidden = scene.name === 'thoughts';
+          await click(session, hidden ? 'Thoughts for 4s' : 'Thoughts:');
+          await session.screen.waitForText(
+            hidden ? 'Thoughts:' : 'Thoughts for 4s',
+            wait,
+          );
           await save(
             session,
             'open',
-            ['Thoughts:', 'previousIds', draft],
+            [hidden ? 'Thoughts:' : 'Thoughts for 4s', draft],
             host.palette,
             theme,
           );
-          await click(session, 'Thoughts:');
-          await session.screen.waitForText('Thoughts for 4s', wait);
+          await session.keyboard.press('Control+T');
+          await session.screen.waitForText(
+            hidden ? 'Thinking blocks: visible' : 'Thinking blocks: hidden',
+            wait,
+          );
+          await session.screen.waitForText(
+            hidden ? 'Thoughts:' : 'Thoughts for 4s',
+            wait,
+          );
+          await save(
+            session,
+            'setting-toggled',
+            [hidden ? 'Thoughts:' : 'Thoughts for 4s', draft],
+            host.palette,
+            theme,
+          );
+          await session.keyboard.press('Control+T');
+          await session.screen.waitForText(
+            hidden ? 'Thoughts for 4s' : 'Thoughts:',
+            wait,
+          );
         } else if (scene.name === 'web') {
+          await click(session, 'Searched web');
+          await session.screen.waitForText('WebFetch(', wait);
+          await save(
+            session,
+            'group-open',
+            ['WebSearch(', 'WebFetch(', 'WebRead(', draft],
+            host.palette,
+            theme,
+          );
           await click(session, 'WebFetch');
           await session.screen.waitForText('contentId=page-01', wait);
           await save(
@@ -323,16 +363,18 @@ await runEffect(async () => {
           scene.name === 'failures'
             ? 'Received:'
             : scene.name === 'thoughts'
-              ? 'Thoughts:'
-              : scene.name === 'web'
-                ? 'offset=228'
-                : scene.name === 'changes' || scene.name === 'folding'
-                  ? 'Ran 8 tests across 2 files.'
-                  : scene.name === 'empty'
-                    ? 'image/png'
-                    : scene.name === 'long-diff'
-                      ? 'including empty filtered pages'
-                      : 'previousIds';
+              ? 'Thoughts for 4s'
+              : scene.name === 'thoughts-visible'
+                ? 'Thoughts:'
+                : scene.name === 'web'
+                  ? 'offset=228'
+                  : scene.name === 'changes' || scene.name === 'folding'
+                    ? 'Ran 8 tests across 2 files.'
+                    : scene.name === 'empty'
+                      ? 'image/png'
+                      : scene.name === 'long-diff'
+                        ? 'including empty filtered pages'
+                        : 'previousIds';
         await session.screen.waitForText(expandedToken, wait);
         await save(
           session,

@@ -1,11 +1,7 @@
-                                                           │
-   • Grep("previousIds" in src/search)                     │
-     ⎿  Found 3 matches in 2 files · collapse              │
-       src/search/paginate.ts:18  export function          │
-       paginate(page, previousIds) {                       │
-       src/search/paginate.ts:19    const seen = new       │
-       Set(previousIds);                                   │
-       src/search/types.ts:12     previousIds: string[];   │
+     paginate(page, previousIds) {                         │
+     src/search/paginate.ts:19    const seen = new         │
+     Set(previousIds);                                     │
+     src/search/types.ts:12     previousIds: string[];     │
                                                            │
  • Write(tests/search/pagination-additional.test.ts)       │
    ⎿  Wrote 10 lines · 2 additional boundary tests ·       │
@@ -20,18 +16,22 @@
       5 │                                                  │
       6 │ test("keeps first occurrence within the same     │
         │ page", () => {                                   │
-      7 │   const first = {id: "a", title: "first"};       ┃
-      8 │   const page = {items: [first, {id: "a", title:  ┃
-        │ "later"}], cursor: "next"};                      ┃
-      9 │   expect(paginate(page,                          ┃
-        │ []).items).toEqual([first]);                     │
-     10 │ });                                              │
-                                                           │
- • Bash(bun test tests/search)                             │
+      7 │   const first = {id: "a", title: "first"};       │
+      8 │   const page = {items: [first, {id: "a", title:  │
+        │ "later"}], cursor: "next"};                      │
+      9 │   expect(paginate(page,                          │
+        │ []).items).toEqual([first]);                     ┃
+     10 │ });                                              ┃
+                                                           ┃
+ • Bash(bun test tests/search)                             ┃
    ⎿  9 passed · 1 failed · duplicate within page ·        │
       collapse                                             │
      FAIL keeps first occurrence within the same page      │
-     Expected ↓ Jump to latest message · End               │
+     Expected: [{id: "a", title: "first"}]                 │
+     Received: [{id: "a", title: "first"}, {id: "a", title:│
+     "later"}]                                             │
+                                                           │
+     9 pass   ↓ Jump to latest message · End               │
 
 ────────────────────────────────────────────────────────────
 下一条草稿不会被展开操作覆盖

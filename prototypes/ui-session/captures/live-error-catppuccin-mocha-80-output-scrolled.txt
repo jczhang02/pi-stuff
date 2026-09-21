@@ -1,13 +1,13 @@
  • Edit(src/search/paginate.ts)                                                │
    ⎿  Added 5 lines, removed 1 line · collapse                                 │
-     19 19   │   const seen = new Set(previousIds);                            │
-     20    - │   const items = page.items.filter(item => !seen.has(item.id));  │
-        20 + │   const items = page.items.filter(item => {                     │
-        21 + │     if (seen.has(item.id)) return false;                        │
-        22 + │     seen.add(item.id);                                          │
-        23 + │     return true;                                                │
-        24 + │   });                                                           │
-     21 25   │   return {items, nextCursor: page.cursor};                      │
+     19     const seen = new Set(previousIds);                                 │
+     20 -   const items = page.items.filter(item => !seen.has(item.id));       │
+     20 +   const items = page.items.filter(item => {                          │
+     21 +     if (seen.has(item.id)) return false;                             │
+     22 +     seen.add(item.id);                                               │
+     23 +     return true;                                                     │
+     24 +   });                                                                │
+     25     return {items, nextCursor: page.cursor};                           │
                                                                                │
  • Bash(bun test tests/search --verbose)                                       │
    ⎿  10 passed · 0 failed · collapse                                          │

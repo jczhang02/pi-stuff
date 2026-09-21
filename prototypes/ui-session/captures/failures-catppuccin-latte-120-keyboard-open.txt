@@ -3,8 +3,8 @@
 
  • Searched 1 pattern · collapse
 
-   • Grep("legacyCursor" in src/search)
-     ⎿  No matches
+ • Grep("legacyCursor" in src/search)
+   ⎿  No matches
 
  • Read(src/search/cursor.ts)
    ⎿  File not found · src/search/cursor.ts · collapse
