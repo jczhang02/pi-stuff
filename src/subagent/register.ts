@@ -13,15 +13,18 @@ export function registerSubagent(
   pi: ExtensionAPI,
   switches: ToolSwitches | undefined,
 ) {
-  const runs = new Runs((run, task) => {
+  const runs = new Runs((run, task, message) => {
     pi.sendMessage(
       {
         customType: 'subagent',
-        content: `${task.agent}: ${task.status}\n${task.error ?? task.finalText}`,
+        content: `${task.agent}: ${task.status}\n${message ?? task.question?.text ?? task.error ?? task.finalText}`,
         display: true,
         details: {runId: run.id, taskId: task.id},
       },
-      {triggerTurn: true, deliverAs: 'followUp'},
+      {
+        triggerTurn: true,
+        deliverAs: task.status === 'failed' ? 'steer' : 'followUp',
+      },
     );
   });
   pi.on('session_shutdown', () => runs.close());
@@ -30,7 +33,7 @@ export function registerSubagent(
     name: 'subagent',
     label: 'Subagent',
     description:
-      'Dispatch independent or dependent read-only Pi subagents. Background by default. Query status/result, wait for completion, or cancel one task or the run.',
+      'Dispatch independent or dependent Pi subagents. Background and read-only by default; writers use separate Git worktrees. Query status/result, wait for completion or a question, reply to a question, steer live work, or cancel one task or the run.',
     parameters: subagentParameters,
     async execute(_id, input, signal, _update, ctx) {
       const result = await Effect.runPromise(
@@ -53,6 +56,21 @@ export function registerSubagent(
                 return runs.wait(input.runId, input.timeoutMs);
               case 'cancel':
                 return runs.cancel(input.runId, input.taskId);
+              case 'reply':
+                if (!input.taskId || !input.questionId || !input.message)
+                  throw new SubagentError({
+                    message: 'Reply needs taskId, questionId and message.',
+                  });
+                return runs.reply(
+                  input.runId,
+                  input.taskId,
+                  input.questionId,
+                  input.message,
+                );
+              case 'steer':
+                if (!input.message)
+                  throw new SubagentError({message: 'Steer needs a message.'});
+                return runs.steer(input.runId, input.taskId, input.message);
             }
           },
           catch: error =>

@@ -10,15 +10,31 @@ const taskFields = {
   agent: Type.String({minLength: 1}),
   task: Type.String({minLength: 1}),
   cwd: Type.Optional(Type.String({minLength: 1})),
+  prompt: Type.Optional(Type.String()),
+  write: Type.Optional(Type.Boolean()),
+  tools: Type.Optional(Type.Array(Type.String({minLength: 1}))),
   needs: Type.Optional(Type.Array(Type.String())),
+  maxRuntimeMs: Type.Optional(Type.Number({minimum: 1})),
 };
 const task = Type.Object(taskFields);
 
 export const subagentParameters = Type.Object({
-  command: StringEnum(['dispatch', 'status', 'result', 'wait', 'cancel']),
+  command: StringEnum([
+    'dispatch',
+    'status',
+    'result',
+    'wait',
+    'cancel',
+    'reply',
+    'steer',
+  ] as const),
   agent: Type.Optional(taskFields.agent),
   task: Type.Optional(taskFields.task),
   cwd: taskFields.cwd,
+  prompt: taskFields.prompt,
+  write: taskFields.write,
+  tools: taskFields.tools,
+  maxRuntimeMs: taskFields.maxRuntimeMs,
   tasks: Type.Optional(Type.Array(task, {minItems: 1, maxItems: 16})),
   chain: Type.Optional(Type.Array(task, {minItems: 1, maxItems: 16})),
   concurrency: Type.Optional(Type.Integer({minimum: 1, maximum: 8})),
@@ -27,6 +43,8 @@ export const subagentParameters = Type.Object({
   runId: Type.Optional(Type.String({minLength: 1})),
   taskId: Type.Optional(Type.String({minLength: 1})),
   timeoutMs: Type.Optional(Type.Number({minimum: 0})),
+  questionId: Type.Optional(Type.String({minLength: 1})),
+  message: Type.Optional(Type.String({minLength: 1})),
 });
 export type SubagentParameters = Static<typeof subagentParameters>;
 
@@ -35,7 +53,11 @@ export interface TaskInput {
   agent: string;
   task: string;
   cwd: string;
+  prompt: string;
+  write: boolean;
+  tools: string[];
   needs: string[];
+  maxRuntimeMs: number;
 }
 
 export interface Dispatch {
@@ -79,7 +101,7 @@ export function dispatchInput(
         message: 'Single dispatch needs agent and task.',
       });
     mode = 'single';
-    inputs = [{agent: input.agent, task: input.task}];
+    inputs = [{...input, agent: input.agent, task: input.task}];
   }
   const edges = resolveNeeds(inputs, mode);
   return {
@@ -89,7 +111,18 @@ export function dispatchInput(
       agent: task.agent,
       task: task.task,
       cwd: resolve(parentCwd, task.cwd ?? input.cwd ?? '.'),
+      prompt: task.prompt ?? '',
+      write:
+        task.write === true ||
+        (task.tools?.some(tool => ['bash', 'edit', 'write'].includes(tool)) ??
+          false),
+      tools:
+        task.tools ??
+        (task.write
+          ? ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write']
+          : ['read', 'grep', 'find', 'ls']),
       needs: edges[index] ?? [],
+      maxRuntimeMs: task.maxRuntimeMs ?? input.maxRuntimeMs ?? 21_600_000,
     })),
     concurrency: input.concurrency ?? 3,
     autoAwait: input.autoAwait ?? false,

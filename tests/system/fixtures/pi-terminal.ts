@@ -58,6 +58,7 @@ export async function launchPi(
   let args = '{}';
   let turn = 0;
   let result = '';
+  let issued = false;
   let reloads = 0;
   let offered: string[] = [];
   const server = Bun.serve({
@@ -72,7 +73,15 @@ export async function launchPi(
       const body = Schema.decodeUnknownSync(Request)(await request.json());
       offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
-      if (last?.role === 'tool')
+      const currentTurn = body.messages.some(message => {
+        if (message.role !== 'user') return false;
+        const content = message.content;
+        const text = Schema.is(Schema.String)(content)
+          ? content
+          : content?.map(block => block.text ?? '').join('');
+        return text === `Run RTK turn ${turn}`;
+      });
+      if (last?.role === 'tool' && currentTurn)
         result = Schema.is(Schema.String)(last.content)
           ? last.content
           : JSON.stringify(last.content);
@@ -81,7 +90,8 @@ export async function launchPi(
         : undefined;
       const finished = callbackResponse
         ? callbackResponse.type === 'content'
-        : last?.role === 'tool' || tool === '';
+        : issued || !currentTurn || last?.role === 'tool' || tool === '';
+      if (!callbackResponse && !finished) issued = true;
       const delta = callbackResponse
         ? callbackResponse.type === 'content'
           ? {content: callbackResponse.content}
@@ -99,7 +109,12 @@ export async function launchPi(
               ],
             }
         : finished
-          ? {content: `RTK_TURN_${turn}_DONE`}
+          ? {
+              content:
+                currentTurn && (last?.role === 'tool' || tool === '')
+                  ? `RTK_TURN_${turn}_DONE`
+                  : 'No additional action.',
+            }
           : {
               tool_calls: [
                 {
@@ -254,6 +269,7 @@ export async function launchPi(
       tool = name;
       args = parameters;
       result = '';
+      issued = false;
       turn++;
       await screen.keyboard.type(`Run RTK turn ${turn}`);
       await screen.keyboard.press('Enter');

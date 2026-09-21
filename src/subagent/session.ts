@@ -5,6 +5,8 @@ import {
   ModelRuntime,
   SessionManager,
   type ExtensionContext,
+  type AgentSession,
+  type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import {join} from 'node:path';
 import {Effect, Schema} from 'effect';
@@ -18,6 +20,10 @@ export interface Investigation {
   agent: string;
   task: string;
   cwd: string;
+  prompt?: string;
+  write: boolean;
+  tools: string[];
+  maxRuntimeMs: number;
 }
 
 // Behavioral source: arhen/pi-extensions 676b11e, pi-core-subagent 1.3.55.
@@ -26,6 +32,8 @@ export function investigate(
   input: Investigation,
   parent: ExtensionContext,
   signal: AbortSignal | undefined,
+  customTools: ToolDefinition[],
+  ready: (session: AgentSession) => void,
 ) {
   return Effect.tryPromise({
     async try() {
@@ -51,7 +59,10 @@ export function investigate(
         agentDir,
         noExtensions: true,
         appendSystemPrompt: [
-          'You are a read-only subagent. Inspect the assigned working directory and return your findings to the parent. Do not delegate.',
+          input.write
+            ? 'You are a subagent working in your own Git worktree. Return your findings and changes to the parent. Do not delegate. node_modules is shared with the parent project: do not install, delete, or modify dependencies.'
+            : 'You are a read-only subagent. Inspect the assigned working directory and return your findings to the parent. Do not delegate.',
+          ...(input.prompt === undefined ? [] : [input.prompt]),
         ],
       });
       await resourceLoader.reload();
@@ -62,7 +73,8 @@ export function investigate(
         agentDir,
         modelRuntime,
         model: parent.model,
-        tools: ['read', 'grep', 'find', 'ls'],
+        tools: [...input.tools, ...customTools.map(tool => tool.name)],
+        customTools,
         resourceLoader,
         sessionManager: SessionManager.create(
           input.cwd,
@@ -76,21 +88,49 @@ export function investigate(
       };
       signal?.addEventListener('abort', cancel, {once: true});
       const startedAt = Date.now();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let timedOut = false;
       try {
         session.setSessionName(input.agent);
         await session.bindExtensions({mode: 'json'});
+        for (const tool of input.tools) {
+          if (!session.getActiveToolNames().includes(tool))
+            throw new SubagentError({
+              message: `Required child tool is unavailable: ${tool}`,
+            });
+        }
         signal?.throwIfAborted();
-        await session.prompt(input.task, {
-          source: 'extension',
-          expandPromptTemplates: false,
-        });
+        ready(session);
+        timer = setTimeout(() => {
+          timedOut = true;
+          cancel();
+        }, input.maxRuntimeMs);
+        try {
+          await session.prompt(input.task, {
+            source: 'extension',
+            expandPromptTemplates: false,
+          });
+        } catch (error) {
+          if (!timedOut) throw error;
+        }
         signal?.throwIfAborted();
+        if (timedOut)
+          throw new SubagentError({
+            message: `Subagent timed out after ${input.maxRuntimeMs}ms.`,
+          });
         const last = session.messages.findLast(
           message => message.role === 'assistant',
         );
-        if (last?.role === 'assistant' && last.stopReason === 'error')
+        if (
+          last?.role === 'assistant' &&
+          (last.stopReason === 'error' || last.stopReason === 'aborted')
+        )
           throw new SubagentError({
-            message: last.errorMessage ?? 'The child provider failed.',
+            message:
+              last.errorMessage ??
+              (last.stopReason === 'aborted'
+                ? 'The child provider aborted execution.'
+                : 'The child provider failed.'),
           });
         return {
           status: 'completed' as const,
@@ -111,6 +151,7 @@ export function investigate(
               : '',
         };
       } finally {
+        clearTimeout(timer);
         signal?.removeEventListener('abort', cancel);
         try {
           await (abort ?? session.abort());
