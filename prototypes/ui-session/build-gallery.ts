@@ -19,6 +19,7 @@ const labels = {
   'group-open': '展开探索组',
   'read-open': '展开其中一个 Read',
   open: '展开 Thoughts',
+  'thought-open': '按原始顺序展开组内思考',
   'fetch-open': '展开 WebFetch',
   'fetch-failed-open': '展开失败的 WebFetch',
   'write-open': '展开 Write',
@@ -52,7 +53,12 @@ await runEffect(async () => {
         const match = /-catppuccin-(latte|mocha)-(\d+)-(.+)\.png$/u.exec(file);
         if (!match) throw new Error(`Unknown capture name ${file}`);
         const state = match[3] ?? '';
-        if (state === 'keyboard-open' && scene.name !== 'long-diff') return '';
+        if (
+          state === 'keyboard-open' &&
+          scene.name !== 'long-diff' &&
+          scene.name !== 'empty'
+        )
+          return '';
         const caption = `${Object.entries(labels).find(([key]) => key === state)?.[1] ?? state} · ${match[1] === 'latte' ? '浅色' : '深色'} · ${match[2]} 列`;
         const stem = file.slice(0, -4);
         return `<figure><figcaption>${escape(caption)}</figcaption><a href="captures/${file}"><img loading="lazy" src="captures/${file}" alt="${escape(scene.title + ' / ' + caption)}"></a><p><a href="captures/${stem}.txt">文本</a> · <a href="captures/${stem}.ansi">ANSI</a></p></figure>`;
@@ -67,6 +73,6 @@ await runEffect(async () => {
     join(import.meta.dir, 'gallery.html'),
     `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pi Stuff · 会话原型</title><style>
 :root{color-scheme:light dark;font-family:system-ui,sans-serif;background:#eff1f5;color:#4c4f69}body{max-width:1500px;margin:auto;padding:36px}h1{font-size:30px}h2{font-size:22px}p{line-height:1.7;max-width:1000px}a{color:#1e66f5}nav{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0}nav a{padding:6px 10px;background:#e6e9ef;border-radius:6px;text-decoration:none}section{padding:24px 0;border-top:1px solid #bcc0cc}code{font:14px ui-monospace,monospace;overflow-wrap:anywhere}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,600px),1fr));gap:20px;margin-top:20px}figure{margin:0}figcaption{font-weight:600;margin-bottom:8px}img{width:100%;height:auto;border-radius:10px;box-shadow:0 1px 8px #0001}figure p{font-size:13px;margin:8px 0}li{line-height:1.8}@media(prefers-color-scheme:dark){:root{background:#1e1e2e;color:#cdd6f4}nav a{background:#313244}a{color:#89b4fa}section{border-color:#45475a}}@media(max-width:650px){body{padding:20px}}
-</style><h1>Pi Stuff · 会话原型</h1><p>以当前功能为范围, 在真实 Pi 中运行的新会话样式. 这里的图片来自可交互终端, 模型与执行数据是离线样例. <a href="claude-reference/index.html">Claude Code 2.1.261 实测对照</a> · <a href="README.md">启动与操作说明</a> · <a href="../../docs/i18n/zh-CN/research/ui-session-prototype-2026-09-21.md">来源与详细规则</a> · <a href="../ui-direction/gallery.html">上一轮方案</a></p><ul><li>用户消息和 statusline 使用 Pi 原生组件, 不纳入改版. 页脚显示离线会话的实际 preview 模型与上下文用量.</li><li>Read/Grep/Find/Ls 连续成功两次起聚合. 点击组查看调用, 再点一项查看内容.</li><li>工具采用 "操作与目标 / 结果" 两层, 称为工具调用/结果块. 每个结果摘要一个 ⎿, 续行只缩进; 展开的独立子工具各有自己的标记. Write、Web 和成功 Bash 默认收起, Edit 保留三行短 diff.</li><li>WebSearch / WebFetch / WebRead 共用相同样式; 元数据只在展开后显示.</li><li>Thoughts 显示耗时, 点击阅读正文. 回答失败或中断保持普通文字.</li></ul><nav>${nav}</nav>${sections.join('')}<footer><p>点击工具或 Thoughts 展开, Ctrl+O 切换全部详情. live 按 Enter 提交初始请求, 完成后再提交边界测试请求; Esc 中断后可继续. live-error 展示回答失败与重试. replay 保留短动态对照. 完整会话用 Pi 原生滚动查看. 截图使用 Catppuccin 与指定 Nerd Font 字体栈; 尚未生产采纳.</p></footer></html>`,
+</style><h1>Pi Stuff · 会话原型</h1><p>以当前功能为范围, 在真实 Pi 中运行的新会话样式. 这里的图片来自可交互终端, 模型与执行数据是离线样例. <a href="folding-reference/index.html">折叠边界实测</a> · <a href="claude-reference/index.html">Claude Code 2.1.261 实测对照</a> · <a href="README.md">启动与操作说明</a> · <a href="../../docs/i18n/zh-CN/research/ui-session-prototype-2026-09-21.md">来源与详细规则</a> · <a href="../ui-direction/gallery.html">上一轮方案</a></p><ul><li>用户消息和 statusline 使用 Pi 原生组件, 不纳入改版. 页脚显示离线会话的实际 preview 模型与上下文用量.</li><li>成功的 Read/Grep/Find/Ls 从一次起显示活动摘要, 后续连续调用合并; Thinking 不切断组, 正文、普通 Bash、写入、Web 与失败切断. 点击组查看调用, 再点一项查看内容.</li><li>工具采用 "操作与目标 / 结果" 两层, 称为工具调用/结果块. 每个结果摘要一个 ⎿, 续行只缩进; 展开的独立子工具各有自己的标记. Write、Web 默认收起, Bash 保留三行输出, Edit 保留三行短 diff. 活动摘要不用 ⎿.</li><li>WebSearch / WebFetch / WebRead 共用相同样式; 元数据只在展开后显示.</li><li>Thoughts 显示耗时, 点击阅读正文. 回答失败或中断保持普通文字.</li></ul><nav>${nav}</nav>${sections.join('')}<footer><p>点击工具或 Thoughts 展开, Ctrl+O 切换全部详情. live 按 Enter 提交初始请求, 完成后再提交边界测试请求; Esc 中断后可继续. live-error 展示回答失败与重试. replay 保留短动态对照. 完整会话用 Pi 原生滚动查看. 截图使用 Catppuccin 与指定 Nerd Font 字体栈; 尚未生产采纳.</p></footer></html>`,
   );
 });

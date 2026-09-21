@@ -11,14 +11,14 @@
    ⎿  Wrote 7 lines · expand
 
  • Bash(bun test tests/search)
-   ⎿  8 passed · 0 failed · 0.4s · expand
+   ⎿  8 passed · 0 failed · 0.4s · 10 more lines · expand
+     bun test v1.4.0
+     [pass] preserves the cursor
+     [pass] skips IDs from the previous page
 
  • 已修复分页重复: 保留结果顺序, 游标原样传递.
 
    新增边界测试, 8 项测试通过.
-
-
-
 
 
 

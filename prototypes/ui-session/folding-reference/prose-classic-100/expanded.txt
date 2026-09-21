@@ -1,0 +1,23 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for prose.
+
+● Read(/tmp/claude-glyph-SRIBgI/project/a.txt)
+  ⎿  Read 4 lines
+
+                                                                  10:36 AM claude-sonnet-4-6
+● VISIBLE_BOUNDARY
+
+● Read(/tmp/claude-glyph-SRIBgI/project/b.txt)
+  ⎿  Read 3 lines
+
+                                                                  10:36 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Cooked for 0s · done 10:36 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all                       verbose

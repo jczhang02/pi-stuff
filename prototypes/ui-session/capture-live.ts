@@ -35,8 +35,8 @@ export async function captureLive(
     await session.keyboard.type('继续, 保留已经完成的检查.');
     await session.keyboard.press('Enter');
   }
-  await session.screen.waitForText('Explored', wait);
-  await save('group-growing', ['Explored']);
+  await session.screen.waitForText('Read 1 file', wait);
+  await save('group-growing', ['Read 1 file']);
   await session.screen.waitForText('HTTP 404', wait);
   await save('web-recovery', ['HTTP 404']);
   await session.screen.waitForText(

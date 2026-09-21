@@ -1,0 +1,31 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for mixed.
+
+● Read(/tmp/claude-glyph-CUwBm3/project/a.txt)
+  ⎿  Read 4 lines
+
+● Bash(grep alpha a.txt)
+  ⎿  alpha
+
+● Bash(ls)
+  ⎿  a.txt
+     b.txt
+     long-output.py
+     long.txt
+     multiline.txt
+     output.py
+
+● Read(/tmp/claude-glyph-CUwBm3/project/b.txt)
+  ⎿  Read 3 lines
+
+                                                                  10:37 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Baked for 0s · done 10:37 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all                       verbose

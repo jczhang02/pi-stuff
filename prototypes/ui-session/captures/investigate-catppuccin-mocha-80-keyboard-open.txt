@@ -1,5 +1,5 @@
- • Explored
-   ⎿  Read 2 files · 2 searches · 1 directory · collapse
+
+ • Read 2 files · Searched 2 patterns · Listed 1 directory · collapse
 
    • Ls(src/search)
      ⎿  Listed 3 entries · collapse

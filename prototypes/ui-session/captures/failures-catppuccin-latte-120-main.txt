@@ -1,8 +1,7 @@
 
  • 先检查旧入口, 找不到就回到当前实现.
 
- • Grep("legacyCursor" in src/search)
-   ⎿  No matches
+ • Searched 1 pattern · expand
 
  • Read(src/search/cursor.ts)
    ⎿  File not found · src/search/cursor.ts · expand
@@ -11,9 +10,10 @@
    ⎿  HTTP 404 · page not found · expand
 
  • Bash(bun test tests/search)
-   ⎿  Exit 1 · skips IDs from the previous page · expand
-
-
+   ⎿  Exit 1 · skips IDs from the previous page · 3 more lines · expand
+     FAIL skips IDs from the previous page
+     Expected: [{id: "b"}]
+     Received: [{id: "a"}, {id: "b"}]
 
 
 

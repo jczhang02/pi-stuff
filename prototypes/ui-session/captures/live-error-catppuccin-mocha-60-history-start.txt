@@ -27,8 +27,8 @@
                                                            │
  • 没有独立的 cursor.ts. 回到当前 paginate.ts 与测试入口.  │
                                                            │
- • Explored                                                │
-   ⎿  Read 1 file · 2 searches · 1 directory · collapse    │
+ • Thoughts for 2s · Read 1 file · Searched 2 patterns ·   │
+   Listed 1 directory · collapse                           │
                                                            │
    • Read(src/search/paginate.ts)                          │
      ⎿  Read  ↓ Jump to latest message · End               │

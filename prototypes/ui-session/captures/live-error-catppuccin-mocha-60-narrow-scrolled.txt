@@ -1,3 +1,4 @@
+      collapse                                             │
       1 │ test("keeps cursor when every item is filtered", │
         │ () => {                                          │
       2 │   const page = {items: [{id: "a"}], cursor:      │
@@ -20,18 +21,17 @@
       collapse                                             │
      FAIL keeps first occurrence within the same page      │
      Expected: [{id: "a", title: "first"}]                 │
-     Received: [{id: "a", title: "first"}, {id: "a", title:│
+     Received: [{id: "a", title: "first"}, {id: "a", title:┃
      "later"}]                                             ┃
                                                            ┃
      9 pass                                                ┃
-     1 fail                                                ┃
+     1 fail                                                │
                                                            │
  • Edit(src/search/paginate.ts)                            │
    ⎿  Added 5 lines, removed 1 line · collapse             │
      19 19   │   const seen = new Set(previousIds);        │
      20    - │   const items = page.items.filter(item =>   │
-           - │ !seen.has(item.id));                        │
-        20 +  ↓ Jump to latest message · End ter(item => { │
+           -  ↓ Jump to latest message · End               │
 
 ────────────────────────────────────────────────────────────
 下一条草稿不会被展开操作覆盖

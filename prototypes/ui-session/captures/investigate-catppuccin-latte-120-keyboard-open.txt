@@ -1,6 +1,6 @@
+ • 先检查分页实现和现有测试, 再对照游标规则.
 
- • Explored
-   ⎿  Read 2 files · 2 searches · 1 directory · collapse
+ • Read 2 files · Searched 2 patterns · Listed 1 directory · collapse
 
    • Ls(src/search)
      ⎿  Listed 3 entries · collapse

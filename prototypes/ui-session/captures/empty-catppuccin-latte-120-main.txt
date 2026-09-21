@@ -3,10 +3,10 @@
    ⎿  No output · exit 0
 
  • Bash(bun test tests/search)
-   ⎿  Cancelled · no completion result · expand
+   ⎿  Cancelled · no completion result
+     Checking pagination...
 
- • Read(docs/pagination.png)
-   ⎿  Image · image/png · expand
+ • Read 1 file · expand
 
 
 

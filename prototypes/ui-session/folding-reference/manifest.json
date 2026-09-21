@@ -1,0 +1,72 @@
+{
+  "date": "2026-09-21",
+  "version": "2.1.261",
+  "sha256": "4ae40dd1784e85753e742e09f267d29ecbb82890361ad3817d27560866d364a6",
+  "terminalControl": "1.2.1",
+  "rows": 40,
+  "theme": "light",
+  "terminalDefaults": {
+    "foreground": "#000000",
+    "background": "#ffffff"
+  },
+  "responseSource": "localhost Anthropic-compatible SSE fixture; real client and tools; no live model inference",
+  "cases": [
+    {
+      "case": "cross-classic-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "cross-fullscreen-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "prose-classic-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "prose-fullscreen-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "whitespace-classic-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "whitespace-fullscreen-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "bridge-classic-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "bridge-fullscreen-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "mixed-classic-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "mixed-fullscreen-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "readfail-classic-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "readfail-fullscreen-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "thought-classic-100",
+      "captures": ["compact", "expanded"]
+    },
+    {
+      "case": "thought-fullscreen-100",
+      "captures": ["compact", "expanded"]
+    }
+  ],
+  "ansiStorage": "gzip, preserving captured bytes including CR/LF and terminal control sequences"
+}

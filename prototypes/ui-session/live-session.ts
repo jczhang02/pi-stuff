@@ -8,7 +8,7 @@ import {
   type Expansion,
 } from './render';
 import {repairPlan, followupPlan, type Step} from './live-plan';
-import {isExploration, type Entry} from './model';
+import {isActivity, isExploration, type Entry} from './model';
 type Row = {entry: Entry; expansion: Expansion};
 export class LiveSession {
   private rows: Row[] = [];
@@ -132,7 +132,10 @@ export class LiveSession {
       }
       if (elapsed >= duration) {
         this.clearTimer();
-        if (entry.kind === 'thoughts') entry.running = false;
+        if (entry.kind === 'thoughts') {
+          entry.running = false;
+          this.fold(row);
+        }
         if (step.kind === 'tool') {
           row.entry = structuredClone(step.tool);
           // Measured replay duration replaces the static fixture's timing.
@@ -151,22 +154,35 @@ export class LiveSession {
   }
   private fold(row: Row): void {
     const tool = row.entry;
-    if (!isExploration(tool)) return;
+    if (!isActivity(tool)) return;
     const previous = this.rows.at(-2);
-    if (!previous) return;
-    if (previous.entry.kind === 'explore') {
+
+    if (previous?.entry.kind === 'explore') {
       previous.entry = {
         kind: 'explore',
         tools: [...previous.entry.tools, tool],
       };
       previous.expansion.children.push(row.expansion);
-    } else if (isExploration(previous.entry)) {
+    } else if (
+      previous &&
+      isActivity(previous.entry) &&
+      (isExploration(previous.entry) || isExploration(tool))
+    ) {
       previous.entry = {kind: 'explore', tools: [previous.entry, tool]};
       previous.expansion = {
         open: this.expanded || previous.expansion.open || row.expansion.open,
         children: [previous.expansion, row.expansion],
       };
-    } else return;
+    } else {
+      if (isExploration(tool)) {
+        row.entry = {kind: 'explore', tools: [tool]};
+        row.expansion = {
+          open: this.expanded || row.expansion.open,
+          children: [row.expansion],
+        };
+      }
+      return;
+    }
     this.rows.pop();
   }
   cancel(): boolean {

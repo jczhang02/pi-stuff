@@ -1,0 +1,40 @@
+     ⎿  Found 1 file · collapse
+       tests/search/paginate.test.ts
+
+ • Read(src/search/cursor.ts)
+   ⎿  File not found · src/search/cursor.ts · collapse
+     ENOENT: no such file or directory, open src/search/cursor.ts
+
+ • Read 1 file · collapse
+
+   • Read(tests/search/paginate.test.ts)
+     ⎿  Read 3 lines · collapse
+       1 │ test("preserves the cursor", () => {
+       2 │   expect(paginate(page, []).nextCursor).toBe(page.cursor);
+       3 │ });
+
+ • Bash(bun test tests/search)
+   ⎿  8 passed · 0 failed · 0.4s · collapse
+     bun test v1.4.0
+     [pass] preserves the cursor
+     [pass] skips IDs from the previous page
+     [pass] keeps original order
+     [pass] accepts an empty page
+     [pass] accepts an empty previous page
+     [pass] preserves fields
+     [pass] does not mutate input
+     [pass] handles a missing cursor
+
+     8 pass
+     0 fail
+     Ran 8 tests across 2 files.
+
+ • 现有 8 项测试通过, 但还没有覆盖跨页重复.
+
+ Tool output: expanded
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+保留这段草稿
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

@@ -1,8 +1,10 @@
 
  • 先检查旧入口, 找不到就回到当前实现.
 
- • Grep("legacyCursor" in src/search)
-   ⎿  No matches
+ • Searched 1 pattern · collapse
+
+   • Grep("legacyCursor" in src/search)
+     ⎿  No matches
 
  • Read(src/search/cursor.ts)
    ⎿  File not found · src/search/cursor.ts · collapse
@@ -23,8 +25,6 @@
      1 fail
 
  Tool output: expanded
-
-
 
 
 

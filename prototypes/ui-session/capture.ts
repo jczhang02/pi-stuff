@@ -46,7 +46,10 @@ async function click(session: Session, label: string): Promise<void> {
   if (y < 0 || !line) throw new Error(`Cannot click hidden ${label}`);
   await session.mouse({
     action: 'click',
-    x: Math.max(1, line.indexOf(label)),
+    x: Math.max(
+      1,
+      line.indexOf(label) + label.length - label.trimStart().length,
+    ),
     y,
     button: 'left',
   });
@@ -189,7 +192,7 @@ await runEffect(async () => {
       if (args.values.interact) {
         await session.keyboard.type(draft);
         if (scene.name === 'investigate') {
-          await click(session, 'Explored');
+          await click(session, 'Read 2 files');
           await session.screen.waitForText('Read 4 lines', wait);
           await save(
             session,
@@ -207,7 +210,7 @@ await runEffect(async () => {
             host.palette,
             theme,
           );
-          await click(session, 'Explored');
+          await click(session, 'Read 2 files');
           await session.screen.waitUntil(
             s => !s.text.includes('Read 4 lines'),
             wait,
@@ -215,7 +218,35 @@ await runEffect(async () => {
           await save(
             session,
             'group-closed',
-            ['Explored', draft],
+            ['Read 2 files', draft],
+            host.palette,
+            theme,
+          );
+        } else if (scene.name === 'folding') {
+          await click(session, 'Thoughts for 4s');
+          await session.screen.waitForText('Read 4 lines', wait);
+          const order = await session.screen.text();
+          if (
+            !(
+              order.indexOf('Read 4 lines') <
+                order.indexOf('   • Thoughts for 4s') &&
+              order.indexOf('   • Thoughts for 4s') < order.indexOf('Grep(')
+            )
+          )
+            throw new Error('Group changed chronological order');
+          await save(
+            session,
+            'group-open',
+            ['Read 4 lines', 'File not found', draft],
+            host.palette,
+            theme,
+          );
+          await click(session, '   • Thoughts for 4s');
+          await session.screen.waitForText('Thoughts:', wait);
+          await save(
+            session,
+            'thought-open',
+            ['Thoughts:', 'previousIds', draft],
             host.palette,
             theme,
           );
@@ -295,11 +326,13 @@ await runEffect(async () => {
               ? 'Thoughts:'
               : scene.name === 'web'
                 ? 'offset=228'
-                : scene.name === 'changes'
+                : scene.name === 'changes' || scene.name === 'folding'
                   ? 'Ran 8 tests across 2 files.'
-                  : scene.name === 'long-diff'
-                    ? 'including empty filtered pages'
-                    : 'previousIds';
+                  : scene.name === 'empty'
+                    ? 'image/png'
+                    : scene.name === 'long-diff'
+                      ? 'including empty filtered pages'
+                      : 'previousIds';
         await session.screen.waitForText(expandedToken, wait);
         await save(
           session,

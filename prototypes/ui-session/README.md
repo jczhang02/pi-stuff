@@ -33,7 +33,7 @@ bun run tui send pi-ui-session ctrl-o
 bun run tui stop pi-ui-session
 ```
 
-Click a tool for its full retained output. Click Explored to reveal compact children, then click one child to inspect it. Click Thoughts for its content. Ctrl+O toggles all detail; input stays editable. Pi's native scroll controls navigate the complete conversation. Resizing the outer foreground terminal updates the child; the CLI's `resize` command does not resize foreground `run` sessions.
+Click a tool for its full retained output. Click the activity summary to reveal compact children, then click one child to inspect it. Click Thoughts for its content. Ctrl+O toggles all detail; input stays editable. Pi's native scroll controls navigate the complete conversation. Resizing the outer foreground terminal updates the child; the CLI's `resize` command does not resize foreground `run` sessions.
 
 User messages use Pi 0.85.1's exported `UserMessageComponent` with its native background, padding and Markdown behavior. The prototype does not install a footer; Pi renders the real isolated session status, including the `preview` model and context usage. These surfaces are outside the redesign.
 
@@ -49,9 +49,10 @@ Pass a name as the first argument. Scene selection remains outside the evaluated
 | `session`                       | How does the entire compact conversation read?                                                                |
 | `welcome`                       | Does the retained old welcome fit?                                                                            |
 | `investigate`                   | Can a grouped exploration expand into individually inspectable calls?                                         |
-| `tools`                         | Do standalone Read/Grep/Find/Ls keep the same two-line hierarchy?                                             |
+| `folding`                       | Do Thoughts preserve retrieval continuity while prose, Bash and failures close groups?                        |
+| `tools`                         | Do Read/Grep/Find/Ls share one summary and retain inspectable children?                                       |
 | `web`                           | Do all current Web actions share a layout without exposing metadata by default?                               |
-| `changes`                       | Are changes visible while Write and test output stay compact?                                                 |
+| `changes`                       | Are changes visible while Write folds and Bash retains three output rows?                                     |
 | `long-diff`                     | Are context, true changes, hidden rows and the full long target preserved?                                    |
 | `running`                       | Is the active operation clear with a two-row tail?                                                            |
 | `failures`                      | Are no matches, missing files, failed Web requests and failed tests distinct?                                 |
@@ -60,6 +61,8 @@ Pass a name as the first argument. Scene selection remains outside the evaluated
 | `interrupted`, `response-error` | Are response statuses plain text?                                                                             |
 | `empty`                         | Are no output, command cancellation and image fallback honest?                                                |
 | `replay`                        | Does execution settle into compact output, and does Esc stop it?                                              |
+
+The current [folding study](../../docs/research/claude-code-tool-folding-2026-09-21.md) separates real Claude observations from the selected prototype rules. Successful retrieval starts a one-line summary from the first call. Completed Thoughts join that summary in chronological order. Visible prose, user turns, ordinary Bash, writes, Web, failures, cancellation and warnings separate groups. Running calls remain visible until success. Bash retains three output rows; Edit retains three changed rows. Activity summaries have no result connector.
 
 ## Capture and verification
 
@@ -88,7 +91,7 @@ The evidence does not establish production message overrides, general diff gener
 
 用户消息直接复用 Pi 0.85.1 的原生 `UserMessageComponent`, 保留背景、留白和 Markdown 行为. 原型不再覆盖 footer, 状态栏由 Pi 显示隔离会话的实际信息, 包括 `preview` 模型和上下文用量. 这两部分不属于本轮改版.
 
-点击 Explored 展开调用清单, 再点一项看正文; 点击 Thoughts 查看思考内容; Ctrl+O 切换全部详情. 输入框由 Pi 管理. 前台终端尺寸随外层终端变化, 完整会话用 Pi 原生滚动查看. 可在另一个终端用 `bun run tui show pi-ui-session` 检查同一会话.
+点击活动摘要 展开调用清单, 再点一项看正文; 点击 Thoughts 查看思考内容; Ctrl+O 切换全部详情. 输入框由 Pi 管理. 前台终端尺寸随外层终端变化, 完整会话用 Pi 原生滚动查看. 可在另一个终端用 `bun run tui show pi-ui-session` 检查同一会话.
 
 执行、网页、模型标签、测试及耗时均为样例, 动态场景按实际计时播放. 静态场景的普通提交保留为草稿; 连续场景按固定两轮脚本响应, 不理解任意自然语言, 不调用模型. 本轮只验证原型展示和交互, 不代表生产实现已采纳. 截图来自真实终端输出, 配色和字体明确设置, 没有在图片上重绘界面.
 

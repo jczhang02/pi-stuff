@@ -17,7 +17,7 @@ import {
   wrapTextWithAnsi,
   type Component,
 } from '@earendil-works/pi-tui';
-import type {Entry, Tool, ToolBody} from './model';
+import type {Activity, Entry, Tool, ToolBody} from './model';
 
 export type Expansion = {open: boolean; children: Expansion[]};
 export function expansionFor(entry: Entry): Expansion {
@@ -121,18 +121,20 @@ function toolRows(
     ? detail
     : tool.state === 'running'
       ? detail.slice(-2)
-      : tool.name === 'Edit' && tool.state === 'done'
-        ? bodyRows(
-            tool.body.kind === 'diff'
-              ? {
-                  ...tool.body,
-                  rows: tool.body.rows.filter(row => row.kind !== 'context'),
-                }
-              : tool.body,
-            Math.max(1, width - 4),
-            theme,
-          ).slice(0, 3)
-        : [];
+      : tool.name === 'Bash'
+        ? detail.slice(0, 3)
+        : tool.name === 'Edit' && tool.state === 'done'
+          ? bodyRows(
+              tool.body.kind === 'diff'
+                ? {
+                    ...tool.body,
+                    rows: tool.body.rows.filter(row => row.kind !== 'context'),
+                  }
+                : tool.body,
+              Math.max(1, width - 4),
+              theme,
+            ).slice(0, 3)
+          : [];
   const hidden = detail.length > shown.length;
   const hint =
     hidden || (!state.open && tool.metadata)
@@ -173,23 +175,30 @@ function toolRows(
     );
   return rows;
 }
-function explorationSummary(tools: readonly Tool[]): string {
+function explorationSummary(entries: readonly Activity[]): string {
+  const tools = entries.filter((entry): entry is Tool => entry.kind === 'tool');
+  const seconds = entries.reduce(
+    (total, entry) => total + (entry.kind === 'thoughts' ? entry.seconds : 0),
+    0,
+  );
   const reads = tools.filter(t => t.name === 'Read').length;
-  const searches = tools.filter(t => t.name === 'Grep').length;
-  const finds = tools.filter(t => t.name === 'Find').length;
+  const searches = tools.filter(
+    t => t.name === 'Grep' || t.name === 'Find',
+  ).length;
   const lists = tools.filter(t => t.name === 'Ls').length;
   return [
-    reads ? `Read ${reads} file${reads === 1 ? '' : 's'}` : '',
-    searches + finds
-      ? `${searches + finds} search${searches + finds === 1 ? '' : 'es'}`
+    entries.some(entry => entry.kind === 'thoughts')
+      ? `Thoughts for ${seconds}s`
       : '',
-    lists ? `${lists} director${lists === 1 ? 'y' : 'ies'}` : '',
+    reads ? `Read ${reads} file${reads === 1 ? '' : 's'}` : '',
+    searches ? `Searched ${searches} pattern${searches === 1 ? '' : 's'}` : '',
+    lists ? `Listed ${lists} director${lists === 1 ? 'y' : 'ies'}` : '',
   ]
     .filter(Boolean)
     .join(' · ');
 }
 function textRows(
-  entry: Exclude<Entry, Tool | {kind: 'explore'; tools: readonly Tool[]}>,
+  entry: Exclude<Entry, Tool | {kind: 'explore'; tools: readonly Activity[]}>,
   state: Expansion,
   theme: Theme,
   width: number,
@@ -239,16 +248,14 @@ export function entryComponent(
         container.addChild(
           new MouseRegion(
             {
-              render: w => [
-                theme.fg('success', '• ') + theme.bold('Explored'),
-                ...wrapTextWithAnsi(
+              render: w =>
+                wrapTextWithAnsi(
                   theme.fg('muted', explorationSummary(entry.tools)) +
                     theme.fg('dim', state.open ? ' · collapse' : ' · expand'),
-                  Math.max(1, w - 5),
+                  Math.max(1, w - 2),
                 ).map(
-                  (line, i) => (i ? '     ' : theme.fg('dim', '  ⎿  ')) + line,
+                  (line, i) => (i ? '  ' : theme.fg('success', '• ')) + line,
                 ),
-              ],
               invalidate() {},
             },
             event => {

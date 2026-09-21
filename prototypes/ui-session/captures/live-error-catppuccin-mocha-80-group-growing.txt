@@ -20,11 +20,11 @@
 
  • 没有独立的 cursor.ts. 回到当前 paginate.ts 与测试入口.
 
- • Explored
-   ⎿  Read 1 file · 1 search · expand
+ • Read 1 file · expand
 
- • Find("*paginate*" in tests)
-   ⎿  Running · 0s
+ • Thinking · 0s
+
+
 
 
 

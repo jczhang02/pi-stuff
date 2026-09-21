@@ -102,6 +102,7 @@
   <p>
     以当前功能为范围, 在真实 Pi 中运行的新会话样式. 这里的图片来自可交互终端,
     模型与执行数据是离线样例.
+    <a href="folding-reference/index.html">折叠边界实测</a> ·
     <a href="claude-reference/index.html">Claude Code 2.1.261 实测对照</a> ·
     <a href="README.md">启动与操作说明</a> ·
     <a href="../../docs/i18n/zh-CN/research/ui-session-prototype-2026-09-21.md"
@@ -115,12 +116,14 @@
       preview 模型与上下文用量.
     </li>
     <li>
-      Read/Grep/Find/Ls 连续成功两次起聚合. 点击组查看调用, 再点一项查看内容.
+      成功的 Read/Grep/Find/Ls 从一次起显示活动摘要, 后续连续调用合并; Thinking
+      不切断组, 正文、普通 Bash、写入、Web 与失败切断. 点击组查看调用,
+      再点一项查看内容.
     </li>
     <li>
       工具采用 "操作与目标 / 结果" 两层, 称为工具调用/结果块. 每个结果摘要一个
-      ⎿, 续行只缩进; 展开的独立子工具各有自己的标记. Write、Web 和成功 Bash
-      默认收起, Edit 保留三行短 diff.
+      ⎿, 续行只缩进; 展开的独立子工具各有自己的标记. Write、Web 默认收起, Bash
+      保留三行输出, Edit 保留三行短 diff. 活动摘要不用 ⎿.
     </li>
     <li>WebSearch / WebFetch / WebRead 共用相同样式; 元数据只在展开后显示.</li>
     <li>Thoughts 显示耗时, 点击阅读正文. 回答失败或中断保持普通文字.</li>
@@ -129,12 +132,12 @@
     <a href="#live">连续交互会话</a><a href="#live-error">回答失败后重试</a
     ><a href="#welcome">欢迎页</a><a href="#long-diff">长 diff 与长路径</a
     ><a href="#session">完整会话</a><a href="#investigate">定位问题</a
-    ><a href="#tools">独立工具</a><a href="#web">Web 家族</a
-    ><a href="#changes">修改与验证</a><a href="#running">执行中</a
-    ><a href="#failures">工具失败与空结果</a><a href="#long-output">长输出</a
-    ><a href="#thoughts">思考过程</a><a href="#interrupted">回答中断</a
-    ><a href="#response-error">回答失败</a><a href="#empty">无输出与取消</a
-    ><a href="#replay">动态执行</a>
+    ><a href="#folding">折叠边界</a><a href="#tools">检索工具</a
+    ><a href="#web">Web 家族</a><a href="#changes">修改与验证</a
+    ><a href="#running">执行中</a><a href="#failures">工具失败与空结果</a
+    ><a href="#long-output">长输出</a><a href="#thoughts">思考过程</a
+    ><a href="#interrupted">回答中断</a><a href="#response-error">回答失败</a
+    ><a href="#empty">无输出与取消</a><a href="#replay">动态执行</a>
   </nav>
   <section id="live">
     <h2>连续交互会话</h2>
@@ -675,7 +678,7 @@
   </section>
   <section id="investigate">
     <h2>定位问题</h2>
-    <p>5 个连续只读调用聚合为两行; 点击组标题查看各次调用.</p>
+    <p>5 个连续只读调用聚合为一行; 点击组标题查看各次调用.</p>
     <code>bun prototypes/ui-session/run.ts investigate</code>
     <div class="grid">
       <figure>
@@ -779,9 +782,115 @@
       </figure>
     </div>
   </section>
+  <section id="folding">
+    <h2>折叠边界</h2>
+    <p>
+      Thinking 不切断检索组; 正文、普通 Bash 和失败调用保留独立位置.
+      展开按原始顺序查看.
+    </p>
+    <code>bun prototypes/ui-session/run.ts folding</code>
+    <div class="grid">
+      <figure>
+        <figcaption>展开探索组 · 浅色 · 120 列</figcaption>
+        <a href="captures/folding-catppuccin-latte-120-group-open.png"
+          ><img
+            loading="lazy"
+            src="captures/folding-catppuccin-latte-120-group-open.png"
+            alt="折叠边界 / 展开探索组 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/folding-catppuccin-latte-120-group-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/folding-catppuccin-latte-120-group-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 浅色 · 120 列</figcaption>
+        <a href="captures/folding-catppuccin-latte-120-main.png"
+          ><img
+            loading="lazy"
+            src="captures/folding-catppuccin-latte-120-main.png"
+            alt="折叠边界 / 默认状态 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/folding-catppuccin-latte-120-main.txt">文本</a> ·
+          <a href="captures/folding-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>按原始顺序展开组内思考 · 浅色 · 120 列</figcaption>
+        <a href="captures/folding-catppuccin-latte-120-thought-open.png"
+          ><img
+            loading="lazy"
+            src="captures/folding-catppuccin-latte-120-thought-open.png"
+            alt="折叠边界 / 按原始顺序展开组内思考 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/folding-catppuccin-latte-120-thought-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/folding-catppuccin-latte-120-thought-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>展开探索组 · 深色 · 80 列</figcaption>
+        <a href="captures/folding-catppuccin-mocha-80-group-open.png"
+          ><img
+            loading="lazy"
+            src="captures/folding-catppuccin-mocha-80-group-open.png"
+            alt="折叠边界 / 展开探索组 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/folding-catppuccin-mocha-80-group-open.txt">文本</a>
+          ·
+          <a href="captures/folding-catppuccin-mocha-80-group-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 深色 · 80 列</figcaption>
+        <a href="captures/folding-catppuccin-mocha-80-main.png"
+          ><img
+            loading="lazy"
+            src="captures/folding-catppuccin-mocha-80-main.png"
+            alt="折叠边界 / 默认状态 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/folding-catppuccin-mocha-80-main.txt">文本</a> ·
+          <a href="captures/folding-catppuccin-mocha-80-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>按原始顺序展开组内思考 · 深色 · 80 列</figcaption>
+        <a href="captures/folding-catppuccin-mocha-80-thought-open.png"
+          ><img
+            loading="lazy"
+            src="captures/folding-catppuccin-mocha-80-thought-open.png"
+            alt="折叠边界 / 按原始顺序展开组内思考 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/folding-catppuccin-mocha-80-thought-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/folding-catppuccin-mocha-80-thought-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
+    </div>
+  </section>
   <section id="tools">
-    <h2>独立工具</h2>
-    <p>Read、Grep、Find、Ls 默认只保留操作和结果两行.</p>
+    <h2>检索工具</h2>
+    <p>Read、Grep、Find、Ls 共享活动摘要, 展开后各自保留操作和结果两层.</p>
     <code>bun prototypes/ui-session/run.ts tools</code>
     <div class="grid">
       <figure>
@@ -790,7 +899,7 @@
           ><img
             loading="lazy"
             src="captures/tools-catppuccin-latte-120-main.png"
-            alt="独立工具 / 默认状态 · 浅色 · 120 列"
+            alt="检索工具 / 默认状态 · 浅色 · 120 列"
         /></a>
         <p>
           <a href="captures/tools-catppuccin-latte-120-main.txt">文本</a> ·
@@ -1094,6 +1203,24 @@
     <p>无输出、命令取消、图片文本回退都保留事实.</p>
     <code>bun prototypes/ui-session/run.ts empty</code>
     <div class="grid">
+      <figure>
+        <figcaption>Ctrl+O 展开全部 · 浅色 · 120 列</figcaption>
+        <a href="captures/empty-catppuccin-latte-120-keyboard-open.png"
+          ><img
+            loading="lazy"
+            src="captures/empty-catppuccin-latte-120-keyboard-open.png"
+            alt="无输出与取消 / Ctrl+O 展开全部 · 浅色 · 120 列"
+        /></a>
+        <p>
+          <a href="captures/empty-catppuccin-latte-120-keyboard-open.txt"
+            >文本</a
+          >
+          ·
+          <a href="captures/empty-catppuccin-latte-120-keyboard-open.ansi"
+            >ANSI</a
+          >
+        </p>
+      </figure>
       <figure>
         <figcaption>默认状态 · 浅色 · 120 列</figcaption>
         <a href="captures/empty-catppuccin-latte-120-main.png"

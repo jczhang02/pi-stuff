@@ -1,5 +1,5 @@
 // Offline event script for a coherent, multi-turn pagination repair.
-import {getEntries} from './fixtures';
+import {getToolFixtures, retrievalTools} from './fixtures';
 import type {Entry, Tool} from './model';
 export type Step =
   | {kind: 'entry'; entry: Entry}
@@ -7,15 +7,11 @@ export type Step =
   | {kind: 'thought'; text: string}
   | {kind: 'answer'; text: string}
   | {kind: 'failure'};
-const tools = (scene: string) =>
-  structuredClone(getEntries(scene)).filter(
-    (entry): entry is Tool => entry.kind === 'tool',
-  );
 export function repairPlan(): Step[] {
-  const investigation = tools('tools');
-  const failures = tools('failures');
-  const web = tools('web');
-  const changes = tools('changes');
+  const investigation = structuredClone(retrievalTools);
+  const failures = getToolFixtures('failures');
+  const web = getToolFixtures('web');
+  const changes = getToolFixtures('changes');
   const missing = failures.find(tool => tool.name === 'Read');
   const webFailure = failures.find(tool => tool.name === 'WebFetch');
   const testFailure = failures.find(tool => tool.name === 'Bash');
@@ -38,7 +34,12 @@ export function repairPlan(): Step[] {
         text: '没有独立的 cursor.ts. 回到当前 paginate.ts 与测试入口.',
       },
     },
-    ...investigation.map(tool => ({kind: 'tool', tool}) as const),
+    {kind: 'tool', tool: investigation[0]!},
+    {
+      kind: 'thought',
+      text: '实现读取了 previousIds, 需要查找它在过滤路径中的使用位置.',
+    },
+    ...investigation.slice(1).map(tool => ({kind: 'tool', tool}) as const),
     {
       kind: 'entry',
       entry: {
@@ -105,7 +106,7 @@ export function followupPlan(): Step[] {
       text: '继续补全空过滤页与页内重复. 上一版只检查 seen, 没有把本页新 ID 加进去; 需要在保留记录时更新集合.',
     },
     {kind: 'answer', text: '我会补上这两个边界, 再检查完整 diff 和测试输出.'},
-    ...tools('tools')
+    ...structuredClone(retrievalTools)
       .slice(0, 2)
       .map(
         tool =>

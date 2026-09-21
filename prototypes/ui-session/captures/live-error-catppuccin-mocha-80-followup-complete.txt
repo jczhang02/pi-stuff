@@ -1,13 +1,10 @@
- • 我会补上这两个边界, 再检查完整 diff 和测试输出.
-
- • Explored
-   ⎿  Read 1 file · 1 search · expand
-
- • Write(tests/search/pagination-additional.test.ts)
    ⎿  Wrote 10 lines · 2 additional boundary tests · expand
 
  • Bash(bun test tests/search)
-   ⎿  9 passed · 1 failed · duplicate within page · expand
+   ⎿  9 passed · 1 failed · duplicate within page · 3 more lines · expand
+     FAIL keeps first occurrence within the same page
+     Expected: [{id: "a", title: "first"}]
+     Received: [{id: "a", title: "first"}, {id: "a", title: "later"}]
 
  • Edit(src/search/paginate.ts)
    ⎿  Added 5 lines, removed 1 line · 5 more lines · expand
@@ -16,7 +13,10 @@
         21 + │     if (seen.has(item.id)) return false;
 
  • Bash(bun test tests/search --verbose)
-   ⎿  10 passed · 0 failed · expand
+   ⎿  10 passed · 0 failed · 31 more lines · expand
+     [pass] preserves the cursor
+       case 1: cursor preserved; input unchanged
+       fixture: page-1; stable output order
 
  • Bash(git diff --check)
    ⎿  No output · exit 0

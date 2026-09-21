@@ -6,12 +6,12 @@
  • Thoughts for 4s
 
  • Bash(bun test tests/search)
-   ⎿  8 passed · 0 failed · 4.0s · expand
+   ⎿  8 passed · 0 failed · 4.0s · 10 more lines · expand
+     bun test v1.4.0
+     [pass] preserves the cursor
+     [pass] skips IDs from the previous page
 
  8 tests passed. The cursor is preserved.
-
-
-
 
 
 

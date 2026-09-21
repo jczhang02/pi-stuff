@@ -185,6 +185,7 @@ const plan: Entry = {
   text: '先检查分页实现和现有测试, 再对照游标规则.',
 };
 const exploration = [ls, grep, read, find, testRead];
+export const retrievalTools: readonly Tool[] = [read, grep, find, ls];
 const research: Entry[] = [
   {
     kind: 'assistant',
@@ -196,7 +197,10 @@ const research: Entry[] = [
   webPage,
 ];
 const fix: Entry[] = [
-  {kind: 'assistant', text: '保持 provider 返回的 cursor, 只过滤重复的 item.'},
+  {
+    kind: 'assistant',
+    text: '保持 provider 返回的 cursor, 只过滤重复的 item.',
+  },
   edit,
   write,
   test,
@@ -282,14 +286,20 @@ export const scenes = [
   {
     name: 'investigate',
     title: '定位问题',
-    note: '5 个连续只读调用聚合为两行; 点击组标题查看各次调用.',
-    tokens: ['Explored', '2 files'],
+    note: '5 个连续只读调用聚合为一行; 点击组标题查看各次调用.',
+    tokens: ['Read 2 files', 'Searched 2 patterns'],
+  },
+  {
+    name: 'folding',
+    title: '折叠边界',
+    note: 'Thinking 不切断检索组; 正文、普通 Bash 和失败调用保留独立位置. 展开按原始顺序查看.',
+    tokens: ['Thoughts for 4s', 'File not found', '8 passed'],
   },
   {
     name: 'tools',
-    title: '独立工具',
-    note: 'Read、Grep、Find、Ls 默认只保留操作和结果两行.',
-    tokens: ['Read 4 lines', 'Found 3 matches'],
+    title: '检索工具',
+    note: 'Read、Grep、Find、Ls 共享活动摘要, 展开后各自保留操作和结果两层.',
+    tokens: ['Read 1 file', 'Searched 2 patterns'],
   },
   {
     name: 'web',
@@ -313,7 +323,7 @@ export const scenes = [
     name: 'failures',
     title: '工具失败与空结果',
     note: '工具失败保留原因, 没有匹配是正常结果. 不重复显示错误正文.',
-    tokens: ['No matches', 'File not found', 'HTTP 404'],
+    tokens: ['Searched 1 pattern', 'File not found', 'HTTP 404'],
   },
   {
     name: 'long-output',
@@ -343,7 +353,7 @@ export const scenes = [
     name: 'empty',
     title: '无输出与取消',
     note: '无输出、命令取消、图片文本回退都保留事实.',
-    tokens: ['No output', 'Cancelled', 'image/png'],
+    tokens: ['No output', 'Cancelled', 'Read 1 file'],
   },
   {
     name: 'replay',
@@ -354,6 +364,14 @@ export const scenes = [
 ] as const;
 export type SceneName = (typeof scenes)[number]['name'];
 export function getEntries(name: string): Entry[] {
+  return groupExploration(scenarioEntries(name));
+}
+export function getToolFixtures(name: string): Tool[] {
+  return structuredClone(scenarioEntries(name)).filter(
+    (entry): entry is Tool => entry.kind === 'tool',
+  );
+}
+function scenarioEntries(name: string): Entry[] {
   switch (name) {
     case 'welcome':
     case 'live':
@@ -408,18 +426,26 @@ export function getEntries(name: string): Entry[] {
         },
       ];
     case 'session':
-      return groupExploration([
-        user,
-        thoughts,
-        plan,
-        ...exploration,
-        ...research,
-        ...fix,
-      ]);
+      return [user, thoughts, plan, ...exploration, ...research, ...fix];
     case 'investigate':
-      return groupExploration([user, thoughts, plan, ...exploration]);
+      return [user, thoughts, plan, ...exploration];
+    case 'folding':
+      return [
+        read,
+        thoughts,
+        grep,
+        {
+          kind: 'assistant',
+          text: '过滤没有使用 previousIds. 接着检查测试入口.',
+        },
+        find,
+        missing,
+        testRead,
+        test,
+        {kind: 'assistant', text: '现有 8 项测试通过, 但还没有覆盖跨页重复.'},
+      ];
     case 'tools':
-      return [plan, read, grep, find, ls];
+      return [plan, ...retrievalTools];
     case 'web':
       return research;
     case 'changes':

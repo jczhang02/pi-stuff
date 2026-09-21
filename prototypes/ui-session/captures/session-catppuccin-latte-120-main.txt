@@ -1,6 +1,3 @@
- • Explored
-   ⎿  Read 2 files · 2 searches · 1 directory · expand
-
  • 实现读取了 previousIds, 但没有过滤结果. 我再确认空页时应如何保留游标.
 
  • WebSearch("cursor pagination duplicate results")
@@ -27,7 +24,10 @@
    ⎿  Wrote 7 lines · expand
 
  • Bash(bun test tests/search)
-   ⎿  8 passed · 0 failed · 0.4s · expand
+   ⎿  8 passed · 0 failed · 0.4s · 10 more lines · expand
+     bun test v1.4.0
+     [pass] preserves the cursor
+     [pass] skips IDs from the previous page
 
  • 已修复分页重复: 保留结果顺序, 游标原样传递.
 
