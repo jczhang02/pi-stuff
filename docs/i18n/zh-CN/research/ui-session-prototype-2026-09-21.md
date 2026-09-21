@@ -77,8 +77,12 @@ Terminal Control 导出真实 Pi 屏幕, 使用仓库 Latte/Mocha 主题及 `Jet
 
 精确续行规则来自本地旧快照 `21b636e`: `packages/pi-stuff/src/tool-display/operation-block-renderer.ts` 的 `renderEvidence` 只在第一条源文本的第一个换行片段使用子项前缀. `render.ts` 和组件集成测试也区分首行前缀与续行空格. 旧项目 `docs/research/pi-stuff-operation-block-dialog-study-20260829.md` 将该单元称为 **Operation Block**, 明确属于项目工作术语.
 
-Claude Code 2.1.220 历史 PTY 报告能证明独立调用与聚合的区别, 但标准化后的文字省略了部分装饰符号. 更早的 agent 活动示意也不是精确截图, 不能据此声称当前 Claude 的所有工具都使用固定数量的枝线. [当前全屏文档](https://code.claude.com/docs/en/fullscreen#use-the-mouse)确认工具调用和结果一起展开, 没有规定这个字符的排版. 本轮没有重新运行当前 Claude 的提供方夹具. 因而原型采用的是已核对的旧 Pi 续行规则, 不宣称是所有 Claude renderer 的统一契约.
+Claude Code 2.1.220 历史 PTY 报告能证明独立调用与聚合的区别, 但标准化后的文字省略了部分装饰符号. 更早的 agent 活动示意也不是精确截图, 不能据此声称当前 Claude 的所有工具都使用固定数量的枝线. [当前全屏文档](https://code.claude.com/docs/en/fullscreen#use-the-mouse)确认工具调用和结果一起展开, 没有规定这个字符的排版. 最初文档调研没有重新运行当前 Claude 的提供方夹具; 下方补充的直接执行研究已更新这一证据边界. 因而原型采用的是已核对的旧 Pi 续行规则, 不宣称是所有 Claude renderer 的统一契约.
 
 在已查阅的 Claude 文档中未找到该布局的官方专名. 可称为 **工具调用/结果块 (tool invocation/result block)**, 项目内部可沿用 **Operation Block**. [Anthropic 工具文档](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview#how-tool-use-works)将协议块称为 `tool_use` 和 `tool_result`, 没有定义视觉上的双行组件. 悬挂缩进描述续行对齐, 渐进式披露描述按需展开详情; 两者都不要求固定两行物理文本.
 
 字符本身是 U+23BF, [Unicode 名称为 Dentistry Symbol Light Vertical and Bottom Right](https://www.unicode.org/charts/nameslist/n_2300.html). 这是字形名称, 不是工具 UI 的学名.
+
+## 直接运行 Claude 的后续验证
+
+[Claude Code 2.1.261 实测](claude-code-result-marker-2026-09-21.md)记录了 20 次真实客户端执行和 43 张终端截图, 直接验证本轮标记规则, 区分 classic/fullscreen、收起/展开、运行和中断. 该符号也会引出命令预览或中断提示, 因而 "从属内容连接符" 比单纯的已完成结果标记更准确. 原型继续保留已选定的旧 Pi/classic 风格, 并明确与 Claude 不同的地方.

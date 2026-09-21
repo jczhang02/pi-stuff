@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for wrapped.
+
+● Bash(python3 long-output.py)
+  ⎿  LONG_START pagination_cursor_pagination_cursor_pagination_cursor_pagination_cursor_pagination_c
+     ursor_pagination_cursor_pagination_cursor_pagination_cursor_pagination_cursor_pagination_cursor
+     _pagination_cursor_pagination_cursor_ LONG_END
+     SECOND_LOGICAL_LINE
+
+                                                                  09:45 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Cooked for 0s · done 9:45 AM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ? for shortcuts                          verbose

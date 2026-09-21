@@ -1,0 +1,288 @@
+{
+  "date": "2026-09-21",
+  "version": "2.1.261",
+  "sha256": "4ae40dd1784e85753e742e09f267d29ecbb82890361ad3817d27560866d364a6",
+  "terminalControl": "1.2.1",
+  "rows": 40,
+  "theme": "light",
+  "terminalDefaults": {
+    "foreground": "#000000",
+    "background": "#ffffff"
+  },
+  "responseSource": "localhost Anthropic-compatible SSE fixture; real client and tools; no live model inference",
+  "cases": [
+    {
+      "case": "cat-classic-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "cat-fullscreen-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "edit-classic-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 1
+        },
+        {
+          "state": "expanded",
+          "markers": 2
+        }
+      ]
+    },
+    {
+      "case": "edit-fullscreen-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 1
+        },
+        {
+          "state": "expanded",
+          "markers": 2
+        }
+      ]
+    },
+    {
+      "case": "empty-classic-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 1
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "empty-fullscreen-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "failed-classic-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 1
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "failed-fullscreen-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "multiline-classic-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 1
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "multiline-fullscreen-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "reads-classic-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 2
+        }
+      ]
+    },
+    {
+      "case": "reads-fullscreen-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 2
+        }
+      ]
+    },
+    {
+      "case": "running-classic-100",
+      "captures": [
+        {
+          "state": "running",
+          "markers": 1
+        },
+        {
+          "state": "cancelled",
+          "markers": 1
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "running-fullscreen-100",
+      "captures": [
+        {
+          "state": "running",
+          "markers": 1
+        },
+        {
+          "state": "running-expanded",
+          "markers": 0
+        },
+        {
+          "state": "cancelled",
+          "markers": 1
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "two-classic-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 2
+        },
+        {
+          "state": "expanded",
+          "markers": 2
+        }
+      ]
+    },
+    {
+      "case": "two-fullscreen-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 2
+        }
+      ]
+    },
+    {
+      "case": "wrapped-classic-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 1
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "wrapped-classic-60",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 1
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "wrapped-fullscreen-100",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    },
+    {
+      "case": "wrapped-fullscreen-60",
+      "captures": [
+        {
+          "state": "compact",
+          "markers": 0
+        },
+        {
+          "state": "expanded",
+          "markers": 1
+        }
+      ]
+    }
+  ],
+  "ansiStorage": "gzip, preserving captured bytes including CR/LF and terminal control sequences"
+}
