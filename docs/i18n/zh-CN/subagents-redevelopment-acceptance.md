@@ -23,9 +23,34 @@
 
 表中省略 `.test.ts`, 所有系统测试位于 [tests/system](../../../tests/system/). 完整套件结果和独立审查范围记录在 PR. 截图中的模型报告用于证明上下文保留, 不替代执行报告建议的测试.
 
-## 最终验证
+## 截至 2026-09-21 的验证
 
 本地完整套件通过 231 项, 有 2 项预期跳过, 0 失败, 共 66 个文件、2,033 个断言. 两项异步 steer 用例需要编译宿主, 已在独立 profile 通过. 编译宿主定向批次分别通过 10 项/105 个断言、8 项/69 个断言, 以及 question-race 的 7 个断言. `bun run check` 和 `git diff --check` 通过. 最终 question-race 测试已独立审查并重跑.
+
+## 2026-09-22 实测修复
+
+本轮基线为 `a70080522eede76c7f022f9267747648756adfbd`. 真实使用暴露了内部报告刷屏、面板缺少分隔、耗时只显示秒、问题/任务文字重复和 Activity 难以访问. 修复保留发送给模型的报告, 将编排通知显示为可展开的紧凑摘要, 面向用户的结论由父代理给出. 续聊完成只报告本次执行的任务.
+
+本轮真实流程使用编译 Pi `0.86.1`、Bun `1.4.0`、tmux `3.6a` 和真实 `openai-codex/gpt-6-astra`, thinking 为 low. 设置及记录隔离, 只读项目包含复制的源码和已安装依赖的链接. 在专用 tmux server 中通过箭头、Enter、Esc 和局部字母操作. Terminal Control 使用前述 Ghostty 字体栈, 在 150x50、120x36、80x24 捕获真实 Latte/Mocha 画面.
+
+- 两个同名 explorer 并行提问, 经 Esc 和缩放后回复草稿仍保留, 问题没有重复显示. Reviewer 等两份报告到齐后启动.
+- 定向 steering 在 Fleet 显示待处理数量, 由正确的 child 消费. 报告包含两次 steering 的确认标记.
+- 续聊、撤回停止确认、确认停止及恢复保留 reviewer 上下文. 历史和 Transcript 可访问. 后续 45 项报告验证分页及直接打开 Activity.
+- 第二组工作中, 停止一个 child 没有停止独立同伴. 同伴收到 UI 回复后完成, 被停止 child 的依赖节点跳过.
+- 串行链将 `SubagentUI.handleInput` 从第一个 child 传给第二个. Auto-await 直接返回结果, 没有额外后台完成回合.
+- Reload 保留记录. 恢复的内置工具证据使用 Pi 公共 renderer factory, 不启动新 child. 最后两次续聊回忆先前发现, 分别返回 `FINAL-REVISION-ACK` 和最终修复 reload 后的 `DELIVERY-CONTEXT-ACK`.
+
+[脱敏执行证据](../../assets/subagents-redevelopment-acceptance/ux-live-run.json)包含三组流程的 13 条执行记录, 其中一条是依赖跳过. 子代理记录费用为 **$0.976440**, 父代理为 **$0.532160**, 属于模型用量统计而非账单. 截图是真实终端输出, 不是生成概念图或原生 Ghostty 窗口. 流程中模型给出的代码判断属于任务输出, 不作为本轮测试结论. 自建终端及 tmux server 已停止, 临时凭据副本已删除.
+
+独立审查复现了完成通知/续聊竞态、切换 Activity 丢失冻结阅读内容、图中文字挤掉名称及指标. 通知修复让续聊等待前次收尾, 每次通知保留自己的任务范围. 回归还覆盖展开后的错误证据和缺失报告措辞. 最终离线全套为 245 通过、2 项编译宿主专用跳过、0 失败, 共 68 文件、2,113 断言. 编译宿主全部 subagent 测试为 66 通过、896 断言, 包含上述跳过项. 最后收紧翻页等待和面板横线断言后, 独立编译宿主复跑为 6 通过、23 断言. 静态检查和 `git diff --check` 通过. 审查范围记录在 PR #103.
+
+![80x24 下单份问题与保留的草稿](../../assets/subagents-redevelopment-acceptance/ux-reply-80x24.png)
+
+![80x24 下列对齐及待处理 steering](../../assets/subagents-redevelopment-acceptance/ux-queued-fleet-80x24.png)
+
+![暗色 120x36 下恢复的原生 Activity 位于长报告前](../../assets/subagents-redevelopment-acceptance/ux-activity-dark-120x36.png)
+
+![暗色 120x36 下保留上下文的最后一次续聊](../../assets/subagents-redevelopment-acceptance/ux-final-detail-dark.png)
 
 ## 2026-09-21 真实流程
 

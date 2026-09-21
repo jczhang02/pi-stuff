@@ -16,6 +16,7 @@ import type {Component, MarkdownTheme, TUI} from '@earendil-works/pi-tui';
 import {Markdown} from '@earendil-works/pi-tui';
 import {Schema} from 'effect';
 import type {RequestRecord} from './records';
+import {recordedToolDefinition} from './activity';
 
 export interface TranscriptSource {
   readonly sessionManager: SessionManager;
@@ -138,7 +139,8 @@ function componentsForMessage(
         part.id,
         part.arguments,
         {showImages: false},
-        source.getToolDefinition?.(part.name),
+        source.getToolDefinition?.(part.name) ??
+          recordedToolDefinition(part.name, source.cwd),
         source.tui,
         source.cwd,
       );

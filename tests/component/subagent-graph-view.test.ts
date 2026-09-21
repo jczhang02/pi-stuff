@@ -16,11 +16,12 @@ function task(
   needs: string[] = [],
   status: TaskSnapshot['status'] = 'queued',
   agent = id,
+  assignment = `${agent} task`,
 ): TaskSnapshot {
   return {
     id,
     agent,
-    task: `${agent} task`,
+    task: assignment,
     cwd: '/tmp',
     prompt: '',
     write: false,
@@ -69,6 +70,36 @@ test('GraphView renders stable DAG order and every explicit diamond edge', () =>
   expect(rendered).toContain('▶○ gamma');
   expect(rendered).toContain('└─▶● review');
   expect(rendered).toContain('┤');
+});
+
+test('GraphView disambiguates duplicate agents with assignments and metrics', () => {
+  const snapshot = run([
+    task('first', [], 'completed', 'explorer', 'Read lifecycle'),
+    task('second', [], 'completed', 'explorer', 'Inspect cancellation'),
+    task(
+      'review',
+      ['first', 'second'],
+      'completed',
+      'reviewer',
+      'Compare findings',
+    ),
+  ]);
+  const review = snapshot.tasks[2];
+  if (review === undefined) throw new Error('Missing review task.');
+  review.startedAt = 0;
+  review.endedAt = 62_000;
+  review.usage = {output: 1_200, turns: 1};
+  const rendered = plain(
+    new GraphView(snapshot, 'review').render(120, 10, theme),
+  ).join('\n');
+
+  expect(rendered).toContain('○ explorer · Read lifecycle');
+  expect(rendered).toContain('○ explorer · Inspect cancel');
+  expect(rendered).toContain('● reviewer');
+  expect(rendered).toContain('Done · reviewer · Compare findings · 1m 2s');
+  expect(rendered).toContain('▶');
+  expect(rendered).not.toContain('first');
+  expect(rendered).not.toContain('second');
 });
 
 test('GraphView navigation uses configured selection bindings', () => {
@@ -201,4 +232,45 @@ test('a prerequisite connecting to both joins remains a connection at a crossing
   expect(rendered).not.toContain('╳ crossing');
   expect(rendered).toContain('▶○ both-one');
   expect(rendered).toContain('▶● both-two');
+});
+
+test('duplicate long roles preserve distinct assignment text at 80 columns', () => {
+  const snapshot = run([
+    task(
+      'one',
+      [],
+      'completed',
+      'independent-researcher',
+      'Lifecycle evidence',
+    ),
+    task('two', [], 'completed', 'independent-researcher', 'Mailbox behavior'),
+    task('join', ['one', 'two'], 'queued', 'reviewer'),
+  ]);
+  const lines = plain(new GraphView(snapshot, 'join').render(80, 10, theme));
+  expect(lines[1]).toContain('Lifecyc');
+  expect(lines[3]).toContain('Mailbox');
+  expect(lines[1]).not.toContain('one');
+  expect(lines[3]).not.toContain('two');
+  expect(lines.every(line => visibleWidth(line) <= 80)).toBe(true);
+});
+
+test('graph keeps request metrics when the selected assignment is long', () => {
+  const selected = task(
+    'review',
+    [],
+    'completed',
+    'reviewer',
+    'Review cancellation and persistence '.repeat(10),
+  );
+  selected.startedAt = 0;
+  selected.endedAt = 2_714_000;
+  selected.usage = {output: 8_200, turns: 1};
+  for (const width of [80, 120]) {
+    const lines = plain(
+      new GraphView(run([selected]), selected.id).render(width, 8, theme),
+    );
+    expect(lines.at(-1)).toContain('Done · reviewer');
+    expect(lines.at(-1)).toEndWith('45m 14s · ↓ 8.2k tokens');
+    expect(visibleWidth(lines.at(-1) ?? '')).toBeLessThanOrEqual(width);
+  }
 });

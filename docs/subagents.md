@@ -29,7 +29,7 @@ FleetView appears below the main statusline. At an editor edge, Up/Down enters i
 | Surface              | Action                                                                                                               |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Fleet                | Pi's selection keys move; confirm opens the selected child; `g` opens its dependency graph when it has dependencies. |
-| Child detail         | `p` expands Prompt, `a` expands Activity, `t` opens Transcript, `i` opens Info.                                      |
+| Child detail         | `p` expands Prompt, `a` opens Activity before the report, `t` opens Transcript, `i` opens Info.                      |
 | Working child        | `m` opens a targeted message editor; the exact instruction remains queued until native input consumes it.            |
 | Pending question     | Confirm opens Reply for that question. A competing answer cannot retarget the draft.                                 |
 | Completed child      | `m` opens Follow-up after the run has settled.                                                                       |
@@ -40,17 +40,17 @@ FleetView appears below the main statusline. At an editor edge, Up/Down enters i
 | Local editor         | Native editing, submit and newline bindings apply. Letters are text. Esc retains the draft without sending.          |
 | Back                 | Esc returns to the previous surface, then Fleet, then the main editor with its draft restored.                       |
 
-The displayed selection, confirmation and editor hints follow Pi's configured bindings. Feature letters are local to the inspector. No Alt+A, function keys or dedicated paging keys are required. Details replace the bottom editor/footer region while the main transcript remains above; this does not switch the host session.
+The displayed selection, confirmation and editor hints follow Pi's configured bindings. Feature letters are local to the inspector. No Alt+A, function keys or dedicated paging keys are required. A horizontal rule separates details from the main transcript. Details use up to three quarters of the screen and replace the bottom editor/footer region while the main transcript remains above; this does not switch the host session.
 
 ## Results and configuration
 
-The parent's tool commands are `dispatch`, `status`, `result`, `wait`, `reply`, `steer`, `resume`, `follow-up` and `cancel`. `status` returns a compact projection; `result` returns recorded evidence. Background completion notifies the parent. An active wait returns the result without a duplicate completion turn; a timed-out wait does not suppress later notification.
+The parent's tool commands are `dispatch`, `status`, `result`, `wait`, `reply`, `steer`, `resume`, `follow-up` and `cancel`. `status` returns a compact projection; `result` returns recorded evidence. Background completion notifies the parent. These orchestration messages default to a compact summary; Pi's tool-expansion binding (normally Ctrl+O) opens the recorded content. The parent's final response is the user-facing conclusion. Following up one child does not repost unchanged sibling reports. An active wait returns the result without a duplicate completion turn; a timed-out wait does not suppress later notification.
 
 Dispatch accepts one agent, `tasks`, or a `chain`; task `needs` names dependency IDs. Batch `tools`, `write`, `prompt`, `model` and `thinking` belong on individual tasks. Defaults are read-only, background execution, concurrency 3 and per-task notifications. The limits are 16 tasks and concurrency 8. `/subagents auto-limit on|off` selects the upstream default runtime ceiling of 1 or 6 hours; a task may set an explicit limit.
 
 Agent files supply role prompts and tool/model settings using upstream discovery rules. Pi's project `APPEND_SYSTEM.md`, or its global fallback, remains part of the child instructions. Selected parent extension sources load in the child; their callable tools are narrowed by the parent's active set and the role. Required-load failures and unsupported interactive child UI calls report errors. Children have `ask_parent`, `notify_parent`, `send_agent_message` and `poll_agent_messages`, with sibling addresses in the messaging tool description. They cannot recursively delegate.
 
-Fleet and detail show the current request's elapsed time and output tokens. Info exposes recorded input/output/cache/cost/turns and cumulative child usage. Missing usage is unavailable. Each accepted resume or follow-up preserves the earlier request and continues the same saved context. It does not rerun dependents.
+Fleet and detail show the current request's elapsed time and output tokens, using seconds, minutes/seconds or hours/minutes. Fleet descriptions show executing native tools when available, otherwise the assignment. Pending steering has a queued count; detail retains the exact text. Info exposes recorded input/output/cache/cost/turns and cumulative child usage. Missing usage is unavailable. Each accepted resume or follow-up preserves the earlier request and continues the same saved context. It does not rerun dependents.
 
 ## Code and retained evidence
 

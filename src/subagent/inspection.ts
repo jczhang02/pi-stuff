@@ -28,7 +28,6 @@ export class Inspection {
   private pending = false;
   private disposed = false;
   private composing = false;
-  private displayedActivity = false;
 
   constructor(
     readonly row: FleetRow,
@@ -115,7 +114,7 @@ export class Inspection {
       return true;
     }
     if (data === 'a') {
-      this.activityExpanded = !this.displayedActivity;
+      this.activityExpanded = this.activityExpanded !== true;
       this.reading.rewind();
       return true;
     }
@@ -128,6 +127,7 @@ export class Inspection {
     theme: Pick<Theme, 'fg' | 'bold'>,
     actions = '',
     composing = false,
+    replyQuestion?: string,
   ): string[] {
     this.composing = composing;
     const task = this.currentRow().task;
@@ -173,6 +173,16 @@ export class Inspection {
       visibleWidth(identity) + visibleWidth(metrics) + 3 <= width
         ? `${identity} · ${metrics}`
         : identity;
+    if (replyQuestion !== undefined)
+      return [
+        truncateToWidth(heading, width, '…'),
+        ...(question && question !== replyQuestion
+          ? wrapTextWithAnsi(`New question: ${question}`, width).slice(
+              0,
+              Math.max(1, height - 1),
+            )
+          : []),
+      ];
     const help = composing
       ? []
       : wrapTextWithAnsi(
@@ -187,11 +197,8 @@ export class Inspection {
     const activityError = this.activityError;
     const hasSession = Boolean(task.sessionFile);
     const activityDefault = !task.endedAt && !task.question;
-    const activityOpen = () => {
-      this.displayedActivity =
-        !this.composing && (this.activityExpanded ?? activityDefault);
-      return this.displayedActivity;
-    };
+    const activityOpen = () =>
+      !this.composing && (this.activityExpanded ?? activityDefault);
     const lines = this.reading.render(
       {
         revision: JSON.stringify([
@@ -200,38 +207,52 @@ export class Inspection {
           this.activityRevision,
           activityError,
         ]),
-        render: columns => [
-          ...(this.prompt
-            ? new Markdown(wording, 0, 0, getMarkdownTheme()).render(columns)
-            : [theme.fg('muted', '▸ Prompt')]),
-          '',
-          ...new Markdown(body, 0, 0, getMarkdownTheme()).render(columns),
-          ...(hasSession
-            ? [
-                '',
-                theme.fg('muted', `${activityOpen() ? '▾' : '▸'} Activity`),
-                ...(activityOpen()
-                  ? activityError
-                    ? wrapTextWithAnsi(activityError, columns)
-                    : (activity?.render(columns) ?? ['Loading activity...'])
-                  : []),
-              ]
-            : []),
-        ],
+        render: columns => {
+          const trail =
+            hasSession && !this.composing
+              ? [
+                  theme.fg('muted', `${activityOpen() ? '▾' : '▸'} Activity`),
+                  ...(activityOpen()
+                    ? activityError
+                      ? wrapTextWithAnsi(activityError, columns)
+                      : (activity?.render(columns) ?? ['Loading activity...'])
+                    : []),
+                ]
+              : [];
+          const inspectActivity =
+            this.activityExpanded === true && !this.composing;
+          return [
+            ...(!this.composing
+              ? this.prompt
+                ? new Markdown(wording, 0, 0, getMarkdownTheme()).render(
+                    columns,
+                  )
+                : [theme.fg('muted', '▸ Prompt')]
+              : []),
+            ...(!this.composing ? [''] : []),
+            ...(inspectActivity ? [...trail, ''] : []),
+            ...new Markdown(body, 0, 0, getMarkdownTheme()).render(columns),
+            ...(!inspectActivity && trail.length ? ['', ...trail] : []),
+          ];
+        },
       },
       width,
-      height - help.length - 3,
+      height - help.length - (this.prompt || composing ? 2 : 3),
     );
     return [
       truncateToWidth(heading, width, '…'),
-      theme.fg(
-        'muted',
-        truncateToWidth(
-          `${task.task.replace(/[\r\n]/g, ' ')}${task.model ? ` · ${task.model}` : ''}`,
-          width,
-          '…',
-        ),
-      ),
+      ...(!this.prompt && !composing
+        ? [
+            theme.fg(
+              'muted',
+              truncateToWidth(
+                `${task.task.replace(/[\r\n]/g, ' ')}${task.model ? ` · ${task.model}` : ''}`,
+                width,
+                '…',
+              ),
+            ),
+          ]
+        : []),
       ...lines,
       theme.fg('dim', truncateToWidth(this.reading.position, width, '…')),
       ...help,

@@ -123,9 +123,13 @@ export class SubagentUI {
   constructor(private readonly runs: Runs) {}
 
   private rows(): FleetRow[] {
-    return this.runs
-      .list()
-      .flatMap(run => run.tasks.map(task => ({run, task})));
+    return this.runs.list().flatMap(run =>
+      run.tasks.map(task => ({
+        run,
+        task,
+        activity: this.runs.currentActivity(run.id, task.id),
+      })),
+    );
   }
 
   mount(ctx: ExtensionContext): void {
@@ -365,17 +369,19 @@ export class SubagentUI {
     if (this.focus !== 'panel' || !this.ctx || !this.tui) return undefined;
     if (width < 40 || this.tui.terminal.rows < 16)
       return wrapTextWithAnsi('Resize terminal.\nesc back', Math.max(1, width));
+    const border = this.ctx.ui.theme.fg('borderMuted', '─'.repeat(width));
+    const height =
+      Math.min(
+        this.tui.terminal.rows - 6,
+        Math.floor(this.tui.terminal.rows * 0.75),
+      ) - 1;
     const panel = this.panels.at(-1);
     if (
       panel instanceof DocumentView ||
       panel instanceof HistoryView ||
       panel instanceof TranscriptView
     )
-      return panel.render(
-        width,
-        Math.floor(this.tui.terminal.rows / 2),
-        this.ctx.ui.theme,
-      );
+      return [border, ...panel.render(width, height, this.ctx.ui.theme)];
     if (panel instanceof GraphView) {
       const help = wrapTextWithAnsi(
         this.ctx.ui.theme.fg(
@@ -385,9 +391,10 @@ export class SubagentUI {
         width,
       );
       return [
+        border,
         ...panel.render(
           width,
-          Math.floor(this.tui.terminal.rows / 2) - help.length,
+          Math.min(height - help.length, panel.run.tasks.length * 2 + 4),
           this.ctx.ui.theme,
         ),
         ...help,
@@ -416,21 +423,20 @@ export class SubagentUI {
       .filter(Boolean)
       .join(' · ');
     return [
+      border,
       ...panel.render(
         width,
         Math.max(
           4,
           Math.min(
-            this.tui.terminal.rows - 6,
-            Math.max(
-              Math.floor(this.tui.terminal.rows / 2),
-              composer.length + 6,
-            ),
+            this.tui.terminal.rows - 7,
+            Math.max(height, composer.length + 6),
           ) - composer.length,
         ),
         this.ctx.ui.theme,
         actions,
         composer.length > 0,
+        this.intervention?.retainedQuestionText,
       ),
       ...composer,
     ];

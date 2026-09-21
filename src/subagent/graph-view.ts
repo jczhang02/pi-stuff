@@ -6,12 +6,21 @@ import {
   type KeybindingsManager,
 } from '@earendil-works/pi-tui';
 import type {RunSnapshot, TaskSnapshot} from './records';
-import {requestTime, requestTokens, taskState} from './fleet';
+import {compactTaskText, requestTime, requestTokens, taskState} from './fleet';
 
 interface Node {
   task: TaskSnapshot;
   level: number;
   row: number;
+}
+
+function duplicateAgents(tasks: readonly TaskSnapshot[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const task of tasks)
+    counts.set(task.agent, (counts.get(task.agent) ?? 0) + 1);
+  return new Set(
+    [...counts].filter(([, count]) => count > 1).map(([agent]) => agent),
+  );
 }
 
 function nodesFor(tasks: readonly TaskSnapshot[]): Node[] {
@@ -92,15 +101,21 @@ export class GraphView {
     const selected = nodes.find(node => node.task.id === this.selected);
     if (!selected) return ['No dependency graph.'];
     const nodeWidth = Math.min(28, Math.max(16, Math.floor(width / 3) - 5));
+    const duplicateNames = duplicateAgents(this.run.tasks);
     const labels = new Map(
-      nodes.map(node => [
-        node.task.id,
-        truncateToWidth(
-          `${node.task.id === this.selected ? '●' : '○'} ${node.task.agent}`,
-          nodeWidth,
-          '…',
-        ),
-      ]),
+      nodes.map(node => {
+        const name = duplicateNames.has(node.task.agent)
+          ? `${truncateToWidth(node.task.agent, Math.floor((nodeWidth - 5) / 2), '…')} · ${compactTaskText(node.task.task)}`
+          : node.task.agent;
+        return [
+          node.task.id,
+          truncateToWidth(
+            `${node.task.id === this.selected ? '●' : '○'} ${name}`,
+            nodeWidth,
+            '…',
+          ),
+        ];
+      }),
     );
     const layerColumns = [0];
     const rails = new Map<string, number>();
@@ -244,11 +259,18 @@ export class GraphView {
     const pending = selected.task.needs
       .map(id => this.run.tasks.find(task => task.id === id))
       .filter(task => task && (task.status !== 'completed' || task.finalizing));
-    const detail =
+    const reason =
       this.queuedReason?.(selected.task.id) ??
       (selected.task.status === 'queued' && pending.length
-        ? `Waiting for ${pending.map(task => task?.agent).join(', ')} · ${selected.task.agent}`
-        : `${state} · ${selected.task.agent} · ${requestTime(selected.task, Date.now())} · ${requestTokens(selected.task)}`);
+        ? `Waiting for ${pending.map(task => task?.agent).join(', ')}`
+        : state);
+    const assignment = compactTaskText(selected.task.task);
+    const identity = `${reason} · ${selected.task.agent} · ${assignment}`;
+    const metrics = `${requestTime(selected.task, Date.now())} · ${requestTokens(selected.task)}`;
+    const detail =
+      visibleWidth(reason) + visibleWidth(metrics) + 3 <= width
+        ? `${truncateToWidth(identity, width - visibleWidth(metrics) - 3, '…')} · ${metrics}`
+        : identity;
     return [
       theme.fg(
         'accent',

@@ -44,6 +44,13 @@ test('opening Prompt while reading older output does not follow a new reply', ()
   detail.handleInput(']');
   task.finalText = 'NEW_RESPONSE';
   expect(detail.render(80, 12, theme).join('\n')).toContain('New output');
+  detail.handleInput('a');
+  const activityOpened = detail
+    .render(80, 12, theme)
+    .map(stripTerminalSequences)
+    .join('\n');
+  expect(activityOpened).toContain('OLD_FINDING');
+  expect(activityOpened).toContain('New output');
   detail.handleInput('p');
   const opened = detail
     .render(80, 12, theme)

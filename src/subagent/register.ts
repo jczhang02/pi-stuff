@@ -11,22 +11,26 @@ import {Runs} from './runs';
 import {readAutoLimit, setAutoLimit} from './settings';
 import {projectRunStatus, projectTaskStatus} from './status';
 import {SubagentUI} from './ui';
+import {
+  createSubagentNotificationContent,
+  createSubagentNotificationDetails,
+  renderSubagentNotification,
+} from './notification-view';
 import {renderSubagentResult} from './tool-view';
 
 export function registerSubagent(
   pi: ExtensionAPI,
   switches: ToolSwitches | undefined,
 ) {
+  pi.registerMessageRenderer('subagent', renderSubagentNotification);
   const runs = new Runs(
     (run, task, message) => {
       pi.sendMessage(
         {
           customType: 'subagent',
-          content: task
-            ? `${task.agent}: ${task.status}\n${message ?? task.question?.text ?? task.error ?? task.finalText}`
-            : `Subagent run ${run.status}\n${run.tasks.map(child => `${child.agent}: ${child.status}\n${child.error ?? child.finalText}`).join('\n\n')}`,
+          content: createSubagentNotificationContent(run, task, message),
           display: true,
-          details: {runId: run.id, taskId: task?.id},
+          details: createSubagentNotificationDetails(run, task, message),
         },
         {
           triggerTurn: true,
@@ -89,7 +93,7 @@ export function registerSubagent(
     name: 'subagent',
     label: 'Subagent',
     description:
-      'Dispatch independent or dependent Pi subagents. Background and read-only by default; writers use separate Git worktrees. Query status/result, wait for completion or a question, reply to a question, steer live work, resume a failed/stopped child, follow up a completed child, or cancel one task or the run.',
+      'Coordinate agent orchestration for the parent session. Dispatch independent or dependent Pi subagents; background and read-only by default, with writers in separate Git worktrees. Query status/result, wait for completion or a question, reply to a question, steer live work, resume a failed/stopped child, follow up a completed child, or cancel one task or the run. Child reports and notifications are transport evidence; synthesize the user-facing response in the parent instead of repeating routine routing updates.',
     parameters: subagentParameters,
     renderResult: renderSubagentResult,
     async execute(_id, input, signal, _update, ctx) {

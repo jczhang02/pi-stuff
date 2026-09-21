@@ -75,27 +75,97 @@ async function openTranscript(
   });
 }
 
+type TranscriptPage = Readonly<{
+  start: number;
+  end: number;
+  total: number;
+}>;
+
+function transcriptPage(text: string): TranscriptPage | undefined {
+  for (const line of text.split('\n')) {
+    const match = /^\s*(\d+)–(\d+) \/ (\d+)\s*$/.exec(line);
+    if (match)
+      return {
+        start: Number(match[1]),
+        end: Number(match[2]),
+        total: Number(match[3]),
+      };
+  }
+  return undefined;
+}
+
+function samePage(
+  left: TranscriptPage | undefined,
+  right: TranscriptPage | undefined,
+): boolean {
+  return (
+    left !== undefined &&
+    right !== undefined &&
+    left.start === right.start &&
+    left.end === right.end &&
+    left.total === right.total
+  );
+}
+
 async function pageToBeginning(
   host: Awaited<ReturnType<typeof launchPi>>,
-): Promise<void> {
-  for (let index = 0; index < 40; index++)
+): Promise<string> {
+  let current = await host.terminal.screen.text();
+  for (let index = 0; index < 40; index++) {
+    const before = transcriptPage(current);
+    if (before?.start === 1) return current;
     await host.terminal.keyboard.type('[');
+    current = (
+      await host.terminal.screen.waitUntil(
+        snapshot => {
+          const page = transcriptPage(snapshot.text);
+          return page !== undefined && !samePage(page, before);
+        },
+        {timeoutMs: 1000},
+      )
+    ).text;
+  }
+  return (
+    await host.terminal.screen.waitUntil(
+      snapshot => transcriptPage(snapshot.text)?.start === 1,
+      {timeoutMs: 5000},
+    )
+  ).text;
 }
 
 async function pageForwardAndRead(
   host: Awaited<ReturnType<typeof launchPi>>,
+  beforeText?: string,
 ): Promise<string> {
-  const before = await host.terminal.screen.text();
+  const before = transcriptPage(
+    beforeText ?? (await host.terminal.screen.text()),
+  );
+  if (before !== undefined && before.end >= before.total)
+    return beforeText ?? (await host.terminal.screen.text());
   await host.terminal.keyboard.type(']');
-  try {
+  return (
     await host.terminal.screen.waitUntil(
-      async () => (await host.terminal.screen.text()) !== before,
+      snapshot => {
+        const page = transcriptPage(snapshot.text);
+        return page !== undefined && !samePage(page, before);
+      },
       {timeoutMs: 1000},
-    );
-  } catch {
-    // The final page is allowed to remain unchanged.
-  }
-  return host.terminal.screen.text();
+    )
+  ).text;
+}
+
+async function topPageContaining(
+  host: Awaited<ReturnType<typeof launchPi>>,
+  marker: string,
+): Promise<string> {
+  return (
+    await host.terminal.screen.waitUntil(
+      snapshot =>
+        transcriptPage(snapshot.text)?.start === 1 &&
+        snapshot.text.includes(marker),
+      {timeoutMs: 5000},
+    )
+  ).text;
 }
 
 test('transcript renders native child tool calls and keeps requests chronological', async () => {
@@ -157,12 +227,14 @@ test('transcript renders native child tool calls and keeps requests chronologica
       timeoutMs: 5000,
     });
     await pageToBeginning(host);
-    await host.terminal.screen.waitForText(firstPrompt, {timeoutMs: 5000});
-    const pages = [await host.terminal.screen.text()];
+    const firstPage = await topPageContaining(host, firstPrompt);
+    const pages = [firstPage];
 
     for (let index = 0; index < 40; index++) {
-      await host.terminal.keyboard.type(']');
-      pages.push(await host.terminal.screen.text());
+      const previous = pages.at(-1) ?? '';
+      const next = await pageForwardAndRead(host, previous);
+      pages.push(next);
+      if (samePage(transcriptPage(next), transcriptPage(previous))) break;
     }
     const transcript = pages.join('\n');
     expect(transcript).toContain('TRANSCRIPT_TOOL_PAYLOAD');
@@ -218,9 +290,13 @@ test('long recorded read output remains reachable without synthetic truncation',
     expect(end).not.toContain('Native tool output was truncated');
 
     await pageToBeginning(host);
-    const pages = [await host.terminal.screen.text()];
-    for (let index = 0; index < 10; index++)
-      pages.push(await pageForwardAndRead(host));
+    const pages = [await topPageContaining(host, firstLine)];
+    for (let index = 0; index < 10; index++) {
+      const previous = pages.at(-1) ?? '';
+      const next = await pageForwardAndRead(host, previous);
+      pages.push(next);
+      if (samePage(transcriptPage(next), transcriptPage(previous))) break;
+    }
     const transcript = pages.join('\n');
     expect(transcript).toContain(firstLine);
     expect(transcript).not.toContain('Native tool output was truncated');

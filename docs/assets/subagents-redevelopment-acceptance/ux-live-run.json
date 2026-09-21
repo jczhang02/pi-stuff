@@ -1,0 +1,462 @@
+{
+  "date": "2026-09-22",
+  "repairBaseline": "a70080522eede76c7f022f9267747648756adfbd",
+  "host": "Pi 0.86.1, Bun 1.4.0, tmux 3.6a",
+  "provider": "openai-codex",
+  "model": "gpt-6-astra",
+  "thinking": "low",
+  "viewports": ["150x50", "120x36", "80x24"],
+  "runs": [
+    {
+      "mode": "parallel",
+      "status": "completed",
+      "tasks": [
+        {
+          "agent": "explorer",
+          "status": "completed",
+          "needs": [],
+          "requests": [
+            {
+              "status": "completed",
+              "elapsedMs": 80631,
+              "markers": [],
+              "usage": {
+                "input": 7231,
+                "output": 410,
+                "cacheRead": 7680,
+                "cacheWrite": 0,
+                "cost": 0.10049000000000001,
+                "turns": 3
+              }
+            }
+          ],
+          "sameSavedSession": true,
+          "pendingInstructionCount": 0,
+          "cumulativeUsage": {
+            "input": 7231,
+            "output": 410,
+            "cacheRead": 7680,
+            "cacheWrite": 0,
+            "cost": 0.10049000000000001,
+            "turns": 3
+          }
+        },
+        {
+          "agent": "explorer",
+          "status": "completed",
+          "needs": [],
+          "requests": [
+            {
+              "status": "completed",
+              "elapsedMs": 103561,
+              "markers": ["LIVE-STEER-ACK"],
+              "usage": {
+                "input": 9845,
+                "output": 463,
+                "cacheRead": 7680,
+                "cacheWrite": 0,
+                "cost": 0.12928,
+                "turns": 3
+              }
+            }
+          ],
+          "sameSavedSession": true,
+          "pendingInstructionCount": 0,
+          "cumulativeUsage": {
+            "input": 9845,
+            "output": 463,
+            "cacheRead": 7680,
+            "cacheWrite": 0,
+            "cost": 0.12928,
+            "turns": 3
+          }
+        },
+        {
+          "agent": "reviewer",
+          "status": "completed",
+          "needs": ["notices", "navigation"],
+          "requests": [
+            {
+              "status": "completed",
+              "elapsedMs": 12528,
+              "markers": [],
+              "usage": {
+                "input": 4639,
+                "output": 333,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "cost": 0.06304,
+                "turns": 1
+              }
+            },
+            {
+              "status": "stopped",
+              "elapsedMs": 70730,
+              "markers": [],
+              "usage": {
+                "input": 540,
+                "output": 42,
+                "cacheRead": 4480,
+                "cacheWrite": 0,
+                "cost": 0.011980000000000005,
+                "turns": 2
+              }
+            },
+            {
+              "status": "completed",
+              "elapsedMs": 10479,
+              "markers": ["LIVE-RESUME-ACK"],
+              "usage": {
+                "input": 5572,
+                "output": 110,
+                "cacheRead": 9856,
+                "cacheWrite": 0,
+                "cost": 0.071076,
+                "turns": 2
+              }
+            },
+            {
+              "status": "completed",
+              "elapsedMs": 80006,
+              "markers": ["LIVE-QUEUE-ACK", "QUEUE-SECOND-ACK"],
+              "usage": {
+                "input": 8787,
+                "output": 2282,
+                "cacheRead": 49920,
+                "cacheWrite": 0,
+                "cost": 0.25189,
+                "turns": 4
+              }
+            },
+            {
+              "status": "completed",
+              "elapsedMs": 5525,
+              "markers": ["FINAL-REVISION-ACK"],
+              "usage": {
+                "input": 1289,
+                "output": 45,
+                "cacheRead": 18432,
+                "cacheWrite": 0,
+                "cost": 0.03357199999999999,
+                "turns": 1
+              }
+            },
+            {
+              "status": "completed",
+              "elapsedMs": 4458,
+              "markers": ["DELIVERY-CONTEXT-ACK"],
+              "usage": {
+                "input": 224,
+                "output": 27,
+                "cacheRead": 19584,
+                "cacheWrite": 0,
+                "cost": 0.023174000000000028,
+                "turns": 1
+              }
+            }
+          ],
+          "sameSavedSession": true,
+          "pendingInstructionCount": 0,
+          "cumulativeUsage": {
+            "input": 21051,
+            "output": 2839,
+            "cacheRead": 102272,
+            "cacheWrite": 0,
+            "cost": 0.454732,
+            "turns": 11
+          }
+        }
+      ]
+    },
+    {
+      "mode": "parallel",
+      "status": "stopped",
+      "tasks": [
+        {
+          "agent": "cancel-check",
+          "status": "stopped",
+          "needs": [],
+          "requests": [
+            {
+              "status": "stopped",
+              "elapsedMs": 35671,
+              "markers": [],
+              "usage": {
+                "input": 3974,
+                "output": 38,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "cost": 0.04164,
+                "turns": 2
+              }
+            }
+          ],
+          "sameSavedSession": true,
+          "pendingInstructionCount": 0,
+          "cumulativeUsage": {
+            "input": 3974,
+            "output": 38,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cost": 0.04164,
+            "turns": 2
+          }
+        },
+        {
+          "agent": "sibling-check",
+          "status": "completed",
+          "needs": [],
+          "requests": [
+            {
+              "status": "completed",
+              "elapsedMs": 51001,
+              "markers": ["LIVE-SIBLING-SURVIVED"],
+              "usage": {
+                "input": 11707,
+                "output": 148,
+                "cacheRead": 3968,
+                "cacheWrite": 0,
+                "cost": 0.128438,
+                "turns": 3
+              }
+            }
+          ],
+          "sameSavedSession": true,
+          "pendingInstructionCount": 0,
+          "cumulativeUsage": {
+            "input": 11707,
+            "output": 148,
+            "cacheRead": 3968,
+            "cacheWrite": 0,
+            "cost": 0.128438,
+            "turns": 3
+          }
+        },
+        {
+          "agent": "reviewer",
+          "status": "skipped",
+          "needs": ["stopme"],
+          "requests": [
+            {
+              "status": "skipped",
+              "elapsedMs": null,
+              "markers": [],
+              "usage": null
+            }
+          ],
+          "sameSavedSession": true,
+          "pendingInstructionCount": 0,
+          "cumulativeUsage": null
+        }
+      ]
+    },
+    {
+      "mode": "chain",
+      "status": "completed",
+      "tasks": [
+        {
+          "agent": "source",
+          "status": "completed",
+          "needs": [],
+          "requests": [
+            {
+              "status": "completed",
+              "elapsedMs": 9488,
+              "markers": ["CHAIN-SOURCE"],
+              "usage": {
+                "input": 7601,
+                "output": 38,
+                "cacheRead": 3840,
+                "cacheWrite": 0,
+                "cost": 0.08175,
+                "turns": 2
+              }
+            }
+          ],
+          "sameSavedSession": true,
+          "pendingInstructionCount": 0,
+          "cumulativeUsage": {
+            "input": 7601,
+            "output": 38,
+            "cacheRead": 3840,
+            "cacheWrite": 0,
+            "cost": 0.08175,
+            "turns": 2
+          }
+        },
+        {
+          "agent": "consumer",
+          "status": "completed",
+          "needs": ["task_1"],
+          "requests": [
+            {
+              "status": "completed",
+              "elapsedMs": 3234,
+              "markers": ["CHAIN-CONSUMER"],
+              "usage": {
+                "input": 3941,
+                "output": 14,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "cost": 0.04011,
+                "turns": 1
+              }
+            }
+          ],
+          "sameSavedSession": true,
+          "pendingInstructionCount": 0,
+          "cumulativeUsage": {
+            "input": 3941,
+            "output": 14,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cost": 0.04011,
+            "turns": 1
+          }
+        }
+      ]
+    }
+  ],
+  "notifications": [
+    {
+      "kind": "task",
+      "status": "awaiting_parent",
+      "agents": ["explorer"],
+      "contentCharacters": 102
+    },
+    {
+      "kind": "task",
+      "status": "awaiting_parent",
+      "agents": ["explorer"],
+      "contentCharacters": 107
+    },
+    {
+      "kind": "task",
+      "status": "completed",
+      "agents": ["explorer"],
+      "contentCharacters": 1510
+    },
+    {
+      "kind": "task",
+      "status": "completed",
+      "agents": ["explorer"],
+      "contentCharacters": 1754
+    },
+    {
+      "kind": "task",
+      "status": "completed",
+      "agents": ["reviewer"],
+      "contentCharacters": 1737
+    },
+    {
+      "kind": "run",
+      "status": "completed",
+      "agents": ["explorer", "explorer", "reviewer"],
+      "contentCharacters": 5028
+    },
+    {
+      "kind": "task",
+      "status": "awaiting_parent",
+      "agents": ["reviewer"],
+      "contentCharacters": 177
+    },
+    {
+      "kind": "task",
+      "status": "stopped",
+      "agents": ["reviewer"],
+      "contentCharacters": 44
+    },
+    {
+      "kind": "run",
+      "status": "stopped",
+      "agents": ["reviewer"],
+      "contentCharacters": 65
+    },
+    {
+      "kind": "task",
+      "status": "completed",
+      "agents": ["reviewer"],
+      "contentCharacters": 401
+    },
+    {
+      "kind": "run",
+      "status": "completed",
+      "agents": ["reviewer"],
+      "contentCharacters": 424
+    },
+    {
+      "kind": "task",
+      "status": "completed",
+      "agents": ["reviewer"],
+      "contentCharacters": 5634
+    },
+    {
+      "kind": "run",
+      "status": "completed",
+      "agents": ["reviewer"],
+      "contentCharacters": 5657
+    },
+    {
+      "kind": "task",
+      "status": "awaiting_parent",
+      "agents": ["cancel-check"],
+      "contentCharacters": 139
+    },
+    {
+      "kind": "task",
+      "status": "awaiting_parent",
+      "agents": ["sibling-check"],
+      "contentCharacters": 140
+    },
+    {
+      "kind": "task",
+      "status": "stopped",
+      "agents": ["cancel-check"],
+      "contentCharacters": 48
+    },
+    {
+      "kind": "task",
+      "status": "completed",
+      "agents": ["sibling-check"],
+      "contentCharacters": 373
+    },
+    {
+      "kind": "task",
+      "status": "skipped",
+      "agents": ["reviewer"],
+      "contentCharacters": 55
+    },
+    {
+      "kind": "run",
+      "status": "stopped",
+      "agents": ["cancel-check", "sibling-check", "reviewer"],
+      "contentCharacters": 501
+    },
+    {
+      "kind": "task",
+      "status": "completed",
+      "agents": ["reviewer"],
+      "contentCharacters": 198
+    },
+    {
+      "kind": "run",
+      "status": "completed",
+      "agents": ["reviewer"],
+      "contentCharacters": 221
+    },
+    {
+      "kind": "task",
+      "status": "completed",
+      "agents": ["reviewer"],
+      "contentCharacters": 96
+    },
+    {
+      "kind": "run",
+      "status": "completed",
+      "agents": ["reviewer"],
+      "contentCharacters": 119
+    }
+  ],
+  "recordedChildCost": 0.9764400000000001,
+  "recordedParentCost": 0.5321600000000001
+}

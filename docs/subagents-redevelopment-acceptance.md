@@ -23,9 +23,34 @@ Tests under `tests/system/` load the real package entrypoint into an isolated Pi
 
 Names in the table omit `.test.ts`; all referenced system files are in [tests/system](../tests/system/). The full-suite result and independent review scope are recorded in the PR. This document's captured model report is evidence of context retention, not a substitute for executing its suggested test.
 
-## Final verification
+## Verification through 2026-09-21
 
 The final local suite passed 231 tests with 2 intentional skips, 0 failures and 2,033 assertions across 66 files. The two skipped asynchronous-steering cases require the compiled host and passed in its separate profile. Compiled targeted batches passed 10 tests/105 assertions, 8 tests/69 assertions and the question-race case with 7 assertions. `bun run check` and `git diff --check` passed. The final question-race test was independently reviewed and rerun.
+
+## Dogfood repairs, 2026-09-22
+
+The repair baseline is `a70080522eede76c7f022f9267747648756adfbd`. Real use exposed long internal report dumps, missing panel boundaries, seconds-only elapsed time, duplicated question/prompt text and difficult access to activity. The repair keeps model-bound reports intact, renders compact expandable orchestration notices, and gives the parent response responsibility for the user-facing conclusion. Continuation completion reports only the requests just executed.
+
+The new live trace used compiled Pi `0.86.1`, Bun `1.4.0`, tmux `3.6a` and real `openai-codex/gpt-6-astra` calls with low thinking. Settings and records were isolated; the read-only project contained copied source files and linked installed dependencies. Arrows, Enter, Esc and local letters drove the interface through a dedicated tmux server. Terminal Control captured actual Latte/Mocha frames at 150x50, 120x36 and 80x24, using the same Ghostty font stack as the earlier trace.
+
+- Two same-name explorers ran concurrently and asked separate questions. Replies survived Esc and resize without duplicating the question. Their reviewer started after both reports arrived.
+- Targeted steering appeared as a queued count and was consumed by the intended child. The resulting reports retained both steering acknowledgement markers.
+- Follow-up, dismissed stop confirmation, confirmed cancellation and resume preserved the reviewer's context. History and Transcript remained reachable. A later 45-item report exercised pagination and direct Activity access.
+- Stopping a second workflow's child left its independent sibling running. That sibling completed after a UI reply; the stopped child's dependent was skipped.
+- A serial chain passed `SubagentUI.handleInput` from its first child to its second. An active auto-await returned the result without a background completion turn.
+- Reload retained all records. Restored built-in tool evidence uses Pi's public native renderer factories without starting another child. Final follow-ups recalled the prior findings and returned `FINAL-REVISION-ACK` and, after the final repair reload, `DELIVERY-CONTEXT-ACK`.
+
+[Sanitized execution evidence](assets/subagents-redevelopment-acceptance/ux-live-run.json) contains 13 request records across the three runs, including one dependency skip. Recorded child cost was **$0.976440** and parent cost **$0.532160**; these are model-usage accounting, not invoices. Screenshots show real terminal output, not generated mockups or a native Ghostty window. Model-generated code assessments in the trace are task output, not our verification verdict. The owned terminal/tmux server were stopped and the temporary credential copy removed.
+
+Independent repair review found and reproduced a completion/continuation race, loss of frozen reading when toggling Activity, and graph text hiding labels/metrics. The notification repair serializes continuation with the previous completion and retains per-execution notification ownership. Regressions also cover expanded error evidence and missing-report wording. The final offline suite passed 245 tests, with 2 compiled-host-only skips, 0 failures and 2,113 assertions across 68 files. The full compiled subagent profile passed 66 tests/896 assertions, including both skipped cases. After the final page-wait and panel-boundary test tightening, an independent compiled rerun passed 6 tests/23 assertions. Static checks and `git diff --check` passed. Review scope is recorded in PR #103.
+
+![One question and retained draft at 80x24](assets/subagents-redevelopment-acceptance/ux-reply-80x24.png)
+
+![Queued steering in aligned Fleet columns at 80x24](assets/subagents-redevelopment-acceptance/ux-queued-fleet-80x24.png)
+
+![Restored native Activity before the long report, dark 120x36](assets/subagents-redevelopment-acceptance/ux-activity-dark-120x36.png)
+
+![Final retained-context follow-up, dark 120x36](assets/subagents-redevelopment-acceptance/ux-final-detail-dark.png)
 
 ## Live trace, 2026-09-21
 

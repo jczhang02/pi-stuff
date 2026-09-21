@@ -21,6 +21,7 @@ import {
 import {attachWorkspace} from './workspace';
 import {loadRuns, saveRuns} from './store';
 import {extensionPaths} from './extensions';
+import {currentActivity as readCurrentActivity} from './activity';
 
 interface Run {
   snapshot: RunSnapshot;
@@ -349,10 +350,17 @@ export class Runs {
     this.notifyCompletion(run);
   }
 
-  private notifyCompletion(run: Run): void {
+  private notifyCompletion(
+    run: Run,
+    tasks: readonly TaskSnapshot[] = run.snapshot.tasks,
+  ): void {
     if (run.autoAwait || run.waiters.size > 0) return;
     if (run.snapshot.tasks.length === 1 && run.taskNoticeSent) return;
-    this.notifyParent(run.snapshot, undefined);
+    const notification: RunSnapshot = {
+      ...run.snapshot,
+      tasks: [...tasks],
+    };
+    this.notifyParent(notification, undefined);
     this.changed();
   }
 
@@ -460,7 +468,12 @@ export class Runs {
     const generation = this.generation;
     run.continuing = true;
     try {
+      await run.completion.catch(() => undefined);
       signal?.throwIfAborted();
+      if (generation !== this.generation)
+        throw new SubagentError({
+          message: 'The parent session changed during continuation.',
+        });
       const sessionManager = await this.savedSession(task);
       const model = selectModel(
         ctx,
@@ -544,7 +557,7 @@ export class Runs {
           this.settle(run);
           this.changed();
           await this.flush();
-          this.notifyCompletion(run);
+          this.notifyCompletion(run, [next]);
         });
       this.changed();
       return run.snapshot;
@@ -565,6 +578,18 @@ export class Runs {
     const task = run.tasks.find(task => task.id === taskId);
     if (!task) throw new SubagentError({message: `Unknown task: ${taskId}`});
     return task;
+  }
+
+  currentActivity(runId: string, taskId: string): string | undefined {
+    const run = this.get(runId);
+    const task = run.snapshot.tasks.find(candidate => candidate.id === taskId);
+    if (!task || task.status !== 'running') return undefined;
+    const child = run.children.get(taskId);
+    if (!child) return undefined;
+    return readCurrentActivity(
+      child.state.messages,
+      child.state.pendingToolCalls,
+    );
   }
 
   queuedReason(runId: string, taskId: string): string | undefined {
