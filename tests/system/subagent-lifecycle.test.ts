@@ -48,7 +48,7 @@ type DispatchInput = Readonly<{
   notifyPerTask?: boolean;
 }>;
 type QueryInput = Readonly<{
-  command: 'status' | 'wait' | 'cancel';
+  command: 'status' | 'result' | 'wait' | 'cancel';
   runId: string;
   taskId?: string;
   timeoutMs?: number;
@@ -156,10 +156,10 @@ async function waitForRun(
   timeoutMs: number,
 ): Promise<RunSnapshot> {
   const deadline = Date.now() + timeoutMs;
-  let run = await invokeRun(host, {command: 'status', runId});
+  let run = await invokeRun(host, {command: 'result', runId});
   while (!predicate(run) && Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 50));
-    run = await invokeRun(host, {command: 'status', runId});
+    run = await invokeRun(host, {command: 'result', runId});
   }
   return run;
 }

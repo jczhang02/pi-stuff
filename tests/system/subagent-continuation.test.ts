@@ -170,14 +170,14 @@ async function waitForTask(
 ): Promise<TaskSnapshot> {
   const deadline = Date.now() + timeoutMs;
   let task = await invokeTask(host, {
-    command: 'status',
+    command: 'result',
     runId,
     taskId,
   });
   while (!predicate(task) && Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 50));
     task = await invokeTask(host, {
-      command: 'status',
+      command: 'result',
       runId,
       taskId,
     });

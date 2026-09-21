@@ -51,7 +51,7 @@ const RunSnapshot = Schema.Struct({
 type RunSnapshot = Schema.Schema.Type<typeof RunSnapshot>;
 type PiMessage = PiFixtureRequest['messages'][number];
 type SubagentInput = Readonly<{
-  command: 'dispatch' | 'status' | 'steer' | 'reply' | 'wait';
+  command: 'dispatch' | 'status' | 'result' | 'steer' | 'reply' | 'wait';
   runId?: string;
   taskId?: string;
   questionId?: string;
@@ -104,10 +104,10 @@ async function waitForRun(
   timeoutMs: number,
 ): Promise<RunSnapshot> {
   const deadline = Date.now() + timeoutMs;
-  let run = await invokeRun(host, {command: 'status', runId});
+  let run = await invokeRun(host, {command: 'result', runId});
   while (!predicate(run) && Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 50));
-    run = await invokeRun(host, {command: 'status', runId});
+    run = await invokeRun(host, {command: 'result', runId});
   }
   return run;
 }
@@ -269,7 +269,7 @@ test('whole-run steer skips a writer finalizing Git while steering its active si
     expect(taskById(steered, 'writer').finalizing).toBe(true);
 
     const steeredStatus = await invokeRun(host, {
-      command: 'status',
+      command: 'result',
       runId: dispatched.id,
     });
     const question = taskById(steeredStatus, 'sibling').question;

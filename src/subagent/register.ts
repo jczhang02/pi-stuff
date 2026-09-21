@@ -9,6 +9,9 @@ import {
 } from './protocol';
 import {Runs} from './runs';
 import {readAutoLimit, setAutoLimit} from './settings';
+import {projectRunStatus, projectTaskStatus} from './status';
+import {SubagentUI} from './ui';
+import {renderSubagentResult} from './tool-view';
 
 export function registerSubagent(
   pi: ExtensionAPI,
@@ -34,10 +37,15 @@ export function registerSubagent(
       return pi.getAllTools().filter(tool => active.has(tool.name));
     },
   );
+  const ui = new SubagentUI(runs);
   pi.registerCommand('subagents', {
     description:
       'Manage subagents. Use auto-limit on|off for a 1 h or 6 h default runtime.',
     async handler(args, ctx) {
+      if (!args.trim()) {
+        ui.open();
+        return;
+      }
       const parts = args.trim().toLowerCase().split(/\s+/);
       if (
         parts[0] !== 'auto-limit' ||
@@ -65,14 +73,22 @@ export function registerSubagent(
       }
     },
   });
-  pi.on('session_shutdown', () => runs.close());
-  pi.on('session_start', (_event, ctx) => runs.restore(ctx));
+  pi.on('session_shutdown', () => {
+    ui.dispose();
+    return runs.close();
+  });
+  pi.on('session_start', async (_event, ctx) => {
+    ui.dispose();
+    await runs.restore(ctx);
+    ui.mount(ctx);
+  });
   registerTool(pi, switches, {
     name: 'subagent',
     label: 'Subagent',
     description:
       'Dispatch independent or dependent Pi subagents. Background and read-only by default; writers use separate Git worktrees. Query status/result, wait for completion or a question, reply to a question, steer live work, resume a failed/stopped child, follow up a completed child, or cancel one task or the run.',
     parameters: subagentParameters,
+    renderResult: renderSubagentResult,
     async execute(_id, input, signal, _update, ctx) {
       const result = await Effect.runPromise(
         Effect.tryPromise({
@@ -108,7 +124,12 @@ export function registerSubagent(
                 );
                 return input.autoAwait ? runs.wait(run.id) : run;
               }
-              case 'status':
+              case 'status': {
+                const snapshot = runs.result(input.runId, input.taskId);
+                return 'tasks' in snapshot
+                  ? projectRunStatus(snapshot)
+                  : projectTaskStatus(snapshot);
+              }
               case 'result':
                 return runs.result(input.runId, input.taskId);
               case 'wait':

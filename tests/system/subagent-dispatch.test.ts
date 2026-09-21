@@ -119,7 +119,7 @@ test('dispatches in the background and exposes status, wait, and result', async 
     expect(['running', 'completed']).toContain(dispatched.status);
 
     const status = await invokeRun(host, {
-      command: 'status',
+      command: 'result',
       runId: dispatched.id,
     });
     expect(status.id).toBe(dispatched.id);

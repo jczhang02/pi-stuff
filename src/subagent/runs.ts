@@ -36,6 +36,7 @@ interface Run {
 export class Runs {
   private readonly runs = new Map<string, Run>();
   private readonly steering = new Set<AgentSession>();
+  private readonly listeners = new Set<() => void>();
   private generation = 0;
   private accepting = true;
   private parentFile: string | undefined;
@@ -58,10 +59,20 @@ export class Runs {
 
   private changed(): void {
     this.dirty = true;
+    for (const listener of this.listeners) listener();
     this.saveTimer ??= setTimeout(() => {
       this.saveTimer = undefined;
       void this.flush();
     }, 100);
+  }
+
+  list(): readonly RunSnapshot[] {
+    return [...this.runs.values()].map(run => run.snapshot);
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   async flush(): Promise<void> {

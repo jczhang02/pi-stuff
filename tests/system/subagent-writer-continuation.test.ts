@@ -388,7 +388,7 @@ test('a missing writer branch rejects continuation before starting its model', a
       await host.invoke(
         'subagent',
         JSON.stringify({
-          command: 'status',
+          command: 'result',
           runId: first.id,
         }),
       ),

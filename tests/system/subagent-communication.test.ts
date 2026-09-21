@@ -39,7 +39,7 @@ type DispatchInput = Readonly<{
   notifyPerTask: boolean;
 }>;
 type QueryInput = Readonly<{
-  command: 'status' | 'wait' | 'reply' | 'steer';
+  command: 'status' | 'result' | 'wait' | 'reply' | 'steer';
   runId: string;
   taskId?: string;
   questionId?: string;
@@ -148,7 +148,7 @@ test('wakes for a child question, rejects stale reply, then resumes', async () =
     expect(stale.toLowerCase()).toMatch(/question|stale|expired/);
 
     const afterStale = await invokeRun(host, {
-      command: 'status',
+      command: 'result',
       runId: awaiting.id,
     });
     expect(afterStale.tasks[0]?.question?.id).toBe(questionId);
@@ -213,7 +213,7 @@ test('steers a live questioner and rejects steering after completion', async () 
     expect(steered.tasks[0]?.pendingInstructions).toContain(instruction);
 
     const status = await invokeRun(host, {
-      command: 'status',
+      command: 'result',
       runId: awaiting.id,
     });
     expect(status.tasks[0]?.pendingInstructions).toContain(instruction);
