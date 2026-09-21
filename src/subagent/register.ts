@@ -65,7 +65,7 @@ export function registerSubagent(
     name: 'subagent',
     label: 'Subagent',
     description:
-      'Dispatch independent or dependent Pi subagents. Background and read-only by default; writers use separate Git worktrees. Query status/result, wait for completion or a question, reply to a question, steer live work, or cancel one task or the run.',
+      'Dispatch independent or dependent Pi subagents. Background and read-only by default; writers use separate Git worktrees. Query status/result, wait for completion or a question, reply to a question, steer live work, resume a failed/stopped child, follow up a completed child, or cancel one task or the run.',
     parameters: subagentParameters,
     async execute(_id, input, signal, _update, ctx) {
       const result = await Effect.runPromise(
@@ -84,6 +84,24 @@ export function registerSubagent(
             if (!input.runId)
               throw new SubagentError({message: 'A runId is required.'});
             switch (input.command) {
+              case 'resume':
+              case 'follow-up': {
+                if (!input.taskId)
+                  throw new SubagentError({
+                    message: 'Continuation needs taskId.',
+                  });
+                const run = await runs.continueTask(
+                  {
+                    ...input,
+                    command: input.command,
+                    runId: input.runId,
+                    taskId: input.taskId,
+                  },
+                  ctx,
+                  signal,
+                );
+                return input.autoAwait ? runs.wait(run.id) : run;
+              }
               case 'status':
               case 'result':
                 return runs.result(input.runId, input.taskId);

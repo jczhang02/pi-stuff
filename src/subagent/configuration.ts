@@ -11,7 +11,7 @@ import {SubagentError} from './session';
 const readonlyTools = ['read', 'grep', 'find', 'ls'];
 const writerTools = [...readonlyTools, 'bash', 'edit', 'write'];
 
-function selectModel(
+export function selectModel(
   ctx: ExtensionContext,
   reference: string | undefined,
 ): Model<Api> {
@@ -47,7 +47,7 @@ function selectModel(
   throw new SubagentError({message: `Model not found: ${ref}`});
 }
 
-function validateThinking(
+export function validateThinking(
   model: Model<Api>,
   thinking: ThinkingLevel | undefined,
 ): void {

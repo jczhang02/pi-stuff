@@ -1,66 +1,23 @@
 import type {
   AgentSession,
   ExtensionContext,
+  SessionManager,
 } from '@earendil-works/pi-coding-agent';
 import {randomUUID} from 'node:crypto';
 import {Effect} from 'effect';
-import {applyUpstream, runWaveScheduler, SchedulerTaskFailure} from './graph';
-import {investigate, SubagentError} from './session';
-import type {Dispatch, TaskInput} from './protocol';
-import {Communication, type Question} from './communication';
+import {applyUpstream, runWaveScheduler} from './graph';
+import {openSavedSession, SubagentError} from './session';
+import {executeRequest} from './request';
+import type {RunSnapshot, TaskSnapshot} from './records';
+import type {ContinuationInput, Dispatch} from './protocol';
+import {Communication} from './communication';
 import {
   resolveConfiguration,
-  preflightConfiguration,
+  selectModel,
+  validateThinking,
   type ResolvedConfiguration,
 } from './configuration';
-import {
-  prepareWorkspace,
-  saveWorkspace,
-  releaseWorkspace,
-  type Workspace,
-  type WorkspaceSaveResult,
-} from './workspace';
-
-export interface TaskSnapshot extends TaskInput {
-  status:
-    | 'queued'
-    | 'starting'
-    | 'running'
-    | 'awaiting_parent'
-    | 'stopping'
-    | 'completed'
-    | 'failed'
-    | 'stopped'
-    | 'skipped';
-  finalText: string;
-  error?: string;
-  startedAt?: number;
-  endedAt?: number;
-  sessionId?: string;
-  sessionFile?: string;
-  question?: Question;
-  pendingInstructions: string[];
-  workspace?: Workspace;
-  git?: WorkspaceSaveResult;
-  preservationError?: string;
-  cleanupError?: string;
-  finalizing?: boolean;
-  roleSource?: string;
-  configurationNotes: string[];
-  provider?: string;
-}
-
-export interface RunSnapshot {
-  id: string;
-  mode: Dispatch['mode'];
-  status: 'running' | 'completed' | 'failed' | 'stopped';
-  tasks: TaskSnapshot[];
-  intercom: {
-    taskId: string;
-    text: string;
-    level: 'info' | 'warning' | 'error';
-  }[];
-}
+import {attachWorkspace} from './workspace';
 
 interface Run {
   snapshot: RunSnapshot;
@@ -70,10 +27,13 @@ interface Run {
   children: Map<string, AgentSession>;
   waiters: Set<() => void>;
   configurations: Map<string, ResolvedConfiguration>;
+  notifyPerTask: boolean;
+  continuing: boolean;
 }
 
 export class Runs {
   private readonly runs = new Map<string, Run>();
+  private generation = 0;
 
   constructor(
     private readonly notify: (
@@ -83,11 +43,25 @@ export class Runs {
     ) => void,
   ) {}
 
+  private notifyParent(
+    run: RunSnapshot,
+    task: TaskSnapshot,
+    message?: string,
+  ): void {
+    try {
+      this.notify(run, task, message);
+    } catch (error) {
+      task.notificationError =
+        error instanceof Error ? error.message : String(error);
+    }
+  }
+
   async dispatch(
     input: Dispatch,
     ctx: ExtensionContext,
     signal?: AbortSignal,
   ): Promise<RunSnapshot> {
+    const generation = this.generation;
     const configurations = new Map(
       await Promise.all(
         input.tasks.map(
@@ -100,6 +74,10 @@ export class Runs {
       ),
     );
     signal?.throwIfAborted();
+    if (generation !== this.generation)
+      throw new SubagentError({
+        message: 'The parent session changed during dispatch.',
+      });
     const snapshot: RunSnapshot = {
       id: randomUUID(),
       mode: input.mode,
@@ -107,6 +85,8 @@ export class Runs {
       intercom: [],
       tasks: input.tasks.map(task => ({
         ...task,
+        requestId: randomUUID(),
+        history: [],
         status: 'queued',
         finalText: '',
         pendingInstructions: [],
@@ -122,7 +102,7 @@ export class Runs {
         if (question) {
           task.question = question;
           task.status = 'awaiting_parent';
-          if (waiters.size === 0) this.notify(snapshot, task);
+          if (waiters.size === 0) this.notifyParent(snapshot, task);
           for (const wake of waiters) wake();
         } else {
           delete task.question;
@@ -134,7 +114,7 @@ export class Runs {
         if (snapshot.intercom.length > 24) snapshot.intercom.shift();
         const task = snapshot.tasks.find(task => task.id === taskId);
         if (task && waiters.size === 0)
-          this.notify(snapshot, task, `${level}: ${text}`);
+          this.notifyParent(snapshot, task, `${level}: ${text}`);
         for (const wake of waiters) wake();
       },
     );
@@ -148,6 +128,8 @@ export class Runs {
       children: new Map(),
       waiters,
       configurations,
+      notifyPerTask: input.notifyPerTask,
+      continuing: false,
     };
     this.runs.set(snapshot.id, run);
     run.completion = this.execute(run, input, ctx);
@@ -162,146 +144,30 @@ export class Runs {
       outputs,
       new Set(),
       async task => {
-        const controller = run.controllers.get(task.id);
-        let unsubscribe: (() => void) | undefined;
-        let outcome: 'completed' | 'failed' | 'stopped' = 'completed';
-        try {
-          controller?.signal.throwIfAborted();
-          task.status = 'starting';
-          task.startedAt = Date.now();
-          const prepared = run.configurations.get(task.id);
-          if (!prepared)
-            throw new SubagentError({
-              message: `Missing task configuration: ${task.id}`,
-            });
-          const configuration = await Effect.runPromise(
-            preflightConfiguration(prepared, ctx, controller?.signal),
-          );
-          task.prompt = configuration.prompt;
-          task.write = configuration.write;
-          task.tools = configuration.tools;
-          task.model = configuration.model.id;
-          task.provider = configuration.model.provider;
-          task.configurationNotes = configuration.notes;
-          if (configuration.roleSource)
-            task.roleSource = configuration.roleSource;
-          if (task.write) {
-            const base = task.needs
-              .map(id => run.snapshot.tasks.find(task => task.id === id))
-              .findLast(task => task?.status === 'completed' && task.workspace);
-            task.workspace = await Effect.runPromise(
-              prepareWorkspace(
-                task.cwd,
-                run.snapshot.id,
-                task.id,
-                base?.workspace?.branch,
-              ),
-            );
-          }
-          const result = await Effect.runPromise(
-            investigate(
-              {
-                ...task,
-                model: configuration.model,
-                thinking: configuration.thinking,
-                cwd: task.workspace?.cwd ?? task.cwd,
-                task: applyUpstream(task.task, task.needs, outputs),
-              },
-              ctx,
-              controller?.signal,
-              run.communication.tools(task.id),
-              session => {
-                run.children.set(task.id, session);
-                task.status = 'running';
-                task.sessionId = session.sessionId;
-                if (session.sessionFile) task.sessionFile = session.sessionFile;
-                task.tools = session.getActiveToolNames();
-                task.thinking = session.thinkingLevel;
-                unsubscribe = session.subscribe(event => {
-                  if (
-                    (event.type === 'message_update' ||
-                      event.type === 'message_end') &&
-                    event.message.role === 'assistant'
-                  ) {
-                    const text = event.message.content
-                      .filter(part => part.type === 'text')
-                      .map(part => part.text)
-                      .join('\n');
-                    if (text) task.finalText = text;
-                  }
-                  if (
-                    event.type === 'message_start' &&
-                    event.message.role === 'user'
-                  ) {
-                    const content = event.message.content;
-                    const text = Array.isArray(content)
-                      ? content
-                          .filter(part => part.type === 'text')
-                          .map(part => part.text)
-                          .join('\n')
-                      : content;
-                    const index = task.pendingInstructions.indexOf(text);
-                    if (index !== -1) task.pendingInstructions.splice(index, 1);
-                  }
-                });
-              },
-            ),
-          );
-          task.finalText = result.finalText;
-          task.sessionId = result.sessionId;
-          if (result.sessionFile !== undefined)
-            task.sessionFile = result.sessionFile;
-          task.tools = result.tools;
-        } catch (error) {
-          outcome = controller?.signal.aborted ? 'stopped' : 'failed';
-          task.error = error instanceof Error ? error.message : String(error);
-        } finally {
-          unsubscribe?.();
-          run.children.delete(task.id);
-          if (task.workspace) {
-            task.finalizing = true;
-            if (controller?.signal.aborted) task.status = 'stopping';
-            try {
-              task.git = await Effect.runPromise(
-                saveWorkspace(task.workspace, `subagent: ${task.agent}`),
-              );
-              try {
-                await Effect.runPromise(releaseWorkspace(task.workspace));
-              } catch (error) {
-                task.cleanupError =
-                  error instanceof Error ? error.message : String(error);
-              }
-            } catch (error) {
-              task.preservationError =
-                error instanceof Error ? error.message : String(error);
-            } finally {
-              task.finalizing = false;
-            }
-          }
-          if (controller?.signal.aborted) outcome = 'stopped';
-          task.status = outcome;
-          task.endedAt = Date.now();
-          if (input.notifyPerTask) this.notify(run.snapshot, task);
-        }
-        return outcome === 'completed'
-          ? {status: outcome, output: task.finalText}
-          : {
-              status: outcome,
-              output: task.finalText,
-              failure: new SchedulerTaskFailure({
-                taskId: task.id,
-                message: task.error ?? 'The task was stopped.',
-              }),
-            };
+        const base = task.needs
+          .map(id => run.snapshot.tasks.find(task => task.id === id))
+          .findLast(task => task?.status === 'completed' && task.workspace);
+        return this.executeTask(
+          run,
+          task,
+          ctx,
+          applyUpstream(task.task, task.needs, outputs),
+          base?.workspace?.branch,
+        );
       },
     );
     for (const skipped of result.skipped) {
       const task = run.snapshot.tasks.find(task => task.id === skipped.id);
       if (!task) continue;
       task.status = 'skipped';
+      task.endedAt = Date.now();
       task.error = `Prerequisite did not complete: ${skipped.needs.join(', ')}`;
-      if (input.notifyPerTask) this.notify(run.snapshot, task);
+      if (input.notifyPerTask) this.notifyParent(run.snapshot, task);
     }
+    this.settle(run);
+  }
+
+  private settle(run: Run): void {
     run.snapshot.status = run.snapshot.tasks.some(
       task => task.status === 'failed',
     )
@@ -309,6 +175,171 @@ export class Runs {
       : run.snapshot.tasks.some(task => task.status === 'stopped')
         ? 'stopped'
         : 'completed';
+  }
+
+  private async executeTask(
+    run: Run,
+    task: TaskSnapshot,
+    ctx: ExtensionContext,
+    message: string,
+    baseBranch?: string,
+    sessionManager?: SessionManager,
+  ) {
+    const configuration = run.configurations.get(task.id);
+    const controller = run.controllers.get(task.id);
+    if (!configuration || !controller)
+      throw new SubagentError({
+        message: `Missing execution configuration: ${task.id}`,
+      });
+    try {
+      return await executeRequest({
+        task,
+        configuration,
+        parent: ctx,
+        signal: controller.signal,
+        runId: run.snapshot.id,
+        message,
+        baseBranch,
+        sessionManager,
+        tools: run.communication.tools(task.id),
+        ready: session => {
+          run.children.set(task.id, session);
+        },
+      });
+    } finally {
+      run.children.delete(task.id);
+      if (run.notifyPerTask) this.notifyParent(run.snapshot, task);
+    }
+  }
+
+  private savedSession(task: TaskSnapshot) {
+    if (!task.sessionFile || !task.sessionId)
+      throw new SubagentError({
+        message: 'This child has no saved session to continue.',
+      });
+    return Effect.runPromise(
+      openSavedSession(
+        task.sessionFile,
+        task.workspace?.cwd ?? task.cwd,
+        task.sessionId,
+      ),
+    );
+  }
+
+  async continueTask(
+    input: ContinuationInput,
+    ctx: ExtensionContext,
+    signal?: AbortSignal,
+  ): Promise<RunSnapshot> {
+    const run = this.get(input.runId);
+    const task = run.snapshot.tasks.find(task => task.id === input.taskId);
+    if (!task)
+      throw new SubagentError({message: `Unknown task: ${input.taskId}`});
+    if (
+      run.snapshot.status === 'running' ||
+      run.continuing ||
+      run.children.size
+    )
+      throw new SubagentError({
+        message: 'Wait for the run to settle before continuing a child.',
+      });
+    const eligible =
+      input.command === 'follow-up'
+        ? task.status === 'completed'
+        : task.status === 'failed' || task.status === 'stopped';
+    if (!eligible)
+      throw new SubagentError({
+        message: `${input.command} is not available for a ${task.status} child.`,
+      });
+    if (input.command === 'follow-up' && !input.message)
+      throw new SubagentError({message: 'Follow-up needs a message.'});
+    const message =
+      input.message ??
+      `Your previous request ended with ${task.status}: ${task.error ?? 'execution interrupted'}. Briefly recap your progress, then continue where you left off and finish the remaining work.`;
+    const prepared = run.configurations.get(task.id);
+    if (!prepared)
+      throw new SubagentError({
+        message: 'The saved child configuration is unavailable.',
+      });
+    const generation = this.generation;
+    run.continuing = true;
+    try {
+      signal?.throwIfAborted();
+      const sessionManager = await this.savedSession(task);
+      const model = selectModel(
+        ctx,
+        input.model ??
+          (task.provider && task.model
+            ? `${task.provider}/${task.model}`
+            : undefined),
+      );
+      const thinking = input.thinking ?? task.thinking;
+      validateThinking(model, thinking);
+      let workspace = task.workspace;
+      if (task.write) {
+        if (!workspace)
+          throw new SubagentError({
+            message: 'The writer has no saved workspace to continue.',
+          });
+        workspace = await Effect.runPromise(attachWorkspace(workspace));
+      }
+      signal?.throwIfAborted();
+      if (generation !== this.generation)
+        throw new SubagentError({
+          message: 'The parent session changed during continuation.',
+        });
+      const {history, cumulativeUsage, ...previous} = task;
+      const next: TaskSnapshot = {
+        ...previous,
+        requestId: randomUUID(),
+        task: message,
+        status: 'queued',
+        finalText: '',
+        pendingInstructions: [],
+        configurationNotes: [],
+        history: [...history, structuredClone(previous)],
+        maxRuntimeMs: input.maxRuntimeMs ?? task.maxRuntimeMs,
+      };
+      for (const key of [
+        'error',
+        'startedAt',
+        'endedAt',
+        'question',
+        'git',
+        'preservationError',
+        'cleanupError',
+        'notificationError',
+        'finalizing',
+        'usage',
+        'startEntryId',
+        'endEntryId',
+      ] as const)
+        delete next[key];
+      if (workspace) next.workspace = workspace;
+      if (cumulativeUsage) next.cumulativeUsage = cumulativeUsage;
+      run.snapshot.tasks[run.snapshot.tasks.indexOf(task)] = next;
+      run.controllers.set(task.id, new AbortController());
+      run.configurations.set(task.id, {
+        ...prepared,
+        model,
+        thinking,
+        notes: [],
+      });
+      run.snapshot.status = 'running';
+      run.completion = this.executeTask(
+        run,
+        next,
+        ctx,
+        message,
+        undefined,
+        sessionManager,
+      )
+        .then(() => undefined)
+        .finally(() => this.settle(run));
+      return run.snapshot;
+    } finally {
+      run.continuing = false;
+    }
   }
 
   private get(runId: string): Run {
@@ -366,7 +397,7 @@ export class Runs {
     );
     const live = targets.filter(
       task =>
-        run.children.has(task.id) &&
+        run.children.get(task.id)?.isStreaming &&
         !run.controllers.get(task.id)?.signal.aborted,
     );
     if (live.length === 0)
@@ -416,6 +447,7 @@ export class Runs {
   }
 
   async close(): Promise<void> {
+    this.generation++;
     for (const run of this.runs.values()) {
       for (const controller of run.controllers.values()) controller.abort();
     }

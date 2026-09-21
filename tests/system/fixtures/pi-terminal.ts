@@ -32,7 +32,11 @@ const Request = Schema.Struct({
 export type PiFixtureRequest = Schema.Schema.Type<typeof Request>;
 
 export type PiFixtureResponse =
-  | {readonly type: 'content'; readonly content: string}
+  | {
+      readonly type: 'content';
+      readonly content: string;
+      readonly usage?: {readonly input: number; readonly output: number};
+    }
   | {
       readonly type: 'tool_call';
       readonly name: string;
@@ -135,6 +139,16 @@ export async function launchPi(
       return new Response(
         `data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({
           ...chunk,
+          usage:
+            callbackResponse?.type === 'content' && callbackResponse.usage
+              ? {
+                  prompt_tokens: callbackResponse.usage.input,
+                  completion_tokens: callbackResponse.usage.output,
+                  total_tokens:
+                    callbackResponse.usage.input +
+                    callbackResponse.usage.output,
+                }
+              : undefined,
           choices: [
             {
               index: 0,

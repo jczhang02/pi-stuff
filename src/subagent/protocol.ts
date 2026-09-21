@@ -40,6 +40,8 @@ export const subagentParameters = Type.Object({
     'cancel',
     'reply',
     'steer',
+    'resume',
+    'follow-up',
   ] as const),
   agent: Type.Optional(taskFields.agent),
   task: Type.Optional(taskFields.task),
@@ -62,6 +64,16 @@ export const subagentParameters = Type.Object({
   message: Type.Optional(Type.String({minLength: 1})),
 });
 export type SubagentParameters = Static<typeof subagentParameters>;
+
+export interface ContinuationInput {
+  command: 'resume' | 'follow-up';
+  runId: string;
+  taskId: string;
+  message?: string;
+  model?: string;
+  thinking?: ThinkingLevel;
+  maxRuntimeMs?: number;
+}
 
 export interface TaskInput {
   id: string;
