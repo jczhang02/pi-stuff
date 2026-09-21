@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-redevelopment-ui.md). English is authoritative.
 
-Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03, UIR04 local help and UIR05-UIR07 accepted on 2026-09-21. UIR08 proposes failed-task details and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
+Status: UIR01 and revised UIR02 accepted on 2026-09-20; UIR03, UIR04 local help and UIR05-UIR08 accepted on 2026-09-21. UIR09 proposes completed-work and follow-up details and awaits an answer. FleetView help appears above its rows only while the list has keyboard focus. The first UIR02 image remains rejected design history. Tracked in [#97](https://github.com/jczhang02/pi-stuff/issues/97), under [#64](https://github.com/jczhang02/pi-stuff/issues/64). Runtime scope is settled in the [redevelopment decisions](subagents-redevelopment.md).
 
 Discuss the UI one part at a time through real usage scenarios: main layout and transitions; FleetView and task structure; details and observability; interventions; completion and history; keyboard and visual consistency. The maintainer's feedback brings detail hierarchy into this round. The previous UI is a starting point, not a wholesale adoption of its old runtime requirements.
 
@@ -48,7 +48,7 @@ The same central area shows the final report directly. Its conclusion and suppor
 
 The working and completed images are states of one design. The local action hints change from message/stop to follow-up as appropriate. Key assignments and action behavior are illustrative until the interaction round.
 
-**Accepted UIR02.** Show the latest reply and current activity while working, then the report on completion, with supporting information one step deeper. Preserve access to full evidence while making the first screen useful on its own. UIR06 covers pending questions; UIR08 proposes failed-task details.
+**Accepted UIR02.** Show the latest reply and current activity while working, then the report on completion, with supporting information one step deeper. Preserve access to full evidence while making the first screen useful on its own. UIR06 covers pending questions; UIR08 covers failed-task details.
 
 ## UIR03: FleetView and task relationships accepted
 
@@ -108,7 +108,7 @@ Scenario: lifecycle is investigating worktree recovery. The user wants it to foc
 
 Arhen's [steering tool](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/index.ts#L351-L377) calls the running child's session with `streamingBehavior: "steer"`. Pi [queues that input](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts) while streaming and removes it from the pending steering list when its user-message event starts. It does not immediately abort an executing tool or prove that the model understood the instruction.
 
-This is distinct from sibling mailboxes, which recipients poll, and from replying to a child blocked on `ask_parent`. This round covers steering a working child. Completed-agent follow-up is already in RQ05; its UI still needs its own scenario. UIR06 covers the pending-question UI.
+This is distinct from sibling mailboxes, which recipients poll, and from replying to a child blocked on `ask_parent`. This round covers steering a working child. Completed-agent follow-up is already in RQ05; UIR09 proposes its UI. UIR06 covers the pending-question UI.
 
 Source inspection also exposes a false-positive path in [steerTask](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1434-L1441): a specified ID can return success without a live child, and the session call is fire-and-forget. The redevelopment must validate the actual target and queue acceptance before displaying success. This is a source finding to reproduce and repair under the existing bug-fix scope, not an executed regression test or a new receipt protocol.
 
@@ -212,7 +212,7 @@ Upstream [resume prerequisites](https://github.com/arhen/pi-extensions/blob/676b
 
 **Accepted UIR07.** Confirm stop within the current detail, show Stopping until execution and request finalization have ended, then retain the incomplete output and actual dependency consequences. Offer the local resume composer when the existing resume conditions are satisfied. Keep the stopped request and do not automatically restart its dependents.
 
-## UIR08: failed-task details
+## UIR08: failed-task details, accepted
 
 Use the same detail layout for both examples below. Put the failed operation, actual cause and useful next step first, followed by any retained output. These are different scenarios, not consecutive states or separate viewing modes.
 
@@ -246,10 +246,52 @@ This image depicts the accepted RQ03 repair. Pinned arhen currently [catches wor
 
 ### Preserve the distinction between execution and code preservation
 
-A finished model task can still have a [worktree commit error](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L957-L1001). Upstream's failed/aborted [partial-commit path](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1041-L1052) also leaves the directory when preservation fails without recording that error in worktreeError. Record this source finding for reproduction and repair; a branch name alone is not proof that edits were saved. The completed-work scenario still needs its own visual pass, including how to present preservation failure alongside an existing report.
+A finished model task can still have a [worktree commit error](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L957-L1001). Upstream's failed/aborted [partial-commit path](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1041-L1052) also leaves the directory when preservation fails without recording that error in worktreeError. Record this source finding for reproduction and repair; a branch name alone is not proof that edits were saved. UIR09 proposes the completed-work presentation, including a commit failure alongside an existing report.
 
-**UIR08 question. Give the cause and next step priority in failed-task detail, retain any useful output, and show Resume and Transcript only when the actual session supports them?** Recommendation: yes. The same layout explains both an interrupted investigation and a launch that never reached model execution.
+**Accepted UIR08.** Give the cause and next step priority in failed-task detail, retain useful output, and show Resume and Transcript only when their actual prerequisites hold. The same layout covers interrupted work and launch failures before model execution.
+
+## UIR09: completed work and follow-up
+
+Scenario: implementer fixes missing-branch recovery in its own worktree. The first two images show completion followed by an unsent follow-up. The third is an alternative outcome in which the same report finishes but Git cannot commit the edits.
+
+### What upstream supports
+
+Arhen [records the report and completed status before committing worktree changes](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L950-L1003). A successful commit preserves the branch and permits worktree-directory cleanup. A commit error keeps the task completed, records worktreeError and retains the directory. The UI must distinguish the model's result from the Git outcome and wait for actual finalization before claiming that edits were committed.
+
+The [commit helper](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/worktree.ts#L128-L159) distinguishes committed changes from an empty staging area. Show the actual result; do not infer a new commit from a branch name or from the child's prose. Upstream's [result text](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/format.ts#L174-L198) leaves review and merge to the parent. Saved child work does not mean that the parent workspace has received it.
+
+Completed follow-up is the accepted RQ05 addition. Upstream [rejects completed-task resume and resets the previous report when resuming other terminal tasks](https://github.com/arhen/pi-extensions/blob/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent/src/manager.ts#L1333-L1411). RQ07 requires separate request records; RQ08 requires continuation from the child's own code. These images depict the agreed additions, not current upstream support.
+
+### 1. Read the result directly
+
+![Completed report with a concise code-preservation result and follow-up action](assets/subagents-redevelopment-ui/20-completed-work.png)
+
+The report is immediately readable, with Activity folded beneath it. The header shows this request's elapsed time and output tokens. Detailed and cumulative usage remain in Info. A single workspace line confirms that the edits were saved on the task branch and have not been applied to main in this example; full branch and diff information is available in Info. Read-only tasks do not acquire a fictitious saved-branch line.
+
+The report and its test claim are illustrative child output. Render the real report without an extra model-generated summary or a UI-invented test verdict. Long reports follow the shared bounded reading and pagination rules.
+
+### 2. Continue while keeping the report visible
+
+![A follow-up draft beneath the completed report](assets/subagents-redevelopment-ui/21-follow-up-compose.png)
+
+The m follow-up action opens the same local composer used by UIR05. Its label names implementer, and the earlier report remains visible. The draft asks for the underlying Git error to be included in the failure message. Until submission, Done and the header metrics still belong to the finished request.
+
+Use Pi's configured submit/newline bindings and Esc to return without sending. Preserve the draft on Esc or submission failure. While typing, letters belong to the editor and only composer help is shown. Once the new request is accepted, show its actual starting/working detail. Keep the earlier report, status, elapsed time and usage in history under RQ07; do not overwrite them or leave an old report labelled as the new request's output. History's reading layout remains for the Info round.
+
+Offer follow-up when the run has settled, the child is no longer executing, and its saved session and required code state are usable. If a prerequisite fails, explain it and retain the draft. Continue the same context and own branch under RQ05-RQ08. No automatic rerun of prerequisites or downstream tasks follows from this action.
+
+### 3. Keep a commit failure visible beside the completed report
+
+![A completed report remains readable while an actual Git commit failure takes priority](assets/subagents-redevelopment-ui/22-commit-failed.png)
+
+Here Git reports a full disk. The header says Done and Commit failed together, with the error emphasized. The main chat retains its native error notice. Detail explains that the edits remain uncommitted in the worktree, then displays the completed report unchanged. Info exposes the full error and retained workspace location. There is no successful-save line.
+
+The example assumes finalization has ended and the session and own worktree remain usable, so follow-up is available after the user addresses the disk problem. This does not introduce a commit retry button or promise automatic repair. The displayed Git error and retained-files statement must follow observed results, not merely the presence of a branch field.
+
+Upstream still schedules from completed status after a commit failure. A downstream worktree may therefore lack those uncommitted edits. This source finding limits what Done can claim; the UI must not imply successful code handoff. This round does not change dependency scheduling or add a new runtime terminal state. The header presents the existing execution and preservation outcomes together.
+
+**UIR09 question. Keep the completed report visible during follow-up, and show code-preservation errors prominently without discarding that report?** Recommendation: yes. Reuse the accepted detail and composer, retain each request's record, and make the actual Git outcome visible.
 
 ## Verification and next step
 
-UIR01-UIR07 remain accepted within their recorded scope. UIR08 is a proposal. Both failure concepts were visually inspected for cause/next-step hierarchy, retained output, the startup distinction and available actions. Ghostty and Pi configuration were rechecked. Source findings concern pinned arhen 1.3.55; provider failure, worktree failure, classification and preservation were not executed this round. The error messages and paths are illustrative, not captured failures. These are ImageGen concepts, not terminal acceptance evidence. This round changes documentation and images only. Await the UIR08 answer before advancing the interview.
+UIR01-UIR08 remain accepted within their recorded scope. UIR09 is a proposal. The three new concepts were visually inspected for report hierarchy, composer focus, retained output and the distinction between completion and commit failure. Ghostty/Pi configuration and pinned arhen 1.3.55 source were checked. No completion, follow-up, recovery or commit-failure runtime test was executed. Reports, test results, error text and metrics are illustrative. These are ImageGen concepts, not terminal acceptance evidence. Await the UIR09 answer before continuing to history, Transcript and Info.
