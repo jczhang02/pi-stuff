@@ -72,6 +72,7 @@ export async function launchPi(
   let issued = false;
   let reloads = 0;
   let offered: string[] = [];
+  const completedTurns = new Set<number>();
   const server = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
@@ -92,6 +93,15 @@ export async function launchPi(
           : content?.map(block => block.text ?? '').join('');
         return text === `Run RTK turn ${turn}`;
       });
+      for (const message of body.messages) {
+        if (
+          message.role !== 'assistant' ||
+          !Schema.is(Schema.String)(message.content)
+        )
+          continue;
+        const completed = /^RTK_TURN_(\d+)_DONE$/.exec(message.content);
+        if (completed?.[1]) completedTurns.add(Number(completed[1]));
+      }
       if (last?.role === 'tool' && currentTurn)
         result = Schema.is(Schema.String)(last.content)
           ? last.content
@@ -318,9 +328,18 @@ export async function launchPi(
       async invoke(name: string, parameters: string) {
         await start(name, parameters);
         try {
-          await screen.screen.waitForText(`RTK_TURN_${turn}_DONE`, {
-            timeoutMs: 15000,
-          });
+          // A background notice can replace the frame before it is painted.
+          // Accept either rendered output or the completed assistant message
+          // returned by the real host in its next provider request.
+          const marker = `RTK_TURN_${turn}_DONE`;
+          await screen.screen.waitUntil(
+            async () =>
+              completedTurns.has(turn) ||
+              new TextDecoder()
+                .decode(await screen.transcript.ansi())
+                .includes(marker),
+            {timeoutMs: 15000},
+          );
         } catch (error) {
           console.error(await screen.screen.text());
           console.error(await screen.logs.text());
