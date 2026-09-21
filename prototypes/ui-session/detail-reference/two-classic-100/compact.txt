@@ -1,0 +1,23 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for two.
+
+● Bash(printf 'FIRST_A\nFIRST_B\n')
+  ⎿  FIRST_A
+     FIRST_B
+
+● Bash(printf 'SECOND_A\nSECOND_B\n')
+  ⎿  SECOND_A
+     SECOND_B
+
+● PROBE_COMPLETE
+
+✻ Cooked for 0s · done 4:20 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ don't ask on (shift+tab to cycle) · ← for agents                             ● high · /effort

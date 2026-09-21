@@ -346,8 +346,8 @@ export const scenes = [
   {
     name: 'interrupted',
     title: '回答中断',
-    note: '已有回答仍保留, 中断是一行普通状态文字.',
-    tokens: ['Response interrupted'],
+    note: '已有回答仍保留, 中断直接使用 Pi 原生 AssistantMessageComponent 的 Operation aborted.',
+    tokens: ['Operation aborted'],
   },
   {
     name: 'response-error',
@@ -482,7 +482,7 @@ function scenarioEntries(name: string): Entry[] {
       return [
         user,
         {kind: 'assistant', text: '我会先检查分页实现, 然后补上边界测试.'},
-        {kind: 'status', text: 'Response interrupted.'},
+        {kind: 'aborted'},
       ];
     case 'response-error':
       return [

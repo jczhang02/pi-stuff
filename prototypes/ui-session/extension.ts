@@ -62,13 +62,21 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
         const content = entryComponent(entry, state, theme, () =>
           host?.requestRender(),
         );
-        if (entry.kind === 'user') return content;
+        if (entry.kind === 'user' || entry.kind === 'aborted') return content;
         const box = new Box(1, 0);
         box.addChild(content);
         return box;
       },
     );
   });
+  pi.registerMessageRenderer('session-preview-aborted', (_m, _o, theme) =>
+    entryComponent(
+      {kind: 'aborted'},
+      expansionFor({kind: 'aborted'}),
+      theme,
+      () => host?.requestRender(),
+    ),
+  );
   const status = (text: string) => {
     pi.registerMessageRenderer(
       'session-preview-status',
@@ -94,7 +102,11 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
       tool.summary = 'Cancelled · no completion result';
       replayDone = true;
       stop();
-      status('Response interrupted.');
+      pi.sendMessage({
+        customType: 'session-preview-aborted',
+        content: '',
+        display: true,
+      });
       host?.requestRender();
     };
     removeInput = ctx.ui.onTerminalInput(data => {

@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claude Code UI 详细参考</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #202124;
+        --muted: #68707a;
+        --line: #d8dce2;
+        --card: #fff;
+        --wash: #f5f7fa;
+        --accent: #bd4d3d;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 32px;
+        background: var(--wash);
+        color: var(--ink);
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 27px;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        margin: 36px 0 14px;
+        font-size: 20px;
+      }
+      p {
+        margin: 7px 0;
+      }
+      .meta {
+        color: var(--muted);
+        max-width: 1000px;
+      }
+      .notice {
+        margin: 18px 0;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--accent);
+        background: var(--card);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+        gap: 18px;
+      }
+      figure {
+        margin: 0;
+        padding: 12px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 1px 2px #1b273315;
+      }
+      figcaption {
+        margin-bottom: 9px;
+        font-weight: 650;
+      }
+      figcaption span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 400;
+      }
+      img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid #c8ccd1;
+        background: #fff;
+      }
+      .links {
+        margin-top: 8px;
+        font-size: 13px;
+      }
+      a {
+        color: #1e5e9d;
+      }
+      code {
+        padding: 1px 4px;
+        background: #e9edf2;
+        border-radius: 3px;
+      }
+      @media (max-width: 600px) {
+        body {
+          padding: 16px;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Claude Code UI 详细参考</h1>
+      <p class="meta">
+        本画廊来自已安装的官方 Claude Code <code>2.1.261</code>, SHA256 为
+        <code
+          >4ae40dd1784e85753e742e09f267d29ecbb82890361ad3817d27560866d364a6</code
+        >. 每个 fixture 都在新的临时 project 中运行, 请求发送到 localhost
+        Anthropic-compatible SSE fixture. Claude Code 真实执行了 Bash, Read 和
+        Edit call, fixture 只提供 model blocks.
+      </p>
+      <div class="notice">
+        <strong>阅读方式.</strong> Classic 是普通的紧凑 renderer. Fullscreen
+        会把已经完成的 tool activity 收起为数量 summary, Ctrl+O 打开详细
+        transcript. Compact 和 expanded 分别是同一次 Ctrl+O 操作前后的截图.
+        running case 同时包含运行中和按下 Esc 后的画面. 这些是当前 client build
+        的证据, 不是 Claude Code 的通用契约.
+      </div>
+
+      <h2>多个结果, 分组和结果连接符</h2>
+      <div class="grid">
+        <figure>
+          <figcaption>
+            两个 Bash 结果 · classic compact<span
+              >两个独立的 child result block, 各有一个
+              <code>⎿</code> 连接符.</span
+            >
+          </figcaption>
+          <img
+            src="two-classic-100/compact.png"
+            alt="Claude Code classic compact view with two Bash result blocks"
+          />
+          <div class="links">
+            <a href="two-classic-100/compact.txt">文本</a> ·
+            <a href="two-classic-100/compact.ansi.gz">ANSI.gz</a> ·
+            <a href="two-classic-100/exchanges.json">exchange</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            两个 Bash 结果 · fullscreen compact<span
+              >compact view 只有一行 summary, 没有 child connector.</span
+            >
+          </figcaption>
+          <img
+            src="two-fullscreen-100/compact.png"
+            alt="Claude Code fullscreen compact summary for two Bash commands"
+          />
+          <div class="links">
+            <a href="two-fullscreen-100/compact.txt">文本</a> ·
+            <a href="two-fullscreen-100/compact.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            两个 Bash 结果 · fullscreen expanded<span
+              >Ctrl+O 恢复两个 command 和两个 result connector.</span
+            >
+          </figcaption>
+          <img
+            src="two-fullscreen-100/expanded.png"
+            alt="Claude Code fullscreen detailed transcript with two Bash result blocks"
+          />
+          <div class="links">
+            <a href="two-fullscreen-100/expanded.txt">文本</a> ·
+            <a href="two-fullscreen-100/expanded.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            Read → Bash → Read · classic compact<span
+              >classic 在 retrieval summary 之间保留普通 Bash call.</span
+            >
+          </figcaption>
+          <img
+            src="bridge-classic-100/compact.png"
+            alt="Claude Code classic compact view with Read, Bash and Read"
+          />
+          <div class="links">
+            <a href="bridge-classic-100/compact.txt">文本</a> ·
+            <a href="bridge-classic-100/compact.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            Read → Bash → Read · fullscreen compact<span
+              >fullscreen 将整个 sequence 收起为一个数量 summary.</span
+            >
+          </figcaption>
+          <img
+            src="bridge-fullscreen-100/compact.png"
+            alt="Claude Code fullscreen compact grouped summary"
+          />
+          <div class="links">
+            <a href="bridge-fullscreen-100/compact.txt">文本</a> ·
+            <a href="bridge-fullscreen-100/compact.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            Read → Bash → Read · fullscreen expanded<span
+              >详细 transcript 恢复原始顺序和连接符.</span
+            >
+          </figcaption>
+          <img
+            src="bridge-fullscreen-100/expanded.png"
+            alt="Claude Code fullscreen detailed Read Bash Read transcript"
+          />
+          <div class="links">
+            <a href="bridge-fullscreen-100/expanded.txt">文本</a> ·
+            <a href="bridge-fullscreen-100/expanded.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+      </div>
+
+      <h2>输出状态</h2>
+      <div class="grid">
+        <figure>
+          <figcaption>
+            多行输出 · classic compact<span
+              >显示前三行, 然后用行内 `(ctrl+o to expand)`
+              提示还有隐藏内容.</span
+            >
+          </figcaption>
+          <img
+            src="multiline-classic-100/compact.png"
+            alt="Claude Code multiline Bash output compact view"
+          />
+          <div class="links">
+            <a href="multiline-classic-100/compact.txt">文本</a> ·
+            <a href="multiline-classic-100/compact.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            多行输出 · classic expanded<span
+              >一个连接符开始整段 output, continuation rows 在下面对齐.</span
+            >
+          </figcaption>
+          <img
+            src="multiline-classic-100/expanded.png"
+            alt="Claude Code multiline Bash output expanded view"
+          />
+          <div class="links">
+            <a href="multiline-classic-100/expanded.txt">文本</a> ·
+            <a href="multiline-classic-100/expanded.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            无输出 · classic<span
+              >空执行仍然明确显示为 <code>(No output)</code>.</span
+            >
+          </figcaption>
+          <img
+            src="empty-classic-100/compact.png"
+            alt="Claude Code no output Bash result"
+          />
+          <div class="links">
+            <a href="empty-classic-100/compact.txt">文本</a> ·
+            <a href="empty-classic-100/compact.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            命令失败 · classic<span
+              >error text 和 stderr 保留在同一个 result connector 下.</span
+            >
+          </figcaption>
+          <img
+            src="failed-classic-100/compact.png"
+            alt="Claude Code failed Bash result"
+          />
+          <div class="links">
+            <a href="failed-classic-100/compact.txt">文本</a> ·
+            <a href="failed-classic-100/compact.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            命令失败 · fullscreen compact<span
+              >fullscreen compact 会把失败结果隐藏在 activity count 里, 这不是
+              Pi 当前建议直接采用的规则.</span
+            >
+          </figcaption>
+          <img
+            src="failed-fullscreen-100/compact.png"
+            alt="Claude Code fullscreen compact failed command summary"
+          />
+          <div class="links">
+            <a href="failed-fullscreen-100/compact.txt">文本</a> ·
+            <a href="failed-fullscreen-100/compact.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            命令失败 · fullscreen expanded<span
+              >详细 transcript 恢复 error block.</span
+            >
+          </figcaption>
+          <img
+            src="failed-fullscreen-100/expanded.png"
+            alt="Claude Code fullscreen expanded failed command"
+          />
+          <div class="links">
+            <a href="failed-fullscreen-100/expanded.txt">文本</a> ·
+            <a href="failed-fullscreen-100/expanded.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+      </div>
+
+      <h2>Edit 和 thinking</h2>
+      <div class="grid">
+        <figure>
+          <figcaption>
+            Edit/diff · classic compact<span
+              >Update 使用一个连接符, 并显示紧凑的彩色 diff preview.</span
+            >
+          </figcaption>
+          <img
+            src="edit-classic-100/compact.png"
+            alt="Claude Code Edit diff compact view"
+          />
+          <div class="links">
+            <a href="edit-classic-100/compact.txt">文本</a> ·
+            <a href="edit-classic-100/compact.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            Edit/diff · fullscreen expanded<span
+              >详细模式恢复前面的 Read, diff rows 仍然属于 Update result.</span
+            >
+          </figcaption>
+          <img
+            src="edit-fullscreen-100/expanded.png"
+            alt="Claude Code Edit diff fullscreen expanded view"
+          />
+          <div class="links">
+            <a href="edit-fullscreen-100/expanded.txt">文本</a> ·
+            <a href="edit-fullscreen-100/expanded.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            工具之间的 thinking · classic expanded<span
+              >thinking 作为独立文本行显示, 前面有浅色 <code>∴</code>, 不属于
+              tool child result.</span
+            >
+          </figcaption>
+          <img
+            src="thought-classic-100/expanded.png"
+            alt="Claude Code thinking line between tools"
+          />
+          <div class="links">
+            <a href="thought-classic-100/expanded.txt">文本</a> ·
+            <a href="thought-classic-100/expanded.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            工具之间的 thinking · classic compact<span
+              >收起的 activity summary 是 `Thought for 1s, read 2 files`.</span
+            >
+          </figcaption>
+          <img
+            src="thought-classic-100/compact.png"
+            alt="Claude Code compact thinking and read summary"
+          />
+          <div class="links">
+            <a href="thought-classic-100/compact.txt">文本</a> ·
+            <a href="thought-classic-100/compact.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+      </div>
+
+      <h2>运行中和 Esc 中断</h2>
+      <div class="grid">
+        <figure>
+          <figcaption>
+            运行中 Bash · classic active<span
+              >live output, elapsed time 和 `esc to interrupt` 保留在原生 active
+              layout 中.</span
+            >
+          </figcaption>
+          <img
+            src="running-classic-100/running.png"
+            alt="Claude Code running Bash command"
+          />
+          <div class="links">
+            <a href="running-classic-100/running.txt">文本</a> ·
+            <a href="running-classic-100/running.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            Esc 之后 · classic<span
+              >Claude Code 用原生 interruption annotation 替换 live
+              status.</span
+            >
+          </figcaption>
+          <img
+            src="running-classic-100/cancelled.png"
+            alt="Claude Code native Esc interruption annotation"
+          />
+          <div class="links">
+            <a href="running-classic-100/cancelled.txt">文本</a> ·
+            <a href="running-classic-100/cancelled.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            运行中 Bash · fullscreen active<span
+              >fullscreen 保留 command, 同时隐藏详细 output.</span
+            >
+          </figcaption>
+          <img
+            src="running-fullscreen-100/running.png"
+            alt="Claude Code fullscreen running Bash command"
+          />
+          <div class="links">
+            <a href="running-fullscreen-100/running.txt">文本</a> ·
+            <a href="running-fullscreen-100/running.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            Esc 之后 · fullscreen<span
+              >fullscreen 保留 count summary, 并显示原生 interruption child
+              result.</span
+            >
+          </figcaption>
+          <img
+            src="running-fullscreen-100/cancelled.png"
+            alt="Claude Code fullscreen Esc interruption"
+          />
+          <div class="links">
+            <a href="running-fullscreen-100/cancelled.txt">文本</a> ·
+            <a href="running-fullscreen-100/cancelled.ansi.gz">ANSI.gz</a>
+          </div>
+        </figure>
+      </div>
+    </main>
+  </body>
+</html>

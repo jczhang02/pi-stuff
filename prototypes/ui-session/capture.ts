@@ -167,14 +167,14 @@ await runEffect(async () => {
       );
       if (args.values.cancel) {
         await session.keyboard.press('Escape');
-        await session.screen.waitForText('Response interrupted', wait);
+        await session.screen.waitForText('Operation aborted', wait);
         await Bun.sleep(4500);
         if ((await session.screen.text()).includes('8 tests passed'))
           throw new Error('Cancelled replay resumed');
         await save(
           session,
           'cancelled',
-          ['Cancelled', 'Response interrupted', draft],
+          ['Cancelled', 'Operation aborted', draft],
           host.palette,
           theme,
         );

@@ -191,7 +191,7 @@ export class LiveSession {
       entry.summary = 'Cancelled · no completion result';
     }
     this.active = undefined;
-    this.append({kind: 'status', text: 'Response interrupted.'});
+    this.append({kind: 'aborted'});
     return true;
   }
   private clearTimer(): void {
@@ -211,7 +211,8 @@ export class LiveSession {
         theme,
         this.repaint,
       );
-      if (row.entry.kind === 'user') container.addChild(content);
+      if (row.entry.kind === 'user' || row.entry.kind === 'aborted')
+        container.addChild(content);
       else {
         const inset = new Box(1, 0);
         inset.addChild(content);

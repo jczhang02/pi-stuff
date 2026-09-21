@@ -56,7 +56,7 @@ await runEffect(async () => {
               new TextEncoder().encode('\u001b[27u'),
             );
           else await session.keyboard.press('Escape');
-          await session.screen.waitForText('Response interrupted', {
+          await session.screen.waitForText('Operation aborted', {
             timeoutMs: 5000,
           });
         }

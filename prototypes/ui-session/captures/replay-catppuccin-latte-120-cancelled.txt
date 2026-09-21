@@ -10,7 +10,7 @@
      [pass] preserves the cursor
      Checking pagination boundaries...
 
- Response interrupted.
+ Operation aborted
 
 
 

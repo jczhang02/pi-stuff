@@ -25,8 +25,8 @@ export async function captureLive(
   if (cancel) {
     await session.keyboard.type('保留草稿, 稍后继续');
     await session.keyboard.press('Escape');
-    await session.screen.waitForText('Response interrupted', wait);
-    await save('cancelled', ['Cancelled', 'Response interrupted', '保留草稿']);
+    await session.screen.waitForText('Operation aborted', wait);
+    await save('cancelled', ['Cancelled', 'Operation aborted', '保留草稿']);
     const stopped = await session.screen.text();
     await Bun.sleep(1800);
     if ((await session.screen.text()) !== stopped)

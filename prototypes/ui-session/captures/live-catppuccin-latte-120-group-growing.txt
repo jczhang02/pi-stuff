@@ -10,7 +10,7 @@
  • Read(src/search/cursor.ts)
    ⎿  Cancelled · no completion result
 
- Response interrupted.
+ Operation aborted
 
 
  继续, 保留已经完成的检查.

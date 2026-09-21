@@ -1,0 +1,22 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for thought.
+
+● Read(/tmp/claude-glyph-5bxRxx/project/a.txt)
+  ⎿  Read 4 lines
+
+∴ THINKING_BRIDGE: inspect another file.
+
+● Read(/tmp/claude-glyph-5bxRxx/project/b.txt)
+  ⎿  Read 3 lines
+
+                                                                  04:20 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Churned for 0s · done 4:20 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all                       verbose

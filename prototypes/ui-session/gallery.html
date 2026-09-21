@@ -102,6 +102,7 @@
   <p>
     以当前功能为范围, 在真实 Pi 中运行的新会话样式. 这里的图片来自可交互终端,
     模型与执行数据是离线样例.
+    <a href="detail-reference/index.html">Claude UI 细节实测 (09-22)</a> ·
     <a href="folding-reference/index.html">折叠边界实测</a> ·
     <a href="claude-reference/index.html">Claude Code 2.1.261 实测对照</a> ·
     <a href="README.md">启动与操作说明</a> ·
@@ -133,7 +134,8 @@
       Thoughts 服从 Pi hideThinkingBlock: hidden 显示 • Thoughts for 4s; no
       hidden 显示 • Thoughts: 正文, 前缀与正体正文同一行, 耗时在末尾,
       续行与消息正文对齐. 原生 Ctrl+T 或 /settings 可切换, 点击只改变单条思考,
-      Ctrl+O 不覆盖思考设置. 回答失败或中断保持普通文字.
+      Ctrl+O 不覆盖思考设置. 回答失败保持普通文字; Esc 中断复用 Pi 原生
+      Operation aborted 组件.
     </li>
   </ul>
   <nav>
@@ -1344,7 +1346,10 @@
   </section>
   <section id="interrupted">
     <h2>回答中断</h2>
-    <p>已有回答仍保留, 中断是一行普通状态文字.</p>
+    <p>
+      已有回答仍保留, 中断直接使用 Pi 原生 AssistantMessageComponent 的
+      Operation aborted.
+    </p>
     <code>bun prototypes/ui-session/run.ts interrupted</code>
     <div class="grid">
       <figure>
@@ -1359,6 +1364,19 @@
           <a href="captures/interrupted-catppuccin-latte-120-main.txt">文本</a>
           ·
           <a href="captures/interrupted-catppuccin-latte-120-main.ansi">ANSI</a>
+        </p>
+      </figure>
+      <figure>
+        <figcaption>默认状态 · 深色 · 80 列</figcaption>
+        <a href="captures/interrupted-catppuccin-mocha-80-main.png"
+          ><img
+            loading="lazy"
+            src="captures/interrupted-catppuccin-mocha-80-main.png"
+            alt="回答中断 / 默认状态 · 深色 · 80 列"
+        /></a>
+        <p>
+          <a href="captures/interrupted-catppuccin-mocha-80-main.txt">文本</a> ·
+          <a href="captures/interrupted-catppuccin-mocha-80-main.ansi">ANSI</a>
         </p>
       </figure>
     </div>

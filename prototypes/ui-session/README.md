@@ -1,6 +1,6 @@
 # Compact conversation TUI prototype
 
-[Gallery](gallery.html) · [Rules and sources](../../docs/research/ui-session-prototype-2026-09-21.md) · [中文规则](../../docs/i18n/zh-CN/research/ui-session-prototype-2026-09-21.md)
+[Gallery](gallery.html) · [Claude UI details, 09-22](detail-reference/index.html) · [Rules and sources](../../docs/research/ui-session-prototype-2026-09-21.md) · [中文规则](../../docs/i18n/zh-CN/research/ui-session-prototype-2026-09-21.md)
 
 This isolated, throwaway prototype answers the five UI corrections in [#101](https://github.com/jczhang02/pi-stuff/issues/101). It starts from `d8ff7be` on a new `codex/ui-session-prototype` worktree. Previous previews are retained. Nothing loads this directory from the production entrypoint.
 
@@ -35,7 +35,7 @@ bun run tui stop pi-ui-session
 
 Click a tool for its full retained output. Click the activity summary to reveal compact children, then click one child to inspect it. Thoughts defaults follow Pi Hide thinking and can be clicked independently. Native Ctrl+T or /settings updates that default; Ctrl+O toggles tool detail; input stays editable. Pi's native scroll controls navigate the complete conversation. Resizing the outer foreground terminal updates the child; the CLI's `resize` command does not resize foreground `run` sessions.
 
-User messages use Pi 0.85.1's exported `UserMessageComponent` with its native background, padding and Markdown behavior. The prototype does not install a footer; Pi renders the real isolated session status, including the `preview` model and context usage. These surfaces are outside the redesign.
+User messages use Pi 0.85.1's exported `UserMessageComponent` with its native background, padding and Markdown behavior. The prototype does not install a footer; Pi renders the real isolated session status, including the `preview` model and context usage. These surfaces are outside the redesign. Esc interruption now also reuses the native `AssistantMessageComponent` aborted state, including its `Operation aborted` text, error color and padding. The offline timeline still simulates cancellation; this is native presentation, not a real provider abort.
 
 Thoughts uses a muted leading dot in both states. Hidden: `• Thoughts for 4s`. Visible: `• Thoughts: The cursor already...  4s`, with the prefix and upright Markdown body on the same line; continuation lines align with message text. There is no separate heading or container. Compare the gallery's `Thoughts · hidden` and `Thoughts · no hidden` sections: captures set the isolated Pi preference explicitly. Foreground launches still inherit your setting; Ctrl+T changes it only inside the temporary preview host.
 
@@ -92,7 +92,7 @@ The evidence does not establish production message overrides, general diff gener
 
 在新 worktree 执行 `bun prototypes/ui-session/run.ts`, 即可进入连续交互会话. 欢迎页输入框有可编辑的分页请求, 按 Enter 启动第一轮; 完成后输入 "补充页内重复和全空过滤页, 展示完整测试结果." 进入第二轮. Esc 中断后再提交可继续未完成步骤, 运行中提交会先中断当前回答. 两轮完成后继续提交只回顾现有结果. `live-error` 首次提交会遇到 HTTP 503, 再提交可重试. `session` 保留静态总览. `investigate` 适合逐项点击, `web` 查看统一 Web 样式, `replay` 演示思考、执行和完成, 可按 Esc 中断. 其他场景名见上表. 空输入时 Ctrl+D 退出并清理临时目录.
 
-用户消息直接复用 Pi 0.85.1 的原生 `UserMessageComponent`, 保留背景、留白和 Markdown 行为. 原型不再覆盖 footer, 状态栏由 Pi 显示隔离会话的实际信息, 包括 `preview` 模型和上下文用量. 这两部分不属于本轮改版.
+用户消息直接复用 Pi 0.85.1 的原生 `UserMessageComponent`, 保留背景、留白和 Markdown 行为. 原型不再覆盖 footer, 状态栏由 Pi 显示隔离会话的实际信息, 包括 `preview` 模型和上下文用量. 这两部分不属于本轮改版. Esc 中断也复用原生 `AssistantMessageComponent` 的 aborted 状态, 保留 `Operation aborted` 文案、错误色和边距. 离线时间线仍模拟取消执行, 此处复用原生展示, 不代表真实提供方中断.
 
 Thoughts 两种状态都保留灰色前导点. hidden 显示 `• Thoughts for 4s`; no hidden 显示 `• Thoughts: The cursor already...  4s`, 前缀与正体 Markdown 正文同一行, 续行与消息正文对齐, 不增加独立标题或容器. 画廊的 `Thoughts · hidden` 和 `Thoughts · no hidden` 分别在隔离 Pi 中设置对应默认值并截图. 前台启动仍继承你的设置, Ctrl+T 只修改临时原型环境.
 

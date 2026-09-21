@@ -37,6 +37,7 @@ export type Thoughts = {
 };
 export type Entry =
   | Tool
+  | {kind: 'aborted'}
   | {kind: 'user' | 'assistant'; text: string}
   | Thoughts
   | {kind: 'status'; text: string; error?: boolean}

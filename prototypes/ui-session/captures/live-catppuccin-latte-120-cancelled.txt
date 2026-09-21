@@ -10,7 +10,7 @@
  • Read(src/search/cursor.ts)
    ⎿  Cancelled · no completion result
 
- Response interrupted.
+ Operation aborted
 
 
 

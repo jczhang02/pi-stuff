@@ -1,6 +1,7 @@
 // Presentation-only renderer for the conversation prototype.
 import {
   UserMessageComponent,
+  AssistantMessageComponent,
   getMarkdownTheme,
   highlightCode,
   getLanguageFromPath,
@@ -241,7 +242,10 @@ function explorationSummary(tools: readonly Tool[]): string {
     .join(' · ');
 }
 function textRows(
-  entry: Exclude<Entry, Tool | {kind: 'explore'; tools: readonly Tool[]}>,
+  entry: Exclude<
+    Entry,
+    Tool | {kind: 'aborted'} | {kind: 'explore'; tools: readonly Tool[]}
+  >,
   state: Expansion,
   theme: Theme,
   width: number,
@@ -290,6 +294,34 @@ export function entryComponent(
   repaint: () => void,
 ): Component {
   if (entry.kind === 'user') return new UserMessageComponent(entry.text);
+  if (entry.kind === 'aborted') {
+    const native = new AssistantMessageComponent({
+      role: 'assistant',
+      content: [],
+      api: 'openai-completions',
+      provider: 'preview',
+      model: 'preview',
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0},
+      },
+      stopReason: 'aborted',
+      timestamp: 0,
+    });
+    // The surrounding custom message or live row already supplies the native blank line.
+    return {
+      render(width) {
+        const [spacer = '', ...rows] = native.render(width);
+        rows[0] = spacer.trimEnd() + (rows[0] ?? '');
+        return rows;
+      },
+      invalidate: () => native.invalidate(),
+    };
+  }
   if (entry.kind === 'explore') {
     const container = new Container();
     return {
