@@ -18,6 +18,7 @@ import {
   type ResolvedConfiguration,
 } from './configuration';
 import {attachWorkspace} from './workspace';
+import {loadRuns, saveRuns} from './store';
 
 interface Run {
   snapshot: RunSnapshot;
@@ -27,13 +28,21 @@ interface Run {
   children: Map<string, AgentSession>;
   waiters: Set<() => void>;
   configurations: Map<string, ResolvedConfiguration>;
-  notifyPerTask: boolean;
   continuing: boolean;
 }
 
 export class Runs {
   private readonly runs = new Map<string, Run>();
   private generation = 0;
+  private accepting = true;
+  private parentFile: string | undefined;
+  private persistenceEnabled = true;
+  private storageError: string | undefined;
+  private dirty = false;
+  private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  private saveQueue: Promise<void> = Promise.resolve();
+  private context: ExtensionContext | undefined;
+  private lifecycle: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly notify: (
@@ -43,11 +52,137 @@ export class Runs {
     ) => void,
   ) {}
 
+  private changed(): void {
+    this.dirty = true;
+    this.saveTimer ??= setTimeout(() => {
+      this.saveTimer = undefined;
+      void this.flush();
+    }, 100);
+  }
+
+  async flush(): Promise<void> {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = undefined;
+    if (
+      !this.parentFile ||
+      !this.persistenceEnabled ||
+      !this.dirty ||
+      this.runs.size === 0
+    )
+      return this.saveQueue;
+    this.dirty = false;
+    const parentFile = this.parentFile;
+    const snapshots = [...this.runs.values()].slice(-50).map(run => {
+      const snapshot = structuredClone(run.snapshot);
+      delete snapshot.persistenceError;
+      return snapshot;
+    });
+    this.saveQueue = this.saveQueue.then(async () => {
+      try {
+        await Effect.runPromise(saveRuns(parentFile, snapshots));
+        this.storageError = undefined;
+        for (const run of this.runs.values())
+          delete run.snapshot.persistenceError;
+      } catch (error) {
+        this.dirty = true;
+        const message = error instanceof Error ? error.message : String(error);
+        for (const run of this.runs.values())
+          run.snapshot.persistenceError = message;
+        if (message !== this.storageError) {
+          this.storageError = message;
+          // Error evidence remains in every run even when a stale host cannot
+          // accept the UI notification during shutdown.
+          try {
+            this.context?.ui.notify(message, 'error');
+          } catch {
+            // The error remains queryable on the run.
+          }
+        }
+      }
+    });
+    return this.saveQueue;
+  }
+
+  private transition(
+    action: (generation: number) => Promise<void>,
+  ): Promise<void> {
+    const generation = ++this.generation;
+    this.accepting = false;
+    for (const run of this.runs.values()) {
+      for (const controller of run.controllers.values()) controller.abort();
+    }
+    // A previous lifecycle caller receives its own error. It must not poison
+    // the queue for the next explicit session change.
+    const next = this.lifecycle
+      .catch(() => undefined)
+      .then(() => action(generation));
+    this.lifecycle = next;
+    return next;
+  }
+
+  restore(ctx: ExtensionContext): Promise<void> {
+    return this.transition(async generation => {
+      await this.clear();
+      if (generation !== this.generation) return;
+      await this.load(ctx, generation);
+    });
+  }
+
+  private async load(ctx: ExtensionContext, generation: number): Promise<void> {
+    this.context = ctx;
+    this.parentFile = ctx.sessionManager.getSessionFile();
+    this.persistenceEnabled = false;
+    this.storageError = undefined;
+    try {
+      const snapshots = this.parentFile
+        ? await Effect.runPromise(loadRuns(this.parentFile))
+        : [];
+      if (generation !== this.generation) return;
+      for (const snapshot of snapshots) {
+        for (const task of snapshot.tasks) {
+          if (
+            [
+              'queued',
+              'starting',
+              'running',
+              'awaiting_parent',
+              'stopping',
+            ].includes(task.status)
+          ) {
+            task.status = 'stopped';
+            task.error = task.finalizing
+              ? 'Interrupted during file finalization. Inspect the retained workspace before resuming.'
+              : 'Interrupted by session restart.';
+            task.endedAt = Date.now();
+            task.finalizing = false;
+            this.dirty = true;
+          }
+          if (task.question) this.dirty = true;
+          delete task.question;
+        }
+        delete snapshot.persistenceError;
+        const run = this.createRun(snapshot, new Map());
+        this.settle(run);
+        this.runs.set(snapshot.id, run);
+      }
+      this.persistenceEnabled = true;
+      await this.flush();
+    } catch (error) {
+      if (generation !== this.generation) return;
+      this.storageError =
+        error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(this.storageError, 'error');
+    } finally {
+      if (generation === this.generation) this.accepting = true;
+    }
+  }
+
   private notifyParent(
     run: RunSnapshot,
     task: TaskSnapshot,
     message?: string,
   ): void {
+    if (!this.accepting) return;
     try {
       this.notify(run, task, message);
     } catch (error) {
@@ -61,6 +196,8 @@ export class Runs {
     ctx: ExtensionContext,
     signal?: AbortSignal,
   ): Promise<RunSnapshot> {
+    if (!this.accepting)
+      throw new SubagentError({message: 'The parent session is changing.'});
     const generation = this.generation;
     const configurations = new Map(
       await Promise.all(
@@ -81,6 +218,7 @@ export class Runs {
     const snapshot: RunSnapshot = {
       id: randomUUID(),
       mode: input.mode,
+      notifyPerTask: input.notifyPerTask,
       status: 'running',
       intercom: [],
       tasks: input.tasks.map(task => ({
@@ -93,9 +231,21 @@ export class Runs {
         configurationNotes: [],
       })),
     };
+    if (this.storageError) snapshot.persistenceError = this.storageError;
+    const run = this.createRun(snapshot, configurations);
+    this.runs.set(snapshot.id, run);
+    this.changed();
+    run.completion = this.execute(run, input, ctx);
+    return snapshot;
+  }
+
+  private createRun(
+    snapshot: RunSnapshot,
+    configurations: Map<string, ResolvedConfiguration>,
+  ): Run {
     const waiters = new Set<() => void>();
     const communication = new Communication(
-      input.tasks.map(task => task.id),
+      snapshot.tasks.map(task => task.id),
       (taskId, question) => {
         const task = snapshot.tasks.find(task => task.id === taskId);
         if (!task) return;
@@ -108,6 +258,7 @@ export class Runs {
           delete task.question;
           if (task.status === 'awaiting_parent') task.status = 'running';
         }
+        this.changed();
       },
       (taskId, text, level) => {
         snapshot.intercom.push({taskId, text, level});
@@ -116,27 +267,25 @@ export class Runs {
         if (task && waiters.size === 0)
           this.notifyParent(snapshot, task, `${level}: ${text}`);
         for (const wake of waiters) wake();
+        this.changed();
       },
     );
-    const run: Run = {
+    return {
       snapshot,
       controllers: new Map(
-        input.tasks.map(task => [task.id, new AbortController()]),
+        snapshot.tasks.map(task => [task.id, new AbortController()]),
       ),
       completion: Promise.resolve(),
       communication,
       children: new Map(),
       waiters,
       configurations,
-      notifyPerTask: input.notifyPerTask,
       continuing: false,
     };
-    this.runs.set(snapshot.id, run);
-    run.completion = this.execute(run, input, ctx);
-    return snapshot;
   }
 
   private async execute(run: Run, input: Dispatch, ctx: ExtensionContext) {
+    await this.flush();
     const outputs = new Map<string, string>();
     const result = await runWaveScheduler(
       run.snapshot.tasks,
@@ -165,6 +314,8 @@ export class Runs {
       if (input.notifyPerTask) this.notifyParent(run.snapshot, task);
     }
     this.settle(run);
+    this.changed();
+    await this.flush();
   }
 
   private settle(run: Run): void {
@@ -202,13 +353,15 @@ export class Runs {
         baseBranch,
         sessionManager,
         tools: run.communication.tools(task.id),
+        changed: () => this.changed(),
         ready: session => {
           run.children.set(task.id, session);
         },
       });
     } finally {
       run.children.delete(task.id);
-      if (run.notifyPerTask) this.notifyParent(run.snapshot, task);
+      if (run.snapshot.notifyPerTask) this.notifyParent(run.snapshot, task);
+      this.changed();
     }
   }
 
@@ -231,6 +384,8 @@ export class Runs {
     ctx: ExtensionContext,
     signal?: AbortSignal,
   ): Promise<RunSnapshot> {
+    if (!this.accepting)
+      throw new SubagentError({message: 'The parent session is changing.'});
     const run = this.get(input.runId);
     const task = run.snapshot.tasks.find(task => task.id === input.taskId);
     if (!task)
@@ -256,11 +411,6 @@ export class Runs {
     const message =
       input.message ??
       `Your previous request ended with ${task.status}: ${task.error ?? 'execution interrupted'}. Briefly recap your progress, then continue where you left off and finish the remaining work.`;
-    const prepared = run.configurations.get(task.id);
-    if (!prepared)
-      throw new SubagentError({
-        message: 'The saved child configuration is unavailable.',
-      });
     const generation = this.generation;
     run.continuing = true;
     try {
@@ -320,7 +470,10 @@ export class Runs {
       run.snapshot.tasks[run.snapshot.tasks.indexOf(task)] = next;
       run.controllers.set(task.id, new AbortController());
       run.configurations.set(task.id, {
-        ...prepared,
+        prompt: task.prompt,
+        tools: task.tools,
+        write: task.write,
+        roleSource: task.roleSource,
         model,
         thinking,
         notes: [],
@@ -335,7 +488,12 @@ export class Runs {
         sessionManager,
       )
         .then(() => undefined)
-        .finally(() => this.settle(run));
+        .finally(async () => {
+          this.settle(run);
+          this.changed();
+          await this.flush();
+        });
+      this.changed();
       return run.snapshot;
     } finally {
       run.continuing = false;
@@ -411,6 +569,7 @@ export class Runs {
           message: `${task.agent} is no longer executing.`,
         });
       task.pendingInstructions.push(message);
+      this.changed();
       try {
         await child.prompt(message, {
           source: 'extension',
@@ -420,6 +579,7 @@ export class Runs {
       } catch (error) {
         const index = task.pendingInstructions.lastIndexOf(message);
         if (index !== -1) task.pendingInstructions.splice(index, 1);
+        this.changed();
         throw error;
       }
     }
@@ -440,18 +600,24 @@ export class Runs {
         ) {
           task.status = 'stopping';
           controller.abort();
+          this.changed();
         }
       }
     }
     return run.snapshot;
   }
 
-  async close(): Promise<void> {
-    this.generation++;
-    for (const run of this.runs.values()) {
-      for (const controller of run.controllers.values()) controller.abort();
-    }
+  close(): Promise<void> {
+    return this.transition(() => this.clear());
+  }
+
+  private async clear(): Promise<void> {
     await Promise.all([...this.runs.values()].map(run => run.completion));
+    await this.saveQueue;
+    await this.flush();
     this.runs.clear();
+    this.parentFile = undefined;
+    this.context = undefined;
+    this.dirty = false;
   }
 }

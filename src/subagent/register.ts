@@ -60,7 +60,7 @@ export function registerSubagent(
     },
   });
   pi.on('session_shutdown', () => runs.close());
-  pi.on('session_start', () => runs.close());
+  pi.on('session_start', (_event, ctx) => runs.restore(ctx));
   registerTool(pi, switches, {
     name: 'subagent',
     label: 'Subagent',
@@ -135,6 +135,7 @@ export function registerSubagent(
                 }),
         }),
       );
+      await runs.flush();
       return {
         content: [{type: 'text', text: JSON.stringify(result)}],
         details: result,

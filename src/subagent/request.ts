@@ -26,9 +26,10 @@ interface RequestExecution {
   sessionManager: SessionManager | undefined;
   tools: ToolDefinition[];
   ready: (session: AgentSession) => void;
+  changed: () => void;
 }
 
-function usage(stats: SessionStats): Required<Usage> {
+function usage(stats: SessionStats) {
   return {
     input: stats.tokens.input,
     output: stats.tokens.output,
@@ -39,7 +40,7 @@ function usage(stats: SessionStats): Required<Usage> {
   };
 }
 
-function recordedUsage(value: Required<Usage>): Usage {
+function recordedUsage(value: ReturnType<typeof usage>): Usage {
   const result: Usage = {turns: value.turns};
   const hasTokens =
     value.input + value.output + value.cacheRead + value.cacheWrite > 0;
@@ -57,7 +58,7 @@ function recordedUsage(value: Required<Usage>): Usage {
 export async function executeRequest(input: RequestExecution) {
   const {task, signal} = input;
   let unsubscribe: (() => void) | undefined;
-  let baseline: Required<Usage> | undefined;
+  let baseline: ReturnType<typeof usage> | undefined;
   let outcome: 'completed' | 'failed' | 'stopped' = 'completed';
   const updateUsage = (session: AgentSession) => {
     const total = usage(session.getSessionStats());
@@ -81,6 +82,7 @@ export async function executeRequest(input: RequestExecution) {
     signal.throwIfAborted();
     task.status = 'starting';
     task.startedAt = Date.now();
+    input.changed();
     const configuration = await Effect.runPromise(
       preflightConfiguration(input.configuration, input.parent, signal),
     );
@@ -115,12 +117,13 @@ export async function executeRequest(input: RequestExecution) {
           baseline = usage(session.getSessionStats());
           const startEntryId = session.sessionManager.getLeafId();
           if (startEntryId) task.startEntryId = startEntryId;
-          input.ready(session);
           task.status = 'running';
           task.sessionId = session.sessionId;
           if (session.sessionFile) task.sessionFile = session.sessionFile;
           task.tools = session.getActiveToolNames();
           task.thinking = session.thinkingLevel;
+          input.ready(session);
+          input.changed();
           unsubscribe = session.subscribe(event => {
             if (
               (event.type === 'message_update' ||
@@ -148,6 +151,12 @@ export async function executeRequest(input: RequestExecution) {
               const index = task.pendingInstructions.indexOf(text);
               if (index !== -1) task.pendingInstructions.splice(index, 1);
             }
+            if (
+              event.type === 'message_update' ||
+              event.type === 'message_end' ||
+              event.type === 'message_start'
+            )
+              input.changed();
           });
         },
         session => {
@@ -174,6 +183,7 @@ export async function executeRequest(input: RequestExecution) {
     if (task.workspace) {
       task.finalizing = true;
       if (signal.aborted) task.status = 'stopping';
+      input.changed();
       try {
         task.git = await Effect.runPromise(
           saveWorkspace(task.workspace, `subagent: ${task.agent}`),
@@ -194,6 +204,7 @@ export async function executeRequest(input: RequestExecution) {
     if (signal.aborted) outcome = 'stopped';
     task.status = outcome;
     task.endedAt = Date.now();
+    input.changed();
   }
   return outcome === 'completed'
     ? {status: outcome, output: task.finalText}
