@@ -8,7 +8,7 @@
    The bug is in the item list: previousIds is
    read but never used to filter page.items. I
    will preserve the cursor and add a boundary
-   test.                                           4s
+   test.  4s
 
  • 先检查分页实现和现有测试, 再对照游标规则.
 

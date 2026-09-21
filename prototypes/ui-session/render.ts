@@ -271,7 +271,7 @@ function textRows(
     if (!entry.running) {
       const last = rows.length - 1;
       rows[last] =
-        (rows[last] ?? '') + theme.fg('muted', `  ${entry.seconds}s`);
+        (rows[last] ?? '').trimEnd() + theme.fg('muted', `  ${entry.seconds}s`);
     }
     return rows
       .flatMap(line => wrapTextWithAnsi(line, available))

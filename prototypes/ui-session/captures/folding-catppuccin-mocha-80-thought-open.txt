@@ -6,7 +6,7 @@
 
  • Thoughts: The cursor already comes from the provider. The bug is in the item
    list: previousIds is read but never used to filter page.items. I
-   will preserve the cursor and add a boundary test.                   4s
+   will preserve the cursor and add a boundary test.  4s
 
  • Searched 1 pattern · expand
 
