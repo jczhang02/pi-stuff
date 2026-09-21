@@ -3,14 +3,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from '@earendil-works/pi-coding-agent';
-import {
-  Box,
-  Text,
-  truncateToWidth,
-  matchesKey,
-  Key,
-  type TUI,
-} from '@earendil-works/pi-tui';
+import {Box, Text, matchesKey, Key, type TUI} from '@earendil-works/pi-tui';
 import {getEntries, replayResult} from './fixtures';
 import {welcomeLines} from '../ui-direction/welcome';
 import {entryComponent, expansionFor, expandAll} from './render';
@@ -61,10 +54,12 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
         }
         const state = states[index];
         if (!state) throw new Error('Missing expansion state');
-        const box = new Box(1, 0);
-        box.addChild(
-          entryComponent(entry, state, theme, () => host?.requestRender()),
+        const content = entryComponent(entry, state, theme, () =>
+          host?.requestRender(),
         );
+        if (entry.kind === 'user') return content;
+        const box = new Box(1, 0);
+        box.addChild(content);
         return box;
       },
     );
@@ -164,22 +159,6 @@ export default function sessionPrototype(pi: ExtensionAPI): void {
         return undefined;
       });
     }
-    ctx.ui.setFooter((_tui, theme) => ({
-      render: width => [
-        truncateToWidth(
-          theme.fg('muted', ' pi-stuff · fix/pagination-boundary'),
-          width,
-        ),
-        truncateToWidth(
-          theme.fg(
-            'dim',
-            ' gpt-5.4 · high                    ctrl+o expand/collapse',
-          ),
-          width,
-        ),
-      ],
-      invalidate() {},
-    }));
     entries.forEach((_entry, index) => {
       if (scene === 'replay' && index === 2) return;
       pi.sendMessage({

@@ -190,16 +190,23 @@ export class LiveSession {
     this.clearTimer();
     this.stopped = true;
   }
-  component(theme: PiTheme): Box {
+  component(theme: PiTheme): Container {
     const container = new Container();
     for (const row of this.rows) {
-      container.addChild(
-        entryComponent(row.entry, row.expansion, theme, this.repaint),
+      const content = entryComponent(
+        row.entry,
+        row.expansion,
+        theme,
+        this.repaint,
       );
+      if (row.entry.kind === 'user') container.addChild(content);
+      else {
+        const inset = new Box(1, 0);
+        inset.addChild(content);
+        container.addChild(inset);
+      }
       container.addChild(new Spacer(1));
     }
-    const box = new Box(1, 0);
-    box.addChild(container);
-    return box;
+    return container;
   }
 }

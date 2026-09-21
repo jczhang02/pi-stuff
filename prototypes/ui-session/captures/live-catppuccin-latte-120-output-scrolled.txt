@@ -23,7 +23,7 @@
        fixture: page-3; stable output order                                                                            │
      [pass] accepts empty page                                                                                         │
        case 4: cursor preserved; input unchanged                                                                       │
-       fixture: page-4; stable output order                                                                            ┃
+       fixture: page-4; stable output order                                                                            │
      [pass] accepts empty previous page                                                                                ┃
        case 5: cursor preserved; input unchanged                                                                       ┃
        fixture: page-5; stable output order                                                                            ┃
@@ -36,5 +36,5 @@
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 下一条草稿不会被展开操作覆盖
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- pi-stuff · fix/pagination-boundary
- gpt-5.4 · high                    ctrl+o expand/collapse
+~
+0.0%/128k (auto)                                                                                                 preview

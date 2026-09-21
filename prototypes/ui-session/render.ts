@@ -1,5 +1,6 @@
 // Presentation-only renderer for the conversation prototype.
 import {
+  UserMessageComponent,
   getMarkdownTheme,
   highlightCode,
   getLanguageFromPath,
@@ -217,10 +218,7 @@ function textRows(
       );
     return rows;
   }
-  const marker =
-    entry.kind === 'user'
-      ? theme.fg('mdQuote', ' ')
-      : theme.fg('accent', '• ');
+  const marker = theme.fg('accent', '• ');
   const lines = new Markdown(entry.text, 0, 0, getMarkdownTheme()).render(
     Math.max(1, width - visibleWidth(marker)),
   );
@@ -232,6 +230,7 @@ export function entryComponent(
   theme: Theme,
   repaint: () => void,
 ): Component {
+  if (entry.kind === 'user') return new UserMessageComponent(entry.text);
   if (entry.kind === 'explore') {
     const container = new Container();
     return {

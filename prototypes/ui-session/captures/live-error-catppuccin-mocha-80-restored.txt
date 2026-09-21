@@ -21,7 +21,7 @@
                                                                                │
  • 两个边界都已补齐, 10 项测试通过.                                            │
                                                                                │
-   ```ts                                                                       ┃
+   ```ts                                                                       │
      if (seen.has(item.id)) return false;                                      ┃
      seen.add(item.id);                                                        ┃
      return true;                                                              ┃
@@ -36,5 +36,5 @@
 ────────────────────────────────────────────────────────────────────────────────
 下一条草稿不会被展开操作覆盖
 ────────────────────────────────────────────────────────────────────────────────
- pi-stuff · fix/pagination-boundary
- gpt-5.4 · high                    ctrl+o expand/collapse
+~
+0.0%/128k (auto)                                                         preview

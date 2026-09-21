@@ -35,6 +35,8 @@ bun run tui stop pi-ui-session
 
 Click a tool for its full retained output. Click Explored to reveal compact children, then click one child to inspect it. Click Thoughts for its content. Ctrl+O toggles all detail; input stays editable. Pi's native scroll controls navigate the complete conversation. Resizing the outer foreground terminal updates the child; the CLI's `resize` command does not resize foreground `run` sessions.
 
+User messages use Pi 0.85.1's exported `UserMessageComponent` with its native background, padding and Markdown behavior. The prototype does not install a footer; Pi renders the real isolated session status, including the `preview` model and context usage. These surfaces are outside the redesign.
+
 The scenario is a pagination repair with coherent read, search, Web, edit, write and test steps. All results, Web pages, model labels and durations are samples. The replay has real elapsed animation but simulated execution. In static scenes, ordinary text submission returns the text to the editor. In live scenes, it drives the fixed offline script. Other native Pi commands are outside this preview's acceptance.
 
 ## Scenes
@@ -83,6 +85,8 @@ The evidence does not establish production message overrides, general diff gener
 ## 中文使用说明
 
 在新 worktree 执行 `bun prototypes/ui-session/run.ts`, 即可进入连续交互会话. 欢迎页输入框有可编辑的分页请求, 按 Enter 启动第一轮; 完成后输入 "补充页内重复和全空过滤页, 展示完整测试结果." 进入第二轮. Esc 中断后再提交可继续未完成步骤, 运行中提交会先中断当前回答. 两轮完成后继续提交只回顾现有结果. `live-error` 首次提交会遇到 HTTP 503, 再提交可重试. `session` 保留静态总览. `investigate` 适合逐项点击, `web` 查看统一 Web 样式, `replay` 演示思考、执行和完成, 可按 Esc 中断. 其他场景名见上表. 空输入时 Ctrl+D 退出并清理临时目录.
+
+用户消息直接复用 Pi 0.85.1 的原生 `UserMessageComponent`, 保留背景、留白和 Markdown 行为. 原型不再覆盖 footer, 状态栏由 Pi 显示隔离会话的实际信息, 包括 `preview` 模型和上下文用量. 这两部分不属于本轮改版.
 
 点击 Explored 展开调用清单, 再点一项看正文; 点击 Thoughts 查看思考内容; Ctrl+O 切换全部详情. 输入框由 Pi 管理. 前台终端尺寸随外层终端变化, 完整会话用 Pi 原生滚动查看. 可在另一个终端用 `bun run tui show pi-ui-session` 检查同一会话.
 

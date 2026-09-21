@@ -66,3 +66,7 @@ The script is deterministic and offline. It exercises the actual editor, mouse d
 Resize verification initially exposed a false-positive capture: Terminal Control changed frame dimensions before Pi redrew, so a short idle wait retained clipped old-width content. A separate full-Pi probe confirmed actual reflow. The live driver now waits for a specific complete code continuation that only appears at 60 columns, then checks navigation to the beginning and back to the current draft. Frame geometry alone is not a reflow assertion.
 
 Final interaction waits identify the owning tool result (`Added 2 lines, removed 1 line · collapse`) and a changed viewport containing the first test case. A generic `collapse` token could match the footer, and an already-visible output tail could satisfy a scroll assertion before input was rendered. These false-positive waits were corrected and affected captures regenerated.
+
+## Follow-up: preserve native messages and statusline
+
+User feedback removes these surfaces from the redesign. Static and live user rows now instantiate Pi 0.85.1's exported `UserMessageComponent`, retaining its background, padding, Markdown behavior and terminal prompt markers. Surrounding prototype padding applies only to other entries. The extension no longer calls `setFooter`; Pi renders its actual isolated session context and `preview` model instead of a hardcoded branch/model. All retained terminal captures were regenerated. Both live paths still pass disclosure, history navigation and 60-column reflow; all six foreground palette checks pass.
