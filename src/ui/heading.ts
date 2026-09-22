@@ -2,6 +2,7 @@ import type {Theme} from '@earendil-works/pi-coding-agent';
 import {
   truncateToWidth,
   wrapTextWithAnsi,
+  stripTerminalSequences,
   type Component,
 } from '@earendil-works/pi-tui';
 
@@ -31,7 +32,7 @@ export class ToolHeading implements Component {
     if (this.width === width) return this.rows;
     const inner = Math.max(1, width - 2);
     const rows = wrapTextWithAnsi(
-      `${this.theme.bold(this.label)}(${this.target})`,
+      `${this.theme.bold(this.label)}(${stripTerminalSequences(this.target)})`,
       inner,
     );
     const shown = this.state.expanded ? rows : rows.slice(0, 2);

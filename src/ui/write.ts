@@ -10,6 +10,7 @@ import {
 import {
   wrapTextWithAnsi,
   truncateToWidth,
+  stripTerminalSequences,
   type Component,
 } from '@earendil-works/pi-tui';
 
@@ -46,9 +47,10 @@ class WrittenContent implements Component {
 
   render(width: number): string[] {
     if (width === this.width) return this.rows;
-    const source = this.source.replace(/\n$/u, '');
+    // Match native Write display normalization; retain the original tool args.
+    const source = this.source.replace(/\r/gu, '').replace(/\n$/u, '');
     this.highlighted ??= highlightCode(
-      source,
+      stripTerminalSequences(source),
       this.settings.codeHighlighting === false
         ? undefined
         : getLanguageFromPath(this.path),

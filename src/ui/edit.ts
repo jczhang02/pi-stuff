@@ -10,6 +10,7 @@ import {
 import {
   truncateToWidth,
   wrapTextWithAnsi,
+  stripTerminalSequences,
   type Component,
 } from '@earendil-works/pi-tui';
 
@@ -41,7 +42,7 @@ function patchHunks(patch: string): DiffLine[][] {
     current.push({
       kind,
       number: kind === '-' ? oldLine : newLine,
-      source: line.slice(1),
+      source: stripTerminalSequences(line.slice(1)),
     });
     if (kind !== '+') oldLine++;
     if (kind !== '-') newLine++;

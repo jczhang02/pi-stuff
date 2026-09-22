@@ -11,6 +11,7 @@ import {
 import {
   truncateToWidth,
   wrapTextWithAnsi,
+  stripTerminalSequences,
   type Component,
 } from '@earendil-works/pi-tui';
 import type {UiSettings} from './settings';
@@ -164,12 +165,13 @@ export class BashDisplay {
       renderCall: (args, theme, context) =>
         new ToolHeading('Bash', args.command ?? '', theme, context),
       renderResult: (result, options, theme, context) => {
-        let output = result.content
-          .map(block =>
-            block.type === 'text' ? block.text : `[image: ${block.mimeType}]`,
-          )
-          .join('\n')
-          .replace(/\n$/u, '');
+        let output = stripTerminalSequences(
+          result.content
+            .map(block =>
+              block.type === 'text' ? block.text : `[image: ${block.mimeType}]`,
+            )
+            .join('\n'),
+        ).replace(/\n$/u, '');
         const metadata: ResultNotice[] = [];
         let showError = false;
         if (!options.isPartial) {

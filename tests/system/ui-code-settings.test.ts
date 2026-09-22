@@ -116,6 +116,44 @@ test('Global code presentation controls change rendering while preserving writte
   }
 }, 30000);
 
+test('Code previews normalize CRLF and tabs without altering file content', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  const source =
+    'function page() {\r\n\tconst items = [1, 2];\r\n\treturn items;\r\n}\r\n';
+  try {
+    await host.invoke(
+      'write',
+      JSON.stringify({path: 'tabs.ts', content: source}),
+    );
+    const written = await host.terminal.screen.text();
+    expect(written).toContain('Wrote 4 lines');
+    expect(written).toContain('1 more line');
+    expect(written).toContain('       const items = [1, 2];');
+    expect(written).toContain('       return items;');
+    expect(await readFile(join(host.directory, 'tabs.ts'), 'utf8')).toBe(
+      source,
+    );
+    await host.invoke(
+      'edit',
+      JSON.stringify({
+        path: 'tabs.ts',
+        edits: [
+          {oldText: '\treturn items;', newText: '\treturn items.slice(0, 1);'},
+        ],
+      }),
+    );
+    const edited = await host.terminal.screen.text();
+    expect(edited).toContain('    3 -    return items;');
+    expect(edited).toContain('    3 +    return items.slice(0, 1);');
+    expect(edited).toContain('Added 1 line, removed 1 line');
+    expect(await readFile(join(host.directory, 'tabs.ts'), 'utf8')).toBe(
+      source.replace('return items;', 'return items.slice(0, 1);'),
+    );
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
 test('Existing code results refresh colors and wrapped preview counts after theme and width changes', async () => {
   const host = await launchPi('{}', undefined, 'ui');
   const before = `const written = "${'a'.repeat(120)}";\nconst left = 1;\nconst right = 2;\nconst ended = 3;\n`;
