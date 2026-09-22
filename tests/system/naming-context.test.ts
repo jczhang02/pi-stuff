@@ -2,7 +2,130 @@ import {expect, test} from 'bun:test';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
-import {NamingProvider} from './fixtures/naming-provider';
+import {NamingProvider, modelResponse} from './fixtures/naming-provider';
+
+test('host recovery of a transient opening error still produces only one automatic name', async () => {
+  const provider = new NamingProvider();
+  let mainCalls = 0;
+  const host = await launchPi(
+    JSON.stringify({naming: {model: {provider: 'fixture', id: 'naming'}}}),
+    undefined,
+    'rtk',
+    'fullscreen',
+    (body, signal) => {
+      if (body.model === 'fixture' && ++mainCalls === 1)
+        return new Response(
+          JSON.stringify({error: {message: 'Transient opening error'}}),
+          {status: 503},
+        );
+      return provider.reply(body, signal);
+    },
+  );
+  try {
+    await writeFile(
+      join(host.agent, 'settings.json'),
+      JSON.stringify({
+        retry: {
+          enabled: true,
+          maxRetries: 1,
+          baseDelayMs: 10,
+          provider: {maxRetries: 0},
+        },
+      }),
+    );
+    await host.restart([]);
+    await host.invoke('', '{}');
+    await host.terminal.screen.waitUntil(() => provider.requests.length === 1, {
+      timeoutMs: 4000,
+    });
+    await host.invoke('', '{}');
+    expect(mainCalls).toBe(3);
+    expect(provider.requests).toHaveLength(1);
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test.each([false, true])(
+  'overflow compaction preserves opening identity with a separate queued request: %s',
+  async queued => {
+    const provider = new NamingProvider();
+    let calls = 0;
+    let release: (() => void) | undefined;
+    const host = await launchPi(
+      JSON.stringify({naming: {model: {provider: 'fixture', id: 'naming'}}}),
+      undefined,
+      'rtk',
+      'fullscreen',
+      async (body, signal) => {
+        if (body.model !== 'fixture') return provider.reply(body, signal);
+        calls++;
+        if (calls === 1)
+          return modelResponse('Incomplete opening answer', 'length');
+        if (calls === 2) {
+          await new Promise<void>(resolve => {
+            release = resolve;
+            signal.addEventListener('abort', () => resolve(), {once: true});
+          });
+          return modelResponse(
+            'The user requested OAuth compatibility research.',
+          );
+        }
+        return modelResponse('QUEUED_SECOND_TASK_FINAL_ANSWER');
+      },
+    );
+    try {
+      await writeFile(
+        join(host.agent, 'settings.json'),
+        JSON.stringify({
+          compaction: {enabled: true, keepRecentTokens: 1, reserveTokens: 128},
+          retry: {enabled: false},
+        }),
+      );
+      await host.restart([]);
+      await host.command('Research OAuth compatibility without implementation');
+      await host.terminal.screen.waitUntil(() => calls === 2, {
+        timeoutMs: 4000,
+      });
+      if (queued) {
+        await host.command('Implement an unrelated S3 uploader instead');
+        await host.terminal.screen.waitForText(
+          'Queued message for after compaction',
+          {timeoutMs: 4000},
+        );
+      }
+      release?.();
+      await host.terminal.screen.waitForText(
+        'QUEUED_SECOND_TASK_FINAL_ANSWER',
+        {
+          timeoutMs: 4000,
+        },
+      );
+      await host.command('/name');
+      if (queued) {
+        await host.terminal.screen.waitForText('Usage: /name', {
+          timeoutMs: 4000,
+        });
+        expect(provider.requests).toHaveLength(0);
+      } else {
+        await host.terminal.screen.waitUntil(
+          () => provider.requests.length === 1,
+          {timeoutMs: 4000},
+        );
+        const payload = JSON.stringify(provider.requests[0]?.messages);
+        expect(payload).toContain(
+          'Research OAuth compatibility without implementation',
+        );
+        expect(payload).toContain('QUEUED_SECOND_TASK_FINAL_ANSWER');
+        expect(payload).not.toContain('Incomplete opening answer');
+      }
+    } finally {
+      release?.();
+      await host.close();
+    }
+  },
+  30000,
+);
 
 test('tool continuations finish the opening without including tool output in either naming request', async () => {
   const provider = new NamingProvider();

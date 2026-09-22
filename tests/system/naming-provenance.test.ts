@@ -108,7 +108,14 @@ test('RPC sessions skip automation but retain the explicit command', async () =>
         }) + '\n',
       ),
     );
-    await host.terminal.screen.waitForText('agent_end', {timeoutMs: 8000});
+    // RPC is a line protocol. A frame can scroll or wrap the completion event.
+    await host.terminal.screen.waitUntil(
+      async () =>
+        new TextDecoder()
+          .decode(await host.terminal.transcript.ansi())
+          .includes('"type":"agent_end"'),
+      {timeoutMs: 8000},
+    );
     expect(provider.requests).toHaveLength(0);
     await host.terminal.keyboard.write(
       new TextEncoder().encode(
@@ -122,6 +129,13 @@ test('RPC sessions skip automation but retain the explicit command', async () =>
     await host.terminal.screen.waitUntil(() => provider.requests.length === 1, {
       timeoutMs: 4000,
     });
+    await host.terminal.screen.waitUntil(
+      async () =>
+        new TextDecoder()
+          .decode(await host.terminal.transcript.ansi())
+          .includes('Session named:'),
+      {timeoutMs: 4000},
+    );
   } finally {
     await host.close();
   }

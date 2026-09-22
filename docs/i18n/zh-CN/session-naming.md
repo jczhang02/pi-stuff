@@ -57,3 +57,30 @@ Pi 扩展 API 没有通用的子代理标志. 将子代理伪装成普通前台 
 Pi 0.85.1 API 映射请求 SSE、`maxRetries: 0` 和有限的 `maxTokens`. OpenAI completions/responses 使用适配器默认的关闭思考映射; Anthropic 接收 `thinkingEnabled: false`; Google 接收 `thinking.enabled: false` (Gemini 3 使用最低支持的思考级别); Codex 在支持时请求不思考, 否则请求 minimal. Provider 可能忽略输出或重试控制: 已检查的 Codex Responses 适配器不会把 `maxTokens` 写入请求体. 这些是本地限制, 不保证所有 provider 消耗相同的 tokens. Abort 也不能收回远端已经消耗的 tokens.
 
 测试使用真实隔离的 Pi 命令、生命周期和原生会话文件, 只控制 HTTP 模型服务. 规格、运行时验收、真实模型名称样本及审查证据见 [Issue #108](https://github.com/jczhang02/pi-stuff/issues/108).
+
+## 验收证据 (2026-09-22)
+
+运行环境为 Linux、Bun 1.4.0、固定依赖中的 Pi 0.85.1, 以及维护者的编译版 Pi 0.87.0 (宿主实际报告 Bun 1.4.0). Terminal Control 1.2.1 驱动真实 regular/fullscreen 会话, 设置、会话文件和工作目录均隔离. 受控模型验证请求数、错误、截止时间、导航竞态、fork、reload/重启、预检失败和 compaction 队列回放. 只读会话文件和 Linux `/dev/full` 用于验证原生写入失败. 扩展会提前检查已知不可写文件; 如果 Pi 实际写入时仍意外失败, 会在内存恢复原名称, 并要求修复文件访问后带该会话重启再继续. 这是因为 Pi 在写入成功前就修改了内存中的历史.
+
+离线检查使用 `bun run check` 和 `bun run test`. 重复编译版命名验收时, 将 `PI_TEST_HOST` 设为编译版可执行文件, 执行 `bun test tests/system/naming*.test.ts`. 真实账号测试独立于离线测试集.
+
+下列 8 个名称来自编译版宿主中的真实 `openai-codex/gpt-6-astra` 请求, 使用最终 prompt 和人工构造的对话. 6 次开场请求在终端观察中耗时 2.7-6.0 秒, 包含观察开销. 未测量实际 tokens 和费用. 较早的 prompt 曾出现一次遗漏冒号, 默认指令现已明确要求分隔符. 这组小样本支持任务相关性、标识符保留和格式判断, 不构成统计可靠性保证.
+
+| 输入意图                                                    | 生成名称                                                               |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 调研 OAuth 兼容性; 助手误称已实现                           | `research: Compare existing providers for OAuth compatibility`         |
+| 实现 Pi 命名并补测试/文档; 助手讨论前期调研                 | `feat: Add configurable Pi auto session naming extension`              |
+| 修复重复支付回调                                            | `fix: Prevent double charges from duplicate payment callbacks`         |
+| 重构 RTK, 不改变行为                                        | `refactor: Restructure RTK command rewriting without behavior changes` |
+| 编写 Exa key 设置和排障文档                                 | `docs: Document Exa API key setup and troubleshooting`                 |
+| 更新固定 Bun 版本和 lockfile                                | `chore: Update pinned Bun version and regenerate lockfile`             |
+| 主任务改为 OAuth 风险文档后执行 `/autoname`                 | `docs: Document OAuth migration risks only`                            |
+| `/autoname Fix session rename races in Pi` 优先于之前的对话 | `fix: Resolve session rename races in Pi`                              |
+
+以下真实终端截图覆盖内置 dark/light 色板、加载、失败、成功, 以及从 100×30 缩到 56×24 的状态. 浅色终端在启动 Pi 前将默认前景/背景设为黑/白. 导出明确使用 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. 这是无窗口终端证据, 不代表原生窗口或合成器体验. 窄终端底栏会截断长名称; `/name` 可换行显示全文. 请求期间仍可输入, 生成失败会保留原名称.
+
+![深色主题中的手动命名请求](../../assets/session-naming/dark-loading.png)
+
+![56 列浅色主题中的生成失败](../../assets/session-naming/light-invalid.png)
+
+![56 列下的完整名称和未保存会话提示](../../assets/session-naming/narrow-success.png)

@@ -1,5 +1,18 @@
 import type {ModelRequest} from './pi-terminal';
 
+export function modelResponse(title: string, finishReason = 'stop') {
+  return new Response(
+    `data: ${JSON.stringify({
+      id: 'naming',
+      object: 'chat.completion.chunk',
+      choices: [
+        {index: 0, delta: {content: title}, finish_reason: finishReason},
+      ],
+    })}\n\ndata: [DONE]\n\n`,
+    {headers: {'content-type': 'text/event-stream'}},
+  );
+}
+
 // Only the remote model is controlled. Pi still owns commands and session state.
 export class NamingProvider {
   constructor(private readonly modelId = 'naming') {}
@@ -16,16 +29,7 @@ export class NamingProvider {
         this.pending.push(resolve);
         signal.addEventListener('abort', () => resolve(), {once: true});
       });
-    return new Response(
-      `data: ${JSON.stringify({
-        id: 'name',
-        object: 'chat.completion.chunk',
-        choices: [
-          {index: 0, delta: {content: this.title}, finish_reason: 'stop'},
-        ],
-      })}\n\ndata: [DONE]\n\n`,
-      {headers: {'content-type': 'text/event-stream'}},
-    );
+    return modelResponse(this.title);
   };
 
   release() {
