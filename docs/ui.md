@@ -2,11 +2,21 @@
 
 [简体中文](i18n/zh-CN/ui.md) · English is normative.
 
-Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Thoughts and welcome are not implemented yet. The prototype remains visual reference, not production acceptance evidence.
+Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Assistant/Thoughts presentation is not implemented yet. The prototype remains visual reference, not production acceptance evidence.
+
+## Welcome
+
+The public Pi `setHeader` API hosts the old square-corner composition, with a single-column narrow layout. Model, provider, directory, active tool count and callable skills/extension commands come from the current host. The public API does not expose a complete extension count, so the prototype's sample count is not carried over. Welcome disappears on the first message and stays absent in existing sessions. Native resource listings, user messages, input and footer remain intact. Set `ui.welcome: false` to retain the native welcome independently.
+
+These are actual Pi 0.85.1 / Bun 1.4.0 isolated terminal captures loading the extension. The fixture model belongs to the test provider. Palette: Pi's default dark theme. Export fonts: JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono. They do not establish Ghostty-window or real-model acceptance.
+
+![Welcome, 120 columns](assets/ui/welcome-dark-120.png)
+
+![Welcome, 60 columns](assets/ui/welcome-dark-60.png)
 
 ## Bash
 
-Bash shows a status dot, command heading and `⎿` output. Completed output previews three rendered rows; running output shows the latest two. Hidden retained rows are counted as `n more lines`. Pi handles mouse disclosure and Ctrl+O. Short results retain the same native disclosure behavior even when both views look identical.
+All tools share the heading rule: a status dot, at most two compact rows, aligned continuations and the complete target on disclosure. Bash shows the command and `⎿` output. Completed output previews three rendered rows; running output shows the latest two. Hidden retained rows are counted as `n more lines`. Pi handles mouse disclosure and Ctrl+O. Short results retain the same native disclosure behavior even when both views look identical.
 
 Configured timeout and upstream truncation/log information have separate result blocks. Expanding reveals only retained output. Tool execution uses Pi's public native definition with the host's configured shell path and command prefix. Other extensions' Bash definitions are left untouched.
 
@@ -34,6 +44,7 @@ Add `ui` to the global `pi-stuff.json` beside existing `web`, `tools` and `rtk` 
 {
   "ui": {
     "enabled": true,
+    "welcome": true,
     "retrievalGroups": true,
     "bashPreviewLines": 3,
     "bashRunningPreviewLines": 2,

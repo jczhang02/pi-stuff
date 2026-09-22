@@ -1,3 +1,4 @@
+import {ToolHeading} from './heading';
 import type {UiSettings} from './settings';
 import {
   createWriteToolDefinition,
@@ -80,11 +81,7 @@ export function createWriteDisplay(cwd: string, settings: UiSettings) {
   const tool = createWriteToolDefinition(cwd);
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) =>
-    new Text(
-      `${theme.fg(context.isError ? 'error' : context.isPartial ? 'warning' : 'success', '•')} ${theme.fg('toolTitle', `Write(${args.path ?? ''})`)}`,
-      0,
-      0,
-    );
+    new ToolHeading('Write', args.path ?? '', theme, context);
   tool.renderResult = (result, options, theme, context) => {
     if (context.isError)
       return new Text(

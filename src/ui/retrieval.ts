@@ -1,3 +1,4 @@
+import {ToolHeading} from './heading';
 import type {RetrievalGroups} from './groups';
 import type {Static, TSchema} from 'typebox';
 import type {
@@ -28,47 +29,36 @@ export function displayRetrieval<
   groups?: RetrievalGroups,
 ) {
   tool.renderShell = 'self';
-  tool.renderCall = (args, theme, context) => ({
-    invalidate() {},
-    handleMouse(event) {
-      if (event.y !== 0 || !groups?.summary(context.toolCallId)) return;
-      if (event.type === 'click' && event.button === 'left') {
-        groups.toggle(context.toolCallId);
-        context.invalidate();
-        return {handled: true};
-      }
-      return undefined;
-    },
-    render(width) {
-      const summary = groups?.summary(context.toolCallId);
-      const heading = summary
-        ? [truncateToWidth(theme.fg('muted', `• ${summary}`), width)]
-        : [];
-      if (groups && !groups.visible(context.toolCallId)) return heading;
-      const rows = wrapTextWithAnsi(
-        `${label}(${target(args, context.expanded)})`,
-        Math.max(1, width - 2),
-      );
-      const visible = context.expanded ? rows : rows.slice(0, 2);
-      const dot = theme.fg(
-        context.isError ? 'error' : context.isPartial ? 'warning' : 'success',
-        '•',
-      );
-      return [
-        ...heading,
-        ...visible.map((line, index) => {
-          const shortened = !context.expanded && index === 1 && rows.length > 2;
-          const text = shortened
-            ? truncateToWidth(`${line}…`, Math.max(1, width - 2), '…')
-            : line;
-          return truncateToWidth(
-            `${index === 0 ? `${dot} ` : '  '}${theme.fg('toolTitle', text)}`,
-            width,
-          );
-        }),
-      ];
-    },
-  });
+  tool.renderCall = (args, theme, context) => {
+    const title = new ToolHeading(
+      label,
+      target(args, context.expanded),
+      theme,
+      context,
+    );
+    return {
+      invalidate() {
+        title.invalidate();
+      },
+      handleMouse(event) {
+        if (event.y !== 0 || !groups?.summary(context.toolCallId)) return;
+        if (event.type === 'click' && event.button === 'left') {
+          groups.toggle(context.toolCallId);
+          context.invalidate();
+          return {handled: true};
+        }
+        return undefined;
+      },
+      render(width) {
+        const summary = groups?.summary(context.toolCallId);
+        const heading = summary
+          ? [truncateToWidth(theme.fg('muted', `• ${summary}`), width)]
+          : [];
+        if (groups && !groups.visible(context.toolCallId)) return heading;
+        return [...heading, ...title.render(width)];
+      },
+    };
+  };
   tool.renderResult = (result, options, theme, context) => {
     const output = result.content
       .map(block =>

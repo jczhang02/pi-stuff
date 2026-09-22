@@ -413,3 +413,38 @@ test('Global preview limits apply to Write, Edit and running Bash without discar
     await host.close();
   }
 }, 30000);
+
+test('Long Write and Edit titles use two compact rows and reveal the full path on disclosure', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  try {
+    await host.terminal.resize({cols: 60, rows: 42});
+    const path = 'long-directory-for-the-heading/'.repeat(4) + 'sample.ts';
+    await host.invoke(
+      'write',
+      JSON.stringify({path, content: 'const value = 1;\n'}),
+    );
+    const written = (await host.terminal.screen.text()).split('\n');
+    const write = written.findIndex(line => line.includes('Write('));
+    expect(written[write + 1]).toContain('…');
+    expect(written[write + 2]).toContain('⎿ Wrote 1 line');
+    await host.invoke(
+      'edit',
+      JSON.stringify({
+        path,
+        edits: [{oldText: 'const value = 1;', newText: 'const value = 2;'}],
+      }),
+    );
+    const edited = (await host.terminal.screen.text()).split('\n');
+    const edit = edited.findIndex(line => line.includes('Edit('));
+    expect(edited[edit + 1]).toContain('…');
+    expect(edited[edit + 2]).toContain('⎿ Added 1 line');
+    expect(edited.join('\n')).not.toContain('sample.ts)');
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('sample.ts)', {timeoutMs: 5000});
+    expect(await readFile(join(host.directory, path), 'utf8')).toBe(
+      'const value = 2;\n',
+    );
+  } finally {
+    await host.close();
+  }
+}, 30000);

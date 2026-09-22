@@ -8,6 +8,7 @@ import {
   type ExtensionAPI,
   type BashToolOptions,
 } from '@earendil-works/pi-coding-agent';
+import {registerWelcome} from './welcome';
 import {RetrievalGroups} from './groups';
 import {createBashDisplay} from './bash';
 import {createWriteDisplay} from './write';
@@ -20,6 +21,7 @@ export function registerUi(
   settings: UiSettings,
 ): RetrievalGroups | undefined {
   if (settings.enabled === false) return;
+  if (settings.welcome !== false) registerWelcome(pi);
   const groups =
     settings.retrievalGroups === false ? undefined : new RetrievalGroups(pi);
   pi.on('session_start', (_event, ctx) => {

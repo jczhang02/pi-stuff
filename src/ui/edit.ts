@@ -1,3 +1,4 @@
+import {ToolHeading} from './heading';
 import type {UiSettings} from './settings';
 import {
   createEditToolDefinition,
@@ -158,11 +159,7 @@ export function createEditDisplay(cwd: string, settings: UiSettings) {
   const tool = createEditToolDefinition(cwd);
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) =>
-    new Text(
-      `${theme.fg(context.isError ? 'error' : context.isPartial ? 'warning' : 'success', '•')} ${theme.fg('toolTitle', `Edit(${args.path ?? ''})`)}`,
-      0,
-      0,
-    );
+    new ToolHeading('Edit', args.path ?? '', theme, context);
   tool.renderResult = (result, options, theme, context) => {
     const patch = result.details?.patch;
     if (context.isError || !patch)

@@ -1,3 +1,4 @@
+import {ToolHeading} from './heading';
 import {
   createBashToolDefinition,
   type BashToolOptions,
@@ -81,36 +82,8 @@ export function createBashDisplay(
 ) {
   const tool = createBashToolDefinition(cwd, options);
   tool.renderShell = 'self';
-  tool.renderCall = (args, theme, context) => {
-    return {
-      invalidate() {},
-      render(width) {
-        const rows = wrapTextWithAnsi(
-          `Bash(${args.command ?? ''})`,
-          Math.max(1, width - 2),
-        );
-        const shown = context.expanded ? rows : rows.slice(0, 2);
-        return shown.map((row, index) => {
-          const last = !context.expanded && index === 1 && rows.length > 2;
-          const content = last
-            ? truncateToWidth(`${row}…`, Math.max(1, width - 2), '…')
-            : row;
-          const dot = theme.fg(
-            context.isError
-              ? 'error'
-              : context.isPartial
-                ? 'warning'
-                : 'success',
-            '•',
-          );
-          return truncateToWidth(
-            `${index === 0 ? `${dot} ` : '  '}${theme.fg('toolTitle', content)}`,
-            width,
-          );
-        });
-      },
-    };
-  };
+  tool.renderCall = (args, theme, context) =>
+    new ToolHeading('Bash', args.command ?? '', theme, context);
   tool.renderResult = (result, options, theme, context) => {
     let output = result.content
       .map(block =>

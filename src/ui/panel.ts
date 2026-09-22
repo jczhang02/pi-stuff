@@ -20,6 +20,7 @@ const options = [
   {id: 'editPreviewLines', label: 'Edit preview rows', defaultValue: 6},
   {id: 'bashPreviewLines', label: 'Bash preview rows', defaultValue: 3},
   {id: 'bashRunningPreviewLines', label: 'Running Bash rows', defaultValue: 2},
+  {id: 'welcome', label: 'Welcome page', defaultValue: true},
 ] as const;
 
 export function registerUiPanel(
@@ -58,7 +59,9 @@ export function registerUiPanel(
           label: option.label,
           currentValue: String(current()[option.id] ?? option.defaultValue),
           values:
-            option.id === 'enabled' || option.id === 'retrievalGroups'
+            option.id === 'enabled' ||
+            option.id === 'retrievalGroups' ||
+            option.id === 'welcome'
               ? ['true', 'false']
               : [
                   ...new Set([
@@ -97,7 +100,9 @@ export function registerUiPanel(
           tui.requestRender();
           try {
             const decoded =
-              option.id === 'enabled' || option.id === 'retrievalGroups'
+              option.id === 'enabled' ||
+              option.id === 'retrievalGroups' ||
+              option.id === 'welcome'
                 ? value === 'true'
                 : Number(value);
             const next = Schema.decodeUnknownSync(UiSettings)({

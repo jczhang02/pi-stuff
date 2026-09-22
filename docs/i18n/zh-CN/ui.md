@@ -2,11 +2,21 @@
 
 [English](../../../docs/ui.md) · 以英文版为准.
 
-[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. Thoughts 和欢迎页尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
+[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. assistant/Thoughts 展示尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
+
+## 欢迎页
+
+欢迎页通过 Pi 的公开 `setHeader` 使用旧版直角框构图, 窄屏改为单栏. 模型、provider、目录、启用工具数以及可调用的 skills/扩展命令数量来自当前宿主. 公开接口没有完整扩展数量, 因此不沿用原型中的示例扩展计数. 首条消息后隐藏欢迎页, 已有会话不再显示; 原生资源列表、用户消息、输入和 footer 保持不变. `ui.welcome: false` 可单独保留原生欢迎内容.
+
+以下是加载实际扩展的 Pi 0.85.1 / Bun 1.4.0 隔离终端截图, 模型名 fixture 来自测试 provider. 使用 Pi 默认暗色主题, 导出字体为 JetBrainsMono Nerd Font Mono、Symbols Nerd Font Mono、LXGW WenKai Mono. 这些截图不代表 Ghostty 窗口或真实模型验收.
+
+![欢迎页, 120列](../../assets/ui/welcome-dark-120.png)
+
+![欢迎页, 60列](../../assets/ui/welcome-dark-60.png)
 
 ## Bash
 
-Bash 显示状态点、命令标题和 `⎿` 输出. 完成后默认预览三个渲染行, 运行中显示最后两行. 隐藏的保留行数通过 `n more lines` 提示. 鼠标展开和 Ctrl+O 由 Pi 处理. 短结果即使展开前后视觉相同, 也保留原生展开行为.
+所有工具共用标题规则: 状态点、收起最多两行、续行对齐, 展开显示完整目标. Bash 显示命令标题和 `⎿` 输出. 完成后默认预览三个渲染行, 运行中显示最后两行. 隐藏的保留行数通过 `n more lines` 提示. 鼠标展开和 Ctrl+O 由 Pi 处理. 短结果即使展开前后视觉相同, 也保留原生展开行为.
 
 配置的超时、上游截断和日志信息使用独立结果块. 展开只显示仍保留的输出. 工具执行复用 Pi 公共原生定义, 保留宿主配置的 Shell 路径和命令前缀. 其他扩展的 Bash 定义不被接管.
 
@@ -34,6 +44,7 @@ Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标�
 {
   "ui": {
     "enabled": true,
+    "welcome": true,
     "retrievalGroups": true,
     "bashPreviewLines": 3,
     "bashRunningPreviewLines": 2,
