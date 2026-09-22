@@ -2,7 +2,7 @@
 
 [English](../../../docs/ui-integration.md) · 以英文版为准.
 
-这些实验检查 Pi 扩展 API 与已确认 UI 之间的差距. assistant/Thoughts 和工具历史适配器仍是提案, 均未批准或加入生产代码.
+这些实验检查 Pi 扩展 API 与已确认 UI 之间的差距. 维护者已[批准 assistant/Thoughts 展示适配](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). 首段实现添加 assistant 前导栏, Thoughts 字体样式与计时仍未完成. 工具历史接入按[另行决定](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338), 先比较公共 API 提前注册与 lookup patch.
 
 ## Assistant 和 Thoughts: 公共 API 的限制
 
@@ -35,9 +35,9 @@ PI_TEST_HOST=/opt/bin/pi bun test tests/system/ui-messages.test.ts
 
 确定性 provider 先发送 reasoning, 再发送最终正文. 只有 provider 流使用脚本控制, 测试驱动真实 Pi TUI 和 renderer. 同一文件中的欢迎页测试保留.
 
-### 建议的兼容补丁范围
+### 已批准的兼容补丁范围
 
-建议在 `AssistantMessageComponent` 的内容组装处增加仅负责展示的适配层. 此建议需要按[规格第13项](https://github.com/jczhang02/pi-stuff/issues/106)确认具体补丁, 目前未实现、未批准.
+已批准在 `AssistantMessageComponent` 的内容组装处增加仅负责展示的适配层. 批准的是接入方向, 不代表功能或性能验收完成.
 
 - 在 Markdown 解析之后添加 assistant 前导栏, 复用 Pi Markdown、语法高亮和折行, 保留原生失败/Esc 展示.
 - 按 Thoughts 块调整展示并记录内存中的实测耗时, 保留 Hide thinking、Ctrl+T 和局部鼠标展开. 不修改 canonical message、provider 上下文或会话记录, 缺少历史计时则省略.
@@ -46,7 +46,19 @@ PI_TEST_HOST=/opt/bin/pi bun test tests/system/ui-messages.test.ts
 
 把全局隐藏标签接口当成计时器还会反复更新历史组件. [所检查 pi-tool-display 版本](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/thinking-label.ts)通过修改持久化 thinking 添加标签, 与已确认的记录保留要求冲突. 两种做法均不采用.
 
-assistant 适配仍需单独决定. 下方工具实验找到了比此前 `ToolExecutionComponent` 历史 renderer 修复更小的候选方案. 两项补丁均未批准或加入生产代码.
+### Assistant 前导栏实现
+
+首段实现包装原生内容组装, 通过注册的原样返回 Markdown transformer 身份识别所属实例, 为原生 Markdown 子组件添加两列前导区域. Thoughts 鼠标区域和原生错误 Text 组件不参与修改. 不给消息拼接文本或替换 Markdown 解析. quit/reload 时先停用 wrapper, 仍持有方法时再恢复; 切换会话则保留安装.
+
+包装层复用原生返回的行数组, 只保存一个宽度的前缀输出. 独立审查发现初版重复扫描 ANSI, 现仅在原生行数组或宽度变化时重算. 完整流式与长历史性能仍待验收.
+
+真实宿主测试覆盖列表开头、reload、亮暗主题、60/80/120列、反复启用/关闭 UI 和新会话, 并保留既有 thinking 展开检查. 同时检查下一次 provider 请求收到原列表文本. 这些测试不证明 Thoughts 样式、计时、并发 SDK 隔离或任意外部补丁共存.
+
+下图使用编译 Pi 0.87.0 / Bun 1.4.0、隔离确定性 provider、80×24终端及 Pi 默认暗色主题. Terminal Control 将虚拟终端导出 SVG, 再由 rsvg-convert 转为 PNG, 不是 Ghostty 窗口截图.
+
+![Assistant 前导栏与原生列表、代码渲染](../../assets/ui/assistant-gutter-dark-80.png)
+
+下方工具实验仍是与公共 API 提前注册并列的候选.
 
 ## 在重建历史之前获取工具定义
 
@@ -76,8 +88,8 @@ assistant 适配仍需单独决定. 下方工具实验找到了比此前 `ToolEx
 
 HTML 导出也使用定义查询. 0.85.1 的导出保留原会话结果并使用简单的自定义 Grep/Find renderer, 已解码检查其内嵌会话数据. Read 使用 Pi 自己的 HTML 模板, 因而此实验不验证自定义 Read HTML 或产品检索组导出. 首次断言直接搜索 HTML 源码, 因 Pi 将数据编码为 base64 而失败; 这是实验断言错误, 不是产品缺陷. 编译0.87.0因安装目录缺少 `export-html/template.css` 而无法导出, 不加拦截时也有同样错误. 该安装环境的导出兼容性仍未验证, 未修改任何安装文件.
 
-### 建议的下一步
+### 工具接入方案比较
 
-用作用范围受限的工具定义适配器替代此前工具组件补丁提案. 通过 `/ui` 命令处理函数识别所属运行实例, 在原生历史组件构造前装饰实际定义, 保留执行与 schema; 分组索引就绪后, 仅刷新启动事件前生成的结果组件. 第三方 renderer 默认保留, 显式接管也使用同一入口. 退出时先停用适配器、再尝试恢复, 不覆盖其他扩展后装的替换.
+比较 pi-tool-display 的公共 API 提前注册方式与下述工具定义适配器, 暂不选定方案. 两者保持相同的执行、归属、Web 配置、生命周期和性能要求; 公共 API 满足要求时优先采用更简单方案. lookup 候选的做法如下: 通过 `/ui` 命令处理函数识别所属运行实例, 在原生历史组件构造前装饰实际定义, 保留执行与 schema; 分组索引就绪后, 仅刷新启动事件前生成的结果组件. 第三方 renderer 默认保留, 显式接管也使用同一入口. 退出时先停用适配器、再尝试恢复, 不覆盖其他扩展后装的替换.
 
-Pi Stuff 的 Web 定义目前同样在 `session_start` 才注册, 此查询无法装饰尚不存在的定义. 通过 Pi 公共 API 提前注册时, 必须保留认证、模型选择和非法配置处理行为. 生产验收前, 接入全部工具及 Bash 结果观测, 重跑既有历史失败测试和配置、取消、媒体、生命周期及补丁共存检查. 对完整长历史负载测量适配器开关前后的表现. `12b0969` 的两个产品 reload/resume 测试仍未修复, 临时实验通过不等于生产测试通过. 此提案仍需按规格第13项确认具体补丁.
+Pi Stuff 的 Web 定义目前同样在 `session_start` 才注册, 此查询无法装饰尚不存在的定义. 通过 Pi 公共 API 提前注册时, 必须保留认证、模型选择和非法配置处理行为. 生产验收前, 接入全部工具及 Bash 结果观测, 重跑既有历史失败测试和配置、取消、媒体、生命周期及补丁共存检查. 对完整长历史负载测量适配器开关前后的表现. `12b0969` 的两个产品 reload/resume 测试仍未修复, 临时实验通过不等于生产测试通过. 比较应先确定是否需要这个 patch, 再选择生产接入方式.

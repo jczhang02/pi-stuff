@@ -2,9 +2,9 @@
 
 [English](../../../docs/ui.md) · 以英文版为准.
 
-[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. assistant/Thoughts 展示尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
+[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. assistant 正文已在原生 Markdown 外添加独立前导点区域. Thoughts 展示和计时尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
 
-[集成实验](ui-integration.md)记录公开 API 限制、真实截图及待决的 assistant/工具历史方案, 其中的实验截图不是目标设计.
+[集成实验](ui-integration.md)记录公开 API 限制、真实截图、已批准的 assistant 适配及待比较的工具历史方案, 其中的实验截图不是目标设计.
 
 ## 欢迎页
 

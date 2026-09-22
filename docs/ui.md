@@ -2,9 +2,9 @@
 
 [简体中文](i18n/zh-CN/ui.md) · English is normative.
 
-Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Assistant/Thoughts presentation is not implemented yet. The prototype remains visual reference, not production acceptance evidence.
+Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Assistant messages now have a separate leading-dot gutter around native Markdown. Thoughts presentation and timing are not implemented yet. The prototype remains visual reference, not production acceptance evidence.
 
-[Integration experiments](ui-integration.md) record public-API limits, actual captures and the pending assistant/tool-history proposals. Their experimental screenshots are not the target design.
+[Integration experiments](ui-integration.md) record public-API limits, actual captures, the approved assistant adaptation and the pending tool-history comparison. Their experimental screenshots are not the target design.
 
 ## Welcome
 

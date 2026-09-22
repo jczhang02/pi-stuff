@@ -9,6 +9,7 @@ import {
   type BashToolOptions,
 } from '@earendil-works/pi-coding-agent';
 import {registerWelcome} from './welcome';
+import {registerAssistantDisplay} from './assistant';
 import {RetrievalGroups} from './groups';
 import {BashDisplay} from './bash';
 import {createWriteDisplay} from './write';
@@ -21,6 +22,7 @@ export function registerUi(
   settings: UiSettings,
 ): RetrievalGroups | undefined {
   if (settings.enabled === false) return;
+  registerAssistantDisplay(pi);
   if (settings.welcome !== false) registerWelcome(pi);
   const bash = new BashDisplay(pi);
   const groups =

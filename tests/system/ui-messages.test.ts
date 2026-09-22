@@ -1,4 +1,6 @@
 import {expect, test} from 'bun:test';
+import {writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
 test('Welcome survives replacement and reload of an empty session', async () => {
@@ -99,6 +101,73 @@ test('Thoughts retain native global and local disclosure independently of tools'
   } catch (error) {
     console.error(await host.terminal.screen.text());
     throw error;
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Assistant gutter survives list-first Markdown, reload and theme changes', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  const answer = '- FIRST_ITEM\n- SECOND_ITEM';
+  try {
+    await host.startResponse(answer);
+    await host.terminal.screen.waitForText('SECOND_ITEM', {timeoutMs: 5000});
+    for (const change of ['initial', 'reload', 'theme'] as const) {
+      if (change === 'reload') await host.reload();
+      if (change === 'theme') {
+        await host.command('/host-theme catppuccin-latte');
+        await host.terminal.screen.waitForText('HOST_THEME:catppuccin-latte', {
+          timeoutMs: 5000,
+        });
+      }
+      for (const cols of [60, 80, 120]) {
+        await host.terminal.resize({cols, rows: 30});
+        const snapshot = await host.terminal.screen.waitUntil(
+          snapshot =>
+            snapshot.frame.cols === cols &&
+            snapshot.text.includes('SECOND_ITEM'),
+          {timeoutMs: 5000},
+        );
+        const rows = snapshot.text.split('\n');
+        const first = rows.find(row => row.includes('FIRST_ITEM')) ?? '';
+        const second = rows.find(row => row.includes('SECOND_ITEM')) ?? '';
+        expect(first).toStartWith('• ');
+        expect(second).toStartWith('  ');
+        expect(first.indexOf('FIRST_ITEM')).toBe(second.indexOf('SECOND_ITEM'));
+      }
+    }
+    await host.startResponse('AFTER_LIST');
+    await host.terminal.screen.waitForText('AFTER_LIST', {timeoutMs: 5000});
+    expect(host.sentAssistant()).toBe(JSON.stringify(answer));
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Assistant gutter follows the UI switch across reload and session replacement', async () => {
+  const host = await launchPi('{"ui":{"enabled":false}}', undefined, 'ui');
+  try {
+    for (const [index, enabled] of [false, true, true, false, true].entries()) {
+      if (index > 0) {
+        await writeFile(
+          join(host.agent, 'pi-stuff.json'),
+          JSON.stringify({ui: {enabled}}),
+        );
+        await host.reload();
+      }
+      await host.command('/host-session new');
+      await host.terminal.screen.waitForText('HOST_SESSION_NEW', {
+        timeoutMs: 5000,
+      });
+      const answer = `ANSWER_${index}`;
+      await host.startResponse(answer);
+      await host.terminal.screen.waitForText(answer, {timeoutMs: 5000});
+      const row =
+        (await host.terminal.screen.text())
+          .split('\n')
+          .find(row => row.includes(answer)) ?? '';
+      expect(row.trimEnd()).toBe(`${enabled ? '• ' : ' '}${answer}`);
+    }
   } finally {
     await host.close();
   }
