@@ -5,6 +5,7 @@ import {
   type BashToolOptions,
 } from '@earendil-works/pi-coding-agent';
 import {createBashDisplay} from './bash';
+import {createWriteDisplay} from './write';
 import type {UiSettings} from './settings';
 
 export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
@@ -12,7 +13,14 @@ export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
   pi.on('session_start', (_event, ctx) => {
     if (!ctx.hasUI) return;
     // Only replace a native definition. Other extensions retain their renderers.
-    const bash = pi.getAllTools().find(tool => tool.name === 'bash');
+    const tools = pi.getAllTools();
+    if (
+      tools.some(
+        tool => tool.name === 'write' && tool.sourceInfo.source === 'builtin',
+      )
+    )
+      pi.registerTool(createWriteDisplay(ctx.cwd));
+    const bash = tools.find(tool => tool.name === 'bash');
     if (bash?.sourceInfo.source !== 'builtin') return;
     const hostSettings = SettingsManager.create(ctx.cwd, getAgentDir(), {
       projectTrusted: ctx.isProjectTrusted(),

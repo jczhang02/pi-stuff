@@ -33,7 +33,7 @@ const Request = Schema.Struct({
 export async function launchPi(
   configuration = '{}',
   extraExtension?: string,
-  profile: 'rtk' | 'web' = 'rtk',
+  profile: 'rtk' | 'web' | 'ui' = 'rtk',
   mode: 'regular' | 'fullscreen' = 'fullscreen',
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
@@ -158,7 +158,12 @@ export async function launchPi(
         '--no-approve',
         ...(profile === 'web'
           ? ['--no-builtin-tools']
-          : ['--tools', 'bash,read']),
+          : [
+              '--tools',
+              profile === 'ui'
+                ? 'bash,read,write,edit,grep,find,ls'
+                : 'bash,read',
+            ]),
         '--provider',
         'fixture',
         '--model',

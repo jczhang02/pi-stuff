@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test';
-import {writeFile} from 'node:fs/promises';
+import {readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
@@ -94,6 +94,29 @@ test('Global Bash preview limit changes visible rows while retaining the full re
     expect(screen).toContain('⎿ one');
     expect(screen).toContain('2 more lines');
     expect(screen).not.toMatch(/^\s+two$/mu);
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Write previews three source rows and reveals the complete written file', async () => {
+  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  try {
+    const content =
+      'export const first = 1;\nexport const second = 2;\nexport const third = 3;\nexport const fourth = 4;\n';
+    await host.invoke('write', JSON.stringify({path: 'sample.ts', content}));
+    expect(await readFile(join(host.directory, 'sample.ts'), 'utf8')).toBe(
+      content,
+    );
+    const compact = await host.terminal.screen.text();
+    expect(compact).toContain('Write(sample.ts)');
+    expect(compact).toContain('Wrote 4 lines');
+    expect(compact).toContain('1 more line');
+    expect(compact).not.toContain('export const fourth');
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('export const fourth', {
+      timeoutMs: 5000,
+    });
   } finally {
     await host.close();
   }
