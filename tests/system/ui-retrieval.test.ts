@@ -3,6 +3,64 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
+test('Repeated retrieval disclosure follows width and theme without rereading the file', async () => {
+  const host = await launchPi(
+    '{"ui":{"retrievalGroups":false}}',
+    undefined,
+    'ui',
+  );
+  try {
+    await host.terminal.resize({cols: 120, rows: 42});
+    await writeFile(
+      join(host.directory, 'shape.txt'),
+      `BODY_${'x'.repeat(90)}_END`,
+    );
+    await host.invoke('read', '{"path":"shape.txt"}');
+    await host.terminal.screen.waitForText('1 more line', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('_END', {timeoutMs: 5000});
+    const dark = await host.terminal.screen.capture();
+    const darkY = dark.text.split('\n').findIndex(row => row.includes('BODY_'));
+    const darkColor = dark.frame.cells.find(
+      cell => cell.y === darkY && cell.x === 4,
+    )?.foreground;
+    expect(darkColor).toBeDefined();
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('1 more line', {timeoutMs: 5000});
+    await host.terminal.resize({cols: 60, rows: 42});
+    await host.terminal.screen.waitForText('2 more lines', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('_END', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('2 more lines', {timeoutMs: 5000});
+    await host.command('/host-theme catppuccin-latte');
+    await host.terminal.screen.waitForText('HOST_THEME:catppuccin-latte', {
+      timeoutMs: 5000,
+    });
+    await writeFile(join(host.directory, 'shape.txt'), 'CHANGED_ON_DISK');
+    for (let i = 0; i < 3; i++) {
+      await host.terminal.keyboard.press('Control+O');
+      await host.terminal.screen.waitForText('_END', {timeoutMs: 5000});
+      const light = await host.terminal.screen.capture();
+      const lightY = light.text
+        .split('\n')
+        .findIndex(row => row.includes('BODY_'));
+      expect(lightY).toBeGreaterThanOrEqual(0);
+      const lightColor = light.frame.cells.find(
+        cell => cell.y === lightY && cell.x === 4,
+      )?.foreground;
+      expect(lightColor).toBeDefined();
+      expect(lightColor).not.toEqual(darkColor);
+      expect(light.text).not.toContain('CHANGED_ON_DISK');
+      await host.terminal.keyboard.press('Control+O');
+      await host.terminal.screen.waitForText('2 more lines', {timeoutMs: 5000});
+      expect(await host.terminal.screen.text()).not.toContain('BODY_');
+    }
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
 test('Retrieval counts exclude native continuation and limit notices', async () => {
   const host = await launchPi(
     '{"ui":{"retrievalGroups":false}}',

@@ -3,7 +3,9 @@ import {ResultBlock} from './result-block';
 import type {RetrievalGroups} from './groups';
 import type {Static, TSchema} from 'typebox';
 import type {
+  Theme,
   ToolDefinition,
+  ToolRenderResultOptions,
   TruncationResult,
 } from '@earendil-works/pi-coding-agent';
 import {
@@ -23,6 +25,106 @@ interface RetrievalDetails {
 export interface RetrievalPart {
   kind: 'body' | 'metadata' | 'warning' | 'status';
   text: string;
+}
+
+// Retain only the current width's layout through Pi's native result slot.
+class RetrievalContent {
+  private width = -1;
+  private wrapped: {
+    part: RetrievalPart;
+    rows?: string[];
+    styled?: string[];
+  }[] = [];
+  private body: string[] | undefined;
+
+  constructor(
+    private parts: RetrievalPart[],
+    private options: ToolRenderResultOptions,
+    private theme: Theme,
+    private readonly groups: RetrievalGroups | undefined,
+    private readonly id: string,
+  ) {}
+
+  update(
+    parts: RetrievalPart[],
+    options: ToolRenderResultOptions,
+    theme: Theme,
+  ) {
+    if (
+      theme !== this.theme ||
+      parts.length !== this.parts.length ||
+      parts.some(
+        (part, index) =>
+          part.kind !== this.parts[index]?.kind ||
+          part.text !== this.parts[index]?.text,
+      )
+    ) {
+      this.parts = parts;
+      this.theme = theme;
+      this.invalidate();
+    }
+    if (
+      options.expanded !== this.options.expanded ||
+      options.isPartial !== this.options.isPartial
+    )
+      this.body = undefined;
+    this.options = options;
+  }
+
+  invalidate() {
+    this.width = -1;
+    this.wrapped = [];
+    this.body = undefined;
+  }
+
+  render(width: number): string[] {
+    if (this.groups && !this.groups.visible(this.id)) return [];
+    if (width !== this.width) {
+      this.wrapped = this.parts.map(part => ({part}));
+      this.body = undefined;
+      this.width = width;
+    }
+    if (this.body) return this.body;
+    const body: string[] = [];
+    for (const block of this.wrapped) {
+      const {part} = block;
+      if (part.kind === 'metadata' && !this.options.expanded) continue;
+      if (part.kind === 'body' && part.text === '') continue;
+      const rows = (block.rows ??= wrapTextWithAnsi(
+        part.text,
+        Math.max(1, width - 4),
+      ));
+      const visible =
+        this.options.expanded || this.options.isPartial || part.kind !== 'body';
+      const color =
+        part.kind === 'warning'
+          ? 'warning'
+          : part.kind === 'metadata'
+            ? 'muted'
+            : 'toolOutput';
+      if (visible) {
+        block.styled ??= rows.map((line, index) =>
+          truncateToWidth(
+            `${index === 0 ? '  ⎿ ' : '    '}${this.theme.fg(color, line)}`,
+            width,
+          ),
+        );
+        body.push(...block.styled);
+      } else {
+        body.push(
+          truncateToWidth(
+            this.theme.fg(
+              'muted',
+              `  ⎿ ${rows.length} more ${rows.length === 1 ? 'line' : 'lines'}`,
+            ),
+            width,
+          ),
+        );
+      }
+    }
+    this.body = body;
+    return body;
+  }
 }
 
 function nativeParts(
@@ -167,52 +269,18 @@ export function displayRetrieval<
         parts.some(part => part.kind === 'body' && part.text !== '') &&
           parts.every(part => part.kind === 'body' || part.kind === 'metadata'),
       );
-    let cachedWidth = -1;
-    let cached: string[] = [];
-    return {
-      invalidate() {
-        cachedWidth = -1;
-      },
-      render(width) {
-        if (groups && !groups.visible(context.toolCallId)) return [];
-        if (width === cachedWidth) return cached;
-        const body: string[] = [];
-        for (const part of parts) {
-          if (part.kind === 'metadata' && !options.expanded) continue;
-          if (part.kind === 'body' && part.text === '') continue;
-          const rows = wrapTextWithAnsi(part.text, Math.max(1, width - 4));
-          const visible =
-            options.expanded || options.isPartial || part.kind !== 'body';
-          const color =
-            part.kind === 'warning'
-              ? 'warning'
-              : part.kind === 'metadata'
-                ? 'muted'
-                : 'toolOutput';
-          body.push(
-            ...(visible
-              ? rows.map((line, index) =>
-                  truncateToWidth(
-                    `${index === 0 ? '  ⎿ ' : '    '}${theme.fg(color, line)}`,
-                    width,
-                  ),
-                )
-              : [
-                  truncateToWidth(
-                    theme.fg(
-                      'muted',
-                      `  ⎿ ${rows.length} more ${rows.length === 1 ? 'line' : 'lines'}`,
-                    ),
-                    width,
-                  ),
-                ]),
-          );
-        }
-        cachedWidth = width;
-        cached = body;
-        return body;
-      },
-    };
+    const previous = context.lastComponent;
+    if (previous instanceof RetrievalContent) {
+      previous.update(parts, options, theme);
+      return previous;
+    }
+    return new RetrievalContent(
+      parts,
+      options,
+      theme,
+      groups,
+      context.toolCallId,
+    );
   };
   return tool;
 }
