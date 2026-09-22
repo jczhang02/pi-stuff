@@ -249,9 +249,10 @@ export class NamingSettingsPanel implements Component, Focusable {
     }
   }
   private report(error: Error) {
+    const message = stripVTControlCharacters(error.message);
+    this.ctx.ui.notify(message, 'error');
     if (this.closed) return;
-    this.error = stripVTControlCharacters(error.message);
-    this.ctx.ui.notify(this.error, 'error');
+    this.error = message;
     this.renderAgain();
   }
   handleInput(data: string) {

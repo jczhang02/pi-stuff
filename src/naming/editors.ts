@@ -70,6 +70,8 @@ export class TextSettingEditor implements Component, Focusable {
     if (this.input instanceof Editor) this.input.setText(initial);
     else this.input.setValue(initial);
     this.input.onSubmit = value => {
+      // Native Editor clears on submit; retain the draft until saving succeeds.
+      if (this.input instanceof Editor) this.input.setText(value);
       void this.submit(value);
     };
   }
@@ -90,14 +92,11 @@ export class TextSettingEditor implements Component, Focusable {
       await this.save(value);
       if (!this.closed) this.done();
     } catch (error) {
-      if (!this.closed) {
-        this.error = stripVTControlCharacters(
-          error instanceof Error
-            ? error.message
-            : 'Could not save this setting.',
-        );
-        this.notifyError(this.error);
-      }
+      const message = stripVTControlCharacters(
+        error instanceof Error ? error.message : 'Could not save this setting.',
+      );
+      this.notifyError(message);
+      if (!this.closed) this.error = message;
     } finally {
       this.pending = false;
       if (!this.closed) this.renderAgain();
@@ -226,14 +225,13 @@ export class NamingModelPicker implements Component, Focusable {
       await this.save(model);
       if (!this.closed) this.done();
     } catch (error) {
-      if (!this.closed) {
-        this.error = stripVTControlCharacters(
-          error instanceof Error
-            ? error.message
-            : 'Could not save the naming model.',
-        );
-        this.notifyError(this.error);
-      }
+      const message = stripVTControlCharacters(
+        error instanceof Error
+          ? error.message
+          : 'Could not save the naming model.',
+      );
+      this.notifyError(message);
+      if (!this.closed) this.error = message;
     } finally {
       this.pending = false;
       if (!this.closed) this.renderAgain();
