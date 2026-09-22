@@ -23,7 +23,7 @@ class WrittenContent implements Component {
     readonly path: string,
     private expanded: boolean,
     private theme: Theme,
-    private readonly previewLines: number,
+    private readonly settings: UiSettings,
   ) {}
 
   update(expanded: boolean, theme: Theme) {
@@ -41,7 +41,12 @@ class WrittenContent implements Component {
   render(width: number): string[] {
     if (width === this.width) return this.rows;
     const source = this.source.replace(/\n$/u, '');
-    this.highlighted ??= highlightCode(source, getLanguageFromPath(this.path));
+    this.highlighted ??= highlightCode(
+      source,
+      this.settings.codeHighlighting === false
+        ? undefined
+        : getLanguageFromPath(this.path),
+    );
     const body =
       this.source === ''
         ? []
@@ -49,7 +54,9 @@ class WrittenContent implements Component {
             wrapTextWithAnsi(line, Math.max(1, width - 4)),
           );
     const count = this.source === '' ? 0 : source.split('\n').length;
-    const visible = this.expanded ? body : body.slice(0, this.previewLines);
+    const visible = this.expanded
+      ? body
+      : body.slice(0, this.settings.writePreviewLines ?? 3);
     const rows = [
       truncateToWidth(
         this.theme.fg(
@@ -103,13 +110,7 @@ export function createWriteDisplay(cwd: string, settings: UiSettings) {
       previous.update(options.expanded, theme);
       return previous;
     }
-    return new WrittenContent(
-      source,
-      path,
-      options.expanded,
-      theme,
-      settings.writePreviewLines ?? 3,
-    );
+    return new WrittenContent(source, path, options.expanded, theme, settings);
   };
   return tool;
 }

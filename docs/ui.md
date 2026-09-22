@@ -34,6 +34,12 @@ Write retains native file execution and shows the written source with Pi syntax 
 
 Edit renders the native result patch with one line-number gutter, removal numbers from the old file and addition/context numbers from the new file. It highlights the available old and new source separately within each hunk, adds semantic backgrounds and shows six rendered rows before disclosure. Wrapped rows do not repeat the gutter. The summary counts added and removed source lines. Opening an old result uses its recorded patch even if the file has since changed. Syntax context outside the recorded hunks is unavailable.
 
+The same Write/Edit sequence with default code settings, then with syntax colors, diff numbers and backgrounds disabled. Both captures use the isolated host at 80 columns.
+
+![Default code presentation](assets/ui/code-default-dark-80.png)
+
+![Code presentation with optional styling disabled](assets/ui/code-plain-dark-80.png)
+
 ## Retrieval tools
 
 Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mouse disclosure or Ctrl+O reveals their text. No-match, empty and error results remain visible, as do upstream truncation and result-limit warnings. Ls is used only for an actual `ls` tool call; shell commands keep their Bash identity. Native Read image-resizing settings are preserved. Successful adjacent local and Web calls now form a compact group. Click its summary to show aligned compact tools, then click a tool to reveal its retained result. Ctrl+O reveals grouped results through native tool expansion. Pending calls, empty results, warnings, failures and ordinary Bash remain outside groups. The index stores call identities and counts, not duplicate output.
@@ -59,7 +65,10 @@ Add `ui` to the global `pi-stuff.json` beside existing `web`, `tools` and `rtk` 
     "bashPreviewLines": 3,
     "bashRunningPreviewLines": 2,
     "writePreviewLines": 3,
-    "editPreviewLines": 6
+    "editPreviewLines": 6,
+    "codeHighlighting": true,
+    "diffLineNumbers": true,
+    "diffBackgrounds": true
   }
 }
 ```
@@ -68,7 +77,9 @@ Add `ui` to the global `pi-stuff.json` beside existing `web`, `tools` and `rtk` 
 
 `enabled` defaults to `true`; `false` leaves native tool rendering in place. All preview limits are nonnegative integers, with the defaults shown above. Zero hides the compact body while retaining the summary and hidden-row count. Limits do not change model-visible output, upstream truncation or expanded content.
 
-Open `/ui` for the global switch, retrieval grouping and common preview limits. The panel uses Pi's SettingsList and remains available when UI presentation is disabled. Settings are saved immediately; use `/reload` to apply them. A stale save is rejected if the file changed externally. Saving retains other configuration sections. Theme and Hide thinking remain in Pi's own settings.
+`codeHighlighting` controls syntax colors in Write and Edit. `diffLineNumbers` and `diffBackgrounds` independently control the diff gutter numbers and addition/removal backgrounds. All three default to `true`. Disabling them preserves source text, `+/-` markers and native execution.
+
+Open `/ui` for the global switch, retrieval grouping, preview limits and code presentation. The panel uses Pi's SettingsList and remains available when UI presentation is disabled. Settings are saved immediately; use `/reload` to apply them. A stale save is rejected if the file changed externally. Saving retains other configuration sections. Theme and Hide thinking remain in Pi's own settings.
 
 The UI implementation is owned by `src/ui/`; the entrypoint registers it after shared configuration decoding. Configuration and remaining UI controls will be extended as their behavior is implemented.
 

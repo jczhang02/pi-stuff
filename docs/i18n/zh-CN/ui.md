@@ -34,6 +34,12 @@ Write 保留原生文件执行, 使用 Pi 语法高亮显示写入源码. 收起
 
 Edit 使用原生结果中的 patch, 采用单一行号栏, 删除行用旧行号, 新增和上下文用新行号. 每个 hunk 中可用的旧/新源码分别高亮, 配合增删背景, 展开前显示六个渲染行. 折行不重复行号栏. 摘要统计增删源码行数. 即使文件后来改变, 展开历史结果仍使用记录中的 patch. 记录 hunk 之外的语法上下文不可用.
 
+下面是同一组 Write/Edit 操作, 分别使用默认设置与关闭语法色、diff 行号和背景后的设置. 两张截图均来自80列隔离宿主.
+
+![默认代码展示](../../assets/ui/code-default-dark-80.png)
+
+![关闭可选样式后的代码展示](../../assets/ui/code-plain-dark-80.png)
+
 ## 检索工具
 
 Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标展开或 Ctrl+O 显示文本. 无匹配、空结果、错误以及上游截断/结果数量限制警告保持可见. 只有实际 `ls` 工具调用显示 Ls, Shell 命令保留 Bash 身份. 保留原生 Read 图片缩放设置. 连续成功的本地和 Web 调用现在组成紧凑检索组. 点击摘要显示左侧对齐的紧凑工具, 再点击工具展开保留结果. Ctrl+O 通过原生工具展开显示组内结果. 运行中、空结果、警告、失败和普通 Bash 保持在组外. 索引只保存调用标识和计数, 不复制输出.
@@ -59,14 +65,19 @@ Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标�
     "bashPreviewLines": 3,
     "bashRunningPreviewLines": 2,
     "writePreviewLines": 3,
-    "editPreviewLines": 6
+    "editPreviewLines": 6,
+    "codeHighlighting": true,
+    "diffLineNumbers": true,
+    "diffBackgrounds": true
   }
 }
 ```
 
 `enabled` 默认为 `true`, 设为 `false` 保留原生工具渲染. 所有预览行数均为非负整数, 默认值见上例. 零表示隐藏收起态正文, 保留摘要和隐藏行数. 这些限制不改变模型可见输出、上游截断或展开内容.
 
-通过 `/ui` 调整全局开关、检索聚合和常用预览行数. 面板复用 Pi SettingsList, UI 展示关闭时仍可打开. 修改立即保存, 使用 `/reload` 生效. 文件被外部修改后拒绝覆盖, 保存保留其他配置区块. Theme 和 Hide thinking 仍在 Pi 自身设置中调整.
+`codeHighlighting` 控制 Write 和 Edit 的语法颜色. `diffLineNumbers` 与 `diffBackgrounds` 分别控制 diff 行号和增删背景, 三项默认均为 `true`. 关闭后仍保留源码、`+/-` 标识和原生执行行为.
+
+通过 `/ui` 调整全局开关、检索聚合、预览行数和代码展示. 面板复用 Pi SettingsList, UI 展示关闭时仍可打开. 修改立即保存, 使用 `/reload` 生效. 文件被外部修改后拒绝覆盖, 保存保留其他配置区块. Theme 和 Hide thinking 仍在 Pi 自身设置中调整.
 
 UI 实现由 `src/ui/` 管理, 入口在共享配置解码后注册. 其余配置和 UI 控制会随对应行为的实现补充.
 

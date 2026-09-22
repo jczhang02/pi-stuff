@@ -10,5 +10,8 @@ export const UiSettings = Schema.Struct({
   bashRunningPreviewLines: Schema.optional(PreviewLines),
   writePreviewLines: Schema.optional(PreviewLines),
   editPreviewLines: Schema.optional(PreviewLines),
+  codeHighlighting: Schema.optional(Schema.Boolean),
+  diffLineNumbers: Schema.optional(Schema.Boolean),
+  diffBackgrounds: Schema.optional(Schema.Boolean),
 });
 export type UiSettings = typeof UiSettings.Type;

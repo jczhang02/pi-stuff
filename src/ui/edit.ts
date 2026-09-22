@@ -58,7 +58,7 @@ class EditDiff implements Component {
     readonly path: string,
     private expanded: boolean,
     private theme: Theme,
-    private readonly previewLines: number,
+    private readonly settings: UiSettings,
   ) {}
 
   update(expanded: boolean, theme: Theme) {
@@ -82,7 +82,10 @@ class EditDiff implements Component {
       1,
     );
     const body: string[] = [];
-    const language = getLanguageFromPath(this.path);
+    const language =
+      this.settings.codeHighlighting === false
+        ? undefined
+        : getLanguageFromPath(this.path);
     for (const [index, hunk] of hunks.entries()) {
       if (index > 0) body.push(this.theme.fg('muted', '    …'));
       const oldColors = highlightCode(
@@ -113,7 +116,10 @@ class EditDiff implements Component {
             : line.kind === '-'
               ? 'toolDiffRemoved'
               : 'toolDiffContext';
-        const gutter = `${String(line.number).padStart(digits)} ${line.kind} `;
+        const gutter =
+          this.settings.diffLineNumbers === false
+            ? `${line.kind} `
+            : `${String(line.number).padStart(digits)} ${line.kind} `;
         const wrapped = wrapTextWithAnsi(
           text,
           Math.max(1, width - 4 - gutter.length),
@@ -121,7 +127,7 @@ class EditDiff implements Component {
         for (const [part, row] of wrapped.entries()) {
           const content = `${this.theme.fg(color, part === 0 ? gutter : ' '.repeat(gutter.length))}${row}`;
           const painted =
-            line.kind === ' '
+            line.kind === ' ' || this.settings.diffBackgrounds === false
               ? content
               : this.theme.bg(
                   line.kind === '+' ? 'toolSuccessBg' : 'toolErrorBg',
@@ -132,7 +138,9 @@ class EditDiff implements Component {
       }
     }
     const summary = `  ⎿ Added ${added} ${added === 1 ? 'line' : 'lines'}, removed ${removed} ${removed === 1 ? 'line' : 'lines'}`;
-    const visible = this.expanded ? body : body.slice(0, this.previewLines);
+    const visible = this.expanded
+      ? body
+      : body.slice(0, this.settings.editPreviewLines ?? 6);
     const rows = wrapTextWithAnsi(
       this.theme.fg('muted', summary),
       Math.max(1, width),
@@ -181,13 +189,7 @@ export function createEditDisplay(cwd: string, settings: UiSettings) {
       previous.update(options.expanded, theme);
       return previous;
     }
-    return new EditDiff(
-      patch,
-      path,
-      options.expanded,
-      theme,
-      settings.editPreviewLines ?? 6,
-    );
+    return new EditDiff(patch, path, options.expanded, theme, settings);
   };
   return tool;
 }
