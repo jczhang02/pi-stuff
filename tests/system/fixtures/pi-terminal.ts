@@ -5,6 +5,7 @@ import {TerminalControl, type Session} from '@kitlangton/terminal-control';
 import {Schema} from 'effect';
 
 const Request = Schema.Struct({
+  model: Schema.String,
   messages: Schema.Array(
     Schema.Struct({
       role: Schema.String,
@@ -28,6 +29,7 @@ const Request = Schema.Struct({
     ),
   ),
 });
+export type ModelRequest = typeof Request.Type;
 
 // The real host loads the product entrypoint. Only the external model is deterministic.
 export async function launchPi(
@@ -35,6 +37,10 @@ export async function launchPi(
   extraExtension?: string,
   profile: 'rtk' | 'web' = 'rtk',
   mode: 'regular' | 'fullscreen' = 'fullscreen',
+  modelReply?: (
+    body: ModelRequest,
+    signal: AbortSignal,
+  ) => Response | undefined | Promise<Response | undefined>,
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
   const agent = join(directory, 'agent');
@@ -55,6 +61,8 @@ export async function launchPi(
       )
         return new Response(null, {status: 404});
       const body = Schema.decodeUnknownSync(Request)(await request.json());
+      const reply = await modelReply?.(body, request.signal);
+      if (reply !== undefined) return reply;
       offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
       const finished = last?.role === 'tool' || tool === '';
@@ -120,7 +128,7 @@ export async function launchPi(
             baseUrl: `${server.url}v1`,
             api: 'openai-completions',
             apiKey: 'offline-fixture',
-            models: [{id: 'fixture'}],
+            models: [{id: 'fixture'}, {id: 'naming'}],
           },
         },
       }),

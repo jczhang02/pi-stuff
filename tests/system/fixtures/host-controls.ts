@@ -6,6 +6,32 @@ import {resolveExa} from '../../../src/web/exa-auth';
 
 // Test-only controls/observations. Never substitutes the extension's registration or I/O.
 export default function (pi: ExtensionAPI) {
+  pi.registerCommand('host-parent-session', {
+    description:
+      'Offline acceptance fixture: create a parent-linked native session',
+    handler: async (_args, ctx) => {
+      const parentSession = ctx.sessionManager.getSessionFile();
+      if (!parentSession)
+        throw new Error('Fixture requires a persistent session');
+      await ctx.newSession({
+        parentSession,
+        withSession: async next => {
+          next.ui.notify('HOST_PARENT_SESSION', 'info');
+        },
+      });
+    },
+  });
+  pi.registerCommand('host-provider', {
+    description:
+      'Offline acceptance fixture: remove or restore model authentication',
+    handler: async (action, ctx) => {
+      if (action === 'off') {
+        pi.registerProvider('fixture', {apiKey: '$PI_FIXTURE_MISSING_KEY'});
+      } else pi.unregisterProvider('fixture');
+      await ctx.modelRegistry.refresh({allowNetwork: false});
+      ctx.ui.notify(`HOST_PROVIDER_${action}`, 'info');
+    },
+  });
   pi.registerCommand('host-auth', {
     description:
       'Offline acceptance fixture: inspect synthetic Exa authentication',
