@@ -85,4 +85,8 @@ The UI implementation is owned by `src/ui/`; the entrypoint registers it after s
 
 ## Verification status
 
+Write/Edit reuse highlighted source and one width's wrapped body across disclosure changes. Pi's native invalidation clears these caches for theme changes, newly loaded syntax grammars and layout refreshes. There is no cache of every previously used width or theme.
+
+A bounded disclosure experiment used Pi 0.85.1, Bun 1.4.0 and an 80×36 terminal: replace 1,500 TypeScript constant declarations, yielding 1,500 removed and 1,500 added rows, then alternate Ctrl+O ten times. Measured from key dispatch until the final source line or compact hidden-row count appeared, the median fell from 127 ms (119–149 ms) at `b8ffd3a` to 2 ms (1–4 ms) with caching. These observations include Terminal Control communication. They do not measure initial highlighting, memory, long-history resume or real-model latency, and do not replace the required full performance comparison.
+
 The initial system tests use actual Pi 0.85.1 under Bun 1.4.0 with an isolated deterministic provider. They check compact/expanded output, model-visible content, timeout blocks, host shell settings and global UI controls. A real-host regression test currently fails after reload: Pi rebuilds historical tool components before the session-start registration callbacks run, so those components retain native renderers. Live grouping and individual disclosure pass, but history acceptance does not. This lifecycle issue must be fixed before delivery. Compiled-host, full UI, independent review, performance and extended real-model acceptance remain outstanding.

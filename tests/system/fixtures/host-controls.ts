@@ -6,6 +6,18 @@ import {resolveExa} from '../../../src/web/exa-auth';
 
 // Test-only controls/observations. Never substitutes the extension's registration or I/O.
 export default function (pi: ExtensionAPI) {
+  pi.registerCommand('host-theme', {
+    description: 'Offline acceptance fixture: select a native Pi theme',
+    handler: async (name, ctx) => {
+      const result = ctx.ui.setTheme(name.trim());
+      ctx.ui.notify(
+        result.success
+          ? `HOST_THEME:${name.trim()}`
+          : (result.error ?? 'Theme failed'),
+        result.success ? 'info' : 'error',
+      );
+    },
+  });
   pi.registerCommand('host-auth', {
     description:
       'Offline acceptance fixture: inspect synthetic Exa authentication',

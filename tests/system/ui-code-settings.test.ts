@@ -115,3 +115,73 @@ test('Global code presentation controls change rendering while preserving writte
     await host.close();
   }
 }, 30000);
+
+test('Existing code results refresh colors and wrapped preview counts after theme and width changes', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  const before = `const written = "${'a'.repeat(120)}";\nconst left = 1;\nconst right = 2;\nconst ended = 3;\n`;
+  const after = `const edited = "${'b'.repeat(120)}";\nconst left = 4;\nconst right = 5;\nconst ended = 9;\n`;
+  try {
+    await host.terminal.resize({cols: 100, rows: 60});
+    await host.invoke(
+      'write',
+      JSON.stringify({path: 'theme.ts', content: before}),
+    );
+    await host.invoke(
+      'edit',
+      JSON.stringify({
+        path: 'theme.ts',
+        edits: [{oldText: before, newText: after}],
+      }),
+    );
+    const compact = await host.terminal.screen.text();
+    expect(compact).toContain('3 more lines');
+    expect(compact).toContain('6 more lines');
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('4 + const ended = 9;', {
+      timeoutMs: 5000,
+    });
+    const dark = await host.terminal.screen.capture();
+    const darkWrite = sourceStyle(dark, 'const written');
+    const darkEdit = sourceStyle(dark, 'const edited');
+
+    await host.command('/host-theme catppuccin-latte');
+    await host.terminal.screen.waitForText('HOST_THEME:catppuccin-latte', {
+      timeoutMs: 5000,
+    });
+    const light = await host.terminal.screen.capture();
+    expect(sourceStyle(light, 'const written').foregrounds).not.toEqual(
+      darkWrite.foregrounds,
+    );
+    expect(sourceStyle(light, 'const edited').foregrounds).not.toEqual(
+      darkEdit.foregrounds,
+    );
+    expect(sourceStyle(light, 'const edited').backgrounds).not.toEqual(
+      darkEdit.backgrounds,
+    );
+
+    await host.terminal.resize({cols: 60, rows: 60});
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('8 more lines', {timeoutMs: 5000});
+    expect(await host.terminal.screen.text()).toContain('4 more lines');
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('4 + const ended = 9;', {
+      timeoutMs: 5000,
+    });
+    await host.command('/host-theme dark');
+    await host.terminal.screen.waitForText('HOST_THEME:dark', {
+      timeoutMs: 5000,
+    });
+    const restored = await host.terminal.screen.capture();
+    expect(sourceStyle(restored, 'const written').foregrounds).toEqual(
+      darkWrite.foregrounds,
+    );
+    expect(sourceStyle(restored, 'const edited').foregrounds).toEqual(
+      darkEdit.foregrounds,
+    );
+    expect(await readFile(join(host.directory, 'theme.ts'), 'utf8')).toBe(
+      after,
+    );
+  } finally {
+    await host.close();
+  }
+}, 30000);

@@ -52,6 +52,12 @@ function patchHunks(patch: string): DiffLine[][] {
 class EditDiff implements Component {
   private width = -1;
   private rows: string[] = [];
+  private bodyWidth = -1;
+  private body: string[] = [];
+  private colored: DiffLine[][] | undefined;
+  private added = 0;
+  private removed = 0;
+  private digits = 1;
 
   constructor(
     readonly patch: string,
@@ -62,32 +68,38 @@ class EditDiff implements Component {
   ) {}
 
   update(expanded: boolean, theme: Theme) {
+    if (theme !== this.theme) {
+      this.colored = undefined;
+      this.bodyWidth = -1;
+    }
+    if (expanded !== this.expanded || theme !== this.theme) this.width = -1;
     this.expanded = expanded;
     this.theme = theme;
-    this.width = -1;
   }
 
   invalidate() {
+    // Native invalidation also covers theme proxies and late-loaded grammars.
+    // Disclosure calls update() directly and can reuse syntax and layout.
+    this.colored = undefined;
+    this.bodyWidth = -1;
     this.width = -1;
   }
 
-  render(width: number): string[] {
-    if (width === this.width) return this.rows;
+  private highlight(): DiffLine[][] {
+    if (this.colored) return this.colored;
     const hunks = patchHunks(this.patch);
     const all = hunks.flat();
-    const added = all.filter(line => line.kind === '+').length;
-    const removed = all.filter(line => line.kind === '-').length;
-    const digits = all.reduce(
+    this.added = all.filter(line => line.kind === '+').length;
+    this.removed = all.filter(line => line.kind === '-').length;
+    this.digits = all.reduce(
       (width, line) => Math.max(width, String(line.number).length),
       1,
     );
-    const body: string[] = [];
     const language =
       this.settings.codeHighlighting === false
         ? undefined
         : getLanguageFromPath(this.path);
-    for (const [index, hunk] of hunks.entries()) {
-      if (index > 0) body.push(this.theme.fg('muted', '    …'));
+    for (const hunk of hunks) {
       const oldColors = highlightCode(
         hunk
           .filter(line => line.kind !== '+')
@@ -105,48 +117,64 @@ class EditDiff implements Component {
       let oldIndex = 0;
       let newIndex = 0;
       for (const line of hunk) {
-        const text =
+        line.source =
           (line.kind === '-' ? oldColors[oldIndex] : newColors[newIndex]) ??
           line.source;
         if (line.kind !== '+') oldIndex++;
         if (line.kind !== '-') newIndex++;
-        const color =
-          line.kind === '+'
-            ? 'toolDiffAdded'
-            : line.kind === '-'
-              ? 'toolDiffRemoved'
-              : 'toolDiffContext';
-        const gutter =
-          this.settings.diffLineNumbers === false
-            ? `${line.kind} `
-            : `${String(line.number).padStart(digits)} ${line.kind} `;
-        const wrapped = wrapTextWithAnsi(
-          text,
-          Math.max(1, width - 4 - gutter.length),
-        );
-        for (const [part, row] of wrapped.entries()) {
-          const content = `${this.theme.fg(color, part === 0 ? gutter : ' '.repeat(gutter.length))}${row}`;
-          const painted =
-            line.kind === ' ' || this.settings.diffBackgrounds === false
-              ? content
-              : this.theme.bg(
-                  line.kind === '+' ? 'toolSuccessBg' : 'toolErrorBg',
-                  content,
-                );
-          body.push(truncateToWidth(`    ${painted}`, width));
-        }
       }
     }
-    const summary = `  ⎿ Added ${added} ${added === 1 ? 'line' : 'lines'}, removed ${removed} ${removed === 1 ? 'line' : 'lines'}`;
+    this.colored = hunks;
+    return hunks;
+  }
+
+  render(width: number): string[] {
+    if (width === this.width) return this.rows;
+    const hunks = this.highlight();
+    if (width !== this.bodyWidth) {
+      const body: string[] = [];
+      for (const [index, hunk] of hunks.entries()) {
+        if (index > 0) body.push(this.theme.fg('muted', '    …'));
+        for (const line of hunk) {
+          const color =
+            line.kind === '+'
+              ? 'toolDiffAdded'
+              : line.kind === '-'
+                ? 'toolDiffRemoved'
+                : 'toolDiffContext';
+          const gutter =
+            this.settings.diffLineNumbers === false
+              ? `${line.kind} `
+              : `${String(line.number).padStart(this.digits)} ${line.kind} `;
+          const wrapped = wrapTextWithAnsi(
+            line.source,
+            Math.max(1, width - 4 - gutter.length),
+          );
+          for (const [part, row] of wrapped.entries()) {
+            const content = `${this.theme.fg(color, part === 0 ? gutter : ' '.repeat(gutter.length))}${row}`;
+            const painted =
+              line.kind === ' ' || this.settings.diffBackgrounds === false
+                ? content
+                : this.theme.bg(
+                    line.kind === '+' ? 'toolSuccessBg' : 'toolErrorBg',
+                    content,
+                  );
+            body.push(truncateToWidth(`    ${painted}`, width));
+          }
+        }
+      }
+      this.bodyWidth = width;
+      this.body = body;
+    }
+    const summary = `  ⎿ Added ${this.added} ${this.added === 1 ? 'line' : 'lines'}, removed ${this.removed} ${this.removed === 1 ? 'line' : 'lines'}`;
     const visible = this.expanded
-      ? body
-      : body.slice(0, this.settings.editPreviewLines ?? 6);
+      ? this.body
+      : this.body.slice(0, this.settings.editPreviewLines ?? 6);
     const rows = wrapTextWithAnsi(
       this.theme.fg('muted', summary),
       Math.max(1, width),
-    );
-    rows.push(...visible);
-    const hidden = body.length - visible.length;
+    ).concat(visible);
+    const hidden = this.body.length - visible.length;
     if (hidden > 0)
       rows.push(
         truncateToWidth(

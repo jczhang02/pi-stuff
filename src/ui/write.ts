@@ -17,6 +17,8 @@ class WrittenContent implements Component {
   private width = -1;
   private rows: string[] = [];
   private highlighted: string[] | undefined;
+  private bodyWidth = -1;
+  private body: string[] = [];
 
   constructor(
     readonly source: string,
@@ -27,14 +29,18 @@ class WrittenContent implements Component {
   ) {}
 
   update(expanded: boolean, theme: Theme) {
-    if (theme !== this.theme) this.highlighted = undefined;
+    if (theme !== this.theme) {
+      this.highlighted = undefined;
+      this.bodyWidth = -1;
+    }
+    if (expanded !== this.expanded || theme !== this.theme) this.width = -1;
     this.expanded = expanded;
     this.theme = theme;
-    this.width = -1;
   }
 
   invalidate() {
     this.highlighted = undefined;
+    this.bodyWidth = -1;
     this.width = -1;
   }
 
@@ -47,16 +53,19 @@ class WrittenContent implements Component {
         ? undefined
         : getLanguageFromPath(this.path),
     );
-    const body =
-      this.source === ''
-        ? []
-        : this.highlighted.flatMap(line =>
-            wrapTextWithAnsi(line, Math.max(1, width - 4)),
-          );
+    if (width !== this.bodyWidth) {
+      this.body =
+        this.source === ''
+          ? []
+          : this.highlighted.flatMap(line =>
+              wrapTextWithAnsi(line, Math.max(1, width - 4)),
+            );
+      this.bodyWidth = width;
+    }
     const count = this.source === '' ? 0 : source.split('\n').length;
     const visible = this.expanded
-      ? body
-      : body.slice(0, this.settings.writePreviewLines ?? 3);
+      ? this.body
+      : this.body.slice(0, this.settings.writePreviewLines ?? 3);
     const rows = [
       truncateToWidth(
         this.theme.fg(
@@ -65,9 +74,9 @@ class WrittenContent implements Component {
         ),
         width,
       ),
+      ...visible.map(line => truncateToWidth(`    ${line}`, width)),
     ];
-    rows.push(...visible.map(line => truncateToWidth(`    ${line}`, width)));
-    const hidden = body.length - visible.length;
+    const hidden = this.body.length - visible.length;
     if (hidden > 0)
       rows.push(
         truncateToWidth(
