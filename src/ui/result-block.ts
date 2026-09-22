@@ -1,5 +1,10 @@
 import type {Theme} from '@earendil-works/pi-coding-agent';
-import {Text, truncateToWidth, type Component} from '@earendil-works/pi-tui';
+import {
+  Text,
+  truncateToWidth,
+  stripTerminalSequences,
+  type Component,
+} from '@earendil-works/pi-tui';
 
 // Pi Text owns wrapping and its cache. The block owns the shared result gutter.
 export class ResultBlock implements Component {
@@ -10,7 +15,7 @@ export class ResultBlock implements Component {
     private readonly theme: Theme,
     private readonly color: 'error' | 'warning' | 'muted' | 'toolOutput',
   ) {
-    this.body = new Text(theme.fg(color, text), 0, 0);
+    this.body = new Text(theme.fg(color, stripTerminalSequences(text)), 0, 0);
   }
 
   invalidate() {

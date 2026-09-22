@@ -3,6 +3,54 @@ import {mkdir, readdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
+test('Assistant text, hidden Thoughts and writes separate retrieval groups', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  try {
+    await host.terminal.resize({cols: 100, rows: 65});
+    await writeFile(join(host.directory, 'read.txt'), 'GROUP_MEMBER_BODY');
+    const read = {name: 'read', parameters: JSON.stringify({path: 'read.txt'})};
+    await host.sequence([
+      read,
+      read,
+      {...read, text: 'CHECKING_ANOTHER_SOURCE'},
+      read,
+      {...read, thinking: 'RECONSIDERING_THE_RESULT'},
+      read,
+      {
+        name: 'write',
+        parameters: JSON.stringify({path: 'decision.txt', content: 'DECISION'}),
+      },
+      read,
+    ]);
+    const visible = await host.terminal.screen.text();
+    expect(visible.match(/Read 2 files/gu)).toHaveLength(3);
+    expect(visible.match(/Read 1 file\b/gu)).toHaveLength(1);
+    expect(visible).toContain('CHECKING_ANOTHER_SOURCE');
+    expect(visible).toContain('RECONSIDERING_THE_RESULT');
+    expect(visible).toContain('Write(decision.txt)');
+    expect(visible).not.toContain('GROUP_MEMBER_BODY');
+    await host.terminal.keyboard.press('Control+T');
+    await host.terminal.screen.waitUntil(
+      snapshot => !snapshot.text.includes('RECONSIDERING_THE_RESULT'),
+      {timeoutMs: 5000},
+    );
+    const hidden = await host.terminal.screen.text();
+    expect(hidden.match(/Read 2 files/gu)).toHaveLength(3);
+    expect(hidden.match(/Read 1 file\b/gu)).toHaveLength(1);
+    expect(hidden).toContain('CHECKING_ANOTHER_SOURCE');
+    expect(hidden).toContain('Write(decision.txt)');
+    await host.invoke('read', read.parameters);
+    const nextTurn = await host.terminal.screen.text();
+    expect(nextTurn.match(/Read 1 file\b/gu)).toHaveLength(2);
+    expect(nextTurn.match(/Read 2 files/gu)).toHaveLength(3);
+  } catch (error) {
+    console.error(await host.terminal.screen.text());
+    throw error;
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
 test('Retrieval group opens aligned compact calls before revealing an individual result', async () => {
   const host = await launchPi('{}', undefined, 'ui');
   try {
@@ -35,6 +83,96 @@ test('Retrieval group opens aligned compact calls before revealing an individual
     expect(await host.terminal.screen.text()).not.toContain('SECOND_BODY');
     await host.terminal.keyboard.press('Control+O');
     await host.terminal.screen.waitForText('SECOND_BODY', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitUntil(
+      snapshot => !snapshot.text.includes('Read(first.txt)'),
+      {timeoutMs: 5000},
+    );
+    const summary = (await host.terminal.screen.text()).split('\n');
+    await host.terminal.mouse({
+      action: 'click',
+      x,
+      y: summary.findIndex(row => row.includes('Read 2 files')),
+      button: 'left',
+    });
+    await host.terminal.screen.waitForText('Read(first.txt)', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.sequence(['Control+O', 'Control+O'], {
+      paceMs: 0,
+    });
+    await host.terminal.screen.waitUntil(
+      snapshot => !snapshot.text.includes('Read(first.txt)'),
+      {timeoutMs: 5000},
+    );
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('SECOND_BODY', {timeoutMs: 5000});
+    const expanded = (await host.terminal.screen.text()).split('\n');
+    const groupY = expanded.findIndex(row => row.includes('Read 2 files'));
+    expect(groupY).toBeGreaterThanOrEqual(0);
+    await host.terminal.mouse({action: 'click', x, y: groupY, button: 'left'});
+    await host.terminal.screen.waitUntil(
+      snapshot => !snapshot.text.includes('Read(first.txt)'),
+      {timeoutMs: 5000},
+    );
+    expect(await host.terminal.screen.text()).not.toContain('SECOND_BODY');
+    const collapsed = (await host.terminal.screen.text()).split('\n');
+    await host.terminal.mouse({
+      action: 'click',
+      x,
+      y: collapsed.findIndex(row => row.includes('Read 2 files')),
+      button: 'left',
+    });
+    await host.terminal.screen.waitForText('SECOND_BODY', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitUntil(
+      snapshot => !snapshot.text.includes('Read(first.txt)'),
+      {timeoutMs: 5000},
+    );
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('SECOND_BODY', {timeoutMs: 5000});
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Retrieval warnings and empty outcomes remain outside successful groups', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  try {
+    await host.terminal.resize({cols: 100, rows: 50});
+    await writeFile(join(host.directory, 'read.txt'), 'GROUP_MEMBER_BODY');
+    await mkdir(join(host.directory, 'entries'));
+    await writeFile(join(host.directory, 'entries', 'a.txt'), 'a');
+    await writeFile(join(host.directory, 'entries', 'b.txt'), 'b');
+    const read = {name: 'read', parameters: JSON.stringify({path: 'read.txt'})};
+    await host.sequence([
+      read,
+      {name: 'ls', parameters: JSON.stringify({path: 'entries', limit: 1})},
+      read,
+      {
+        name: 'grep',
+        parameters: JSON.stringify({pattern: 'ABSENT', path: 'read.txt'}),
+      },
+      read,
+      {
+        name: 'fetch_content',
+        parameters: JSON.stringify({urls: ['invalid-url']}),
+      },
+      read,
+    ]);
+    const screen = await host.terminal.screen.text();
+    expect(screen.match(/Read 1 file\b/gu)).toHaveLength(4);
+    expect(screen).toContain('Ls(entries)');
+    expect(screen).toContain('Result limit reached: 1');
+    expect(screen).toContain('Grep(ABSENT, read.txt)');
+    expect(screen).toContain('No matches found');
+    expect(screen).toContain('WebFetch(1 page)');
+    expect(screen).toContain('error: input:');
+    expect(screen).not.toContain('Read web content');
+    expect(screen).not.toContain('GROUP_MEMBER_BODY');
+  } catch (error) {
+    console.error(await host.terminal.screen.text());
+    throw error;
   } finally {
     await host.close();
   }

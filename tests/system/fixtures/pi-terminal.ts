@@ -4,6 +4,13 @@ import {join, resolve} from 'node:path';
 import {TerminalControl, type Session} from '@kitlangton/terminal-control';
 import {Schema} from 'effect';
 
+interface ModelCall {
+  name: string;
+  parameters: string;
+  text?: string;
+  thinking?: string;
+}
+
 const Request = Schema.Struct({
   messages: Schema.Array(
     Schema.Struct({
@@ -39,16 +46,15 @@ export async function launchPi(
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
   const agent = join(directory, 'agent');
   await mkdir(agent);
-  let tool = '';
-  let args = '{}';
+  let tool: ModelCall | undefined;
   let turn = 0;
   let result = '';
   let response: {text: string; thinking: string} | undefined;
   let sentAssistant = '';
   let reloads = 0;
   let offered: string[] = [];
-  let remaining: {name: string; parameters: string}[] = [];
-  let simultaneous: {name: string; parameters: string}[] = [];
+  let remaining: ModelCall[] = [];
+  let simultaneous: ModelCall[] = [];
   let callIndex = 0;
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -68,27 +74,25 @@ export async function launchPi(
       const last = body.messages.at(-1);
       const next = last?.role === 'tool' ? remaining.shift() : undefined;
       if (next) {
-        tool = next.name;
-        args = next.parameters;
+        tool = next;
         callIndex++;
       }
-      const finished = (last?.role === 'tool' && !next) || tool === '';
+      const finished = (last?.role === 'tool' && !next) || !tool;
       if (last?.role === 'tool')
         result = Schema.is(Schema.String)(last.content)
           ? last.content
           : JSON.stringify(last.content);
-      const delta = finished
-        ? {content: response?.text ?? `RTK_TURN_${turn}_DONE`}
-        : {
-            tool_calls: [{name: tool, parameters: args}, ...simultaneous].map(
-              (call, index) => ({
+      const delta =
+        !finished && tool
+          ? {
+              tool_calls: [tool, ...simultaneous].map((call, index) => ({
                 index,
                 id: `rtk_${turn}_${callIndex}_${index}`,
                 type: 'function',
                 function: {name: call.name, arguments: call.parameters},
-              }),
-            ),
-          };
+              })),
+            }
+          : {content: response?.text ?? `RTK_TURN_${turn}_DONE`};
       const chunk = {
         id: `chat_${turn}`,
         object: 'chat.completion.chunk',
@@ -96,21 +100,27 @@ export async function launchPi(
         model: 'fixture',
         choices: [{index: 0, delta, finish_reason: null}],
       };
-      const thinking =
-        finished && response?.thinking
-          ? `data: ${JSON.stringify({
+      const thinking = finished ? response?.thinking : tool?.thinking;
+      const preamble = [
+        ...(thinking ? [{reasoning_content: thinking}] : []),
+        ...(!finished && tool?.text ? [{content: tool.text}] : []),
+      ]
+        .map(
+          delta =>
+            `data: ${JSON.stringify({
               ...chunk,
               choices: [
                 {
                   index: 0,
-                  delta: {reasoning_content: response.thinking},
+                  delta,
                   finish_reason: null,
                 },
               ],
-            })}\n\n`
-          : '';
+            })}\n\n`,
+        )
+        .join('');
       return new Response(
-        `${thinking}data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({
+        `${preamble}data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({
           ...chunk,
           choices: [
             {
@@ -250,17 +260,15 @@ export async function launchPi(
       await screen.keyboard.type(`Run RTK turn ${turn}`);
       await screen.keyboard.press('Enter');
     }
-    async function start(
-      name: string,
-      parameters: string,
-      next: {name: string; parameters: string}[] = [],
-      parallel: {name: string; parameters: string}[] = [],
+    async function startCall(
+      call: ModelCall,
+      next: ModelCall[] = [],
+      parallel: ModelCall[] = [],
     ) {
       remaining = [...next];
       simultaneous = [...parallel];
       callIndex = 0;
-      tool = name;
-      args = parameters;
+      tool = call.name ? call : undefined;
       response = undefined;
       await submit();
     }
@@ -270,23 +278,24 @@ export async function launchPi(
       terminal: screen,
       close,
       command,
-      start,
+      start: (name: string, parameters: string) =>
+        startCall({name, parameters}),
       sentAssistant: () => sentAssistant,
       async startResponse(text: string, thinking = '') {
-        tool = '';
+        tool = undefined;
         remaining = [];
         simultaneous = [];
         response = {text, thinking};
         await submit();
       },
-      async startParallel(calls: {name: string; parameters: string}[]) {
+      async startParallel(calls: ModelCall[]) {
         const [first, ...parallel] = calls;
         if (!first) throw new Error('A batch needs at least one call');
-        await start(first.name, first.parameters, [], parallel);
+        await startCall(first, [], parallel);
       },
       offered: () => offered,
       async invoke(name: string, parameters: string) {
-        await start(name, parameters);
+        await startCall({name, parameters});
         try {
           await screen.screen.waitForText(`RTK_TURN_${turn}_DONE`, {
             timeoutMs: 15000,
@@ -298,10 +307,10 @@ export async function launchPi(
         }
         return result;
       },
-      async sequence(calls: {name: string; parameters: string}[]) {
+      async sequence(calls: ModelCall[]) {
         const [first, ...next] = calls;
         if (!first) throw new Error('A sequence needs at least one call');
-        await start(first.name, first.parameters, next);
+        await startCall(first, next);
         await screen.screen.waitForText(`RTK_TURN_${turn}_DONE`, {
           timeoutMs: 15000,
         });

@@ -32,7 +32,7 @@ Setup and spawn errors remain visible even with a zero-row preview. The followin
 
 Write retains native file execution and shows the written source with Pi syntax highlighting. The compact result shows three rendered rows and a hidden-row count; native disclosure reveals the complete retained source. The result summary counts source lines rather than terminal wrapping. Error results retain the actual tool error text.
 
-CRLF content uses the same display normalization as native Write, so previews do not insert blank rows between source lines. Files retain their original line endings and tabs. Tool targets, Bash output and code previews use Pi's terminal-sequence stripping helper before styling; embedded palette commands are not sent to the terminal. This cleaning affects presentation only.
+CRLF content uses the same display normalization as native Write, so previews do not insert blank rows between source lines. Files retain their original line endings and tabs. Tool targets, Bash output, retrieval text, result blocks and code previews use Pi's terminal-sequence stripping helper before styling. This cleaning affects presentation only and remains active when RTK's model-result cleanup is disabled.
 
 ## Edit
 
@@ -57,6 +57,14 @@ The same code sequence under compiled Pi 0.87.0 / Bun 1.4.0 with Catppuccin Latt
 Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mouse disclosure or Ctrl+O reveals their text. No-match, empty and error results remain visible, as do upstream truncation and result-limit warnings. Ls is used only for an actual `ls` tool call; shell commands keep their Bash identity. Native Read image-resizing settings are preserved. Successful adjacent local and Web calls now form a compact group. Click its summary to show aligned compact tools, then click a tool to reveal its retained result. Ctrl+O reveals grouped results through native tool expansion. Pending calls, empty results, warnings, failures and ordinary Bash remain outside groups. The index stores call identities and counts, not duplicate output.
 
 Parallel calls keep their original order even when they finish in a different order. A pending call remains visible; when it succeeds, it joins adjacent successful calls without crossing a failure. Session shutdown releases the old context before Pi can render a transition frame, so creating a new session does not crash or retain the previous group's members.
+
+The group summary can collapse its members even after Ctrl+O expanded all tools. A later Ctrl+O change resets that local override. Assistant text, Thoughts (including hidden Thoughts), writes and new user turns separate groups. Host tests also cover local result limits, no-match outcomes and Web batch failures between successful reads.
+
+These 100-column captures show global expansion followed by a click on the group summary. Pi 0.87.0 / Bun 1.4.0, default dark theme, isolated deterministic provider, with native quiet startup enabled. Export fonts match the welcome captures. The global status remains expanded after the local group closes.
+
+![Retrieval members after Ctrl+O](assets/ui/retrieval-global-expanded.png)
+
+![The same group locally collapsed](assets/ui/retrieval-local-collapsed.png)
 
 Read results containing images stay outside text groups and delegate result rendering to Pi. Pi retains image display, conversion and its text fallback with MIME type and dimensions. The fallback has been checked on the pinned host and the installed Pi 0.87.0 compiled host; actual Kitty/Ghostty image display still needs visual acceptance.
 
@@ -106,3 +114,5 @@ Write/Edit reuse highlighted source and one width's wrapped body across disclosu
 A bounded disclosure experiment used Pi 0.85.1, Bun 1.4.0 and an 80×36 terminal: replace 1,500 TypeScript constant declarations, yielding 1,500 removed and 1,500 added rows, then alternate Ctrl+O ten times. Measured from key dispatch until the final source line or compact hidden-row count appeared, the median fell from 127 ms (119–149 ms) at `b8ffd3a` to 2 ms (1–4 ms) with caching. These observations include Terminal Control communication. They do not measure initial highlighting, memory, long-history resume or real-model latency, and do not replace the required full performance comparison.
 
 The initial system tests use actual Pi 0.85.1 under Bun 1.4.0 with an isolated deterministic provider. They check compact/expanded output, model-visible content, timeout blocks, host shell settings and global UI controls. History regressions currently fail after reload and resume: historical tool components retain native renderers. Reload rebuilds those components before the session-start registration callbacks run. Live grouping, parallel completion, individual disclosure and starting a new session pass, but history acceptance does not. This lifecycle issue must be fixed before delivery. Compiled-host, full UI, independent review, performance and extended real-model acceptance remain outstanding.
+
+An intermediate independent review of `bb03c4e..c43c503` found four blockers. The terminal-sequence regression with RTK cleanup disabled and local group collapse after Ctrl+O have regression fixes. Retrieval hidden-row counts still include metadata, and WebRead find results without excerpts still lack a visible no-match state. Those two findings and final full-diff review remain open. Passing preservation tests do not establish assistant/Thoughts implementation or complete acceptance.

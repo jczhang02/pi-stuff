@@ -6,7 +6,11 @@ import type {
   ToolDefinition,
   TruncationResult,
 } from '@earendil-works/pi-coding-agent';
-import {wrapTextWithAnsi, truncateToWidth} from '@earendil-works/pi-tui';
+import {
+  wrapTextWithAnsi,
+  truncateToWidth,
+  stripTerminalSequences,
+} from '@earendil-works/pi-tui';
 
 interface RetrievalDetails {
   truncation?: TruncationResult;
@@ -32,6 +36,9 @@ export function displayRetrieval<
   const nativeResult = tool.renderResult;
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) => {
+    // Pi updates call renderers on every global toggle, even when successive
+    // toggles coalesce into one terminal frame. Clear local overrides here too.
+    groups?.visible(context.toolCallId);
     const title = new ToolHeading(
       label,
       target(args, context.expanded),
@@ -68,12 +75,14 @@ export function displayRetrieval<
       groups?.finish(context.toolCallId, false);
       return nativeResult(result, options, theme, context);
     }
-    const output = result.content
-      .map(block =>
-        block.type === 'text' ? block.text : `[image: ${block.mimeType}]`,
-      )
-      .join('\n')
-      .replace(/\n$/u, '');
+    const output = stripTerminalSequences(
+      result.content
+        .map(block =>
+          block.type === 'text' ? block.text : `[image: ${block.mimeType}]`,
+        )
+        .join('\n')
+        .replace(/\n$/u, ''),
+    );
     if (context.isError) {
       groups?.finish(context.toolCallId, false);
       return new ResultBlock(output, theme, 'error');

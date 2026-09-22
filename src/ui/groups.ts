@@ -9,7 +9,8 @@ import type {
 interface Group {
   members: Set<Call>;
   leader: Call;
-  open: boolean;
+  open: boolean | undefined;
+  defaultExpanded: boolean;
   counts: Map<string, number>;
 }
 interface Call {
@@ -106,13 +107,16 @@ export class RetrievalGroups {
     call.group = {
       members: new Set([call]),
       leader: call,
-      open: false,
+      open: undefined,
+      defaultExpanded: this.expanded(),
       counts: new Map([[call.label, 1]]),
     };
     for (const neighbor of [call.previous, call.next]) {
       const adjacent = neighbor?.group;
       const current = call.group;
       if (!adjacent || adjacent === current) continue;
+      this.visible(call.id);
+      this.visible(neighbor.id);
       // Move the smaller membership set, keeping long retrieval runs cheap.
       const [large, small] =
         current.members.size >= adjacent.members.size
@@ -125,13 +129,20 @@ export class RetrievalGroups {
       for (const [label, count] of small.counts)
         large.counts.set(label, (large.counts.get(label) ?? 0) + count);
       if (small.leader.order < large.leader.order) large.leader = small.leader;
-      large.open ||= small.open;
+      if (large.open !== true && small.open !== undefined)
+        large.open = small.open;
     }
   }
 
   visible(id: string): boolean {
     const group = this.calls.get(id)?.group;
-    return !group || group.open || this.expanded();
+    if (!group) return true;
+    const expanded = this.expanded();
+    if (group.defaultExpanded !== expanded) {
+      group.defaultExpanded = expanded;
+      group.open = undefined;
+    }
+    return group.open ?? expanded;
   }
 
   summary(id: string): string | undefined {
@@ -162,6 +173,6 @@ export class RetrievalGroups {
 
   toggle(id: string): void {
     const group = this.calls.get(id)?.group;
-    if (group) group.open = !group.open;
+    if (group) group.open = !this.visible(id);
   }
 }

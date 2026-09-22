@@ -1,6 +1,30 @@
 import {expect, test} from 'bun:test';
 import {launchPi} from './fixtures/pi-terminal';
 
+test('Welcome survives replacement and reload of an empty session', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  try {
+    await host.terminal.screen.waitForText('Welcome back!', {timeoutMs: 5000});
+    await host.command('/host-session new');
+    await host.terminal.screen.waitForText('HOST_SESSION_NEW', {
+      timeoutMs: 5000,
+    });
+    expect(await host.terminal.screen.text()).toContain('Welcome back!');
+    await host.reload();
+    expect(await host.terminal.screen.text()).toContain('Welcome back!');
+    await host.startResponse('EMPTY_SESSION_REPLACED');
+    await host.terminal.screen.waitForText('EMPTY_SESSION_REPLACED', {
+      timeoutMs: 5000,
+    });
+    expect(await host.terminal.screen.text()).not.toContain('Welcome back!');
+  } catch (error) {
+    console.error(await host.terminal.logs.text());
+    throw error;
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
 test('Welcome uses square corners and the actual model, then clears on the first turn', async () => {
   const host = await launchPi('{}', undefined, 'ui');
   try {
