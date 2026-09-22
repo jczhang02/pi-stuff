@@ -1,0 +1,27 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    /var/tmp/agent/claude-default-4UJr1e/project
+
+  Switched back to the classic renderer
+
+
+❯ Check the pagination fixture.
+
+● Search(pattern: "*.ts")
+  ⎿  Found 1 file
+     sample.ts
+
+● Read(/var/tmp/agent/claude-default-4UJr1e/project/sample.ts)
+  ⎿  Read 4 lines
+
+● Search(pattern: "return", path: "/var/tmp/agent/claude-default-4UJr1e/project")
+  ⎿  Found 1 line
+     sample.ts:2:  return items.length;
+
+                                                                                      10:16 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Crunched for 0s · done 10:16 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all                                           verbose

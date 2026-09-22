@@ -1,0 +1,20 @@
+{
+  "scenario": "long-timeout",
+  "cols": 80,
+  "rows": 42,
+  "modeCommand": "/tui default",
+  "steps": [
+    [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "python3 output.py # validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering ",
+          "description": "Check pagination output",
+          "timeout": 90000
+        }
+      }
+    ]
+  ]
+}

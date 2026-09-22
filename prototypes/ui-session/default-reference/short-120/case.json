@@ -1,0 +1,19 @@
+{
+  "scenario": "short",
+  "cols": 120,
+  "rows": 42,
+  "modeCommand": "/tui default",
+  "steps": [
+    [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "printf 'first line\\nsecond line\\n'",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  ]
+}

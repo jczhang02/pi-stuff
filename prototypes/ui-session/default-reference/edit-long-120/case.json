@@ -1,0 +1,30 @@
+{
+  "scenario": "edit-long",
+  "cols": 120,
+  "rows": 72,
+  "modeCommand": "/tui default",
+  "steps": [
+    [
+      {
+        "type": "tool_use",
+        "id": "read_one",
+        "name": "Read",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-g0bN5I/project/sample.ts"
+        }
+      }
+    ],
+    [
+      {
+        "type": "tool_use",
+        "id": "edit_one",
+        "name": "Edit",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-g0bN5I/project/sample.ts",
+          "old_string": "export const item4 = 4;\nexport const item5 = 5;\nexport const item6 = 6;\nexport const item7 = 7;\nexport const item8 = 8;\nexport const item9 = 9;\nexport const item10 = 10;\nexport const item11 = 11;\nexport const item12 = 12;\nexport const item13 = 13;\nexport const item14 = 14;\nexport const item15 = 15;\nexport const item16 = 16;\nexport const item17 = 17;\nexport const item18 = 18;\nexport const item19 = 19;\nexport const item20 = 20;\nexport const item21 = 21;\nexport const item22 = 22;\nexport const item23 = 23;",
+          "new_string": "export const item4 = 104;\nexport const item5 = 105;\nexport const item6 = 106;\nexport const item7 = 107;\nexport const item8 = 108;\nexport const item9 = 109;\nexport const item10 = 110;\nexport const item11 = 111;\nexport const item12 = 112;\nexport const item13 = 113;\nexport const item14 = 114;\nexport const item15 = 115;\nexport const item16 = 116;\nexport const item17 = 117;\nexport const item18 = 118;\nexport const item19 = 119;\nexport const item20 = 120;\nexport const item21 = 121;\nexport const item22 = 122;\nexport const item23 = 123;"
+        }
+      }
+    ]
+  ]
+}

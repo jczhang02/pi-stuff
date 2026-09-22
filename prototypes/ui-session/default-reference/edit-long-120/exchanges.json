@@ -1,0 +1,107 @@
+[
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "read_one",
+        "name": "Read",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-g0bN5I/project/sample.ts"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "read_one",
+        "name": "Read",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-g0bN5I/project/sample.ts"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "read_one",
+        "name": "Read",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-g0bN5I/project/sample.ts"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "read_one",
+        "name": "Read",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-g0bN5I/project/sample.ts"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [
+      {
+        "tool_use_id": "read_one",
+        "type": "tool_result",
+        "content": "1\texport const item1 = 1;\n2\texport const item2 = 2;\n3\texport const item3 = 3;\n4\texport const item4 = 4;\n5\texport const item5 = 5;\n6\texport const item6 = 6;\n7\texport const item7 = 7;\n8\texport const item8 = 8;\n9\texport const item9 = 9;\n10\texport const item10 = 10;\n11\texport const item11 = 11;\n12\texport const item12 = 12;\n13\texport const item13 = 13;\n14\texport const item14 = 14;\n15\texport const item15 = 15;\n16\texport const item16 = 16;\n17\texport const item17 = 17;\n18\texport const item18 = 18;\n19\texport const item19 = 19;\n20\texport const item20 = 20;\n21\texport const item21 = 21;\n22\texport const item22 = 22;\n23\texport const item23 = 23;\n24\texport const item24 = 24;\n25\texport const item25 = 25;\n26\texport const item26 = 26;\n27\texport const item27 = 27;\n28\texport const item28 = 28;\n29\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "edit_one",
+        "name": "Edit",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-g0bN5I/project/sample.ts",
+          "old_string": "export const item4 = 4;\nexport const item5 = 5;\nexport const item6 = 6;\nexport const item7 = 7;\nexport const item8 = 8;\nexport const item9 = 9;\nexport const item10 = 10;\nexport const item11 = 11;\nexport const item12 = 12;\nexport const item13 = 13;\nexport const item14 = 14;\nexport const item15 = 15;\nexport const item16 = 16;\nexport const item17 = 17;\nexport const item18 = 18;\nexport const item19 = 19;\nexport const item20 = 20;\nexport const item21 = 21;\nexport const item22 = 22;\nexport const item23 = 23;",
+          "new_string": "export const item4 = 104;\nexport const item5 = 105;\nexport const item6 = 106;\nexport const item7 = 107;\nexport const item8 = 108;\nexport const item9 = 109;\nexport const item10 = 110;\nexport const item11 = 111;\nexport const item12 = 112;\nexport const item13 = 113;\nexport const item14 = 114;\nexport const item15 = 115;\nexport const item16 = 116;\nexport const item17 = 117;\nexport const item18 = 118;\nexport const item19 = 119;\nexport const item20 = 120;\nexport const item21 = 121;\nexport const item22 = 122;\nexport const item23 = 123;"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [
+      {
+        "tool_use_id": "read_one",
+        "type": "tool_result",
+        "content": "1\texport const item1 = 1;\n2\texport const item2 = 2;\n3\texport const item3 = 3;\n4\texport const item4 = 4;\n5\texport const item5 = 5;\n6\texport const item6 = 6;\n7\texport const item7 = 7;\n8\texport const item8 = 8;\n9\texport const item9 = 9;\n10\texport const item10 = 10;\n11\texport const item11 = 11;\n12\texport const item12 = 12;\n13\texport const item13 = 13;\n14\texport const item14 = 14;\n15\texport const item15 = 15;\n16\texport const item16 = 16;\n17\texport const item17 = 17;\n18\texport const item18 = 18;\n19\texport const item19 = 19;\n20\texport const item20 = 20;\n21\texport const item21 = 21;\n22\texport const item22 = 22;\n23\texport const item23 = 23;\n24\texport const item24 = 24;\n25\texport const item25 = 25;\n26\texport const item26 = 26;\n27\texport const item27 = 27;\n28\texport const item28 = 28;\n29\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>"
+      },
+      {
+        "tool_use_id": "edit_one",
+        "type": "tool_result",
+        "content": "The file /var/tmp/agent/claude-default-g0bN5I/project/sample.ts has been updated successfully. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "PROBE_COMPLETE"
+      }
+    ]
+  }
+]

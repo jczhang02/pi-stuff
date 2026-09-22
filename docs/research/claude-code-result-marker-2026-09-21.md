@@ -2,6 +2,8 @@
 
 [简体中文](../i18n/zh-CN/research/claude-code-result-marker-2026-09-21.md) · [Actual capture gallery](../../prototypes/ui-session/claude-reference/README.md)
 
+Correction: the [new /tui default study](claude-code-default-tui-2026-09-22.md) reproduces separate output and timeout children in one Bash invocation. This report did not cover that completed state and does not establish a one-connector-per-tool limit.
+
 ## Finding
 
 The earlier description, "one marker per tool result", was too narrow. In the tested Claude Code 2.1.261 paths, `⎿` starts visible child content: completed output, live stdout, an active command preview, or an interruption annotation. It does not appear on every output line, nor does every invocation necessarily have a visible marker. Collapsed summaries can have none.

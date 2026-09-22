@@ -1,0 +1,30 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    /var/tmp/agent/claude-default-amB9RV/project
+
+  Switched back to the classic renderer
+
+
+❯ Check the pagination fixture.
+
+● Bash(python3 slow.py)
+  ⎿  PROGRESS 01/12
+     PROGRESS 02/12
+     PROGRESS 03/12
+     PROGRESS 04/12
+     PROGRESS 05/12
+     PROGRESS 06/12
+     PROGRESS 07/12
+     PROGRESS 08/12
+     PROGRESS 09/12
+     PROGRESS 10/12
+     PROGRESS 11/12
+     PROGRESS 12/12
+
+                                                                                      10:16 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Churned for 12s · done 10:16 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all                                           verbose

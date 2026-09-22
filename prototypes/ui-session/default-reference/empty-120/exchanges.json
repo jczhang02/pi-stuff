@@ -1,0 +1,82 @@
+[
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "true",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "true",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "true",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "true",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [
+      {
+        "tool_use_id": "tool_one",
+        "type": "tool_result",
+        "content": "(Bash completed with no output)\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>",
+        "is_error": false,
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "PROBE_COMPLETE"
+      }
+    ]
+  }
+]

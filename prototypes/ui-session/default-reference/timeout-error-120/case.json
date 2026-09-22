@@ -1,0 +1,20 @@
+{
+  "scenario": "timeout-error",
+  "cols": 120,
+  "rows": 42,
+  "modeCommand": "/tui default",
+  "steps": [
+    [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "sleep 3; echo late",
+          "description": "Check pagination output",
+          "timeout": 1000
+        }
+      }
+    ]
+  ]
+}

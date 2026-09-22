@@ -1,0 +1,14 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    /var/tmp/agent/claude-default-XBGmkv/project
+
+  Switched back to the classic renderer
+
+
+❯ Check the pagination fixture.
+
+● Bash(python3 slow.py)
+  ⎿  Interrupted · What should Claude do instead?
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all                                           verbose

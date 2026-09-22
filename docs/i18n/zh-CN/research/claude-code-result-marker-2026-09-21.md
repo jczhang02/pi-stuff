@@ -2,6 +2,8 @@
 
 [English](../../../research/claude-code-result-marker-2026-09-21.md) · [真实截图画廊](../../../../prototypes/ui-session/claude-reference/README.md)
 
+补充修正: [新的 /tui default 实测](claude-code-default-tui-2026-09-22.md)复现同次 Bash 的输出和 timeout 两个子块. 本报告未覆盖该完成态, 不应据此限制每个工具只能有一个 `⎿`.
+
 ## 结论
 
 此前 "每个工具结果一个标记" 的描述过窄. 在本轮 Claude Code 2.1.261 实测路径中, `⎿` 标记可见从属内容的开头: 已完成输出、运行中的 stdout、当前命令预览, 或中断提示. 它不是每一行都有, 也不是每次调用必有; 收起后的摘要可以没有.

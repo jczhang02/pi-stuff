@@ -1,0 +1,77 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    /var/tmp/agent/claude-default-g0bN5I/project
+
+  Switched back to the classic renderer
+
+
+❯ Check the pagination fixture.
+
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    /var/tmp/agent/claude-default-g0bN5I/project
+
+  Switched back to the classic renderer
+
+
+❯ Check the pagination fixture.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(sample.ts)
+  ⎿  Added 20 lines, removed 20 lines
+       1  export const item1 = 1;
+       2  export const item2 = 2;
+       3  export const item3 = 3;
+       4 -export const item4 = 4;
+       5 -export const item5 = 5;
+       6 -export const item6 = 6;
+       7 -export const item7 = 7;
+       8 -export const item8 = 8;
+       9 -export const item9 = 9;
+      10 -export const item10 = 10;
+      11 -export const item11 = 11;
+      12 -export const item12 = 12;
+      13 -export const item13 = 13;
+      14 -export const item14 = 14;
+      15 -export const item15 = 15;
+      16 -export const item16 = 16;
+      17 -export const item17 = 17;
+      18 -export const item18 = 18;
+      19 -export const item19 = 19;
+      20 -export const item20 = 20;
+      21 -export const item21 = 21;
+      22 -export const item22 = 22;
+      23 -export const item23 = 23;
+       4 +export const item4 = 104;
+       5 +export const item5 = 105;
+       6 +export const item6 = 106;
+       7 +export const item7 = 107;
+       8 +export const item8 = 108;
+       9 +export const item9 = 109;
+      10 +export const item10 = 110;
+      11 +export const item11 = 111;
+      12 +export const item12 = 112;
+      13 +export const item13 = 113;
+      14 +export const item14 = 114;
+      15 +export const item15 = 115;
+      16 +export const item16 = 116;
+      17 +export const item17 = 117;
+      18 +export const item18 = 118;
+      19 +export const item19 = 119;
+      20 +export const item20 = 120;
+      21 +export const item21 = 121;
+      22 +export const item22 = 122;
+      23 +export const item23 = 123;
+      24  export const item24 = 24;
+      25  export const item25 = 25;
+      26  export const item26 = 26;
+
+● PROBE_COMPLETE
+
+✻ Cogitated for 0s · done 10:16 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ don't ask on (shift+tab to cycle) · ← for agents                                                 ● high · /effort

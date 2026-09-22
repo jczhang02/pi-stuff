@@ -1,0 +1,30 @@
+{
+  "scenario": "edit",
+  "cols": 120,
+  "rows": 42,
+  "modeCommand": "/tui default",
+  "steps": [
+    [
+      {
+        "type": "tool_use",
+        "id": "read_one",
+        "name": "Read",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-te6zzT/project/sample.ts"
+        }
+      }
+    ],
+    [
+      {
+        "type": "tool_use",
+        "id": "edit_one",
+        "name": "Edit",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-te6zzT/project/sample.ts",
+          "old_string": "  return items.length;",
+          "new_string": "  const unique = new Set(items);\n  return unique.size;"
+        }
+      }
+    ]
+  ]
+}

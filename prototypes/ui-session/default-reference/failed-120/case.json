@@ -1,0 +1,19 @@
+{
+  "scenario": "failed",
+  "cols": 120,
+  "rows": 42,
+  "modeCommand": "/tui default",
+  "steps": [
+    [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "printf 'invalid cursor\\n' >&2; exit 3",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  ]
+}
