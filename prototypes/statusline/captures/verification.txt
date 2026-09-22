@@ -1,36 +1,36 @@
-catppuccin-latte/base/150: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  ↑120k ↓28k  |  est $0.92
-catppuccin-latte/base/100: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  ↑120k ↓28k
-catppuccin-latte/base/80: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%
-catppuccin-latte/base/50: ctx 31% ━━━━━━━━━━  |  hit 83.8%
-catppuccin-latte/base/150: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  ↑120k ↓28k  |  est $0.92
+catppuccin-latte/base/150: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% ↑120k ↓28k est $0.92
+catppuccin-latte/base/100: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% ↑120k ↓28k est $0.92
+catppuccin-latte/base/80: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% est $0.92
+catppuccin-latte/base/50: ~/dev/pi-stuff main* ctx 31% ━━━━━━━━━━ hit 83.8%
+catppuccin-latte/base/150: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% ↑120k ↓28k est $0.92
 catppuccin-latte/base: editing, submit, cancel, resubmit passed
-catppuccin-latte/extended/150: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active  |  Codex used 5h 41% · week 63%  |  ↑120k ↓28k
-catppuccin-latte/extended/100: gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active
-catppuccin-latte/extended/80: gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active
-catppuccin-latte/extended/50: ctx 31% ━━━━━━━━━━  |  hit 83.8%
-catppuccin-latte/extended/150: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active  |  Codex used 5h 41% · week 63%  |  ↑120k ↓28k
+catppuccin-latte/extended/150: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active Codex used 5h 41% · week 63% ↑120k ↓28k est $0.92
+catppuccin-latte/extended/100: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active ↑120k ↓28k
+catppuccin-latte/extended/80: ~/dev/pi-stuff gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active
+catppuccin-latte/extended/50: ~/dev/pi-stuff main* ctx 31% ━━━━━━━━━━ hit 83.8%
+catppuccin-latte/extended/150: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active Codex used 5h 41% · week 63% ↑120k ↓28k est $0.92
 catppuccin-latte/extended: editing, submit, cancel, resubmit passed
-catppuccin-latte/long/150: 研究工具/pi-stuff-statusline  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active  |  Codex used 5h 41% · week 63%
-catppuccin-latte/long/100: gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active
-catppuccin-latte/long/80: gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active
-catppuccin-latte/long/50: ctx 31% ━━━━━━━━━━  |  hit 83.8%
-catppuccin-latte/long/150: 研究工具/pi-stuff-statusline  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active  |  Codex used 5h 41% · week 63%
+catppuccin-latte/long/150: ~/dev/研究工具/pi-stuff-statusline gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active Codex used 5h 41% · week 63% ↑120k ↓28k est $0.92
+catppuccin-latte/long/100: ~/dev/研究工具/pi-stuff-statusline gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active
+catppuccin-latte/long/80: ~/dev/研究工具/pi-stuff-statusline ctx 31% ━━━━━━━━━━ hit 83.8% goal active
+catppuccin-latte/long/50: ~/dev/研究工具/pi-stuff-statusline hit 83.8%
+catppuccin-latte/long/150: ~/dev/研究工具/pi-stuff-statusline gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active Codex used 5h 41% · week 63% ↑120k ↓28k est $0.92
 catppuccin-latte/long: editing, submit, cancel, resubmit passed
-catppuccin-mocha/base/150: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  ↑120k ↓28k  |  est $0.92
-catppuccin-mocha/base/100: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  ↑120k ↓28k
-catppuccin-mocha/base/80: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%
-catppuccin-mocha/base/50: ctx 31% ━━━━━━━━━━  |  hit 83.8%
-catppuccin-mocha/base/150: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  ↑120k ↓28k  |  est $0.92
+catppuccin-mocha/base/150: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% ↑120k ↓28k est $0.92
+catppuccin-mocha/base/100: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% ↑120k ↓28k est $0.92
+catppuccin-mocha/base/80: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% est $0.92
+catppuccin-mocha/base/50: ~/dev/pi-stuff main* ctx 31% ━━━━━━━━━━ hit 83.8%
+catppuccin-mocha/base/150: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% ↑120k ↓28k est $0.92
 catppuccin-mocha/base: editing, submit, cancel, resubmit passed
-catppuccin-mocha/extended/150: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active  |  Codex used 5h 41% · week 63%  |  ↑120k ↓28k
-catppuccin-mocha/extended/100: gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active
-catppuccin-mocha/extended/80: gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active
-catppuccin-mocha/extended/50: ctx 31% ━━━━━━━━━━  |  hit 83.8%
-catppuccin-mocha/extended/150: pi-stuff  |  main*  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active  |  Codex used 5h 41% · week 63%  |  ↑120k ↓28k
+catppuccin-mocha/extended/150: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active Codex used 5h 41% · week 63% ↑120k ↓28k est $0.92
+catppuccin-mocha/extended/100: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active ↑120k ↓28k
+catppuccin-mocha/extended/80: ~/dev/pi-stuff gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active
+catppuccin-mocha/extended/50: ~/dev/pi-stuff main* ctx 31% ━━━━━━━━━━ hit 83.8%
+catppuccin-mocha/extended/150: ~/dev/pi-stuff main* gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active Codex used 5h 41% · week 63% ↑120k ↓28k est $0.92
 catppuccin-mocha/extended: editing, submit, cancel, resubmit passed
-catppuccin-mocha/long/150: 研究工具/pi-stuff-statusline  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active  |  Codex used 5h 41% · week 63%
-catppuccin-mocha/long/100: gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active
-catppuccin-mocha/long/80: gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active
-catppuccin-mocha/long/50: ctx 31% ━━━━━━━━━━  |  hit 83.8%
-catppuccin-mocha/long/150: 研究工具/pi-stuff-statusline  |  gpt-6-astra · medium  |  ctx 31% ━━━━━━━━━━  |  hit 83.8%  |  goal active  |  Codex used 5h 41% · week 63%
+catppuccin-mocha/long/150: ~/dev/研究工具/pi-stuff-statusline gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active Codex used 5h 41% · week 63% ↑120k ↓28k est $0.92
+catppuccin-mocha/long/100: ~/dev/研究工具/pi-stuff-statusline gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active
+catppuccin-mocha/long/80: ~/dev/研究工具/pi-stuff-statusline ctx 31% ━━━━━━━━━━ hit 83.8% goal active
+catppuccin-mocha/long/50: ~/dev/研究工具/pi-stuff-statusline hit 83.8%
+catppuccin-mocha/long/150: ~/dev/研究工具/pi-stuff-statusline gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8% goal active Codex used 5h 41% · week 63% ↑120k ↓28k est $0.92
 catppuccin-mocha/long: editing, submit, cancel, resubmit passed

@@ -28,13 +28,15 @@ export function renderFooter(
     theme.fg('thinkingMedium', '━'.repeat(filled)) +
     theme.fg('borderMuted', '━'.repeat(10 - filled));
   const project =
-    state.scenario === 'long' ? '研究工具/pi-stuff-statusline' : 'pi-stuff';
+    state.scenario === 'long'
+      ? '~/dev/研究工具/pi-stuff-statusline'
+      : '~/dev/pi-stuff';
   const branch =
     state.scenario === 'long'
       ? 'codex/statusline-responsive-prototype'
       : 'main*';
   const fields: Field[] = [
-    {id: 'project', priority: 40, text: theme.bold(project)},
+    {id: 'project', priority: 110, text: theme.bold(project)},
     {id: 'branch', priority: 30, text: theme.fg('success', branch)},
     {
       id: 'model',
@@ -73,12 +75,13 @@ export function renderFooter(
     },
   );
 
-  const separator = theme.fg('dim', '  |  ');
+  const separator = ' ';
   const selected = new Set<string>();
   let used = 0;
   for (const field of [...fields].sort((a, b) => b.priority - a.priority)) {
-    const needed = visibleWidth(field.text) + (selected.size > 0 ? 5 : 0);
-    if (used + needed > width) break;
+    const needed =
+      visibleWidth(field.text) + (selected.size > 0 ? separator.length : 0);
+    if (used + needed > width) continue;
     selected.add(field.id);
     used += needed;
   }

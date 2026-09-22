@@ -21,7 +21,7 @@ async function capture(session: Session, name: string): Promise<string> {
     snapshot =>
       snapshot.text
         .split('\n')
-        .some(line => /ctx 31% ━{10}  \|  hit 83\.8%/u.test(line)),
+        .some(line => line.startsWith('~/dev/') && line.includes('hit 83.8%')),
     {timeoutMs: 5000},
   );
   const snapshot = await session.screen.capture({
@@ -33,7 +33,13 @@ async function capture(session: Session, name: string): Promise<string> {
   const lines = snapshot.text.split('\n');
   const footer = lines.filter(line => line.includes('hit 83.8%'));
   assert.equal(footer.length, 1, snapshot.text);
-  assert.match(footer[0] ?? '', /ctx 31% ━{10}/u);
+  const text = footer[0]?.trimEnd() ?? '';
+  assert.doesNotMatch(
+    text,
+    / {2}|\|/u,
+    'No repeated spaces or separator clutter',
+  );
+  if (text.includes('ctx')) assert.match(text, /ctx 31% ━{10}/u);
   assert.doesNotMatch(footer[0] ?? '', /\+\d/u);
   const path = join(output, name);
   assert.ok(snapshot.ansi);
@@ -110,8 +116,25 @@ await runEffect(async () => {
               );
               evidence.push(`${theme}/${scenario}/${cols}: ${footer}`);
               if (cols === 50) {
-                assert.match(footer, /^ctx 31% ━{10}  \|  hit 83\.8%\s*$/u);
+                if (scenario === 'long') {
+                  assert.equal(
+                    footer.trimEnd(),
+                    '~/dev/研究工具/pi-stuff-statusline hit 83.8%',
+                  );
+                } else {
+                  assert.match(
+                    footer,
+                    /^~\/dev\/pi-stuff main\* ctx 31% ━{10} hit 83\.8%\s*$/u,
+                  );
+                }
               }
+              assert.ok(
+                footer.startsWith(
+                  scenario === 'long'
+                    ? '~/dev/研究工具/pi-stuff-statusline '
+                    : '~/dev/pi-stuff ',
+                ),
+              );
               if (cols === 150)
                 assert.equal(footer, wide, 'Fields must restore after resize');
             }
