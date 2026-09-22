@@ -5,11 +5,13 @@ import {ConfigurationFile} from './src/pi/configuration-file';
 import {registerWeb} from './src/web/register';
 import {registerRtk} from './src/rtk/register';
 import {registerRtkPanel} from './src/rtk/panel';
+import {registerUi} from './src/ui/register';
 
 export default async function (pi: ExtensionAPI) {
   const configuration = await Effect.runPromise(
     ConfigurationFile.load(join(getAgentDir(), 'pi-stuff.json')),
   );
+  registerUi(pi);
   registerWeb(pi, configuration.value.web ?? {}, configuration.value.tools);
   const rtk = registerRtk(pi, configuration.value.rtk ?? {});
   registerRtkPanel(pi, rtk, async settings => {
