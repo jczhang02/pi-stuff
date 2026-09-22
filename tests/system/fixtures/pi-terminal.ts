@@ -43,6 +43,8 @@ export async function launchPi(
   let args = '{}';
   let turn = 0;
   let result = '';
+  let response: {text: string; thinking: string} | undefined;
+  let sentAssistant = '';
   let reloads = 0;
   let offered: string[] = [];
   let remaining: {name: string; parameters: string}[] = [];
@@ -59,6 +61,10 @@ export async function launchPi(
         return new Response(null, {status: 404});
       const body = Schema.decodeUnknownSync(Request)(await request.json());
       offered = body.tools?.map(tool => tool.function.name) ?? [];
+      const previous = body.messages.findLast(
+        message => message.role === 'assistant',
+      );
+      sentAssistant = JSON.stringify(previous?.content ?? null);
       const last = body.messages.at(-1);
       const next = last?.role === 'tool' ? remaining.shift() : undefined;
       if (next) {
@@ -72,7 +78,7 @@ export async function launchPi(
           ? last.content
           : JSON.stringify(last.content);
       const delta = finished
-        ? {content: `RTK_TURN_${turn}_DONE`}
+        ? {content: response?.text ?? `RTK_TURN_${turn}_DONE`}
         : {
             tool_calls: [{name: tool, parameters: args}, ...simultaneous].map(
               (call, index) => ({
@@ -90,8 +96,21 @@ export async function launchPi(
         model: 'fixture',
         choices: [{index: 0, delta, finish_reason: null}],
       };
+      const thinking =
+        finished && response?.thinking
+          ? `data: ${JSON.stringify({
+              ...chunk,
+              choices: [
+                {
+                  index: 0,
+                  delta: {reasoning_content: response.thinking},
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`
+          : '';
       return new Response(
-        `data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({
+        `${thinking}data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({
           ...chunk,
           choices: [
             {
@@ -225,6 +244,12 @@ export async function launchPi(
       await screen.keyboard.type(text.includes(' ') ? `${text} ` : text);
       await screen.keyboard.press('Enter');
     }
+    async function submit() {
+      result = '';
+      turn++;
+      await screen.keyboard.type(`Run RTK turn ${turn}`);
+      await screen.keyboard.press('Enter');
+    }
     async function start(
       name: string,
       parameters: string,
@@ -236,10 +261,8 @@ export async function launchPi(
       callIndex = 0;
       tool = name;
       args = parameters;
-      result = '';
-      turn++;
-      await screen.keyboard.type(`Run RTK turn ${turn}`);
-      await screen.keyboard.press('Enter');
+      response = undefined;
+      await submit();
     }
     return {
       directory,
@@ -248,6 +271,14 @@ export async function launchPi(
       close,
       command,
       start,
+      sentAssistant: () => sentAssistant,
+      async startResponse(text: string, thinking = '') {
+        tool = '';
+        remaining = [];
+        simultaneous = [];
+        response = {text, thinking};
+        await submit();
+      },
       async startParallel(calls: {name: string; parameters: string}[]) {
         const [first, ...parallel] = calls;
         if (!first) throw new Error('A batch needs at least one call');

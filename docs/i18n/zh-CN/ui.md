@@ -4,6 +4,8 @@
 
 [已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. assistant/Thoughts 展示尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
 
+[Assistant 集成证据](ui-integration.md)记录公开 API 限制、真实截图和待决兼容方案, 其中的实验截图不是目标设计.
+
 ## 欢迎页
 
 欢迎页通过 Pi 的公开 `setHeader` 使用旧版直角框构图, 窄屏改为单栏. 模型、provider、目录、启用工具数以及可调用的 skills/扩展命令数量来自当前宿主. 公开接口没有完整扩展数量, 因此不沿用原型中的示例扩展计数. 首条消息后隐藏欢迎页, 已有会话不再显示; 原生资源列表、用户消息、输入和 footer 保持不变. `ui.welcome: false` 可单独保留原生欢迎内容.
