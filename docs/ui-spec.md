@@ -22,6 +22,8 @@ Expose useful presentation options as configuration, with defaults matching the 
 
 Use the new presentation for Pi built-in tools and Pi Stuff tools. Preserve existing third-party custom renderers by default. Provide explicit per-tool takeover options; only opted-in tools use the generic presentation.
 
+Retrieval grouping remains a first-release implementation target. The absence of a direct public grouping API alone does not justify dropping it. Revisit the trade-off only when real testing demonstrates substantial regressions, such as interaction stutter or significantly slower session resume, using concrete measurements.
+
 ## Conversation frame and messages
 
 ### Welcome, user messages and footer
