@@ -72,7 +72,7 @@ Edit and Write, Default, latte, 120 columns
 
 ### Retrieval grouping and alignment
 
-Successful Read/Grep/Find/Ls and WebSearch/WebFetch/WebRead form an activity summary starting with the first eligible success. Click the summary to reveal chronological compact tools; click one tool to inspect its body. Expanded tools align with ordinary tool rows, without extra nesting. The summary has a status dot and no ⎿. User turns, visible prose, Thoughts, ordinary Bash, writes, warnings, failure and cancellation separate groups. Running calls stay visible until success.
+Successful Read/Grep/Find/Ls and WebSearch/WebFetch/WebRead form an activity summary starting with the first eligible success. Click the summary to reveal chronological compact tools; click one tool to inspect its body. Expanded tools align with ordinary tool rows, without extra nesting. The summary has a status dot and no ⎿. User turns, visible prose, Thoughts, ordinary Bash, writes, warnings, failure and cancellation separate groups. Running calls stay visible until success. Retain Ls for actual `ls` tool calls, including its existing grouped and expanded presentation. A shell `ls` command invoked through Bash remains Bash.
 
 Retrieval grouping, Default, latte, 120 columns
 
