@@ -2,48 +2,13 @@
 
 [English](../../../research/conversation-coverage-2026-09-20.md)
 
-本轮回答两件事: 当前哪些输出需要 conversation UI 覆盖, 以及 edit 如何同时保留语法高亮和改动结构. 延续 #99 与草稿 PR #100, 仍是讨论材料, 不是已接受的生产规格.
-
-这是保留的原生输出盘点. 下方历史 diff 候选仅作参考, 当前设计统一见 [UI spec](../ui-spec.md).
+盘点基线产品中会进入会话的内容, 并保留 diff 布局的来源比较. 当前显示规则见 [UI spec](../ui-spec.md).
 
 ## 基线与范围
 
 当时检查的产品基线为 `cd0f174`, 与预览分支的产品基线一致. 本地 Pi 为 0.85.1, Bun 为 1.4.0. `index.ts` 注册 Web 和 RTK. 用户、assistant、工具及会话摘要的大部分展示由 Pi 提供. 旧 Pi Stuff 和外部包提供参考, 不代表它们的功能已进入当前 Pi Stuff.
 
 Todo、subagents、Goal、后台任务、BTW 和会话命名继续排除在设计工作外. 当前会话内已有的错误和诊断提示仍需列出, 这不等于新增通知系统. 不恢复独立工具检查器, 生产详情入口继续复用 Pi 原生单工具点击展开.
-
-## 三种 diff 方案
-
-三种方案使用完全相同的代码: 五行函数变为七行, 一行替换成三行, `+3 −1`. 先保留页内去重, 再过滤上一页已出现的 ID. 文件路径、用户请求、解释和测试状态保持一致. 每种方案均有 120 列明暗主题与 80 列浅色图, 见[画廊](../../../../prototypes/ui-session/native-reference/README.md).
-
-| 候选          | 结构                                            | 适合                   | 代价                     |
-| ------------- | ----------------------------------------------- | ---------------------- | ------------------------ |
-| A: 统一 diff  | 旧/新双行号、增删符号、语法颜色, 新逻辑加下划线 | 连续阅读与窄终端       | 替换行需要上下对照       |
-| B: 左右对照   | 旧/新列对齐换行, 小于 110 列回退统一 diff       | 相邻字段、类型签名比较 | 需要宽度, 对齐时产生空行 |
-| C: 前后代码块 | 完整旧块后接完整新块, 仅变化行标增删            | 阅读修改后的完整函数   | 重复上下文, 占用更多高度 |
-
-A 更适合作为会话密度的起点. B、C 保留为备选, 不自动成为功能要求. 最终按图片讨论.
-
-预览对完整前后代码块调用 Pi `highlightCode`, 换行时保留 ANSI 语法颜色. 增删由行号栏和符号表达, 不再用整行红绿覆盖语法颜色. 下划线范围按样例中的新逻辑指定, 不代表已实现通用 diff 解析器、自动词级匹配或大文件性能保障. 保留的候选会话里, Read 代码片段也加入语法高亮.
-
-## 参考来源的作用
-
-Pi 当前 `renderDiff` 对增删整行着色, 仅一删一增时使用词级反色强调, `filePath` 参数未使用. 已导出的语法高亮和 ANSI 宽度工具足以支撑本次原型, 无需新依赖.
-
-Codex 和 Gemini 将行号、语法颜色与换行组合使用. OpenCode 根据宽度切换 split/unified, 已查源码的阈值是大于 120 列; 本原型单独试验 110 列回退. pi-tidy-tools 提供紧凑会话块和宽度适配参考, 但其 diff 着色本身没有语法高亮. C 的完整前后分块是本地提案, 不是上游默认界面的复刻.
-
-| 来源                      | 一手依据                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pi 0.85.1                 | [diff renderer](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/modes/interactive/components/diff.ts), [syntax highlighting](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/modes/interactive/theme/theme.ts), [width utilities](https://github.com/earendil-works/pi/blob/v0.85.1/packages/tui/src/utils.ts) |
-| Codex                     | [diff_render.rs](https://github.com/openai/codex/blob/5c5308fc9a9ee789049d646ef11e5400384b9c6f/codex-rs/tui/src/diff_render.rs)                                                                                                                                                                                                                                        |
-| Gemini CLI                | [DiffRenderer.tsx](https://github.com/google-gemini/gemini-cli/blob/cfbcaa8df13ea4610bb379b377b56d62980c0032/packages/cli/src/ui/components/messages/DiffRenderer.tsx)                                                                                                                                                                                                 |
-| OpenCode                  | [permission.tsx](https://github.com/anomalyco/opencode/blob/ebb7b76eca82342642c78645109e865614533827/packages/tui/src/routes/session/permission.tsx)                                                                                                                                                                                                                   |
-| pi-tidy-tools             | [block-render.ts](https://github.com/mikeyobrien/pi-tidy-tools/blob/da148ac7f33371d9855632ea62f288ba929357d0/packages/pi-tidy-tools/block-render.ts)                                                                                                                                                                                                                   |
-| pi-diff 0.9.1             | [syntax, row and word layers](https://github.com/buddingnewinsights/pi-diff/blob/79b00a7bd7c85405f7fbbab047c00457a51f44a9/src/index.ts)                                                                                                                                                                                                                                |
-| pi-tool-display 0.5.0     | [Pi highlighter and ANSI span overlay](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/diff-renderer.ts), [adaptive presentation](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/diff-presentation.ts)                                                                      |
-| @pi-archimedes/diff 2.7.3 | [split](https://github.com/danielcherubini/pi-archimedes/blob/2a1519b65883f866bc52f835879028e23771ae90/packages/diff/src/render/split.ts), [unified](https://github.com/danielcherubini/pi-archimedes/blob/2a1519b65883f866bc52f835879028e23771ae90/packages/diff/src/render/unified.ts)                                                                               |
-
-pi-diff 分开处理语法前景色、变更行背景和词级强调. pi-tool-display 直接使用 Pi highlightCode, 按可见列叠加强调并保留 ANSI 颜色. 两者都有会话内 split/unified 布局, pi-archimedes 提供第三份语法高亮参考. pi-diff 和 pi-archimedes 所需的 Shiki 依赖未安装; pi-tool-display 的 peer 范围只声明到 Pi 0.80.x. 这里只参考源码, 不声称它们可直接接入 Pi 0.85.1, 也没有新增依赖.
 
 ## 当前输出的证据边界
 
@@ -115,3 +80,36 @@ Web 样例向 Pi 传入当前 createWebTools 的真实工具定义, 不调用 ex
 | [Conditional Earendil announcement](../../../../prototypes/ui-session/native-reference/catalog-host-earendil-catppuccin-latte-120x40-main.png)                   | conditional appendix      | Pi /dementedelves command, actual host component                                                 |
 | [Conditional Armin animation](../../../../prototypes/ui-session/native-reference/catalog-host-armin-catppuccin-latte-120x40-main.png)                            | conditional appendix      | Pi /arminsayshi command, actual host component                                                   |
 | [Conditional OpenCode / Kimi announcement](../../../../prototypes/ui-session/native-reference/catalog-host-daxnuts-catppuccin-latte-120x40-main.png)             | conditional appendix      | Pi opencode + kimi-k2.5 model selection condition, actual host component                         |
+
+## 三种 diff 方案
+
+三种方案使用完全相同的代码: 五行函数变为七行, 一行替换成三行, `+3 −1`. 先保留页内去重, 再过滤上一页已出现的 ID. 文件路径、用户请求、解释和测试状态保持一致. 每种方案均有 120 列明暗主题与 80 列浅色图, 见[画廊](../../../../prototypes/ui-session/native-reference/README.md).
+
+| 候选          | 结构                                            | 适合                   | 代价                     |
+| ------------- | ----------------------------------------------- | ---------------------- | ------------------------ |
+| A: 统一 diff  | 旧/新双行号、增删符号、语法颜色, 新逻辑加下划线 | 连续阅读与窄终端       | 替换行需要上下对照       |
+| B: 左右对照   | 旧/新列对齐换行, 小于 110 列回退统一 diff       | 相邻字段、类型签名比较 | 需要宽度, 对齐时产生空行 |
+| C: 前后代码块 | 完整旧块后接完整新块, 仅变化行标增删            | 阅读修改后的完整函数   | 重复上下文, 占用更多高度 |
+
+A 更适合作为会话密度的起点. B、C 保留为备选, 不自动成为功能要求. 最终按图片讨论.
+
+预览对完整前后代码块调用 Pi `highlightCode`, 换行时保留 ANSI 语法颜色. 增删由行号栏和符号表达, 不再用整行红绿覆盖语法颜色. 下划线范围按样例中的新逻辑指定, 不代表已实现通用 diff 解析器、自动词级匹配或大文件性能保障. 保留的候选会话里, Read 代码片段也加入语法高亮.
+
+## 参考来源的作用
+
+Pi 当前 `renderDiff` 对增删整行着色, 仅一删一增时使用词级反色强调, `filePath` 参数未使用. 已导出的语法高亮和 ANSI 宽度工具足以支撑本次原型, 无需新依赖.
+
+Codex 和 Gemini 将行号、语法颜色与换行组合使用. OpenCode 根据宽度切换 split/unified, 已查源码的阈值是大于 120 列; 本原型单独试验 110 列回退. pi-tidy-tools 提供紧凑会话块和宽度适配参考, 但其 diff 着色本身没有语法高亮. C 的完整前后分块是本地提案, 不是上游默认界面的复刻.
+
+| 来源                      | 一手依据                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pi 0.85.1                 | [diff renderer](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/modes/interactive/components/diff.ts), [syntax highlighting](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/modes/interactive/theme/theme.ts), [width utilities](https://github.com/earendil-works/pi/blob/v0.85.1/packages/tui/src/utils.ts) |
+| Codex                     | [diff_render.rs](https://github.com/openai/codex/blob/5c5308fc9a9ee789049d646ef11e5400384b9c6f/codex-rs/tui/src/diff_render.rs)                                                                                                                                                                                                                                        |
+| Gemini CLI                | [DiffRenderer.tsx](https://github.com/google-gemini/gemini-cli/blob/cfbcaa8df13ea4610bb379b377b56d62980c0032/packages/cli/src/ui/components/messages/DiffRenderer.tsx)                                                                                                                                                                                                 |
+| OpenCode                  | [permission.tsx](https://github.com/anomalyco/opencode/blob/ebb7b76eca82342642c78645109e865614533827/packages/tui/src/routes/session/permission.tsx)                                                                                                                                                                                                                   |
+| pi-tidy-tools             | [block-render.ts](https://github.com/mikeyobrien/pi-tidy-tools/blob/da148ac7f33371d9855632ea62f288ba929357d0/packages/pi-tidy-tools/block-render.ts)                                                                                                                                                                                                                   |
+| pi-diff 0.9.1             | [syntax, row and word layers](https://github.com/buddingnewinsights/pi-diff/blob/79b00a7bd7c85405f7fbbab047c00457a51f44a9/src/index.ts)                                                                                                                                                                                                                                |
+| pi-tool-display 0.5.0     | [Pi highlighter and ANSI span overlay](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/diff-renderer.ts), [adaptive presentation](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/diff-presentation.ts)                                                                      |
+| @pi-archimedes/diff 2.7.3 | [split](https://github.com/danielcherubini/pi-archimedes/blob/2a1519b65883f866bc52f835879028e23771ae90/packages/diff/src/render/split.ts), [unified](https://github.com/danielcherubini/pi-archimedes/blob/2a1519b65883f866bc52f835879028e23771ae90/packages/diff/src/render/unified.ts)                                                                               |
+
+pi-diff 分开处理语法前景色、变更行背景和词级强调. pi-tool-display 直接使用 Pi highlightCode, 按可见列叠加强调并保留 ANSI 颜色. 两者都有会话内 split/unified 布局, pi-archimedes 提供第三份语法高亮参考. pi-diff 和 pi-archimedes 所需的 Shiki 依赖未安装; pi-tool-display 的 peer 范围只声明到 Pi 0.80.x. 这里只参考源码, 不声称它们可直接接入 Pi 0.85.1, 也没有新增依赖.

@@ -2,9 +2,9 @@
 
 [UI spec](../../docs/ui-spec.md) · [中文 UI spec](../../docs/i18n/zh-CN/ui-spec.md) · [Research](../../docs/research/README.md) · [中文 research](../../docs/i18n/zh-CN/research/README.md) · [All captures / 全部截图](captures/README.md)
 
-This is the runnable, offline prototype for issue #101 and draft PR #102. Current design rules and selected screenshots live in the UI spec. This directory owns its welcome renderer, fixtures, interaction code and verification tools. No production entrypoint loads it.
+Run the conversation prototype here. The UI spec contains its design rules and screenshots; research records their sources. Tracked in #101 and draft PR #102.
 
-这是 #101 / 草稿 PR #102 的可运行离线原型. 当前设计规则与精选截图统一在 UI spec. 本目录包含欢迎页、样例、交互代码及验证工具, 生产入口不加载.
+本目录用于运行会话原型. 设计规则和截图见 UI spec, 来源见研究索引. 对应 #101 / 草稿 PR #102.
 
 ## Run / 启动
 
@@ -30,7 +30,17 @@ Click a group, tool or Thoughts to toggle that entry. Ctrl+O toggles tools only;
 
 点击组、工具或 Thoughts 切换单项. Ctrl+O 只切换工具, 原生 Ctrl+T 或 /settings 控制 Hide thinking. 保留草稿与原生历史滚动. 前台缩放需调整外层终端, CLI resize 不调整 foreground run.
 
-## Scenes / 场景
+## Environment and limits / 环境与边界
+
+Pi 0.85.1 / Bun 1.4.0 / Terminal Control 1.2.1. The launcher inherits Pi theme and hideThinkingBlock, supports Catppuccin Latte/Mocha, and requires an explicit supported theme for other/automatic themes. It emits no terminal palette setters or resets and does not change Ghostty configuration. Isolated settings, working and session directories are deleted on exit. Only headless captures set their own PTY palette.
+
+启动继承 Pi theme 与 hideThinkingBlock, 支持 Catppuccin Latte/Mocha, 其他或自动主题须显式指定受支持主题. 不发送终端配色设置或重置指令, 不修改 Ghostty. 隔离配置、工作与会话目录在退出后删除, 只有无头截图设置自己的 PTY 配色.
+
+The editor, display, mouse, scrolling, timers and cancellation controls run in real Pi. Model replies, tools, Web pages, tests, labels and timings are fixed samples. This is not arbitrary language understanding, real provider execution, a general diff algorithm, production persistence or native desktop-compositor acceptance. Native aborted presentation is reused; provider/tool cancellation remains simulated.
+
+编辑器、显示、鼠标、滚动、计时和取消控制在真实 Pi 中运行. 模型回复、工具、网页、测试、标签及耗时为固定样例. 不代表任意自然语言理解、真实提供方执行、通用 diff 算法、生产持久化或原生桌面验收. 中断复用原生展示, 提供方/工具取消仍为模拟.
+
+## Choose a scene / 选择场景
 
 | Name                            | Question                                                                                                      |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -52,16 +62,6 @@ Click a group, tool or Thoughts to toggle that entry. Ctrl+O toggles tools only;
 | `empty`                         | Are no output, command cancellation and image fallback honest?                                                |
 | `replay`                        | Does execution settle into compact output, and does Esc stop it?                                              |
 
-## Environment and limits / 环境与边界
-
-Pi 0.85.1 / Bun 1.4.0 / Terminal Control 1.2.1. The launcher inherits Pi theme and hideThinkingBlock, supports Catppuccin Latte/Mocha, and requires an explicit supported theme for other/automatic themes. It emits no terminal palette setters or resets and does not change Ghostty configuration. Isolated settings, working and session directories are deleted on exit. Only headless captures set their own PTY palette.
-
-启动继承 Pi theme 与 hideThinkingBlock, 支持 Catppuccin Latte/Mocha, 其他或自动主题须显式指定受支持主题. 不发送终端配色设置或重置指令, 不修改 Ghostty. 隔离配置、工作与会话目录在退出后删除, 只有无头截图设置自己的 PTY 配色.
-
-The editor, display, mouse, scrolling, timers and cancellation controls run in real Pi. Model replies, tools, Web pages, tests, labels and timings are fixed samples. This is not arbitrary language understanding, real provider execution, a general diff algorithm, production persistence or native desktop-compositor acceptance. Native aborted presentation is reused; provider/tool cancellation remains simulated.
-
-编辑器、显示、鼠标、滚动、计时和取消控制在真实 Pi 中运行. 模型回复、工具、网页、测试、标签及耗时为固定样例. 不代表任意自然语言理解、真实提供方执行、通用 diff 算法、生产持久化或原生桌面验收. 中断复用原生展示, 提供方/工具取消仍为模拟.
-
 ## Capture and verification / 截图与验证
 
 ```sh
@@ -76,8 +76,8 @@ bun run check
 git diff --check
 ```
 
-The foreground verifier's inherited-theme case requires supported Pi settings; use disposable Catppuccin settings if the host uses another theme. The capture driver checks text, palette, clipping and selected interactions, exports PNG/ANSI/TXT and closes owned sessions. Update the Markdown capture appendix when adding states. No HTML generator is retained.
+The foreground verifier's inherited-theme case requires supported Pi settings; use disposable Catppuccin settings if the host uses another theme. The capture driver checks text, palette, clipping and selected interactions, exports PNG/ANSI/TXT and closes owned sessions. Update the Markdown capture appendix when adding states.
 
-前台验证的继承主题场景要求受支持的 Pi 设置; 宿主使用其他主题时用临时 Catppuccin 设置验证. 截图驱动检查文本、配色、裁切和所选交互, 导出 PNG/ANSI/TXT 后关闭自建会话. 新增状态后更新 Markdown 截图附录. 不再保留 HTML 生成器.
+前台验证的继承主题场景要求受支持的 Pi 设置; 宿主使用其他主题时用临时 Catppuccin 设置验证. 截图驱动检查文本、配色、裁切和所选交互, 导出 PNG/ANSI/TXT 后关闭自建会话. 新增状态后更新 Markdown 截图附录.
 
 Export font: `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`.

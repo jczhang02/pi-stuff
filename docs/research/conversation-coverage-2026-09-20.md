@@ -2,48 +2,13 @@
 
 [简体中文](../i18n/zh-CN/research/conversation-coverage-2026-09-20.md)
 
-This revision answers two questions: which current outputs need conversation UI coverage, and how an edit can preserve syntax highlighting without losing the change structure. It extends #99 and draft PR #100. These are review artifacts, not an accepted production specification.
-
-This is the retained native-output inventory. Historical diff alternatives below are reference only; current design is in the [UI spec](../ui-spec.md).
+This inventory records the conversation output at the product baseline and the sources behind the diff comparison. See the [UI spec](../ui-spec.md) for current display rules.
 
 ## Baseline and scope
 
 The inspected product baseline was `cd0f174`, matching the product baseline of the retained preview branch. Installed Pi is 0.85.1 and Bun is 1.4.0. `index.ts` registers Web and RTK. Pi owns the native user/assistant/tool and session-summary presentation. Old Pi Stuff and external packages provide references; their presence in research does not make their features current Pi Stuff capabilities.
 
 Todo, subagents, Goal, background jobs, BTW and session naming remain excluded from design work. Existing in-conversation errors and diagnostic notices are included as current output, not as a new notification subsystem. There is no independent tool inspector. Native per-tool click expansion remains the intended production detail path.
-
-## Diff alternatives
-
-All three views show the same five-line function becoming seven lines: one line replaced by three, `+3 −1`. The previous-page ID set filters already seen results after within-page deduplication. File path, request, surrounding explanation and test state stay identical. Each option has 120-column light/dark and 80-column light captures in the [gallery](../../prototypes/ui-session/native-reference/README.md).
-
-| Candidate        | Structure                                                                                         | Useful for                                | Cost                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------ |
-| A: unified       | Old/new line-number gutters, colored signs, syntax-colored content, selected new logic underlined | Continuous reading and narrow terminals   | Replacement pairs require vertical comparison    |
-| B: split         | Old and new columns with aligned wrapped rows; unified below 110 columns                          | Comparing nearby fields or signatures     | Requires width; adds blank rows to align changes |
-| C: paired blocks | Complete before block, then complete after block; only changed lines carry signs                  | Reading the resulting function as a whole | Repeats context and consumes more height         |
-
-A is the most conservative starting point for conversation density. B and C remain alternatives, not automatic feature requirements. The screenshots are the decision material.
-
-The preview uses Pi `highlightCode` on complete before/after blocks and keeps the resulting ANSI tokens through wrapping. Gutter colors carry add/remove meaning; syntax colors are not replaced by whole-line red/green. Underlined ranges are fixture-selected semantic changes. This is not a production diff parser, automatic word matcher or large-file performance test. Read excerpts in the retained candidate conversation also use syntax highlighting.
-
-## What the references contribute
-
-Pi's current `renderDiff` colors whole added/removed lines, and only uses word-level inverse emphasis for a one-line deletion followed by a one-line addition. Its `filePath` option is unused. Its exported syntax highlighter and ANSI-width helpers provide the necessary building blocks without new dependencies.
-
-Codex and Gemini combine line numbers, syntax spans and wrapping. OpenCode selects split/unified according to available width; its checked threshold is greater than 120 columns, while this prototype tests its own 110-column fallback. pi-tidy-tools contributes compact transcript blocks and width-aware rendering, but its diff colors alone do not supply syntax highlighting. C's complete before/after grouping is a local proposal, not a claim about an upstream default.
-
-| Source                    | Primary evidence                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pi 0.85.1                 | [diff renderer](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/modes/interactive/components/diff.ts), [syntax highlighting](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/modes/interactive/theme/theme.ts), [width utilities](https://github.com/earendil-works/pi/blob/v0.85.1/packages/tui/src/utils.ts) |
-| Codex                     | [diff_render.rs](https://github.com/openai/codex/blob/5c5308fc9a9ee789049d646ef11e5400384b9c6f/codex-rs/tui/src/diff_render.rs)                                                                                                                                                                                                                                        |
-| Gemini CLI                | [DiffRenderer.tsx](https://github.com/google-gemini/gemini-cli/blob/cfbcaa8df13ea4610bb379b377b56d62980c0032/packages/cli/src/ui/components/messages/DiffRenderer.tsx)                                                                                                                                                                                                 |
-| OpenCode                  | [permission.tsx](https://github.com/anomalyco/opencode/blob/ebb7b76eca82342642c78645109e865614533827/packages/tui/src/routes/session/permission.tsx)                                                                                                                                                                                                                   |
-| pi-tidy-tools             | [block-render.ts](https://github.com/mikeyobrien/pi-tidy-tools/blob/da148ac7f33371d9855632ea62f288ba929357d0/packages/pi-tidy-tools/block-render.ts)                                                                                                                                                                                                                   |
-| pi-diff 0.9.1             | [syntax, row and word layers](https://github.com/buddingnewinsights/pi-diff/blob/79b00a7bd7c85405f7fbbab047c00457a51f44a9/src/index.ts)                                                                                                                                                                                                                                |
-| pi-tool-display 0.5.0     | [Pi highlighter and ANSI span overlay](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/diff-renderer.ts), [adaptive presentation](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/diff-presentation.ts)                                                                      |
-| @pi-archimedes/diff 2.7.3 | [split](https://github.com/danielcherubini/pi-archimedes/blob/2a1519b65883f866bc52f835879028e23771ae90/packages/diff/src/render/split.ts), [unified](https://github.com/danielcherubini/pi-archimedes/blob/2a1519b65883f866bc52f835879028e23771ae90/packages/diff/src/render/unified.ts)                                                                               |
-
-pi-diff separates syntax foreground, changed-row background and word overlays. pi-tool-display directly uses Pi highlightCode and maps emphasis through ANSI-aware visible columns. Both demonstrate inline split/unified layouts. pi-archimedes provides a third syntax-aware comparison. The Shiki dependencies of pi-diff and pi-archimedes are not installed here; pi-tool-display declares peer support only through Pi 0.80.x. These are source references, not verified drop-in extensions for Pi 0.85.1. No dependency was added.
 
 ## Current-output evidence boundary
 
@@ -115,3 +80,36 @@ Each row links to a full terminal image. Conditional and optional output is labe
 | [Conditional Earendil announcement](../../prototypes/ui-session/native-reference/catalog-host-earendil-catppuccin-latte-120x40-main.png)                   | conditional appendix      | Pi /dementedelves command, actual host component                                                 |
 | [Conditional Armin animation](../../prototypes/ui-session/native-reference/catalog-host-armin-catppuccin-latte-120x40-main.png)                            | conditional appendix      | Pi /arminsayshi command, actual host component                                                   |
 | [Conditional OpenCode / Kimi announcement](../../prototypes/ui-session/native-reference/catalog-host-daxnuts-catppuccin-latte-120x40-main.png)             | conditional appendix      | Pi opencode + kimi-k2.5 model selection condition, actual host component                         |
+
+## Diff alternatives
+
+All three views show the same five-line function becoming seven lines: one line replaced by three, `+3 −1`. The previous-page ID set filters already seen results after within-page deduplication. File path, request, surrounding explanation and test state stay identical. Each option has 120-column light/dark and 80-column light captures in the [gallery](../../prototypes/ui-session/native-reference/README.md).
+
+| Candidate        | Structure                                                                                         | Useful for                                | Cost                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------ |
+| A: unified       | Old/new line-number gutters, colored signs, syntax-colored content, selected new logic underlined | Continuous reading and narrow terminals   | Replacement pairs require vertical comparison    |
+| B: split         | Old and new columns with aligned wrapped rows; unified below 110 columns                          | Comparing nearby fields or signatures     | Requires width; adds blank rows to align changes |
+| C: paired blocks | Complete before block, then complete after block; only changed lines carry signs                  | Reading the resulting function as a whole | Repeats context and consumes more height         |
+
+A is the most conservative starting point for conversation density. B and C remain alternatives, not automatic feature requirements. The screenshots are the decision material.
+
+The preview uses Pi `highlightCode` on complete before/after blocks and keeps the resulting ANSI tokens through wrapping. Gutter colors carry add/remove meaning; syntax colors are not replaced by whole-line red/green. Underlined ranges are fixture-selected semantic changes. This is not a production diff parser, automatic word matcher or large-file performance test. Read excerpts in the retained candidate conversation also use syntax highlighting.
+
+## What the references contribute
+
+Pi's current `renderDiff` colors whole added/removed lines, and only uses word-level inverse emphasis for a one-line deletion followed by a one-line addition. Its `filePath` option is unused. Its exported syntax highlighter and ANSI-width helpers provide the necessary building blocks without new dependencies.
+
+Codex and Gemini combine line numbers, syntax spans and wrapping. OpenCode selects split/unified according to available width; its checked threshold is greater than 120 columns, while this prototype tests its own 110-column fallback. pi-tidy-tools contributes compact transcript blocks and width-aware rendering, but its diff colors alone do not supply syntax highlighting. C's complete before/after grouping is a local proposal, not a claim about an upstream default.
+
+| Source                    | Primary evidence                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pi 0.85.1                 | [diff renderer](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/modes/interactive/components/diff.ts), [syntax highlighting](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/modes/interactive/theme/theme.ts), [width utilities](https://github.com/earendil-works/pi/blob/v0.85.1/packages/tui/src/utils.ts) |
+| Codex                     | [diff_render.rs](https://github.com/openai/codex/blob/5c5308fc9a9ee789049d646ef11e5400384b9c6f/codex-rs/tui/src/diff_render.rs)                                                                                                                                                                                                                                        |
+| Gemini CLI                | [DiffRenderer.tsx](https://github.com/google-gemini/gemini-cli/blob/cfbcaa8df13ea4610bb379b377b56d62980c0032/packages/cli/src/ui/components/messages/DiffRenderer.tsx)                                                                                                                                                                                                 |
+| OpenCode                  | [permission.tsx](https://github.com/anomalyco/opencode/blob/ebb7b76eca82342642c78645109e865614533827/packages/tui/src/routes/session/permission.tsx)                                                                                                                                                                                                                   |
+| pi-tidy-tools             | [block-render.ts](https://github.com/mikeyobrien/pi-tidy-tools/blob/da148ac7f33371d9855632ea62f288ba929357d0/packages/pi-tidy-tools/block-render.ts)                                                                                                                                                                                                                   |
+| pi-diff 0.9.1             | [syntax, row and word layers](https://github.com/buddingnewinsights/pi-diff/blob/79b00a7bd7c85405f7fbbab047c00457a51f44a9/src/index.ts)                                                                                                                                                                                                                                |
+| pi-tool-display 0.5.0     | [Pi highlighter and ANSI span overlay](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/diff-renderer.ts), [adaptive presentation](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/diff-presentation.ts)                                                                      |
+| @pi-archimedes/diff 2.7.3 | [split](https://github.com/danielcherubini/pi-archimedes/blob/2a1519b65883f866bc52f835879028e23771ae90/packages/diff/src/render/split.ts), [unified](https://github.com/danielcherubini/pi-archimedes/blob/2a1519b65883f866bc52f835879028e23771ae90/packages/diff/src/render/unified.ts)                                                                               |
+
+pi-diff separates syntax foreground, changed-row background and word overlays. pi-tool-display directly uses Pi highlightCode and maps emphasis through ANSI-aware visible columns. Both demonstrate inline split/unified layouts. pi-archimedes provides a third syntax-aware comparison. The Shiki dependencies of pi-diff and pi-archimedes are not installed here; pi-tool-display declares peer support only through Pi 0.80.x. These are source references, not verified drop-in extensions for Pi 0.85.1. No dependency was added.

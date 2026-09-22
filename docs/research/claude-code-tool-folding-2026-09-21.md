@@ -1,4 +1,4 @@
-# Claude Code tool folding and prototype revision
+# Claude Code tool grouping boundaries
 
 [简体中文](../i18n/zh-CN/research/claude-code-tool-folding-2026-09-21.md)
 
@@ -27,10 +27,6 @@ These are observations of this binary and fixture. They do not establish Web, MC
 The inspected pi-stuff-old snapshot is `21b636eaccc487a08362165ec69ffe364e8730fb`. Its `packages/pi-stuff/src/tool-display/retrieval-groups.ts` classifies Read/Grep/Find/Ls using retrieval metadata and treats visible text, visible Thinking, user turns, mutations, ordinary Bash and visible custom messages as boundaries. `activity-presentation.ts` projects a collapsed leader or the original ordered calls without changing model-visible messages. `render.ts` gives Bash a three-line compact preview. Retrieval failures can remain inside the old group; transparent infrastructure failures are handled separately. The old implementation is a local source reference, not newly imported code.
 
 We also inspected the unofficial [source snapshot at 6f6f12b](https://github.com/tanbiralam/claude-code/tree/6f6f12b37f529488b10e53928dd5508bb93535c7). Its provenance and relationship to the installed binary are not established. No implementation was copied. [collapseReadSearch.ts](https://github.com/tanbiralam/claude-code/blob/6f6f12b37f529488b10e53928dd5508bb93535c7/src/utils/collapseReadSearch.ts) suggests cross-response retrieval grouping, transparent thinking/whitespace, and fullscreen shell grouping. Those hypotheses agree with the direct probes above; that agreement does not authenticate the snapshot. [groupToolUses.ts](https://github.com/tanbiralam/claude-code/blob/6f6f12b37f529488b10e53928dd5508bb93535c7/src/utils/groupToolUses.ts) describes a separate same-response/same-tool grouping layer. We did not implement that layer or infer general MCP eligibility from the snapshot.
-
-## Ownership of design rules
-
-The [UI spec](../ui-spec.md) owns current eligibility, boundaries, Thoughts, Web and diff rules. This report retains client observations and source comparison without duplicating the prototype contract.
 
 ## Verification and limits
 

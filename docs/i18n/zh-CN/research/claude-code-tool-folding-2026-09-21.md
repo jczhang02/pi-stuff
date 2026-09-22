@@ -1,4 +1,4 @@
-# Claude Code 工具折叠与原型修订
+# Claude Code 工具分组边界
 
 [English](../../../research/claude-code-tool-folding-2026-09-21.md)
 
@@ -27,10 +27,6 @@
 读取的 pi-stuff-old 快照为 `21b636eaccc487a08362165ec69ffe364e8730fb`. `packages/pi-stuff/src/tool-display/retrieval-groups.ts` 根据检索元数据分类 Read/Grep/Find/Ls, 将可见正文、可见 Thinking、用户回合、修改、普通 Bash 和可见自定义消息视为边界. `activity-presentation.ts` 在摘要与原序调用之间切换, 不修改模型消息. `render.ts` 给 Bash 三行紧凑预览. 检索失败可留在旧组内, 透明基础设施调用的失败另行处理. 旧实现只作为本地参考, 没有导入代码.
 
 另读取非官方[源码快照 6f6f12b](https://github.com/tanbiralam/claude-code/tree/6f6f12b37f529488b10e53928dd5508bb93535c7). 其来源及与已安装二进制的关系未获确认, 没有复制实现. [collapseReadSearch.ts](https://github.com/tanbiralam/claude-code/blob/6f6f12b37f529488b10e53928dd5508bb93535c7/src/utils/collapseReadSearch.ts)提供跨响应聚合、Thinking/空白透明、全屏聚合 shell 的线索. 这些线索与真实执行相符, 但不能据此认证该快照. [groupToolUses.ts](https://github.com/tanbiralam/claude-code/blob/6f6f12b37f529488b10e53928dd5508bb93535c7/src/utils/groupToolUses.ts)另有同响应、同名工具的合组机制. 原型没有实现这层, 也没有从快照推导通用 MCP 折叠资格.
-
-## 设计规则的归属
-
-当前检索资格、分组边界、Thoughts、Web 和 diff 规则统一见 [UI spec](../ui-spec.md). 本文保留客户端观察与源码比较, 不再重复维护原型规则.
 
 ## 验证与限制
 

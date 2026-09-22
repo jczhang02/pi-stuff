@@ -1,4 +1,4 @@
-# UI source research / UI 来源研究
+# UI 来源与扩展接口
 
 [English](../../../research/ui-sources.md)
 
@@ -33,11 +33,11 @@
 | [Gemini status row](https://github.com/google-gemini/gemini-cli/blob/cfbcaa8df13ea4610bb379b377b56d62980c0032/packages/cli/src/ui/components/StatusRow.tsx) 与 [configuration](https://github.com/google-gemini/gemini-cli/blob/cfbcaa8df13ea4610bb379b377b56d62980c0032/docs/reference/configuration.md) | Activity, mode 和 context 有各自位置; tool density, thinking 和 footer visibility 可配置.        | 在 `/ui` 中试验密度控制. 可配置字段更多不等于默认设置更好.                                                |
 | [Gemini tool grouping](https://github.com/google-gemini/gemini-cli/blob/cfbcaa8df13ea4610bb379b377b56d62980c0032/packages/cli/src/ui/components/messages/ToolGroupMessage.tsx)                                                                                                                            | Compact 和 standard tool groups 是不同视图.                                                      | 保留 tool family 的差异并统一间距和状态语言. 单一的通用 log 行会丢失有用语义.                             |
 
-共同点中最值得采用的是: 默认显示简短且有用的内容, 同时可靠地进入详情. 我建议把这个原则用于各类 tool, 保留旧的整体外框. 如果真实长会话显示 excerpt 本身已经压垮 transcript, 这个判断会改变; 解决方向应是选择性分组和密度控制, 而不是隐藏所有结果.
+这些参考都采用短预览并保留详情入口. 长会话可通过检索分组减少重复, 同时保持错误可见.
 
 本次检查的源码 revision 是 Codex `5c5308fc9a9ee789049d646ef11e5400384b9c6f`, OpenCode `ebb7b76eca82342642c78645109e865614533827`, Gemini CLI `cfbcaa8df13ea4610bb379b377b56d62980c0032`. OpenCode v1/v2 文档描述的是不同表面; 这里只沿用上面链接所支持的事实. 本次比较没有安装或执行任何外部 harness.
 
-## Pi 包与公开实现接缝
+## Pi 包与公开渲染接口
 
 这些快照来自原始源码, 不是已采用的依赖. "采用"表示预览中可以直接参考的模式, "改造"表示先按 Pi 0.85.1 核对后再借鉴, "拒绝"表示它与用户要求的旧界面参考或 surface 边界冲突.
 
@@ -52,9 +52,9 @@
 | [pi-subagents 2.2.3, `de24dbb`](https://github.com/jwu/pi-subagents/tree/de24dbb5f4f3b6b4bac3dc7ad239a34fb85b430f)                       | 使用公开的 `renderCall`/`renderResult` 渲染折叠和展开的 subagent 卡片, 有界 tool log 以及 usage/context summary.                                                                                            | 仅作来源记录. Subagents 不在本轮范围内, 不提出实现建议.                                                                |
 | [pi-messenger 0.15.2, `09937ed`](https://github.com/nicobailon/pi-messenger/tree/09937ed647a1b07a3b595bf75943feacb80ff123)               | 使用 additive `setStatus`, custom message rendering 和 `tool_call`/`tool_result` lifecycle 更新, 但主 UI 是可自动打开的 tabbed overlay.                                                                     | 仅作来源记录. BTW、后台工作和通知不在本轮范围内, 不提出实现建议.                                                       |
 | [tmustier/pi-extensions, `09706a7`](https://github.com/tmustier/pi-extensions/tree/09706a7448d1715796d4d849e75ae2abe9be1f86)             | `files-widget` 0.2.0 把 `setWidget` 和 non-overlay `ctx.ui.custom` 组合成文件浏览, review, search 和 comment 流程. 它需要 `bat`, `delta` 和 `glow`.                                                         | 改造 focused review 流程和 `[ ]` 导航. 外部 CLI 工具保持可选, 不把 file browser 加到默认 shell.                        |
-| [pi-footer-display 0.2.1, `86d65c2`](https://github.com/10ego/pi-footer-display/tree/86d65c2f4bbd0d8be6bbc54f99d0ac562998a5bf)           | 只发布 `ctx.ui.setStatus("pr-footer", text)`, 保留 Pi 原生 model, token 和 footer 渲染, 同时异步跟踪 Git/PR 状态.                                                                                           | 采用这种 additive status ownership 模式. 它是保留旧 footer 的最干净参考.                                               |
+| [pi-footer-display 0.2.1, `86d65c2`](https://github.com/10ego/pi-footer-display/tree/86d65c2f4bbd0d8be6bbc54f99d0ac562998a5bf)           | 只发布 `ctx.ui.setStatus("pr-footer", text)`, 保留 Pi 原生 model, token 和 footer 渲染, 同时异步跟踪 Git/PR 状态.                                                                                           | 采用这种 additive status ownership 模式. 它保留原生 footer 的所有权.                                                   |
 
-### 公开接缝边界
+### 公开渲染接口
 
 Pi 0.85.1 的 [extension API](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/extensions/types.ts) 公开了 `setStatus`, keyed `setWidget`, `setHeader`, `setFooter`, `setEditorComponent`, `registerMessageRenderer`, `registerEntryRenderer` 以及每个工具的 `renderCall`/`renderResult`. Custom message fixture 只能证明该 custom type 的 renderer. 它不会替换普通 assistant text, thinking 或原生 `read`/`bash` card.
 
