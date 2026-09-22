@@ -18,7 +18,9 @@ The current implementation scope changes Pi Stuff only. Prefer public Pi extensi
 
 Resolve technical choices from Pi and comparable packages before asking for product trade-offs. Reference: [pi-tool-display 0.5.0 at 91cef758](https://github.com/MasuRii/pi-tool-display/tree/91cef7580078371f8dc49a8607222807ad6a424d). Referencing its implementation does not authorize a new dependency or wholesale port.
 
-Expose useful presentation options as configuration, with defaults matching the accepted prototype. Provide the complete option set in a configuration file and common controls in an interactive settings entry, including preview limits, retrieval grouping, diff presentation and UI feature toggles. Reuse existing Pi settings such as theme and Hide thinking. Exact fields and configuration scope remain undecided.
+Expose useful presentation options as configuration, with defaults matching the accepted prototype. Provide the complete option set in a configuration file and common controls in an interactive settings entry, including preview limits, retrieval grouping, diff presentation and UI feature toggles. Reuse existing Pi settings such as theme and Hide thinking. Configuration is global only, with no project overrides. Exact fields remain undecided.
+
+Use the new presentation for Pi built-in tools and Pi Stuff tools. Preserve existing third-party custom renderers by default. Provide explicit per-tool takeover options; only opted-in tools use the generic presentation.
 
 ## Conversation frame and messages
 
