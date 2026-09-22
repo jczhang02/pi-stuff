@@ -130,7 +130,7 @@ The old successful-settlement proposal and default periodic cooldown are therefo
 
 No runtime behavior, configuration, dependency or persistence format was changed. Live model quality, costs and end-to-end host lifecycle remain unmeasured. This report supports the next design discussion; implementation and its concurrency/persistence review require a separately agreed scope.
 
-## Design interview: confirmed decisions and open questions
+## Design interview: accepted decisions
 
 Automatic generation is restricted to the session opening. Later task changes, resume and compaction do not trigger generation. An explicit user command may generate a replacement later; it does not restart automatic management. This supersedes the earlier discussion of resuming automatic management and following later goal changes. Manual names remain authoritative until the user explicitly changes them or requests a generated replacement.
 
@@ -142,4 +142,4 @@ A separately configured naming model is allowed; when absent, use the current se
 
 Only a newly created blank main session is eligible. An existing name suppresses automatic generation. Resumed and forked sessions, including unnamed forks, and background subagent sessions do not generate names automatically. The explicit command is `/autoname [task hint]`; Pi core `/name <name>` remains direct assignment.
 
-See the [design draft](session-naming-design.md) for consolidated decisions and the remaining defaults to confirm. No implementation is authorized by these partial decisions.
+The maintainer accepted automatic enablement by default, a 2,000-character automatic conversation budget, a 4,000-character explicit-generation budget and a 15-second deadline. These are design starting points, not measured optima or universal token/billing caps. The confirmed primary test boundary is a real isolated Pi host with a controlled local model endpoint. See the [specification](session-naming-design.md) and [implementation issue #108](https://github.com/jczhang02/pi-stuff/issues/108) for the complete contract, review-derived host limitations and acceptance cases. This research/specification work does not implement the feature.
