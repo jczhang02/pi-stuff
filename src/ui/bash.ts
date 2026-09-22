@@ -12,6 +12,7 @@ import {
   truncateToWidth,
   wrapTextWithAnsi,
   stripTerminalSequences,
+  visibleWidth,
   type Component,
 } from '@earendil-works/pi-tui';
 import type {UiSettings} from './settings';
@@ -60,12 +61,12 @@ class BashResult implements Component {
         : this.running
           ? rows.slice(-count)
           : rows.slice(0, count);
-    const lines = shown.map((line, index) =>
-      truncateToWidth(
-        `${index === 0 ? '  ⎿ ' : '    '}${this.theme.fg('toolOutput', line)}`,
-        width,
-      ),
-    );
+    const lines = shown.map((line, index) => {
+      const text = `${index === 0 ? '  ⎿ ' : '    '}${this.theme.fg('toolOutput', line)}`;
+      return visibleWidth(line) <= width - 4
+        ? text
+        : truncateToWidth(text, width);
+    });
     if (empty && !this.running)
       lines.push(
         truncateToWidth(this.theme.fg('muted', '  ⎿ (no output)'), width),

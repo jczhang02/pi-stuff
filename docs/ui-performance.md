@@ -55,6 +55,29 @@ A separate 96,000-row probe localized most of the work to styled-row truncation:
 
 The workload repeats ASCII source, which benefits from Pi's ASCII width fast path. Unicode correctness was checked separately; Unicode-heavy performance has not been measured. The segment probe ran modes sequentially in one process, so its timings include warm-up/cache-order effects. The actual host comparison used fresh processes. Neither comparison controls CPU scheduling or establishes a numerical acceptance budget.
 
+## Bash disclosure and the simpler alternative
+
+At `56e32f1`, repeated expansion of a separate Bash-heavy conversation took a median 563 ms. Each fresh process executed 15 turns with eight `cat source.ts` calls per turn, each returning the same 400-line ASCII file, followed by a 100-line Write. That is 121 calls, 48,000 Bash lines and a 2,458,436-byte session. The compiled host, isolated provider, settings, viewport and interaction measurements were the same as above, but this experiment did not perform the five new-session cycles.
+
+The baseline ran UI off/on/on/off/off/on. A candidate that reused `lastComponent`, wrapped rows and styled rows then ran three times. Independent review requested a simpler comparison: keep only the `visibleWidth` check before styled truncation, still creating a fresh result component. That version ran three times and is the selected implementation. [Bash observations](assets/ui/bash-performance.json) retain all twelve runs and the candidate/source hashes.
+
+| Observation, median                      | UI off | Before | Cache candidate | Width check only |
+| ---------------------------------------- | -----: | -----: | --------------: | ---------------: |
+| First global expansion, ms               |  2,177 |    545 |              34 |               60 |
+| Repeated global expansion, ms            |  2,222 |    563 |              29 |               53 |
+| Global collapse, ms                      |    171 |     50 |              28 |               50 |
+| Draft input, ms                          |    4.0 |    1.5 |             1.6 |              1.7 |
+| Resize while compact, ms                 |    9.0 |    9.4 |             7.7 |              7.6 |
+| CPU during the measured interactions, ms | 12,619 |  3,330 |             462 |              656 |
+| RSS after building the conversation, MiB |    327 |    281 |             304 |              280 |
+| RSS after the measured interactions, MiB |    590 |    485 |             335 |              323 |
+
+The selected change reduced repeated expansion to 49–61 ms. The extra cache saved another 24 ms at the median in this workload, but introduced separate body/style state and invalidation paths. The width check removes most of the observed pause with a smaller change, so the cache was discarded. This is not a new acceptance threshold. RSS depends on allocation and garbage-collection timing; these samples cannot establish a leak or a guaranteed memory saving.
+
+The new host test checks streaming tail previews, appended output, completion switching to the first three rows, theme changes at the same width, repeated disclosure and CJK wrapping at 60/80/120 columns. It passed on the baseline before the optimization. Its first draft captured an intermediate resize frame; waiting for the requested width and complete line fixed the test, without changing the product. The final tools, streaming, terminal-output and RTK-result suites pass 28 cases with 197 assertions on each of pinned Pi 0.85.1 and compiled Pi 0.87.0. These functional checks do not measure paced-streaming performance or resolve the known history failures.
+
+Independent review passed 3,600 exact-row comparisons against the baseline across two themes, 12 widths (0–7, 12, 60, 80, 120), ten text samples and multiple preview/result states. An additional width assertion exposed an existing edge case: at five columns, the leading combining/spacing sequence `\u0301\u093eX` can yield a row measured as six columns. The reviewer confirmed 22 such overflow cases were identical before and after. This establishes equivalence for the optimization, not universal Unicode width correctness; the existing edge case remains for final acceptance.
+
 ## Verification limits
 
 For the initial cache increment, retrieval/group/error suites passed 19 cases and failed the two known reload/resume cases on both pinned Pi 0.85.1 and compiled Pi 0.87.0, with 182 assertions per host. After the final lazy-metadata adjustment, independent checks passed the strengthened same-width theme test on both hosts, 16 assertions each, plus 20 real-component assertions for partial/final output, replacement text, warning/error and metadata transitions. The theme test also verifies narrow wrapping and that reopening a result does not reread a changed file.
