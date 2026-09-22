@@ -121,3 +121,76 @@ test('Write previews three source rows and reveals the complete written file', a
     await host.close();
   }
 }, 30000);
+
+test('Edit displays real source line numbers and added/removed counts', async () => {
+  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  try {
+    await writeFile(
+      join(host.directory, 'change.ts'),
+      'function value() {\n  return 1;\n}\n',
+    );
+    await host.invoke(
+      'edit',
+      JSON.stringify({
+        path: 'change.ts',
+        edits: [
+          {
+            oldText: '  return 1;',
+            newText: '  const result = 2;\n  return result;',
+          },
+        ],
+      }),
+    );
+    expect(await readFile(join(host.directory, 'change.ts'), 'utf8')).toBe(
+      'function value() {\n  const result = 2;\n  return result;\n}\n',
+    );
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('Edit(change.ts)');
+    expect(screen).toContain('Added 2 lines, removed 1 line');
+    expect(screen).toMatch(/2 -\s+return 1;/u);
+    expect(screen).toMatch(/2 \+\s+const result = 2;/u);
+    expect(screen).toMatch(/3 \+\s+return result;/u);
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Edit disclosure uses the recorded patch after the file changes again', async () => {
+  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  try {
+    const before =
+      Array.from(
+        {length: 9},
+        (_, index) => `const old${index} = ${index};`,
+      ).join('\n') + '\n';
+    const after =
+      Array.from(
+        {length: 9},
+        (_, index) => `const next${index} = ${index + 1};`,
+      ).join('\n') + '\n';
+    const path = join(host.directory, 'history.ts');
+    await writeFile(path, before);
+    await host.invoke(
+      'edit',
+      JSON.stringify({
+        path: 'history.ts',
+        edits: [{oldText: before, newText: after}],
+      }),
+    );
+    const compact = await host.terminal.screen.text();
+    expect(compact).toContain('Added 9 lines, removed 9 lines');
+    expect(compact).toContain('12 more lines');
+    expect(compact).not.toContain('const next8');
+    await writeFile(path, 'UNRELATED_CURRENT_FILE\n');
+    await host.terminal.resize({cols: 80, rows: 48});
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('const next8 = 9;', {
+      timeoutMs: 5000,
+    });
+    const expanded = await host.terminal.screen.text();
+    expect(expanded).not.toContain('UNRELATED_CURRENT_FILE');
+    expect(expanded).not.toContain('more lines');
+  } finally {
+    await host.close();
+  }
+}, 30000);

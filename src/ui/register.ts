@@ -6,6 +6,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import {createBashDisplay} from './bash';
 import {createWriteDisplay} from './write';
+import {createEditDisplay} from './edit';
 import type {UiSettings} from './settings';
 
 export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
@@ -20,6 +21,12 @@ export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
       )
     )
       pi.registerTool(createWriteDisplay(ctx.cwd));
+    if (
+      tools.some(
+        tool => tool.name === 'edit' && tool.sourceInfo.source === 'builtin',
+      )
+    )
+      pi.registerTool(createEditDisplay(ctx.cwd));
     const bash = tools.find(tool => tool.name === 'bash');
     if (bash?.sourceInfo.source !== 'builtin') return;
     const hostSettings = SettingsManager.create(ctx.cwd, getAgentDir(), {
