@@ -2,7 +2,52 @@ import {expect, test} from 'bun:test';
 import {launchPi} from './fixtures/pi-terminal';
 import {NamingProvider} from './fixtures/naming-provider';
 
-test('output validation counts Unicode code points and refuses malformed names without repair requests', async () => {
+test.each([
+  ['empty', ''],
+  ['multiline', 'first\nsecond'],
+  ['control', 'bad\u0007name'],
+  ['bidi control', 'bad\u202ename'],
+  ['overlong Unicode', '𠮷'.repeat(9)],
+] as const)(
+  'output validation rejects %s names without repair requests',
+  async (_label, title) => {
+    const provider = new NamingProvider();
+    provider.title = title;
+    const host = await launchPi(
+      JSON.stringify({
+        naming: {
+          automatic: false,
+          maxLength: 8,
+          model: {provider: 'fixture', id: 'naming'},
+        },
+      }),
+      undefined,
+      'rtk',
+      'fullscreen',
+      provider.reply,
+    );
+    try {
+      await host.command('/name Kept');
+      await host.terminal.screen.waitForText('Session name set: Kept', {
+        timeoutMs: 4000,
+      });
+      await host.command('/autoname Test name validation');
+      await host.terminal.screen.waitForText('Naming failed: invalid name', {
+        timeoutMs: 4000,
+      });
+      await host.command('/name');
+      await host.terminal.screen.waitForText('Session name: Kept', {
+        timeoutMs: 4000,
+      });
+      expect(provider.requests).toHaveLength(1);
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);
+
+test('output validation counts Unicode code points after trimming', async () => {
   const provider = new NamingProvider();
   const host = await launchPi(
     JSON.stringify({
@@ -18,36 +63,12 @@ test('output validation counts Unicode code points and refuses malformed names w
     provider.reply,
   );
   try {
-    for (const [index, title] of [
-      '',
-      'first\nsecond',
-      'bad\u0007name',
-      'bad\u202ename',
-      '𠮷'.repeat(9),
-    ].entries()) {
-      await host.command(`/name Kept${index}`);
-      await host.terminal.screen.waitForText(`Session name set: Kept${index}`, {
-        timeoutMs: 4000,
-      });
-      provider.title = title;
-      await host.command('/autoname Test name validation');
-      await host.terminal.screen.waitUntil(
-        async () =>
-          provider.requests.length === index + 1 &&
-          !(await host.terminal.screen.text()).includes('Naming...'),
-        {timeoutMs: 4000},
-      );
-      await host.command('/name');
-      await host.terminal.screen.waitForText(`Session name: Kept${index}`, {
-        timeoutMs: 4000,
-      });
-    }
     provider.title = '  ' + '𠮷'.repeat(8) + '  ';
     await host.command('/autoname A custom eight character name');
     await host.terminal.screen.waitForText('Session named: ' + '𠮷'.repeat(8), {
       timeoutMs: 4000,
     });
-    expect(provider.requests).toHaveLength(6);
+    expect(provider.requests).toHaveLength(1);
   } finally {
     await host.close();
   }

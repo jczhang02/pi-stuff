@@ -36,7 +36,7 @@ A feature that needs comparable multi-section navigation must use another struct
 
 Make the current operation, key result and available next action easy to identify. Choose the layout and supporting detail with the feature.
 
-Distinguish loading, no data, no matching results and failure where applicable. Give long-running operations visible status feedback. Show a percentage only when actual progress can be calculated. Prefer Pi's existing components and presentation conventions for these states.
+Distinguish loading, no data, no matching results and failure where applicable within the feature's agreed interface. New progress/status notices, such as a `Naming...` statusline message or a loading notification, require explicit maintainer approval for that presentation. A request to implement a capability does not authorize adding these notices. Record the agreed feedback with the feature; using Pi's native API does not remove this requirement. Show a percentage only when actual progress can be calculated.
 
 ## Theme and feedback colors
 

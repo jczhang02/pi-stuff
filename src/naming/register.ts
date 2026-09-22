@@ -44,7 +44,6 @@ export function registerNaming(
     explicit: boolean,
   ) {
     invalidate();
-    ctx.ui.setStatus('pi-stuff-naming', undefined);
     const request = new AbortController();
     pending = request;
     const origin = lifetime;
@@ -77,7 +76,6 @@ export function registerNaming(
         );
       return;
     }
-    if (explicit) ctx.ui.setStatus('pi-stuff-naming', 'Naming...');
     await Effect.runPromise(
       Effect.tryPromise({
         try: signal =>
@@ -230,7 +228,6 @@ export function registerNaming(
     );
     if (origin === lifetime && (pending === request || pending === undefined)) {
       pending = undefined;
-      if (explicit) ctx.ui.setStatus('pi-stuff-naming', undefined);
     }
   }
 

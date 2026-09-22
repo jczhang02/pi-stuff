@@ -17,6 +17,7 @@ test('a newer command supersedes pending work and a direct rename away and back 
     await host.terminal.screen.waitUntil(() => provider.requests.length === 1, {
       timeoutMs: 4000,
     });
+    expect(await host.terminal.screen.text()).not.toContain('Naming...');
     provider.title = 'research: Compare the current OAuth providers';
     provider.held = false;
     await host.command('/autoname Current request');
@@ -53,7 +54,7 @@ test('a newer command supersedes pending work and a direct rename away and back 
   }
 }, 30000);
 
-test('reload discards pending work, clears its status and never rearms opening generation', async () => {
+test('reload discards pending work and never rearms opening generation', async () => {
   const provider = new NamingProvider();
   provider.held = true;
   const host = await launchPi(

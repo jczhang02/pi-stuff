@@ -6,7 +6,7 @@ Pi Stuff names a fresh foreground TUI session after its first successful exchang
 
 Use Pi's native `/name Exact title` for a direct assignment. `/autoname` generates a replacement from the opening request and recent dialogue; `/autoname Document OAuth migration risks` gives the model a task hint with priority over that dialogue. Accepting `/autoname` permanently ends automation for that session, including when generation fails. A newer command supersedes a pending request.
 
-In TUI mode, the command shows `Naming...`, then a success or actionable failure message. Print/JSON commands wait for completion and send feedback to stderr, leaving JSON stdout machine-readable. Automatic requests run quietly in the background. A pending result cannot overwrite a later direct rename, navigation or another generation. Names belong to the whole session, including its branches.
+The command runs without a progress/status notice, then reports success or an actionable failure. Print/JSON commands wait for completion and send feedback to stderr, leaving JSON stdout machine-readable. Automatic requests run quietly in the background. A pending result cannot overwrite a later direct rename, navigation or another generation. Names belong to the whole session, including its branches.
 
 ## Configuration
 
@@ -77,9 +77,7 @@ The following eight names came from actual `openai-codex/gpt-6-astra` requests t
 | `/autoname` after the agreed task changes to OAuth risk documentation           | `docs: Document OAuth migration risks only`                            |
 | `/autoname Fix session rename races in Pi` overrides earlier dialogue           | `fix: Resolve session rename races in Pi`                              |
 
-The actual terminal captures below cover built-in dark/light palettes, loading, failure, success and resizing from 100×30 to 56×24. The light terminal's default foreground/background were set to black/white before launching Pi. Exports explicitly use `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. They are headless terminal evidence, not native window/compositor evidence. The narrow footer truncates a long title; `/name` displays its complete wrapped text. Input remains available while a request is pending, and failed generation preserves the prior name.
-
-![Dark theme with a pending explicit request](assets/session-naming/dark-loading.png)
+The actual terminal captures below cover failure, success and resizing from 100×30 to 56×24. The light terminal's default foreground/background were set to black/white before launching Pi. Exports explicitly use `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. They are headless terminal evidence, not native window/compositor evidence. The narrow footer truncates a long title; `/name` displays its complete wrapped text. Input remains available while a request is pending, and failed generation preserves the prior name.
 
 ![Light theme with a failed request at 56 columns](assets/session-naming/light-invalid.png)
 

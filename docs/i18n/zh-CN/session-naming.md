@@ -6,7 +6,7 @@ Pi Stuff 会在新建前台 TUI 会话的首次成功问答后尝试命名一次
 
 Pi 原生 `/name Exact title` 用于直接赋名. `/autoname` 根据开场请求和最近对话生成替代名称; `/autoname Document OAuth migration risks` 提供优先于对话的任务提示. 一旦接受 `/autoname`, 该会话就永久停止自动命名, 即使生成失败也一样. 新命令会取代尚未完成的请求.
 
-TUI 模式下, 命令先显示 `Naming...`, 再显示成功或可操作的失败提示. Print/JSON 命令会等待完成并将反馈写入 stderr, 保持 JSON stdout 可供机器解析. 自动请求在后台安静运行. 旧结果不能覆盖后来的直接改名、导航或新生成. 名称属于整个会话, 各分支共用.
+命令执行期间不显示进度或状态提示, 完成后反馈成功或可操作的失败原因. Print/JSON 命令会等待完成并将反馈写入 stderr, 保持 JSON stdout 可供机器解析. 自动请求在后台安静运行. 旧结果不能覆盖后来的直接改名、导航或新生成. 名称属于整个会话, 各分支共用.
 
 ## 配置
 
@@ -77,9 +77,7 @@ Pi 0.85.1 API 映射请求 SSE、`maxRetries: 0` 和有限的 `maxTokens`. OpenA
 | 主任务改为 OAuth 风险文档后执行 `/autoname`                 | `docs: Document OAuth migration risks only`                            |
 | `/autoname Fix session rename races in Pi` 优先于之前的对话 | `fix: Resolve session rename races in Pi`                              |
 
-以下真实终端截图覆盖内置 dark/light 色板、加载、失败、成功, 以及从 100×30 缩到 56×24 的状态. 浅色终端在启动 Pi 前将默认前景/背景设为黑/白. 导出明确使用 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. 这是无窗口终端证据, 不代表原生窗口或合成器体验. 窄终端底栏会截断长名称; `/name` 可换行显示全文. 请求期间仍可输入, 生成失败会保留原名称.
-
-![深色主题中的手动命名请求](../../assets/session-naming/dark-loading.png)
+以下真实终端截图覆盖失败、成功, 以及从 100×30 缩到 56×24 的状态. 浅色终端在启动 Pi 前将默认前景/背景设为黑/白. 导出明确使用 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. 这是无窗口终端证据, 不代表原生窗口或合成器体验. 窄终端底栏会截断长名称; `/name` 可换行显示全文. 请求期间仍可输入, 生成失败会保留原名称.
 
 ![56 列浅色主题中的生成失败](../../assets/session-naming/light-invalid.png)
 
