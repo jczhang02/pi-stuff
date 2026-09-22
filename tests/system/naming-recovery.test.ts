@@ -28,6 +28,8 @@ test('a native write failure after preflight keeps Pi alive and explains session
       await readdir(join(host.directory, 'sessions'), {recursive: true})
     ).filter(path => path.endsWith('.jsonl'));
     file = join(host.directory, 'sessions', files[0] ?? '');
+    const savedMessages =
+      SessionManager.open(file).buildSessionContext().messages;
     await rename(file, file + '.backup');
     await symlink('/dev/full', file);
     replaced = true;
@@ -46,7 +48,7 @@ test('a native write failure after preflight keeps Pi alive and explains session
     await rename(file + '.backup', file);
     replaced = false;
     const recovered = SessionManager.open(file);
-    expect(recovered.buildSessionContext().messages).toHaveLength(2);
+    expect(recovered.buildSessionContext().messages).toEqual(savedMessages);
     for (const entry of recovered.getBranch()) {
       if (entry.parentId)
         expect(recovered.getEntry(entry.parentId)).toBeDefined();
