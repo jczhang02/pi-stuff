@@ -48,6 +48,8 @@ Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mo
 
 Parallel calls keep their original order even when they finish in a different order. A pending call remains visible; when it succeeds, it joins adjacent successful calls without crossing a failure. Session shutdown releases the old context before Pi can render a transition frame, so creating a new session does not crash or retain the previous group's members.
 
+Read results containing images stay outside text groups and delegate result rendering to Pi. Pi retains image display, conversion and its text fallback with MIME type and dimensions. The fallback has been checked on the pinned host and the installed Pi 0.87.0 compiled host; actual Kitty/Ghostty image display still needs visual acceptance.
+
 ## Web tools
 
 The existing Web access tools display as WebSearch, WebFetch and WebRead. Compact headings show the operation count or retained-content label; expanded headings show query/URL/content ID and paging/find arguments. Their original API names, output and cache behavior are unchanged. Batch-item errors and retained-content paging notices remain visible while compact. This presentation does not fetch additional content on disclosure.

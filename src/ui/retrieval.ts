@@ -29,6 +29,7 @@ export function displayRetrieval<
   inspect?: (output: string) => string[],
   groups?: RetrievalGroups,
 ) {
+  const nativeResult = tool.renderResult;
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) => {
     const title = new ToolHeading(
@@ -61,6 +62,12 @@ export function displayRetrieval<
     };
   };
   tool.renderResult = (result, options, theme, context) => {
+    if (nativeResult && result.content.some(block => block.type === 'image')) {
+      // Pi renders images outside the tool's text component. Do not hide their
+      // headings in a text group or replace its dimension/protocol fallback.
+      groups?.finish(context.toolCallId, false);
+      return nativeResult(result, options, theme, context);
+    }
     const output = result.content
       .map(block =>
         block.type === 'text' ? block.text : `[image: ${block.mimeType}]`,
