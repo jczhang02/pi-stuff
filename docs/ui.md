@@ -20,6 +20,12 @@ All tools share the heading rule: a status dot, at most two compact rows, aligne
 
 Configured timeout and upstream truncation/log information have separate result blocks. Expanding reveals only retained output. Tool execution uses Pi's public native definition with the host's configured shell path and command prefix. Other extensions' Bash definitions are left untouched.
 
+Completed live calls show the actual process exit code and elapsed time. Timeout and cancellation remain visible when the body is folded, including a zero-row preview. Empty output stays visible without a hidden-row count. Failed native calls can retain their truncation/log notice only in error text; that notice is lifted into separate result blocks. Model-visible results and recorded errors are unchanged. Historical output without timing does not receive an invented duration.
+
+Setup and spawn errors remain visible even with a zero-row preview. The following capture shows actual commands, retained output, an unsuccessful exit and a timeout, using the same isolated host and fonts as the welcome captures.
+
+![Bash results, default dark theme, 120 columns](assets/ui/bash-outcomes-dark-120.png)
+
 ## Write
 
 Write retains native file execution and shows the written source with Pi syntax highlighting. The compact result shows three rendered rows and a hidden-row count; native disclosure reveals the complete retained source. The result summary counts source lines rather than terminal wrapping. Error results retain the actual tool error text.

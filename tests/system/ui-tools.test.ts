@@ -448,3 +448,132 @@ test('Long Write and Edit titles use two compact rows and reveal the full path o
     await host.close();
   }
 }, 30000);
+
+test('Bash reports the actual exit status and duration outside a folded long result', async () => {
+  const host = await launchPi('{"rtk":{"rewrite":false}}');
+  try {
+    const result = await host.invoke(
+      'bash',
+      JSON.stringify({
+        command: "printf 'first\\nsecond\\nthird\\nfourth\\nfifth\\n'; exit 17",
+      }),
+    );
+    expect(result).toContain('fifth');
+    expect(result).toContain('Command exited with code 17');
+    const failed = await host.terminal.screen.text();
+    expect(failed).toContain('Exit code 17');
+    expect(failed).toMatch(/Exit code 17 · \d+\.\d+s/u);
+    expect(failed).not.toMatch(/^\s+fifth$/mu);
+    await host.invoke('bash', JSON.stringify({command: 'printf success'}));
+    const successful = await host.terminal.screen.text();
+    expect(successful).toMatch(/Exit code 0 · \d+\.\d+s/u);
+    expect(successful).toContain('⎿ success');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Bash keeps failed-output truncation and its log visible with a zero-row preview', async () => {
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"bashPreviewLines":0}}',
+  );
+  try {
+    const result = await host.invoke(
+      'bash',
+      JSON.stringify({
+        command:
+          'for i in $(seq 1 2200); do printf \'FAILURE_LINE_%04d\\n\' "$i"; done; exit 23',
+      }),
+    );
+    expect(result).toContain('Command exited with code 23');
+    const log = /Full output: ([^\]\n]+)/u.exec(result)?.[1];
+    if (!log)
+      throw new Error('Native Bash did not retain the truncated output.');
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('Exit code 23');
+    expect(screen).toContain('Full output:');
+    expect(screen).toContain(log);
+    expect(screen).toContain('2000 more lines');
+    expect(screen).not.toMatch(/^\s+FAILURE_LINE_2200$/mu);
+    expect(await readFile(log, 'utf8')).toContain('FAILURE_LINE_0001');
+    expect(await readFile(log, 'utf8')).toContain('FAILURE_LINE_2200');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Bash keeps an empty outcome visible without inventing hidden output rows', async () => {
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"bashPreviewLines":0}}',
+  );
+  try {
+    expect(await host.invoke('bash', JSON.stringify({command: ':'}))).toBe(
+      '(no output)',
+    );
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('⎿ (no output)');
+    expect(screen).toContain('Exit code 0');
+    expect(screen).not.toContain('more line');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Bash timeout and cancellation remain visible when output is hidden', async () => {
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"bashPreviewLines":0}}',
+  );
+  try {
+    const result = await host.invoke(
+      'bash',
+      JSON.stringify({command: 'printf TIMEOUT_BODY; sleep 10', timeout: 0.15}),
+    );
+    expect(result).toContain('TIMEOUT_BODY');
+    expect(result).toContain('Command timed out after 0.15 seconds');
+    const timedOut = await host.terminal.screen.text();
+    expect(timedOut).toMatch(/⎿ Timed out · \d+\.\d+s/u);
+    expect(timedOut).toContain('⎿ timeout 0.15s');
+    await host.start(
+      'bash',
+      JSON.stringify({command: 'printf CANCEL_READY; sleep 10'}),
+    );
+    await host.terminal.screen.waitUntil(
+      async () =>
+        (
+          await host.terminal.screen.capture({
+            allowIncomplete: true,
+            deadlineMs: 200,
+          })
+        ).text.includes('⎿ CANCEL_READY'),
+      {timeoutMs: 5000},
+    );
+    await host.terminal.keyboard.press('Escape');
+    await host.terminal.screen.waitForText('Cancelled ·', {timeoutMs: 5000});
+    const cancelled = await host.terminal.screen.text();
+    expect(cancelled).toMatch(/⎿ Cancelled · \d+\.\d+s/u);
+    expect(cancelled).toContain('Error: The operation was aborted.');
+    await host.invoke('bash', JSON.stringify({command: 'printf AFTER_CANCEL'}));
+    expect(await host.terminal.screen.text()).toContain('Exit code 0');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Bash shows native setup errors even when the normal output preview is disabled', async () => {
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"bashPreviewLines":0}}',
+  );
+  try {
+    const result = await host.invoke(
+      'bash',
+      JSON.stringify({command: 'printf MUST_NOT_RUN', timeout: 0}),
+    );
+    expect(result).toBe('Invalid timeout: must be a finite number of seconds');
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain(result);
+    expect(screen).not.toContain('more line');
+    expect(screen).not.toContain('Exit code 0');
+  } finally {
+    await host.close();
+  }
+}, 30000);

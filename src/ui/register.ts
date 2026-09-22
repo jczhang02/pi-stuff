@@ -10,7 +10,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import {registerWelcome} from './welcome';
 import {RetrievalGroups} from './groups';
-import {createBashDisplay} from './bash';
+import {BashDisplay} from './bash';
 import {createWriteDisplay} from './write';
 import {createEditDisplay} from './edit';
 import {displayRetrieval} from './retrieval';
@@ -22,10 +22,11 @@ export function registerUi(
 ): RetrievalGroups | undefined {
   if (settings.enabled === false) return;
   if (settings.welcome !== false) registerWelcome(pi);
+  const bash = new BashDisplay(pi);
   const groups =
     settings.retrievalGroups === false ? undefined : new RetrievalGroups(pi);
   pi.on('session_start', (_event, ctx) => {
-    if (!ctx.hasUI) return;
+    if (ctx.mode !== 'tui') return;
     // Only replace a native definition. Other extensions retain their renderers.
     const tools = pi.getAllTools();
     if (
@@ -95,7 +96,7 @@ export function registerUi(
     const shell = hostSettings.getShellPath();
     if (prefix !== undefined) options.commandPrefix = prefix;
     if (shell !== undefined) options.shellPath = shell;
-    pi.registerTool(createBashDisplay(ctx.cwd, options, settings));
+    pi.registerTool(bash.create(ctx.cwd, options, settings));
   });
   return groups;
 }
