@@ -1,23 +1,23 @@
- • Bash(bun test tests/search)
-   ⎿  Exit 1 · 3 more lines · expand
-     FAIL keeps first occurrence within the same page
      Expected: [{id: "a", title: "first"}]
      Received: [{id: "a", title: "first"}, {id: "a", title: "later"}]
+     3 more lines
 
  • Edit(src/search/paginate.ts)
-   ⎿  Added 5 lines, removed 1 line · 2 more lines · expand
+   ⎿  Added 5 lines, removed 1 line
+     19     const seen = new Set(previousIds);
      20 -   const items = page.items.filter(item => !seen.has(item.id));
      20 +   const items = page.items.filter(item => {
      21 +     if (seen.has(item.id)) return false;
      22 +     seen.add(item.id);
      23 +     return true;
-     24 +   });
+     2 more lines
 
  • Bash(bun test tests/search --verbose)
-   ⎿  Exit 0 · 31 more lines · expand
+   ⎿  Exit 0
      [pass] preserves the cursor
        case 1: cursor preserved; input unchanged
        fixture: page-1; stable output order
+     31 more lines
 
  • Bash(git diff --check)
    ⎿  No output · exit 0

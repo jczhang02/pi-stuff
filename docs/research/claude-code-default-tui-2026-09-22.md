@@ -64,7 +64,7 @@ Ctrl+O changes Claude's global transcript view, including other calls and timest
 
 ## Changes worth considering for Pi Stuff
 
-These are presentation proposals. The runnable prototype has not been changed by this research.
+These proposals did not change the prototype during the research phase. The maintainer subsequently approved implementation; see the [UI spec](../ui-spec.md) for current behavior and updated captures.
 
 1. **Apply the agreed disclosure copy.** Remove `· expand` and `· collapse`. Show `n more lines` only for retained output hidden by the compact view. Place it after the preview, so it describes omitted output instead of competing with the result summary. Preserve native expansion even when no extra content is revealed. Long-title ellipses remain separate from output counts.
 2. **Allow existing information to form separate child blocks.** Keep result summary and output together. A configured timeout or an upstream truncation notice with a log path can form another `⎿` block. Omit absent fields; do not create empty slots or a new permission system. Pi 0.85.1's Bash already accepts an optional timeout in seconds and exposes truncation/log-path details. Its stdout and stderr share the output accumulator, so do not invent a stream split. Showing configured timeout directly is simpler than copying Claude's progress-dependent visibility.

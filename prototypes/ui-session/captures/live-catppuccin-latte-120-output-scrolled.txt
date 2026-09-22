@@ -1,6 +1,6 @@
                                                                                                                        │
  • Edit(src/search/paginate.ts)                                                                                        │
-   ⎿  Added 5 lines, removed 1 line · collapse                                                                         │
+   ⎿  Added 5 lines, removed 1 line                                                                                    │
      19     const seen = new Set(previousIds);                                                                         │
      20 -   const items = page.items.filter(item => !seen.has(item.id));                                               │
      20 +   const items = page.items.filter(item => {                                                                  │
@@ -11,7 +11,7 @@
      25     return {items, nextCursor: page.cursor};                                                                   │
                                                                                                                        │
  • Bash(bun test tests/search --verbose)                                                                               │
-   ⎿  Exit 0 · collapse                                                                                                │
+   ⎿  Exit 0                                                                                                           │
      [pass] preserves the cursor                                                                                       │
        case 1: cursor preserved; input unchanged                                                                       │
        fixture: page-1; stable output order                                                                            │

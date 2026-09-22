@@ -1,14 +1,14 @@
 
- • Edit(src/search/providers/remote/pagination/preserve-first-occurrence-and...
-   ⎿  Added 3 lines, removed 1 line · 3 more lines · expand
+ • Edit(src/search/providers/remote/pagination/preserve-first-occurrence-and-ne
+   xt-cursor-boundary.ts)
+   ⎿  Added 3 lines, removed 1 line
+     18   export function paginate(page, previousIds) {
+     19     const seen = new Set(previousIds);
      20 -   return {items: page.items, nextCursor: page.cursor};
      20 +   const items = page.items.filter(item => !seen.has(item.id));
      21 +   // Keep the provider cursor, including empty filtered pages.
      22 +   return {items, nextCursor: page.cursor};
-
-
-
-
+     1 more line
 
 
 

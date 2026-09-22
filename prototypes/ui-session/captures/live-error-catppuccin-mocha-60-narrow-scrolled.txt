@@ -1,4 +1,4 @@
-   ⎿  Wrote 10 lines · collapse                            │
+   ⎿  Wrote 10 lines                                       │
       1 │ test("keeps cursor when every item is filtered", │
         │ () => {                                          │
       2 │   const page = {items: [{id: "a"}], cursor:      │
@@ -17,7 +17,7 @@
      10 │ });                                              │
                                                            │
  • Bash(bun test tests/search)                             │
-   ⎿  Exit 1 · collapse                                    │
+   ⎿  Exit 1                                               │
      FAIL keeps first occurrence within the same page      │
      Expected: [{id: "a", title: "first"}]                 │
      Received: [{id: "a", title: "first"}, {id: "a", title:│
@@ -27,7 +27,7 @@
      1 fail                                                ┃
                                                            │
  • Edit(src/search/paginate.ts)                            │
-   ⎿  Added 5 lines, removed 1 line · collapse             │
+   ⎿  Added 5 lines, removed 1 line                        │
      19     const seen = new Set(previousIds);             │
      20 -   const items = page.items.filter(item =>        │
           !seen.has(item.id));                             │

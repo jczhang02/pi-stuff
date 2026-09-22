@@ -6,7 +6,7 @@
    ⎿  Cancelled · no completion result
      Checking pagination...
 
- • Read 1 file · expand
+ • Read 1 file
 
 
 

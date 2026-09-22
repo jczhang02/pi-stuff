@@ -26,6 +26,7 @@ export type Tool = {
   summary: string;
   body: ToolBody;
   state: 'done' | 'running' | 'failed' | 'cancelled';
+  timeoutSeconds?: number;
   warning?: string;
   metadata?: string;
 };

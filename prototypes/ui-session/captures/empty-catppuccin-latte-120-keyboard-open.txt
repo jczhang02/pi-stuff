@@ -3,13 +3,13 @@
    ⎿  No output · exit 0
 
  • Bash(bun test tests/search)
-   ⎿  Cancelled · no completion result · collapse
+   ⎿  Cancelled · no completion result
      Checking pagination...
 
- • Read 1 file · collapse
+ • Read 1 file
 
  • Read(docs/pagination.png)
-   ⎿  Image · image/png · collapse
+   ⎿  Image · image/png
      [image/png: terminal text fallback]
 
  Tool output: expanded

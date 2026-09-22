@@ -7,27 +7,27 @@
 
  • 先检查分页实现和现有测试, 再对照游标规则.
 
- • Read 2 files · Searched 2 patterns · Listed 1 directory · collapse
+ • Read 2 files · Searched 2 patterns · Listed 1 directory
 
  • Ls(src/search)
-   ⎿  Listed 3 entries · expand
+   ⎿  Listed 3 entries
+     3 more lines
 
  • Grep("previousIds" in src/search)
-   ⎿  Found 3 matches in 2 files · expand
+   ⎿  Found 3 matches in 2 files
+     3 more lines
 
  • Read(src/search/paginate.ts)
-   ⎿  Read 4 lines · expand
+   ⎿  Read 4 lines
+     4 more lines
 
  • Find("*paginate*" in tests)
-   ⎿  Found 1 file · expand
+   ⎿  Found 1 file
+     1 more line
 
  • Read(tests/search/paginate.test.ts)
-   ⎿  Read 3 lines · expand
-
-
-
-
-
+   ⎿  Read 3 lines
+     3 more lines
 
 
 

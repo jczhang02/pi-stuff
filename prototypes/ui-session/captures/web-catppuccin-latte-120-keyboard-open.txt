@@ -9,7 +9,7 @@
      web_search · provider=exa · contentId=search-01 · offset=0 · nextOffset=325
 
  • WebFetch(docs.example.com/pagination)
-   ⎿  Retrieved pagination guide · 6 lines · collapse
+   ⎿  Retrieved pagination guide · 6 lines
      Cursor pagination
 
      Keep the first occurrence of each item. Pass the cursor from the response
@@ -19,13 +19,13 @@
      fetch_content · https://docs.example.com/pagination · contentId=page-01 · offset=0 · nextOffset=228
 
  • WebRead(docs.example.com/pagination · find "cursor")
-   ⎿  Found 2 matches · collapse
+   ⎿  Found 2 matches
      3   Pass the cursor from the response unchanged to the next request.
      6   Do not derive the next cursor from the filtered result count.
      get_search_content · contentId=page-01 · find=cursor · moreMatches=false
 
  • WebRead(docs.example.com/pagination · continue)
-   ⎿  Read next 3 lines · more available · collapse
+   ⎿  Read next 3 lines · more available
      7   Empty filtered pages are valid.
      8   Continue using the next cursor until the provider returns no cursor.
      9   Deduplication must preserve the order of retained records.

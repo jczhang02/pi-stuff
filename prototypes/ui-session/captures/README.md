@@ -452,6 +452,36 @@ Browse states by scenario. Text and raw terminal output accompany each image.
 
 ## long-output
 
+### long-output-catppuccin-latte-120-keyboard-open
+
+![long-output-catppuccin-latte-120-keyboard-open](long-output-catppuccin-latte-120-keyboard-open.png)
+
+[Text](long-output-catppuccin-latte-120-keyboard-open.txt) · [ANSI](long-output-catppuccin-latte-120-keyboard-open.ansi)
+
+### long-output-catppuccin-latte-120-restored
+
+![long-output-catppuccin-latte-120-restored](long-output-catppuccin-latte-120-restored.png)
+
+[Text](long-output-catppuccin-latte-120-restored.txt) · [ANSI](long-output-catppuccin-latte-120-restored.ansi)
+
+### long-output-catppuccin-mocha-60-keyboard-open
+
+![long-output-catppuccin-mocha-60-keyboard-open](long-output-catppuccin-mocha-60-keyboard-open.png)
+
+[Text](long-output-catppuccin-mocha-60-keyboard-open.txt) · [ANSI](long-output-catppuccin-mocha-60-keyboard-open.ansi)
+
+### long-output-catppuccin-mocha-60-main
+
+![long-output-catppuccin-mocha-60-main](long-output-catppuccin-mocha-60-main.png)
+
+[Text](long-output-catppuccin-mocha-60-main.txt) · [ANSI](long-output-catppuccin-mocha-60-main.ansi)
+
+### long-output-catppuccin-mocha-60-restored
+
+![long-output-catppuccin-mocha-60-restored](long-output-catppuccin-mocha-60-restored.png)
+
+[Text](long-output-catppuccin-mocha-60-restored.txt) · [ANSI](long-output-catppuccin-mocha-60-restored.ansi)
+
 ### 默认 / Default · latte · 120 columns
 
 ![long-output-catppuccin-latte-120-main](long-output-catppuccin-latte-120-main.png)
@@ -697,3 +727,61 @@ Browse states by scenario. Text and raw terminal output accompany each image.
 ![直角欢迎页, 深色80列](welcome-catppuccin-mocha-80-main.png)
 
 [Text](welcome-catppuccin-mocha-80-main.txt) · [ANSI](welcome-catppuccin-mocha-80-main.ansi)
+
+## multiline-command
+
+### multiline-command-catppuccin-latte-120-keyboard-open
+
+![multiline-command-catppuccin-latte-120-keyboard-open](multiline-command-catppuccin-latte-120-keyboard-open.png)
+
+[Text](multiline-command-catppuccin-latte-120-keyboard-open.txt) · [ANSI](multiline-command-catppuccin-latte-120-keyboard-open.ansi)
+
+### multiline-command-catppuccin-latte-120-main
+
+![multiline-command-catppuccin-latte-120-main](multiline-command-catppuccin-latte-120-main.png)
+
+[Text](multiline-command-catppuccin-latte-120-main.txt) · [ANSI](multiline-command-catppuccin-latte-120-main.ansi)
+
+### multiline-command-catppuccin-latte-120-restored
+
+![multiline-command-catppuccin-latte-120-restored](multiline-command-catppuccin-latte-120-restored.png)
+
+[Text](multiline-command-catppuccin-latte-120-restored.txt) · [ANSI](multiline-command-catppuccin-latte-120-restored.ansi)
+
+## short-diff
+
+### short-diff-catppuccin-latte-120-clicked
+
+![short-diff-catppuccin-latte-120-clicked](short-diff-catppuccin-latte-120-clicked.png)
+
+[Text](short-diff-catppuccin-latte-120-clicked.txt) · [ANSI](short-diff-catppuccin-latte-120-clicked.ansi)
+
+### short-diff-catppuccin-latte-120-keyboard-open
+
+![short-diff-catppuccin-latte-120-keyboard-open](short-diff-catppuccin-latte-120-keyboard-open.png)
+
+[Text](short-diff-catppuccin-latte-120-keyboard-open.txt) · [ANSI](short-diff-catppuccin-latte-120-keyboard-open.ansi)
+
+### short-diff-catppuccin-latte-120-main
+
+![short-diff-catppuccin-latte-120-main](short-diff-catppuccin-latte-120-main.png)
+
+[Text](short-diff-catppuccin-latte-120-main.txt) · [ANSI](short-diff-catppuccin-latte-120-main.ansi)
+
+### short-diff-catppuccin-latte-120-restored
+
+![short-diff-catppuccin-latte-120-restored](short-diff-catppuccin-latte-120-restored.png)
+
+[Text](short-diff-catppuccin-latte-120-restored.txt) · [ANSI](short-diff-catppuccin-latte-120-restored.ansi)
+
+### short-diff-catppuccin-latte-60-narrow-closed
+
+![short-diff-catppuccin-latte-60-narrow-closed](short-diff-catppuccin-latte-60-narrow-closed.png)
+
+[Text](short-diff-catppuccin-latte-60-narrow-closed.txt) · [ANSI](short-diff-catppuccin-latte-60-narrow-closed.ansi)
+
+### short-diff-catppuccin-latte-60-narrow-open
+
+![short-diff-catppuccin-latte-60-narrow-open](short-diff-catppuccin-latte-60-narrow-open.png)
+
+[Text](short-diff-catppuccin-latte-60-narrow-open.txt) · [ANSI](short-diff-catppuccin-latte-60-narrow-open.ansi)

@@ -62,6 +62,18 @@ const edit: Tool = {
     path,
     rows: [
       {
+        kind: 'context',
+        oldLine: 18,
+        newLine: 18,
+        text: 'export function paginate(page, previousIds) {',
+      },
+      {
+        kind: 'context',
+        oldLine: 19,
+        newLine: 19,
+        text: '  const seen = new Set(previousIds);',
+      },
+      {
         kind: 'remove',
         oldLine: 20,
         text: '  return {items: page.items, nextCursor: page.cursor};',
@@ -76,6 +88,7 @@ const edit: Tool = {
         newLine: 21,
         text: '  return {items, nextCursor: page.cursor};',
       },
+      {kind: 'context', oldLine: 21, newLine: 22, text: '}'},
     ],
   },
 };
@@ -116,6 +129,7 @@ const running: Tool = {
   ...test,
   state: 'running',
   summary: 'Running · 2s',
+  timeoutSeconds: 30,
   body: {
     kind: 'text',
     text: '[pass] preserves the cursor\nChecking pagination boundaries...',
@@ -239,7 +253,9 @@ const webFailed: Tool = {
 };
 const truncated: Tool = {
   ...test,
-  target: 'bun test --verbose',
+  target:
+    'bun test tests/search/pagination-boundary.test.ts tests/search/pagination-empty-page.test.ts --timeout 30000 --bail',
+  timeoutSeconds: 90,
   summary: 'Exit 0 · output truncated',
   warning:
     'Showing the retained tail. Full output: /tmp/pi-pagination-tests.log',
@@ -272,10 +288,22 @@ export const scenes = [
     tokens: ['Welcome back!'],
   },
   {
+    name: 'multiline-command',
+    title: '多行命令',
+    note: '标题保留换行, 两行后明确省略; 展开恢复完整命令.',
+    tokens: ['printf one', 'printf two…'],
+  },
+  {
+    name: 'short-diff',
+    title: '完整小 diff',
+    note: '正文完整显示时仍可点击展开; 缩窄后可观察同一展开状态.',
+    tokens: ['Added 2 lines', 'previousIds'],
+  },
+  {
     name: 'long-diff',
     title: '长 diff 与长路径',
     note: '短预览注明隐藏行数; 展开恢复完整路径和带高亮的改动.',
-    tokens: ['more lines', 'Added 3 lines'],
+    tokens: ['more line', 'Added 3 lines'],
   },
   {
     name: 'session',
@@ -310,7 +338,7 @@ export const scenes = [
   {
     name: 'changes',
     title: '修改与验证',
-    note: 'Edit 默认展示最多 6 行高亮差异; Write 默认预览 3 行高亮代码, 点击查看完整内容.',
+    note: 'Edit 默认展示最多 6 行含上下文的高亮差异; Write 默认预览 3 行高亮代码, 点击查看完整内容.',
     tokens: ['Added 2 lines', 'Exit 0'],
   },
   {
@@ -383,6 +411,17 @@ function scenarioEntries(name: string): Entry[] {
     case 'live':
     case 'live-error':
       return [];
+    case 'multiline-command':
+      return [
+        {
+          ...test,
+          target: 'printf one\nprintf two\nprintf three',
+          summary: 'Exit 0',
+          body: {kind: 'text', text: 'onetwothree'},
+        },
+      ];
+    case 'short-diff':
+      return [edit];
     case 'long-diff':
       return [
         {

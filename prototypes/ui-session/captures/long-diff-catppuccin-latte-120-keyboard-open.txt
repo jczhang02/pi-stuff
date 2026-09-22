@@ -1,6 +1,6 @@
 
  • Edit(src/search/providers/remote/pagination/preserve-first-occurrence-and-next-cursor-boundary.ts)
-   ⎿  Added 3 lines, removed 1 line · collapse
+   ⎿  Added 3 lines, removed 1 line
      18   export function paginate(page, previousIds) {
      19     const seen = new Set(previousIds);
      20 -   return {items: page.items, nextCursor: page.cursor};

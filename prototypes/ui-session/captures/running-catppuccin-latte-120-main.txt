@@ -9,7 +9,7 @@
    ⎿  Running · 2s
      [pass] preserves the cursor
      Checking pagination boundaries...
-
+   ⎿  (timeout 30s)
 
 
 

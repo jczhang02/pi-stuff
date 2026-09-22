@@ -6,14 +6,14 @@
  • Thoughts · 4s
 
  • Bash(bun test tests/search)
-   ⎿  Exit 0 · 4.0s · 10 more lines · expand
+   ⎿  Exit 0 · 4.0s
      bun test v1.4.0
      [pass] preserves the cursor
      [pass] skips IDs from the previous page
+     10 more lines
+   ⎿  (timeout 30s)
 
  8 tests passed. The cursor is preserved.
-
-
 
 
 

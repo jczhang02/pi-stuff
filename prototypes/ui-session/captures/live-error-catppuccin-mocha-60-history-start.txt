@@ -18,16 +18,16 @@
    不变.                                                   │
                                                            │
  • Read(src/search/cursor.ts)                              │
-   ⎿  File not found · src/search/cursor.ts · collapse     │
+   ⎿  File not found · src/search/cursor.ts                │
      ENOENT: no such file or directory, open               │
      src/search/cursor.ts                                  │
                                                            │
  • 没有独立的 cursor.ts. 回到当前 paginate.ts 与测试入口.  │
                                                            │
- • Read 1 file · collapse                                  │
+ • Read 1 file                                             │
                                                            │
  • Read(src/search/paginate.ts)                            │
-   ⎿  Read 4 lines · collapse                              │
+   ⎿  Read 4 lines                                         │
      18 │ export function paginate(page, previousIds) {    │
      19 │   const seen = new Set(previousIds);             │
      20 │   return {items: page.items, nextCursor:         │

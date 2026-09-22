@@ -1,15 +1,15 @@
 
- • Bash(bun test --verbose)
-   ⎿  Exit 0 · output truncated · 21 more lines · expand
+ • Bash(bun test tests/search/pagination-boundary.test.ts tests/search/pagination-empty-page.test.ts --timeout 30000
+   --bail)
+   ⎿  Exit 0 · output truncated
      test runner diagnostic 1
      test runner diagnostic 2
      test runner diagnostic 3
-     Showing the retained tail. Full output: /tmp/pi-pagination-tests.log
+     21 more lines
+   ⎿  (timeout 90s)
+   ⎿  Showing the retained tail. Full output: /tmp/pi-pagination-tests.log
 
  • 测试通过. 详细输出保留在日志里.
-
-
-
 
 
 

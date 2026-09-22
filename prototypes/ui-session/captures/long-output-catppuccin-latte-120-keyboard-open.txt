@@ -1,0 +1,40 @@
+
+ • Bash(bun test tests/search/pagination-boundary.test.ts tests/search/pagination-empty-page.test.ts --timeout 30000
+   --bail)
+   ⎿  Exit 0 · output truncated
+     test runner diagnostic 1
+     test runner diagnostic 2
+     test runner diagnostic 3
+     test runner diagnostic 4
+     test runner diagnostic 5
+     test runner diagnostic 6
+     test runner diagnostic 7
+     test runner diagnostic 8
+     test runner diagnostic 9
+     test runner diagnostic 10
+     test runner diagnostic 11
+     test runner diagnostic 12
+     test runner diagnostic 13
+     test runner diagnostic 14
+     test runner diagnostic 15
+     test runner diagnostic 16
+     test runner diagnostic 17
+     test runner diagnostic 18
+     test runner diagnostic 19
+     test runner diagnostic 20
+     test runner diagnostic 21
+     test runner diagnostic 22
+     test runner diagnostic 23
+     test runner diagnostic 24
+   ⎿  (timeout 90s)
+   ⎿  Showing the retained tail. Full output: /tmp/pi-pagination-tests.log
+
+ • 测试通过. 详细输出保留在日志里.
+
+ Tool output: expanded
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+保留这段草稿
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

@@ -1,8 +1,8 @@
-     20 +   const items = page.items.filter(item => !seen.has(item.id));
      21 +   return {items, nextCursor: page.cursor};
+     22   }
 
  • Write(tests/search/pagination-boundary.test.ts)
-   ⎿  Wrote 7 lines · collapse
+   ⎿  Wrote 7 lines
      1 │ test("skips IDs from the previous page", () => {
      2 │   const page = {items: [{id: "a"}, {id: "b"}], cursor: "next"};
      3 │   const result = paginate(page, ["a"]);
@@ -12,7 +12,7 @@
      7 │ });
 
  • Bash(bun test tests/search)
-   ⎿  Exit 0 · 0.4s · collapse
+   ⎿  Exit 0 · 0.4s
      bun test v1.4.0
      [pass] preserves the cursor
      [pass] skips IDs from the previous page

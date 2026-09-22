@@ -48,14 +48,8 @@ export async function captureLive(
   const editLine = firstScreen.findIndex(line => line.includes('• Edit('));
   if (editLine < 0) throw new Error('Edit not visible for live mouse probe');
   await session.mouse({action: 'click', x: 3, y: editLine, button: 'left'});
-  await session.screen.waitForText(
-    'Added 2 lines, removed 1 line · collapse',
-    wait,
-  );
-  await save('edit-clicked', [
-    'Added 2 lines, removed 1 line · collapse',
-    '8 项测试通过',
-  ]);
+  await session.screen.waitForIdle({timeoutMs: 10000, quietForMs: 200});
+  await save('edit-clicked', ['Added 2 lines, removed 1 line', '8 项测试通过']);
   await session.keyboard.type('补充页内重复和全空过滤页, 展示完整测试结果.');
   await session.keyboard.press('Enter');
   await session.screen.waitForText('10 项测试通过', wait);

@@ -1,20 +1,20 @@
-   ⎿  Found 1 file · collapse
+   ⎿  Found 1 file
      tests/search/paginate.test.ts
 
  • Read(src/search/cursor.ts)
-   ⎿  File not found · src/search/cursor.ts · collapse
+   ⎿  File not found · src/search/cursor.ts
      ENOENT: no such file or directory, open src/search/cursor.ts
 
- • Read 1 file · collapse
+ • Read 1 file
 
  • Read(tests/search/paginate.test.ts)
-   ⎿  Read 3 lines · collapse
+   ⎿  Read 3 lines
      1 │ test("preserves the cursor", () => {
      2 │   expect(paginate(page, []).nextCursor).toBe(page.cursor);
      3 │ });
 
  • Bash(bun test tests/search)
-   ⎿  Exit 0 · 0.4s · collapse
+   ⎿  Exit 0 · 0.4s
      bun test v1.4.0
      [pass] preserves the cursor
      [pass] skips IDs from the previous page

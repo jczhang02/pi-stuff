@@ -52,6 +52,8 @@ The editor, display, mouse, scrolling, timers and cancellation controls run in r
 | `tools`                         | Do Read/Grep/Find/Ls share one summary and retain inspectable children?                                       |
 | `web`                           | Do successful Web actions join retrieval while retaining their semantic names on expansion?                   |
 | `changes`                       | Are changes visible while Write folds and Bash retains three output rows?                                     |
+| `short-diff`                    | Does a complete diff still toggle, with its state preserved after narrowing?                                  |
+| `multiline-command`             | Does a multiline command keep line boundaries and reveal its full title on expansion?                         |
 | `long-diff`                     | Are context, true changes, hidden rows and the full long target preserved?                                    |
 | `running`                       | Is the active operation clear with a two-row tail?                                                            |
 | `failures`                      | Are no matches, missing files, failed Web requests and failed tests distinct?                                 |

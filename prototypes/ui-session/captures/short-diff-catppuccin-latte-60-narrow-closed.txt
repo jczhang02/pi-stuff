@@ -1,0 +1,40 @@
+
+ • Edit(src/search/paginate.ts)
+   ⎿  Added 2 lines, removed 1 line
+     18   export function paginate(page, previousIds) {
+     19     const seen = new Set(previousIds);
+     20 -   return {items: page.items, nextCursor:
+          page.cursor};
+     20 +   const items = page.items.filter(item =>
+          !seen.has(item.id));
+     2 more lines
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────
+保留这段草稿
+────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                     preview

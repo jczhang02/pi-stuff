@@ -1,28 +1,28 @@
- • Write(tests/search/pagination-boundary.test.ts)
-   ⎿  Wrote 7 lines · 4 more lines · expand
-     1 │ test("skips IDs from the previous page", () => {
-     2 │   const page = {items: [{id: "a"}, {id: "b"}], cursor: "next"};
-     3 │   const result = paginate(page, ["a"]);
 
  • Bash(bun test tests/search)
-   ⎿  Exit 1 · 3 more lines · expand
+   ⎿  Exit 1
      FAIL skips IDs from the previous page
      Expected: [{id: "b"}]
      Received: [{id: "a"}, {id: "b"}]
+     3 more lines
 
  • 新增测试复现了跨页重复. 现在只修改 item 过滤, 保留 provider 的 cursor.
 
  • Edit(src/search/paginate.ts)
    ⎿  Added 2 lines, removed 1 line
+     18   export function paginate(page, previousIds) {
+     19     const seen = new Set(previousIds);
      20 -   return {items: page.items, nextCursor: page.cursor};
      20 +   const items = page.items.filter(item => !seen.has(item.id));
      21 +   return {items, nextCursor: page.cursor};
+     22   }
 
  • Bash(bun test tests/search)
-   ⎿  Exit 0 · 1.2s · 10 more lines · expand
+   ⎿  Exit 0 · 1.2s
      bun test v1.4.0
      [pass] preserves the cursor
      [pass] skips IDs from the previous page
+     10 more lines
 
  • 已修复跨页重复, 8 项测试通过.
 

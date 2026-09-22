@@ -9,9 +9,9 @@
    ⎿  Cancelled · no completion result
      [pass] preserves the cursor
      Checking pagination boundaries...
+   ⎿  (timeout 30s)
 
  Operation aborted
-
 
 
 

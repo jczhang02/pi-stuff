@@ -1,33 +1,33 @@
-
- • Thoughts · 4s
-
- • 先检查分页实现和现有测试, 再对照游标规则.
-
- • Read 2 files · Searched 2 patterns · Listed 1 directory · expand
+ • Read 2 files · Searched 2 patterns · Listed 1 directory
 
  • 实现读取了 previousIds, 但没有过滤结果. 我再确认空页时应如何保留游标.
 
- • Searched web 1 time · Read web content 3 times · expand
+ • Searched web 1 time · Read web content 3 times
 
  • 保持 provider 返回的 cursor, 只过滤重复的 item.
 
  • Edit(src/search/paginate.ts)
    ⎿  Added 2 lines, removed 1 line
+     18   export function paginate(page, previousIds) {
+     19     const seen = new Set(previousIds);
      20 -   return {items: page.items, nextCursor: page.cursor};
      20 +   const items = page.items.filter(item => !seen.has(item.id));
      21 +   return {items, nextCursor: page.cursor};
+     22   }
 
  • Write(tests/search/pagination-boundary.test.ts)
-   ⎿  Wrote 7 lines · 4 more lines · expand
+   ⎿  Wrote 7 lines
      1 │ test("skips IDs from the previous page", () => {
      2 │   const page = {items: [{id: "a"}, {id: "b"}], cursor: "next"};
      3 │   const result = paginate(page, ["a"]);
+     4 more lines
 
  • Bash(bun test tests/search)
-   ⎿  Exit 0 · 0.4s · 10 more lines · expand
+   ⎿  Exit 0 · 0.4s
      bun test v1.4.0
      [pass] preserves the cursor
      [pass] skips IDs from the previous page
+     10 more lines
 
  • 已修复分页重复: 保留结果顺序, 游标原样传递.
 

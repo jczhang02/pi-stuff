@@ -62,12 +62,7 @@ function codeRows(
     ),
   );
 }
-function bodyRows(
-  body: ToolBody,
-  width: number,
-  theme: Theme,
-  changesOnly = false,
-): string[] {
+function bodyRows(body: ToolBody, width: number, theme: Theme): string[] {
   switch (body.kind) {
     case 'text':
       return body.text
@@ -108,7 +103,6 @@ function bodyRows(
           row.kind === 'remove' ? oldCode[oldIndex] : newCode[newIndex];
         if (row.kind !== 'add') oldIndex++;
         if (row.kind !== 'remove') newIndex++;
-        if (changesOnly && row.kind === 'context') return [];
         const color =
           row.kind === 'add'
             ? 'toolDiffAdded'
@@ -164,11 +158,21 @@ function toolRows(
           : 'success';
   const marker = `${theme.fg(color, '•')} `;
   const title = `${theme.bold(theme.fg('toolTitle', tool.name))}(${theme.fg('text', tool.target)})`;
-  const rows = state.open
-    ? wrapTextWithAnsi(title, Math.max(1, width - 2)).map(
-        (line, i) => (i ? '  ' : marker) + line,
-      )
-    : [truncateToWidth(marker + title, width)];
+  const titleWidth = Math.max(1, width - 2);
+  const titleRows = wrapTextWithAnsi(title, titleWidth);
+  const compactTitle = titleRows.slice(0, 2);
+  if (titleRows.length > 2)
+    compactTitle[1] =
+      truncateToWidth(titleRows[1] ?? '', Math.max(1, titleWidth - 1), '') +
+      theme.fg('dim', '…');
+  const rows = (state.open ? titleRows : compactTitle).map(
+    (line, i) => (i ? '  ' : marker) + line,
+  );
+  // Each child owns one connector; continuation rows align with its text.
+  const child = (text: string) =>
+    wrapTextWithAnsi(text, Math.max(1, width - 5)).map(
+      (line, i) => (i ? '     ' : theme.fg('dim', '  ⎿  ')) + line,
+    );
   const detail = bodyRows(tool.body, Math.max(1, width - 4), theme);
   const shown = state.open
     ? detail
@@ -177,36 +181,28 @@ function toolRows(
       : tool.name === 'Bash' || (tool.name === 'Write' && tool.state === 'done')
         ? detail.slice(0, 3)
         : tool.name === 'Edit' && tool.state === 'done'
-          ? bodyRows(tool.body, Math.max(1, width - 4), theme, true).slice(0, 6)
+          ? detail.slice(0, 6)
           : [];
-  const hidden = detail.length > shown.length;
-  const hint =
-    hidden || (!state.open && tool.metadata)
-      ? theme.fg(
-          'dim',
-          `${shown.length && hidden ? ` · ${detail.length - shown.length} more lines` : ''} · expand`,
-        )
-      : state.open && detail.length
-        ? theme.fg('dim', ' · collapse')
-        : '';
   rows.push(
-    ...wrapTextWithAnsi(
-      theme.fg(tool.state === 'failed' ? 'error' : 'muted', tool.summary) +
-        hint,
-      Math.max(1, width - 5),
-    ).map((line, i) => (i ? '     ' : theme.fg('dim', '  ⎿  ')) + line),
+    ...child(
+      theme.fg(tool.state === 'failed' ? 'error' : 'muted', tool.summary),
+    ),
+    ...indent(shown, '    '),
   );
-  rows.push(...indent(shown, '    '));
-  if (tool.warning)
+  const hidden = detail.length - shown.length;
+  if (hidden > 0)
     rows.push(
       ...indent(
         wrapTextWithAnsi(
-          theme.fg('warning', tool.warning),
+          theme.fg('dim', `${hidden} more ${hidden === 1 ? 'line' : 'lines'}`),
           Math.max(1, width - 4),
         ),
         '    ',
       ),
     );
+  if (tool.timeoutSeconds !== undefined)
+    rows.push(...child(theme.fg('dim', `(timeout ${tool.timeoutSeconds}s)`)));
+  if (tool.warning) rows.push(...child(theme.fg('warning', tool.warning)));
   if (state.open && tool.metadata)
     rows.push(
       ...indent(
@@ -332,8 +328,7 @@ export function entryComponent(
             {
               render: w =>
                 wrapTextWithAnsi(
-                  theme.fg('muted', explorationSummary(entry.tools)) +
-                    theme.fg('dim', state.open ? ' · collapse' : ' · expand'),
+                  theme.fg('muted', explorationSummary(entry.tools)),
                   Math.max(1, w - 2),
                 ).map(
                   (line, i) => (i ? '  ' : theme.fg('success', '• ')) + line,

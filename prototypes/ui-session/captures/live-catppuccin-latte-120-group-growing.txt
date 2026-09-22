@@ -17,14 +17,14 @@
 
 
  • Read(src/search/cursor.ts)
-   ⎿  File not found · src/search/cursor.ts · expand
+   ⎿  File not found · src/search/cursor.ts
+     1 more line
 
  • 没有独立的 cursor.ts. 回到当前 paginate.ts 与测试入口.
 
- • Read 1 file · expand
+ • Read 1 file
 
  • Thinking · 0s
-
 
 
 

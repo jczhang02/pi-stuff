@@ -8,19 +8,19 @@
 
  • 先检查分页实现和现有测试, 再对照游标规则.
 
- • Read 1 file · expand
+ • Read 1 file
 
  • Edit(src/search/paginate.ts)
    ⎿  Added 2 lines, removed 1 line
+     18   export function paginate(page, previousIds) {
+     19     const seen = new Set(previousIds);
      20 -   return {items: page.items, nextCursor:
           page.cursor};
      20 +   const items = page.items.filter(item =>
           !seen.has(item.id));
-     21 +   return {items, nextCursor: page.cursor};
+     2 more lines
 
  Tool output: collapsed
-
-
 
 
 

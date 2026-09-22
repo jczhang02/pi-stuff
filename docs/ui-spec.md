@@ -4,7 +4,7 @@
 
 ## Review scope
 
-Use this spec to review the conversation UI in the current prototype on `codex/ui-session-prototype`, product baseline `cd0f174`, Pi 0.85.1 and Bun 1.4.0. Production adoption is pending. Three unimplemented proposals appear at the end.
+Use this spec to review the conversation UI in the current prototype on `codex/ui-session-prototype`, product baseline `cd0f174`, Pi 0.85.1 and Bun 1.4.0. Production adoption is pending. One unimplemented proposal appears at the end.
 
 Preserve native user messages, footer, input and session controls. Todo, agents, Goal, background tasks, BTW, notification systems, session naming and a separate tool inspector are excluded. Native compaction/branch/skill/direct-shell output remains in the research inventory; old candidates do not establish new requirements.
 
@@ -64,7 +64,7 @@ Live session, Cancelled, latte, 120 columns
 
 ### Tool invocation and result block
 
-Use a leading status dot, Action(target), then an outcome introduced by ⎿. One connector begins each visible child-result summary; wrapped summary continuations align with its text, body rows retain their own content inset. Independent expanded tools each own a connector. This is a semantic two-level structure, not a limit of two physical lines. Long expanded targets wrap; code retains syntax highlighting. Success, running, failure and cancellation use semantic colors plus text.
+Use a leading status dot, Action(target), then an outcome introduced by ⎿. One connector begins each visible child-result summary; wrapped summary continuations align with its text, body rows retain their own content inset. One invocation can contain several child blocks: the result, an optional configured timeout, and an upstream truncation/log notice. Absent metadata adds no rows. Web technical metadata remains expansion-only. Independent expanded tools each own their result connector. This is a semantic two-level structure, not a limit of two physical lines. Compact titles wrap onto at most two rows, with an ellipsis only when more title text remains; expansion shows the full target. Code retains syntax highlighting. Success, running, failure and cancellation use semantic colors plus text.
 
 Edit and Write, Default, latte, 120 columns
 
@@ -100,7 +100,7 @@ Web tools, WebFetch expanded, latte, 120 columns
 
 ### Edit, Write and syntax
 
-Edit uses a unified diff with one line-number gutter: deletions use old numbers, additions/context use new numbers. +/- signs and added/removed backgrounds preserve meaning alongside syntax colors. Old/new source is highlighted separately. Compact Edit shows at most six rendered changed rows; expanded Edit restores context and the full target. Wrapped rows do not repeat line numbers or signs. Write defaults to path, line count and the first three rendered rows of highlighted content. Short content appears in full; expansion reveals the remaining rows. Diff rows are authored fixture data.
+Edit uses a unified diff with one line-number gutter: deletions use old numbers, additions/context use new numbers. +/- signs and added/removed backgrounds preserve meaning alongside syntax colors. Old/new source is highlighted separately. Compact Edit shows the first six rendered rows of the available hunk, including unchanged context. The small fixture fits its enclosing function, changes and closing line at wide widths. Expansion restores all remaining rows and the full target. Wrapped rows do not repeat line numbers or signs. Write defaults to path, line count and the first three rendered rows of highlighted content. Short content appears in full; expansion reveals the remaining rows. Diff rows are authored fixture data.
 
 Edit and Write, Ctrl+O expanded, latte, 120 columns
 
@@ -138,6 +138,8 @@ Tool failures, Default, latte, 120 columns
 
 ## Interaction and long sessions
 
+Tools and retrieval groups have no `· expand` or `· collapse` suffix. When compact tool output hides retained rendered rows, show `n more lines` below the preview, separate from the outcome summary. Count only body rows, not title wrapping or metadata. Full output and empty bodies show no count. Native click and Ctrl+O toggling remain available even when both tool views look identical. Retrieval summaries remain clickable without a suffix.
+
 The live script repairs pagination in two submitted turns, with read/search/Web/edit/write/test activity, a failed request, retry and continued history. Esc stops progression and retains the draft; resubmitting resumes the interrupted step. Submitting during execution first interrupts. After both scripted turns, later submissions recap existing results. Native scrolling and resize preserve access to full retained output. Verify at 120/80/60 columns with Latte and Mocha.
 
 Live session, Second turn complete, latte, 120 columns
@@ -154,10 +156,8 @@ Images are actual Pi terminal exports with offline content/execution. Font stack
 
 ## Proposals awaiting review, not implemented
 
-| Proposal                                                                        | Current prototype                                    |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Remove permanent collapse, replace generic expand with hidden-content summaries | Existing tool/group text suffixes remain             |
-| Retain some context in compact diffs                                            | Up to six changed rows; context appears on expansion |
-| Lead running tools with an existing action description                          | Current heading remains tool name and target         |
+| Proposal                                               | Current prototype                            |
+| ------------------------------------------------------ | -------------------------------------------- |
+| Lead running tools with an existing action description | Current heading remains tool name and target |
 
-[建议依据: Claude 实测](research/claude-code-ui-details-2026-09-22.md)
+[Remaining proposal source](research/claude-code-ui-details-2026-09-22.md) · [Adopted child-block and disclosure research](research/claude-code-default-tui-2026-09-22.md)

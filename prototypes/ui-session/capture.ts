@@ -70,6 +70,8 @@ async function save(
     if (!screen.text.includes(token))
       throw new Error(`${label}: missing ${token}`);
   if (!screen.ansi) throw new Error('No ANSI evidence');
+  if (/ · (expand|collapse)\b/.test(screen.text))
+    throw new Error('Obsolete disclosure suffix');
   const hex = (c: {r: number; g: number; b: number}) =>
     '#' + [c.r, c.g, c.b].map(v => v.toString(16).padStart(2, '0')).join('');
   if (
@@ -196,7 +198,42 @@ await runEffect(async () => {
       await save(session, 'main', scene.tokens, host.palette, theme);
       if (args.values.interact) {
         await session.keyboard.type(draft);
-        if (scene.name === 'investigate') {
+        if (scene.name === 'short-diff') {
+          await session.screen.waitForText(draft, wait);
+          const before = (await session.screen.text()).split('─')[0];
+          await click(session, 'Edit(');
+          await session.screen.waitForIdle({timeoutMs: 10000, quietForMs: 200});
+          if ((await session.screen.text()).split('─')[0] !== before)
+            throw new Error('Complete short diff gained disclosure chrome');
+          await save(
+            session,
+            'clicked',
+            ['Added 2 lines', draft],
+            host.palette,
+            theme,
+          );
+          await session.resize({cols: 60, rows});
+          await session.screen.waitUntil(s => s.frame.cols === 60, wait);
+          if ((await session.screen.text()).includes('more lines'))
+            throw new Error('Click did not retain expanded state after resize');
+          await save(
+            session,
+            'narrow-open',
+            ['previousIds', draft],
+            host.palette,
+            theme,
+          );
+          await click(session, 'Edit(');
+          await session.screen.waitForText('more lines', wait);
+          await save(
+            session,
+            'narrow-closed',
+            ['more lines', draft],
+            host.palette,
+            theme,
+          );
+          await session.resize({cols, rows});
+        } else if (scene.name === 'investigate') {
           await click(session, 'Read 2 files');
           await session.screen.waitForText('Read 4 lines', wait);
           await save(
@@ -362,19 +399,23 @@ await runEffect(async () => {
         const expandedToken =
           scene.name === 'failures'
             ? 'Received:'
-            : scene.name === 'thoughts'
-              ? 'Thoughts · 4s'
-              : scene.name === 'thoughts-visible'
-                ? 'Thoughts:'
-                : scene.name === 'web'
-                  ? 'offset=228'
-                  : scene.name === 'changes' || scene.name === 'folding'
-                    ? 'Ran 8 tests across 2 files.'
-                    : scene.name === 'empty'
-                      ? 'image/png'
-                      : scene.name === 'long-diff'
-                        ? 'including empty filtered pages'
-                        : 'previousIds';
+            : scene.name === 'multiline-command'
+              ? 'printf three)'
+              : scene.name === 'thoughts'
+                ? 'Thoughts · 4s'
+                : scene.name === 'thoughts-visible'
+                  ? 'Thoughts:'
+                  : scene.name === 'web'
+                    ? 'offset=228'
+                    : scene.name === 'changes' || scene.name === 'folding'
+                      ? 'Ran 8 tests across 2 files.'
+                      : scene.name === 'empty'
+                        ? 'image/png'
+                        : scene.name === 'long-output'
+                          ? 'test runner diagnostic 24'
+                          : scene.name === 'long-diff'
+                            ? 'including empty filtered pages'
+                            : 'previousIds';
         await session.screen.waitForText(expandedToken, wait);
         await save(
           session,
