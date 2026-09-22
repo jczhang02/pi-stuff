@@ -399,3 +399,81 @@ test('Parallel retrievals retain pending calls and failures in source order', as
     }
   }
 }, 30000);
+
+test('Cancelled retrieval stays visible between completed groups and the next turn', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  let requests = 0;
+  let aborted = 0;
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request) {
+      requests++;
+      return new Promise<Response>(resolve => {
+        request.signal.addEventListener(
+          'abort',
+          () => {
+            aborted++;
+            resolve(new Response(null, {status: 499}));
+          },
+          {once: true},
+        );
+      });
+    },
+  });
+  try {
+    await host.terminal.resize({cols: 100, rows: 50});
+    await writeFile(join(host.directory, 'ready.txt'), 'COMPLETED_READ_BODY');
+    const read = {
+      name: 'read',
+      parameters: JSON.stringify({path: 'ready.txt'}),
+    };
+    await host.startParallel([
+      read,
+      {
+        name: 'fetch_content',
+        parameters: JSON.stringify({urls: [String(server.url)], mode: 'raw'}),
+      },
+      read,
+    ]);
+    await host.terminal.screen.waitUntil(
+      snapshot =>
+        requests === 1 && snapshot.text.match(/Read 1 file\b/gu)?.length === 2,
+      {timeoutMs: 5000},
+    );
+    await host.terminal.keyboard.press('Escape');
+    await host.terminal.screen.waitUntil(
+      snapshot =>
+        aborted === 1 && /operation(?: was)? aborted/iu.test(snapshot.text),
+      {timeoutMs: 5000},
+    );
+    const cancelled = await host.terminal.screen.text();
+    expect(cancelled).toContain('WebFetch(1 page)');
+    expect(cancelled).not.toContain('Read web content');
+    expect(cancelled.match(/Read 1 file\b/gu)).toHaveLength(2);
+    expect(cancelled).not.toContain('COMPLETED_READ_BODY');
+    const web = cancelled.indexOf('WebFetch(1 page)');
+    const nextRead = cancelled.indexOf('Read 1 file', web);
+    expect(cancelled.slice(0, web)).toContain('Read 1 file');
+    expect(nextRead).toBeGreaterThan(web);
+    expect(cancelled.slice(web, nextRead)).toContain(
+      '⎿ All fibers interrupted without error',
+    );
+    await host.invoke('read', read.parameters);
+    const resumed = await host.terminal.screen.text();
+    expect(resumed.match(/Read 1 file\b/gu)).toHaveLength(3);
+    expect(resumed).toContain('WebFetch(1 page)');
+    expect(resumed).toMatch(/operation(?: was)? aborted/iu);
+    expect(resumed).not.toContain('Read web content');
+    expect(requests).toBe(1);
+  } catch (error) {
+    console.error(await host.terminal.screen.text());
+    throw error;
+  } finally {
+    try {
+      await server.stop(true);
+    } finally {
+      await host.close();
+    }
+  }
+}, 30000);
