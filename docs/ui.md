@@ -4,7 +4,7 @@
 
 Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Assistant/Thoughts presentation is not implemented yet. The prototype remains visual reference, not production acceptance evidence.
 
-[Assistant integration evidence](ui-integration.md) records the public-API limits, actual captures and the pending compatibility proposal. Its experimental screenshots are not the target design.
+[Integration experiments](ui-integration.md) record public-API limits, actual captures and the pending assistant/tool-history proposals. Their experimental screenshots are not the target design.
 
 ## Welcome
 
@@ -133,7 +133,7 @@ The UI implementation is owned by `src/ui/`; the entrypoint registers it after s
 
 ## Verification status
 
-Retrieval results reuse Pi's native result component and retain only the current width's layout. Repeated expansion of a 321-call conversation fell from a median 1,174 ms to 33 ms; first expansion still took about 1.25 seconds. [Measurements and limits](ui-performance.md) include UI-on/off results, CPU, memory and raw observations. This is not complete performance acceptance.
+Retrieval results reuse Pi's native result component and retain only the current width's layout. Repeated expansion of a 321-call conversation fell from a median 1,174 ms to 33 ms. A later native width check avoids rescanning fitting styled rows; first expansion fell from 1,097 ms to 102 ms in a fresh comparison. [Measurements and limits](ui-performance.md) include UI-on/off results, CPU, memory and raw observations. This is not complete performance acceptance.
 
 Write/Edit reuse highlighted source and one width's wrapped body across disclosure changes. Pi's native invalidation clears these caches for theme changes, newly loaded syntax grammars and layout refreshes. There is no cache of every previously used width or theme.
 

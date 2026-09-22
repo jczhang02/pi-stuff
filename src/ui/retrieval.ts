@@ -12,6 +12,7 @@ import {
   wrapTextWithAnsi,
   truncateToWidth,
   stripTerminalSequences,
+  visibleWidth,
 } from '@earendil-works/pi-tui';
 
 interface RetrievalDetails {
@@ -103,12 +104,13 @@ class RetrievalContent {
             ? 'muted'
             : 'toolOutput';
       if (visible) {
-        block.styled ??= rows.map((line, index) =>
-          truncateToWidth(
-            `${index === 0 ? '  ⎿ ' : '    '}${this.theme.fg(color, line)}`,
-            width,
-          ),
-        );
+        block.styled ??= rows.map((line, index) => {
+          const text = `${index === 0 ? '  ⎿ ' : '    '}${this.theme.fg(color, line)}`;
+          // Measure the unstyled body to avoid scanning ANSI on every fitting row.
+          return visibleWidth(line) <= width - 4
+            ? text
+            : truncateToWidth(text, width);
+        });
         body.push(...block.styled);
       } else {
         body.push(

@@ -1,0 +1,998 @@
+{
+  "baselineCommit": "06768a264c9e52cec9b7f86128f8011c14da1ed6",
+  "baselineRetrievalSha256": "60871cadfff5e217ffcf92de8c6bf52c11f8f11cf87d4083d97b244f1e4deec4",
+  "finalRetrievalSha256": "8523c8ef41c0396173b5b5cc149137ab80fc758cddb1bb10153b0f92217741e5",
+  "host": {
+    "pi": "0.87.0 compiled",
+    "bun": "1.4.0",
+    "terminalControl": "1.2.1",
+    "terminal": {
+      "cols": 100,
+      "rows": 36
+    }
+  },
+  "method": {
+    "workload": "40 user turns with 8 Read calls each, then one 100-line Write. Every Read returns the same 300-line ASCII TypeScript source. UI enabled, welcome and both RTK transformations disabled, grouping enabled.",
+    "samples": "Three fresh processes before, then three after. Baseline was captured in batches of one and two runs; original sample indices are retained.",
+    "timing": "Same launchPi driver as the initial cache experiment. Timings include terminal dispatch and observation. The last written source line marks completed expansion.",
+    "controls": "Development host, no CPU pinning, randomized order or explicit garbage collection. No numerical acceptance budget or complete performance acceptance is claimed.",
+    "scope": "Source width check only. No compatibility adapters or new caching."
+  },
+  "before": [
+    {
+      "sample": 0,
+      "enabled": true,
+      "startupMs": 680.88954,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4962321,
+      "loadMs": 5999.616709,
+      "typingMs": [
+        4.061740999999529, 2.5944030000000566, 2.091167999999925,
+        2.083773000000292, 1.7423870000002353, 2.9997800000001007,
+        2.076726000000235, 2.212922000000617, 4.651162000000113,
+        4.6605310000004465
+      ],
+      "disclosureMs": [
+        1177.0838570000005, 28.155939999999646, 29.868698000000222,
+        30.70877399999972, 30.362967000000026, 31.510974999999235,
+        30.269109999999273, 27.042123000000174, 30.92293199999949,
+        27.90794199999982
+      ],
+      "resizeMs": [
+        9.42779100000007, 11.041837000000669, 11.058385000000271,
+        8.607965000001059, 9.332167999999001, 9.595197000000553
+      ],
+      "initial": {
+        "label": "initial",
+        "pid": 1769330,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 777875,
+          "system": 98333
+        },
+        "memory": {
+          "rss": 185724928,
+          "heapUsed": 41086182,
+          "external": 17333925
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 1769330,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6413343,
+          "system": 920847
+        },
+        "memory": {
+          "rss": 418181120,
+          "heapUsed": 121076339,
+          "external": 80114372
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 1769330,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 7922897,
+          "system": 1014772
+        },
+        "memory": {
+          "rss": 512053248,
+          "heapUsed": 81316899,
+          "external": 37875666
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 1769330,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 8052654,
+            "system": 1027791
+          },
+          "memory": {
+            "rss": 475025408,
+            "heapUsed": 81316899,
+            "external": 38035861
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 1769330,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 8098826,
+            "system": 1036548
+          },
+          "memory": {
+            "rss": 477646848,
+            "heapUsed": 81316899,
+            "external": 38196056
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 1769330,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 8146063,
+            "system": 1042374
+          },
+          "memory": {
+            "rss": 481087488,
+            "heapUsed": 81316899,
+            "external": 38356347
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 1769330,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 8211477,
+            "system": 1045963
+          },
+          "memory": {
+            "rss": 484524032,
+            "heapUsed": 94825836,
+            "external": 45758216
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 1769330,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 8254410,
+            "system": 1054692
+          },
+          "memory": {
+            "rss": 453021696,
+            "heapUsed": 95391749,
+            "external": 46084836
+          }
+        }
+      ]
+    },
+    {
+      "sample": 0,
+      "enabled": true,
+      "startupMs": 653.3535909999999,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4962321,
+      "loadMs": 5884.883177,
+      "typingMs": [
+        3.9646709999997256, 2.72787100000005, 3.091417999999976,
+        2.2404349999997066, 2.0926519999993616, 1.6748999999999796,
+        1.6906500000004598, 2.528573000000506, 1.5926879999997254,
+        1.910757999999987
+      ],
+      "disclosureMs": [
+        1096.80516, 28.419807999999648, 37.70639000000028, 28.04930299999978,
+        27.847710999999435, 30.66232300000047, 28.474237999999787,
+        29.46936800000003, 29.093777999999475, 27.64751999999953
+      ],
+      "resizeMs": [
+        7.274623999999676, 6.650161999999909, 7.889517000000524,
+        7.2110099999999875, 5.763747000000876, 6.739704999999958
+      ],
+      "initial": {
+        "label": "initial",
+        "pid": 1779936,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 750818,
+          "system": 71894
+        },
+        "memory": {
+          "rss": 184147968,
+          "heapUsed": 41119720,
+          "external": 17375031
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 1779936,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6283100,
+          "system": 875791
+        },
+        "memory": {
+          "rss": 391323648,
+          "heapUsed": 91966015,
+          "external": 56446080
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 1779936,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 7711521,
+          "system": 952052
+        },
+        "memory": {
+          "rss": 410390528,
+          "heapUsed": 80577501,
+          "external": 37895645
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 1779936,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7823686,
+            "system": 965106
+          },
+          "memory": {
+            "rss": 393617408,
+            "heapUsed": 80577501,
+            "external": 38055936
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 1779936,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7864225,
+            "system": 970053
+          },
+          "memory": {
+            "rss": 402792448,
+            "heapUsed": 80577501,
+            "external": 38216323
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 1779936,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7901827,
+            "system": 975262
+          },
+          "memory": {
+            "rss": 406765568,
+            "heapUsed": 80577501,
+            "external": 38376614
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 1779936,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7958763,
+            "system": 983880
+          },
+          "memory": {
+            "rss": 407072768,
+            "heapUsed": 94155196,
+            "external": 45684096
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 1779936,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7991959,
+            "system": 986927
+          },
+          "memory": {
+            "rss": 409530368,
+            "heapUsed": 94155196,
+            "external": 45844387
+          }
+        }
+      ]
+    },
+    {
+      "sample": 1,
+      "enabled": true,
+      "startupMs": 643.9916360000007,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4962321,
+      "loadMs": 5672.172221000001,
+      "typingMs": [
+        4.009032000001753, 6.224433000001227, 3.0859479999999166,
+        2.9267950000012206, 2.61982099999841, 2.351107000000411,
+        2.0612350000010338, 2.019815000001472, 4.918746999999712,
+        2.133679000000484
+      ],
+      "disclosureMs": [
+        1060.9353789999986, 30.54118700000072, 50.47443900000144,
+        27.28192499999932, 31.29456399999981, 27.10868499999924,
+        38.29300200000034, 32.00268500000129, 48.131335999998555,
+        26.620068000000174
+      ],
+      "resizeMs": [
+        8.417072999998709, 7.220892000001186, 8.728940999999395,
+        9.63054000000011, 6.663483000000269, 5.889445999999225
+      ],
+      "initial": {
+        "label": "initial",
+        "pid": 1780529,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 742421,
+          "system": 83378
+        },
+        "memory": {
+          "rss": 184688640,
+          "heapUsed": 41104097,
+          "external": 17364224
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 1780529,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 5977893,
+          "system": 920321
+        },
+        "memory": {
+          "rss": 402579456,
+          "heapUsed": 103219222,
+          "external": 64961657
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 1780529,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 7313304,
+          "system": 1037694
+        },
+        "memory": {
+          "rss": 528306176,
+          "heapUsed": 126959652,
+          "external": 74393301
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 1780529,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7429972,
+            "system": 1054966
+          },
+          "memory": {
+            "rss": 477556736,
+            "heapUsed": 127441026,
+            "external": 74632181
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 1780529,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7464981,
+            "system": 1062826
+          },
+          "memory": {
+            "rss": 487526400,
+            "heapUsed": 127441026,
+            "external": 74792568
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 1780529,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7503044,
+            "system": 1063998
+          },
+          "memory": {
+            "rss": 495579136,
+            "heapUsed": 127441026,
+            "external": 74952763
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 1780529,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7588047,
+            "system": 1074145
+          },
+          "memory": {
+            "rss": 507375616,
+            "heapUsed": 50726723,
+            "external": 24800321
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 1780529,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 7642713,
+            "system": 1077688
+          },
+          "memory": {
+            "rss": 502075392,
+            "heapUsed": 50726723,
+            "external": 24960612
+          }
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "sample": 0,
+      "enabled": true,
+      "startupMs": 683.631251,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4962321,
+      "loadMs": 5630.817293,
+      "typingMs": [
+        4.518669999999474, 3.447935000000143, 3.1882519999999204,
+        2.048225000000457, 2.1723369999999704, 1.9718689999999697,
+        2.025934999999663, 2.375864000000547, 1.936772000000019,
+        1.6900230000001102
+      ],
+      "disclosureMs": [
+        100.18478400000004, 40.96390499999961, 39.93939000000046,
+        33.07340900000054, 31.732535000000098, 34.332360000000335,
+        32.52383700000064, 28.44903599999998, 28.959930999999415,
+        28.80812700000024
+      ],
+      "resizeMs": [
+        7.9697580000001835, 7.538001999999324, 13.654465000000528,
+        11.940508000000591, 6.5512610000005225, 7.74766499999987
+      ],
+      "initial": {
+        "label": "initial",
+        "pid": 1783855,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 840204,
+          "system": 87677
+        },
+        "memory": {
+          "rss": 197410816,
+          "heapUsed": 46039843,
+          "external": 21133010
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 1783855,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6068230,
+          "system": 854221
+        },
+        "memory": {
+          "rss": 373719040,
+          "heapUsed": 92433617,
+          "external": 56688866
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 1783855,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6429812,
+          "system": 893846
+        },
+        "memory": {
+          "rss": 413593600,
+          "heapUsed": 116160714,
+          "external": 62073929
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 1783855,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6540468,
+            "system": 902435
+          },
+          "memory": {
+            "rss": 400416768,
+            "heapUsed": 124354329,
+            "external": 65836777
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 1783855,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6603733,
+            "system": 914343
+          },
+          "memory": {
+            "rss": 385138688,
+            "heapUsed": 127039107,
+            "external": 67515895
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 1783855,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6648478,
+            "system": 922572
+          },
+          "memory": {
+            "rss": 385503232,
+            "heapUsed": 127039107,
+            "external": 67676186
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 1783855,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6696561,
+            "system": 926793
+          },
+          "memory": {
+            "rss": 392876032,
+            "heapUsed": 127039107,
+            "external": 67836477
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 1783855,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6746116,
+            "system": 927771
+          },
+          "memory": {
+            "rss": 400175104,
+            "heapUsed": 128793534,
+            "external": 68559674
+          }
+        }
+      ]
+    },
+    {
+      "sample": 1,
+      "enabled": true,
+      "startupMs": 679.8046279999999,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4962321,
+      "loadMs": 5800.851605000001,
+      "typingMs": [
+        3.310675999999148, 2.3352909999994154, 1.83602300000166,
+        1.8591059999998834, 3.1255500000006577, 1.752039999999397,
+        1.7148789999992005, 3.0341259999986505, 1.6287219999994704,
+        1.8361219999987952
+      ],
+      "disclosureMs": [
+        107.06927900000119, 28.495343999999022, 31.803454999999303,
+        27.596255000000383, 29.073343000000023, 27.754079000000274,
+        30.566655999999057, 29.602822999999262, 30.145871000000625,
+        27.489164000000528
+      ],
+      "resizeMs": [
+        7.520375000000058, 6.993359000000055, 9.241149999999834,
+        6.1356680000008055, 6.141743000000133, 6.014479999999821
+      ],
+      "initial": {
+        "label": "initial",
+        "pid": 1784260,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 747914,
+          "system": 80894
+        },
+        "memory": {
+          "rss": 185491456,
+          "heapUsed": 41053475,
+          "external": 17329154
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 1784260,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6148179,
+          "system": 853257
+        },
+        "memory": {
+          "rss": 403341312,
+          "heapUsed": 114812794,
+          "external": 73933083
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 1784260,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6498226,
+          "system": 901668
+        },
+        "memory": {
+          "rss": 461582336,
+          "heapUsed": 136372744,
+          "external": 78960914
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 1784260,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6673034,
+            "system": 924196
+          },
+          "memory": {
+            "rss": 492937216,
+            "heapUsed": 61726571,
+            "external": 27626891
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 1784260,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6734006,
+            "system": 935193
+          },
+          "memory": {
+            "rss": 380502016,
+            "heapUsed": 61726571,
+            "external": 27787182
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 1784260,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6783605,
+            "system": 943430
+          },
+          "memory": {
+            "rss": 382304256,
+            "heapUsed": 65591847,
+            "external": 30415816
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 1784260,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6820597,
+            "system": 946589
+          },
+          "memory": {
+            "rss": 385560576,
+            "heapUsed": 65591847,
+            "external": 30576107
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 1784260,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6849955,
+            "system": 951186
+          },
+          "memory": {
+            "rss": 389701632,
+            "heapUsed": 65591847,
+            "external": 30736302
+          }
+        }
+      ]
+    },
+    {
+      "sample": 2,
+      "enabled": true,
+      "startupMs": 647.3900780000004,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4962321,
+      "loadMs": 5864.254994999999,
+      "typingMs": [
+        4.766085999999632, 2.485702999998466, 2.4051650000001246,
+        2.130397000000812, 1.8884199999993143, 1.829407999997784,
+        1.9582679999984975, 2.669422000002669, 4.565930999997363,
+        3.5695009999981266
+      ],
+      "disclosureMs": [
+        101.62867899999765, 34.22886499999731, 31.237324000001536,
+        27.60927300000185, 31.77156599999944, 32.50718400000187,
+        31.329374000000826, 31.80554900000061, 29.280209000000468,
+        29.235774999997375
+      ],
+      "resizeMs": [
+        7.645539999997709, 15.875004000001354, 14.028025999999954,
+        7.357814999999391, 6.582514000001538, 6.09694799999852
+      ],
+      "initial": {
+        "label": "initial",
+        "pid": 1784694,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 748234,
+          "system": 76226
+        },
+        "memory": {
+          "rss": 182353920,
+          "heapUsed": 41079224,
+          "external": 17337271
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 1784694,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6130060,
+          "system": 919986
+        },
+        "memory": {
+          "rss": 393936896,
+          "heapUsed": 104555053,
+          "external": 65655550
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 1784694,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6504441,
+          "system": 975427
+        },
+        "memory": {
+          "rss": 428175360,
+          "heapUsed": 128598151,
+          "external": 70983574
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 1784694,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6691797,
+            "system": 986676
+          },
+          "memory": {
+            "rss": 415191040,
+            "heapUsed": 61726493,
+            "external": 27544333
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 1784694,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6743953,
+            "system": 993154
+          },
+          "memory": {
+            "rss": 417513472,
+            "heapUsed": 65078569,
+            "external": 29907784
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 1784694,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6785357,
+            "system": 1001033
+          },
+          "memory": {
+            "rss": 356999168,
+            "heapUsed": 65078569,
+            "external": 30067979
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 1784694,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6823427,
+            "system": 1005770
+          },
+          "memory": {
+            "rss": 359784448,
+            "heapUsed": 65078569,
+            "external": 30228270
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 1784694,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 6863946,
+            "system": 1011944
+          },
+          "memory": {
+            "rss": 362897408,
+            "heapUsed": 67067893,
+            "external": 31028427
+          }
+        }
+      ]
+    }
+  ],
+  "medians": {
+    "before": {
+      "firstExpansionMs": 1096.80516,
+      "repeatedExpansionMs": 30.64294949999976,
+      "draftInputMs": 2.4398400000004585,
+      "compactResizeMs": 8.153294999999616,
+      "interactionCpuMs": 1504.682
+    },
+    "after": {
+      "firstExpansionMs": 101.62867899999765,
+      "repeatedExpansionMs": 31.28334900000118,
+      "draftInputMs": 2.1513670000003913,
+      "compactResizeMs": 7.529188499999691,
+      "interactionCpuMs": 401.207
+    }
+  },
+  "segmentProbe": {
+    "runtime": "Bun 1.4.0 with repository-installed Pi 0.85.1 theme and Pi TUI helpers",
+    "method": "320 iterations of 300 wrapped source rows. Wrapping and styled-row construction measured separately; SHA256 covers returned strings. Three modes ran sequentially in one process, so warm-up and cache order are not controlled.",
+    "observations": [
+      {
+        "mode": "baseline",
+        "sample": 0,
+        "wrappingMs": 36.74304399999977,
+        "stylingMs": 842.1539119999992,
+        "rows": 96000,
+        "outputSha256": "86b8f73048689db3d18c15a3e51d3d5e010add48349be9c9d6b0dbd74fd0408d"
+      },
+      {
+        "mode": "baseline",
+        "sample": 1,
+        "wrappingMs": 33.10461099999975,
+        "stylingMs": 844.0144450000014,
+        "rows": 96000,
+        "outputSha256": "86b8f73048689db3d18c15a3e51d3d5e010add48349be9c9d6b0dbd74fd0408d"
+      },
+      {
+        "mode": "baseline",
+        "sample": 2,
+        "wrappingMs": 34.64309699999512,
+        "stylingMs": 801.5756160000012,
+        "rows": 96000,
+        "outputSha256": "86b8f73048689db3d18c15a3e51d3d5e010add48349be9c9d6b0dbd74fd0408d"
+      },
+      {
+        "mode": "measure-colored",
+        "sample": 0,
+        "wrappingMs": 23.370382999998583,
+        "stylingMs": 14.522432000003846,
+        "rows": 96000,
+        "outputSha256": "86b8f73048689db3d18c15a3e51d3d5e010add48349be9c9d6b0dbd74fd0408d"
+      },
+      {
+        "mode": "measure-colored",
+        "sample": 1,
+        "wrappingMs": 21.90297199999941,
+        "stylingMs": 13.157627999999022,
+        "rows": 96000,
+        "outputSha256": "86b8f73048689db3d18c15a3e51d3d5e010add48349be9c9d6b0dbd74fd0408d"
+      },
+      {
+        "mode": "measure-colored",
+        "sample": 2,
+        "wrappingMs": 22.566274000002522,
+        "stylingMs": 10.900599000004604,
+        "rows": 96000,
+        "outputSha256": "86b8f73048689db3d18c15a3e51d3d5e010add48349be9c9d6b0dbd74fd0408d"
+      },
+      {
+        "mode": "measure-body",
+        "sample": 0,
+        "wrappingMs": 21.945498999999018,
+        "stylingMs": 8.951690000002145,
+        "rows": 96000,
+        "outputSha256": "86b8f73048689db3d18c15a3e51d3d5e010add48349be9c9d6b0dbd74fd0408d"
+      },
+      {
+        "mode": "measure-body",
+        "sample": 1,
+        "wrappingMs": 21.42834400000038,
+        "stylingMs": 8.27448300000242,
+        "rows": 96000,
+        "outputSha256": "86b8f73048689db3d18c15a3e51d3d5e010add48349be9c9d6b0dbd74fd0408d"
+      },
+      {
+        "mode": "measure-body",
+        "sample": 2,
+        "wrappingMs": 21.373675999993793,
+        "stylingMs": 8.32225900000185,
+        "rows": 96000,
+        "outputSha256": "86b8f73048689db3d18c15a3e51d3d5e010add48349be9c9d6b0dbd74fd0408d"
+      }
+    ]
+  },
+  "rendererComparison": {
+    "result": {
+      "comparisons": 2640,
+      "themes": ["dark", "light"],
+      "widths": [1, 2, 3, 4, 5, 6, 7, 12, 60, 80, 120],
+      "samples": 10,
+      "kinds": 4,
+      "options": 3,
+      "assertions": 5280
+    },
+    "scope": "Before/after displayRetrieval results using actual native Read definitions and theme helpers. Ten deterministic strings include ASCII, CJK, combining marks, emoji, tabs, ANSI, CRLF and spaces. All rows match baseline exactly and remain within width. This does not exercise full host lifecycle.",
+    "stderr": "",
+    "setupNote": "Initial imports for the theme helper failed; the probe was corrected to use the installed file. Those setup errors were not product failures."
+  },
+  "hostTests": {
+    "command": "bun test tests/system/ui-retrieval.test.ts tests/system/ui-groups.test.ts tests/system/ui-result-blocks.test.ts",
+    "pinned": {
+      "pi": "0.85.1",
+      "passed": 20,
+      "failed": 2,
+      "assertions": 193
+    },
+    "compiled": {
+      "pi": "0.87.0",
+      "passed": 20,
+      "failed": 2,
+      "assertions": 192
+    },
+    "knownFailures": [
+      "Resumed sessions rebuild historical retrieval groups",
+      "Retrieval groups retain web members across reload and keep failures and Bash outside"
+    ],
+    "note": "The compiled reload case failed while waiting for the restored summary; pinned reached the subsequent assertion. The wide/combining-character preservation test passed on pinned Pi before the production change, and on both hosts afterward. No timing threshold was added to functional tests."
+  },
+  "scriptSha256": {
+    "ui-live-performance.ts": "7b3120169105188595b787d9c1c73dad24c1a1755dafc49c346a07e2d211673e",
+    "ui-resource-observer.ts": "a8b98ca0caeb9ebd161327c0b480a2b66c7c0108c92578594a243062a8077e1a",
+    "segments.ts": "d77bb45160a98087bfd106effd17de9f6396aec09b7a3a7b3bd6d402199bc4fc",
+    "compare.ts": "e5ab0a38e05a54a1df1ef2d4cb4ff8550e375d99471913bd6011030b0f4e9d80"
+  }
+}

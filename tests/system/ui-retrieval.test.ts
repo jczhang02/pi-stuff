@@ -3,6 +3,45 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
+test('Retrieval disclosure preserves wide and combining characters across widths', async () => {
+  const host = await launchPi(
+    '{"ui":{"retrievalGroups":false}}',
+    undefined,
+    'ui',
+  );
+  const source = `WIDE_${'界'.repeat(30)}_END\nCOMBINING_${'e\u0301'.repeat(45)}_END`;
+  try {
+    await host.terminal.resize({cols: 120, rows: 40});
+    await writeFile(join(host.directory, '宽度.txt'), source);
+    expect(await host.invoke('read', '{"path":"宽度.txt"}')).toBe(source);
+    for (const cols of [60, 80, 120]) {
+      await host.terminal.resize({cols, rows: 40});
+      const count = cols === 60 ? 4 : 2;
+      await host.terminal.screen.waitForText(`${count} more lines`, {
+        timeoutMs: 5000,
+      });
+      await host.terminal.keyboard.press('Control+O');
+      await host.terminal.screen.waitForText('COMBINING_', {timeoutMs: 5000});
+      const rows = (await host.terminal.screen.text()).split('\n');
+      const start = rows.findIndex(row => row.includes('WIDE_'));
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(
+        rows
+          .slice(start, start + count)
+          .map(row => row.slice(4).trimEnd())
+          .join(''),
+      ).toBe(source.replace('\n', ''));
+      await host.terminal.keyboard.press('Control+O');
+      await host.terminal.screen.waitForText(`${count} more lines`, {
+        timeoutMs: 5000,
+      });
+      expect(await host.terminal.screen.text()).not.toContain('COMBINING_');
+    }
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
 test('Repeated retrieval disclosure follows width and theme without rereading the file', async () => {
   const host = await launchPi(
     '{"ui":{"retrievalGroups":false}}',
