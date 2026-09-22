@@ -284,7 +284,7 @@ test('Ls exposes upstream limits while keeping retained entries compact', async 
     );
     expect(result).toContain('aaa.txt');
     const screen = await host.terminal.screen.text();
-    expect(screen).toContain('Result limit reached: 1');
+    expect(screen).toContain('1 entries limit reached. Use limit=2 for more');
     expect(screen).not.toContain('aaa.txt');
     await host.terminal.keyboard.press('Control+O');
     await host.terminal.screen.waitForText('aaa.txt', {timeoutMs: 5000});

@@ -20,6 +20,71 @@ interface RetrievalDetails {
   linesTruncated?: boolean;
 }
 
+export interface RetrievalPart {
+  kind: 'body' | 'metadata' | 'warning' | 'status';
+  text: string;
+}
+
+function nativeParts(
+  output: string,
+  details: RetrievalDetails | undefined,
+  name: string,
+): RetrievalPart[] {
+  const limited =
+    details?.truncation?.truncated ||
+    details?.matchLimitReached !== undefined ||
+    details?.resultLimitReached !== undefined ||
+    details?.entryLimitReached !== undefined ||
+    details?.linesTruncated;
+  if (limited) {
+    // Native tools append a final notice only when these details report a limit.
+    // Keep its continuation instructions, without counting them as source rows.
+    const footer = /\n\n(\[[^\n]*\])$/u.exec(output);
+    if (footer?.[1])
+      return [
+        {kind: 'body', text: output.slice(0, footer.index)},
+        {kind: 'warning', text: footer[1]},
+      ];
+    return [{kind: 'warning', text: output}];
+  }
+  const empty =
+    output === '' ||
+    (name === 'grep' && output === 'No matches found') ||
+    (name === 'find' && output === 'No files found matching pattern') ||
+    (name === 'ls' && output === '(empty directory)');
+  return [{kind: empty ? 'status' : 'body', text: output || '(no output)'}];
+}
+
+export function readParts(
+  output: string,
+  details: RetrievalDetails | undefined,
+  offset = 1,
+  limit?: number,
+): RetrievalPart[] {
+  if (details?.truncation?.truncated)
+    return nativeParts(output, details, 'read');
+  // User-requested Read limits have no structured details in Pi. Validate the
+  // native suffix against the requested range before separating it from text.
+  const footer =
+    /\n\n\[([1-9]\d*) more lines in file\. Use offset=(\d+) to continue\.\]$/u.exec(
+      output,
+    );
+  if (
+    footer &&
+    limit !== undefined &&
+    Number.isSafeInteger(limit) &&
+    limit > 0 &&
+    Number(footer[2]) === Math.max(1, offset) + limit &&
+    output.slice(0, footer.index).split('\n').length === limit
+  )
+    return [
+      {kind: 'body', text: output.slice(0, footer.index)},
+      {kind: 'warning', text: footer[0].slice(2)},
+    ];
+  if (footer && limit !== undefined) return [{kind: 'status', text: output}];
+  return nativeParts(output, details, 'read');
+}
+
 // These tools share retained text and native disclosure, but keep their own
 // schema, execution and metadata. The adapter never rewrites a tool result.
 export function displayRetrieval<
@@ -30,7 +95,11 @@ export function displayRetrieval<
   tool: ToolDefinition<Params, Details, State>,
   label: string,
   target: (args: Static<Params>, expanded: boolean) => string,
-  inspect?: (output: string) => string[],
+  inspect?: (
+    output: string,
+    details: Details,
+    args: Static<Params>,
+  ) => RetrievalPart[],
   groups?: RetrievalGroups,
 ) {
   const nativeResult = tool.renderResult;
@@ -75,73 +144,69 @@ export function displayRetrieval<
       groups?.finish(context.toolCallId, false);
       return nativeResult(result, options, theme, context);
     }
-    const output = stripTerminalSequences(
-      result.content
-        .map(block =>
-          block.type === 'text' ? block.text : `[image: ${block.mimeType}]`,
-        )
-        .join('\n')
-        .replace(/\n$/u, ''),
-    );
+    const output = result.content
+      .map(block =>
+        block.type === 'text' ? block.text : `[image: ${block.mimeType}]`,
+      )
+      .join('\n');
     if (context.isError) {
       groups?.finish(context.toolCallId, false);
       return new ResultBlock(output, theme, 'error');
     }
-    const notices = inspect?.(output) ?? [];
-    const details = result.details;
-    if (details?.truncation?.truncated)
-      notices.push(
-        `Output truncated: ${details.truncation.outputLines} of ${details.truncation.totalLines} lines retained`,
-      );
-    const limit =
-      details?.matchLimitReached ??
-      details?.resultLimitReached ??
-      details?.entryLimitReached;
-    if (limit !== undefined) notices.push(`Result limit reached: ${limit}`);
-    if (details?.linesTruncated)
-      notices.push('Long result lines were truncated');
-    const empty =
-      output === '' ||
-      output === 'No matches found' ||
-      output === 'No files found matching pattern' ||
-      output === '(empty directory)';
+    const parts = (
+      inspect?.(output, result.details, context.args) ??
+      nativeParts(output, result.details, tool.name)
+    ).map(part => ({
+      ...part,
+      text: stripTerminalSequences(part.text).replace(/\n$/u, ''),
+    }));
     if (!options.isPartial)
-      groups?.finish(context.toolCallId, notices.length === 0 && !empty);
-    const noticeBlocks = notices.map(
-      notice => new ResultBlock(notice, theme, 'warning'),
-    );
+      groups?.finish(
+        context.toolCallId,
+        parts.some(part => part.kind === 'body' && part.text !== '') &&
+          parts.every(part => part.kind === 'body' || part.kind === 'metadata'),
+      );
     let cachedWidth = -1;
     let cached: string[] = [];
     return {
       invalidate() {
         cachedWidth = -1;
-        for (const block of noticeBlocks) block.invalidate();
       },
       render(width) {
         if (groups && !groups.visible(context.toolCallId)) return [];
         if (width === cachedWidth) return cached;
-        const rows = wrapTextWithAnsi(
-          output || '(no output)',
-          Math.max(1, width - 4),
-        );
-        const visible = options.expanded || empty || options.isPartial;
-        const body = visible
-          ? rows.map((line, index) =>
-              truncateToWidth(
-                `${index === 0 ? '  ⎿ ' : '    '}${theme.fg('toolOutput', line)}`,
-                width,
-              ),
-            )
-          : [
-              truncateToWidth(
-                theme.fg(
-                  'muted',
-                  `  ⎿ ${rows.length} more ${rows.length === 1 ? 'line' : 'lines'}`,
-                ),
-                width,
-              ),
-            ];
-        for (const block of noticeBlocks) body.push(...block.render(width));
+        const body: string[] = [];
+        for (const part of parts) {
+          if (part.kind === 'metadata' && !options.expanded) continue;
+          if (part.kind === 'body' && part.text === '') continue;
+          const rows = wrapTextWithAnsi(part.text, Math.max(1, width - 4));
+          const visible =
+            options.expanded || options.isPartial || part.kind !== 'body';
+          const color =
+            part.kind === 'warning'
+              ? 'warning'
+              : part.kind === 'metadata'
+                ? 'muted'
+                : 'toolOutput';
+          body.push(
+            ...(visible
+              ? rows.map((line, index) =>
+                  truncateToWidth(
+                    `${index === 0 ? '  ⎿ ' : '    '}${theme.fg(color, line)}`,
+                    width,
+                  ),
+                )
+              : [
+                  truncateToWidth(
+                    theme.fg(
+                      'muted',
+                      `  ⎿ ${rows.length} more ${rows.length === 1 ? 'line' : 'lines'}`,
+                    ),
+                    width,
+                  ),
+                ]),
+          );
+        }
         cachedWidth = width;
         cached = body;
         return body;

@@ -13,7 +13,7 @@ import {RetrievalGroups} from './groups';
 import {BashDisplay} from './bash';
 import {createWriteDisplay} from './write';
 import {createEditDisplay} from './edit';
-import {displayRetrieval} from './retrieval';
+import {displayRetrieval, readParts} from './retrieval';
 import type {UiSettings} from './settings';
 
 export function registerUi(
@@ -56,7 +56,8 @@ export function registerUi(
           }),
           'Read',
           args => args.path ?? '',
-          undefined,
+          (output, details, args) =>
+            readParts(output, details, args.offset, args.limit),
           groups,
         ),
       );

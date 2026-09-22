@@ -163,7 +163,7 @@ test('Retrieval warnings and empty outcomes remain outside successful groups', a
     const screen = await host.terminal.screen.text();
     expect(screen.match(/Read 1 file\b/gu)).toHaveLength(4);
     expect(screen).toContain('Ls(entries)');
-    expect(screen).toContain('Result limit reached: 1');
+    expect(screen).toContain('1 entries limit reached. Use limit=2 for more');
     expect(screen).toContain('Grep(ABSENT, read.txt)');
     expect(screen).toContain('No matches found');
     expect(screen).toContain('WebFetch(1 page)');
