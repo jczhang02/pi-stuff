@@ -175,20 +175,20 @@ class NamingPanel implements Component, Focusable {
             `Current name${this.namePages > 1 ? ` · ${this.namePage + 1}/${this.namePages} · [ / ]` : ''}`,
           ),
           ...slice,
-          ...Array<string>(3 - slice.length).fill(''),
-          this.ctx.sessionManager.getSessionName() && this.saved === false
-            ? this.theme.fg('warning', 'Not saved yet')
-            : '',
-          this.ctx.sessionManager.getSessionName() && this.saved === false
-            ? this.ctx.sessionManager.getSessionFile()
-              ? 'Saved with the first assistant reply.'
-              : 'Session storage is disabled for this session.'
-            : '',
+          ...Array<string>(Math.min(3, wrapped.length) - slice.length).fill(''),
+          ...(this.ctx.sessionManager.getSessionName() && this.saved === false
+            ? [
+                this.theme.fg('warning', 'Not saved yet'),
+                this.ctx.sessionManager.getSessionFile()
+                  ? 'Saved with the first assistant reply.'
+                  : 'Session storage is disabled for this session.',
+              ]
+            : []),
         ],
         this.actions,
       );
     } else lines = this.settings.render(inner);
-    if (this.page === 'home')
+    if (this.page === 'home' && this.error)
       lines.push(truncateToWidth(this.theme.fg('error', this.error), inner));
     return this.layout.frame(
       width,

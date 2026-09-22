@@ -216,11 +216,25 @@ test('panel applies a name immediately and refreshes unsaved status when the fir
       'Not saved yet',
     );
     expect(await host.terminal.logs.text()).toContain('Name not saved yet.');
+    const unsaved = (await host.terminal.screen.text({settleMs: 0})).split(
+      '\n',
+    );
+    const name = unsaved.indexOf(provider.title);
+    expect(name).toBeGreaterThan(0);
+    expect(unsaved[name + 1]).toBe('Not saved yet');
+    expect(unsaved[name + 2]).toBe('Saved with the first assistant reply.');
+    expect(unsaved[name + 3]).toBe('');
+    expect(unsaved[name + 4]).toMatch(/^  Settings/u);
     release?.();
     await host.terminal.screen.waitUntil(
       screen => !screen.text.includes('Not saved yet'),
       {timeoutMs: 4000},
     );
+    const saved = (await host.terminal.screen.text()).split('\n');
+    const savedName = saved.indexOf(provider.title);
+    expect(savedName).toBeGreaterThan(0);
+    expect(saved[savedName + 1]).toBe('');
+    expect(saved[savedName + 2]).toMatch(/^  Settings/u);
     await closeNamingHome(host);
     await host.command('/name');
     await host.terminal.screen.waitForText(`Session name: ${provider.title}`, {

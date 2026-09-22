@@ -95,6 +95,8 @@ The following eight names came from actual `openai-codex/gpt-6-astra` requests t
 
 The panel tests cover field saves and resets, multiline rules, invalid length, stale-file refusal, committed-save cancellation, panel cancellation, remapped keys, persistence status refresh and long-value pagination. The captures below were taken from compiled Pi 0.87.0 with a controlled local model, using real commands at 100×30, 56×26 and 56×24. RTK comparison captures use a local executable fixture with synthetic statistics. Their displayed title is fixture output; the live-model samples above are separate evidence.
 
+The compact AutoName home captures at 100×30 and 56×26 were refreshed on compiled Pi 0.87.1. Short names use their actual height, absent persistence/error messages occupy no rows, and long-name pages retain a stable height. The same follow-up passed 10 targeted cases on Pi 0.85.1 and 16 on compiled Pi 0.87.1, including shared layouts, persistence transitions and panel cancellation. Other captures retain the Pi 0.87.0 evidence above.
+
 The light terminal uses black/white default foreground/background; dark uses light text on black. Exports explicitly use `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. These are headless terminal captures, not native window/compositor evidence.
 
 ![Dark AutoName panel after generating from dialogue](assets/session-naming/panel-dark.png)

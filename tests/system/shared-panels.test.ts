@@ -34,6 +34,14 @@ for (const theme of ['light', 'dark']) {
           expect(screen[heading - 1]).toMatch(/^─+$/u);
           expect(screen[heading + 1]).toBe('');
           expect(screen[heading + 2]).toBe(description!);
+          if (title === 'AutoName') {
+            const name = screen.indexOf('No name yet');
+            expect(name).toBeGreaterThan(heading);
+            expect(screen[name + 1]).toBe('');
+            expect(screen[name + 2]).toMatch(/^→ Settings/u);
+            const hint = screen.findIndex(line => line.includes('Esc Close'));
+            expect(screen[hint + 1]).toMatch(/^─+$/u);
+          }
           homes.push(screen);
           expect(screen.find(line => line.includes('Settings'))).toMatch(
             /^→ Settings/u,
