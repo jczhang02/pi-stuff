@@ -1,57 +1,52 @@
-# Single-line statusline prototype
+# Two-row statusline prototype
 
-This throwaway prototype runs inside real Pi. It answers whether complete-field hiding keeps the selected B layout readable without abbreviating labels, removing spaces or adding rows. Retain it on `codex/statusline-prototype`; it is not registered by the production package.
+This throwaway prototype runs in real Pi. It explores whether two rows can preserve directory and Git information while making model/context/cache statistics easier to scan. It is retained on `codex/statusline-prototype`, outside the production package.
 
-中文: 这是在真实 Pi 中运行的一次性原型, 用于验证方案 B 在窄屏下仅隐藏完整字段的效果. 不简写标签、不删空格、不增加行. 原型保留在 `codex/statusline-prototype` 分支, 不接入正式包.
+中文: 这个一次性原型在真实 Pi 中运行, 验证双行能否保住目录和 Git 信息, 同时让模型、上下文与缓存统计更易扫读. 保留在 `codex/statusline-prototype`, 不接入正式包.
 
 ## Run
 
-Working directory: the `codex/statusline-prototype` worktree. Install the pinned dependencies with `bun install --frozen-lockfile --ignore-scripts` if needed, then start a shared foreground terminal:
+From the prototype worktree, with the repository's pinned dependencies installed:
 
 ```sh
 PI_TEST_HOST=/opt/bin/pi bun run tui run pi-statusline --host opentui -- bun prototypes/statusline/run.ts --theme catppuccin-latte --scenario extended
 ```
 
-`PI_TEST_HOST` selects the local compiled Pi executable. Omit it to use the installed Pi 0.85.1 CLI under Bun. Use `catppuccin-mocha` for the dark theme. Scenarios are `base`, `extended` (goal and quota), and `long` (long project/branch names, including wide characters). These are launch arguments, not controls inside Pi.
+Omit `PI_TEST_HOST` to use the installed Pi 0.85.1 CLI under Bun. Choose `catppuccin-mocha` for dark mode. Scenarios: `base` has a clean branch; `extended` adds changes, goal and quota; `long` uses a full long branch, a directory containing wide characters and a conflict. Scenario selection stays outside the evaluated UI.
 
-Type and edit in Pi's native editor, press Enter to submit, and Esc to interrupt the two-second sample reply. Successful replies advance the sample counters; cancellation leaves them unchanged. Use Pi's normal exit action, or stop the named session:
+Use Pi's native editor, Enter to submit and Esc to cancel the two-second sample response. Successful responses advance the sample usage. Resize the foreground terminal itself: Terminal Control 1.2.1 `run` follows its outer PTY, not CLI `resize`. An already-running instance can load the revised footer through Pi's `/reload` command.
 
 ```sh
 bun run tui show pi-statusline
 bun run tui stop pi-statusline
 ```
 
-Resize the foreground terminal itself. Terminal Control 1.2.1's `run` follows its outer PTY size; its CLI `resize` command does not resize a foreground run.
+中文: 在原型 worktree 中执行上述命令. 省略 `PI_TEST_HOST` 后使用安装的 Pi 0.85.1 CLI; 暗色主题选 `catppuccin-mocha`. `base` 是干净分支, `extended` 加入改动、goal 和额度, `long` 包含长分支、中文目录与冲突. 原生编辑器支持输入、Enter 提交、Esc 取消约两秒的样例回复. 成功回复增加统计. 缩放时调整前台终端本身; 已运行的实例可以用 `/reload` 载入修改.
 
-中文: 在该 worktree 中运行上面的命令. `PI_TEST_HOST` 指向本机编译版 Pi; 省略后使用仓库安装的 Pi 0.85.1 CLI. `catppuccin-mocha` 是暗色主题. `base` 为基础字段, `extended` 加入 goal 和额度, `long` 使用含中文的长项目名和长分支名. 所有场景选择都在启动参数中完成. 原生编辑器支持编辑、Enter 提交和 Esc 取消. 每次样例回复约两秒, 成功后增加样例计数, 取消不增加. 缩放时调整承载原型的终端窗口. 查看及停止命令见上.
+## Layout and Git notation
 
-## Layout decision
+The footer always occupies two rows. At ordinary widths, row one starts with the bold full directory, followed by the complete branch and Git counters. Goal and quota follow when space allows. Row two holds the model/effort, continuous ten-cell context meter and capacity, auto-compaction indicator, cache hit, token/cache counts and subscription cost estimate. Only the directory is bold; state colors and a context accent provide the remaining hierarchy. Fields have one normal separating space, without alignment padding.
 
-Every field retains its complete text. Fields use one separating space, with no repeated vertical bars or padding. Bold directory text and semantic colors establish the hierarchy. The directory shows the full sample path with the usual home-directory `~` notation, not only its basename. The context meter stays ten continuous line characters.
+Git samples distinguish `clean`, `+1` staged, `~1` modified, `?1` untracked, `!1` conflicted, `↑2` ahead and `↓1` behind. Zero counts are omitted. These are file counts and commit divergence, not line-change counts. The sample scenarios do not attempt to model every Git operation, such as rebase or detached HEAD.
 
-Display order is fixed. Space is assigned by priority: directory, context, cache hit, model/effort, goal, quota, branch, tokens, estimated cost. A field that does not fit is hidden whole; subsequent fields may use the remaining space. This lets a long directory and cache hit coexist at 50 columns even when the context meter cannot fit. The directory is never shortened to make room for optional metrics.
+When directory plus Git exceeds one row, the counters move before statistics on row two, preserving directory and branch together. If the two names themselves cannot share a row, the complete branch moves to row two and the directory/counters occupy row one. Goal and quota are hidden during this reflow. Optional statistics yield to these identities. Across the tested widths, even the long sample retains its entire directory, branch and every nonzero Git counter. If an individual branch exceeds the entire viewport, or the directory exceeds the space left by counters, an ellipsis marks unavoidable clipping. This is a physical limit, not a reason to hide the identity entirely.
 
-For the `extended` sample:
+Optional fields are selected by fit and priority, then shown in a fixed reading order. Context and hit lead statistics priority, followed by model/effort, capacity, tokens, cache read/write, auto, cost and provider. Smaller fields can occupy space that a larger higher-priority field cannot use. Goal and quota never displace directory/Git. In the long sample at 50 columns, the meter/model are hidden while the full branch and hit remain; at 80 columns, the meter returns. The ordinary 50-column sample keeps model/effort, meter and hit together, hiding capacity. No third row, details entry or overflow count is added.
 
-| Width | Visible fields                                                           |
-| ----- | ------------------------------------------------------------------------ |
-| 150   | Directory, branch, model/effort, context, hit, goal, quota, tokens, cost |
-| 100   | Directory, branch, model/effort, context, hit, goal, tokens              |
-| 80    | Directory, model/effort, context, hit, goal                              |
-| 50    | Directory, branch, context, hit                                          |
+中文: Footer 固定双行. 常规宽度第一行用加粗完整目录开头, 紧跟完整分支与 Git 计数, 有余地再放 goal 和额度. 第二行是模型/思考强度、十格宽的连续线条 ctx 进度条与容量、自动压缩标记、命中率、token/缓存读写和订阅估算费用. 仅目录加粗, 用状态色与 ctx 强调色建立其余层次, 字段间一个正常空格, 不用填充空白对齐.
 
-The footer stays one row and restores fields when widened. The long-directory sample retains its entire path and cache hit at 50 columns; its meter returns at 80 columns. There is no overflow count or details entry. A directory wider than the entire terminal is hidden whole under the same rule, never clipped. Priorities remain a prototype design choice, not a production policy.
+中文: Git 中 `clean` 表示干净, `+1` 暂存、`~1` 修改、`?1` 未跟踪、`!1` 冲突、`↑2` 领先、`↓1` 落后. 零值省略, 数值分别是文件数与提交数, 不是代码行数. 样例未覆盖 rebase、detached HEAD 等所有 Git 操作状态. 目录和 Git 放不下一行时, 先把计数移至第二行的统计之前, 保留目录与分支相邻. 两个名称本身也无法同处一行时, 完整分支才移至第二行, 目录与计数留在第一行. 重排期间隐藏 goal/额度, 统计字段退让. 测试宽度下长样例的目录、分支和所有非零 Git 计数均完整保留. 单独分支超过整屏、或目录超过计数以外的空间时才用省略号截断, 不会整项消失.
 
-中文: 去掉重复竖线与填充空格, 字段之间仅留一个正常空格, 通过目录加粗和语义颜色建立层次. 目录显示完整样例路径, 主目录沿用 `~` 写法, 不再只显示 basename. ctx 进度条保持十个连续线条字符. 显示顺序固定, 优先级依次为目录、ctx、cache hit、模型/思考强度、goal、额度、分支、token 和费用. 放不下的字段整项隐藏, 后续较小字段可以利用余下空间. 普通目录在 50 列保留目录、分支、ctx 与 hit; 长目录在 50 列保留完整路径与 hit, 80 列恢复进度条. 目录不会为了可选统计而缩短; 若连整个终端都放不下, 则按同一规则整项隐藏. 始终一行, 不加溢出计数或详情入口. 优先级仍是原型设计, 尚未接入正式产品.
+中文: 可选统计按优先级和可用宽度选取, 按固定阅读顺序显示. 优先级依次为 ctx、hit、模型/强度、容量、token、缓存读写、auto、费用和 provider. 放不下的大字段不妨碍较小字段利用剩余空间. goal/额度不挤占目录/Git. 长样例在 50 列隐藏进度条和模型, 保留完整分支及 hit; 80 列恢复进度条. 普通样例在 50 列保留模型/强度、进度条和 hit, 隐藏容量. 不加第三行、详情入口或溢出计数.
 
 ## Evidence and limits
 
-The committed PNGs are actual Terminal Control captures at 150/100/80/50 columns and 50 rows, using Catppuccin Latte/Mocha and the font stack `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. The original whole Pi screen is preserved. They are headless terminal evidence, not native Ghostty/compositor screenshots.
+The PNGs are actual headless Terminal Control captures at 150/100/80/50 columns and 16 rows, in Latte and Mocha, using `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. They show the complete terminal viewport, not a cropped mockup or native Ghostty/compositor capture.
 
 ![Light, extended, 150 columns](captures/catppuccin-latte-extended-150.png)
-![Dark, extended, 50 columns](captures/catppuccin-mocha-extended-50.png)
+![Dark, long directory and branch, 50 columns](captures/catppuccin-mocha-long-50.png)
 
-The capture driver exercised all three scenarios in both themes, each resizing 150 → 100 → 80 → 50 → 150, then editing, submitting, interrupting and resubmitting. It checked complete directory paths, single-space separation, whole meters when visible, cache hit on one row, and exact restoration of the wide footer. See [verification.txt](captures/verification.txt). Reproduce with:
+The one-shot driver covers each theme/scenario at 150 → 100 → 80 → 50 → 150, then editing, submit, cancellation and resubmit. Assertions check two rows, full sample identities and Git states at every width, continuous meter/capacity and hit when space allows, normal spacing and restoration. See [verification.txt](captures/verification.txt).
 
 ```sh
 PI_TEST_HOST=/opt/bin/pi bun prototypes/statusline/capture.ts /tmp/pi-statusline-captures
@@ -59,12 +54,12 @@ bun run check
 git diff --check
 ```
 
-Verified locally with Bun 1.4.0, compiled Pi 0.87.1, Terminal Control 1.2.1 and the repository's Pi API declarations at 0.85.1. The host uses temporary settings/session directories and a local custom streaming provider. Replies, project/branch, token/cost, context, hit, goal and quota values are deterministic samples; no account usage or repository changes are queried. No real model request or check command is executed. The editor, message rendering, streaming, cancellation and terminal resize are Pi's real behavior. The custom provider uses Pi's [documented extension API](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/custom-provider.md).
+Environment: Bun 1.4.0, compiled Pi 0.87.1, Terminal Control 1.2.1, repository API declarations at Pi 0.85.1. Temporary settings/sessions are cleaned up. The local provider and all displayed directory/Git/account/usage data are deterministic samples; no Git status, account quota, real model request or check command is executed. The native editor, message rendering, streaming, cancellation and resize are real Pi behavior. The provider uses Pi's [documented extension API](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/custom-provider.md).
 
-中文: 截图来自真实 Terminal Control 会话, 覆盖 150/100/80/50 列、50 行、明暗主题及指定字体栈, 保留整个 Pi 屏幕. 它们是无头终端证据, 不是 Ghostty 原生窗口或合成器截图. 六组场景均完成缩窄及恢复、编辑、提交、取消和再次提交, 验证完整目录、单空格分隔、可见时完整的进度条、单行 cache hit 及放宽后的字段恢复. 运行环境及复现命令见上. 项目名、分支、回复和所有统计值都是确定样例, 不读取账号额度或实际仓库状态, 不请求模型或执行检查命令. 编辑器、消息、流式响应、取消及缩放由真实 Pi 提供. 临时设置和会话目录在退出时清理.
+中文: PNG 来自真实无头 Terminal Control, 包含完整 16 行终端视口, 覆盖明暗主题和 150/100/80/50 列, 字体栈见上. 它们不是裁剪的设计图或原生 Ghostty/合成器截图. 一次性驱动验证各场景的缩窄与恢复、编辑、提交、取消和再次提交, 检查双行、完整目录/分支/Git 计数、可容纳时的连续进度条/容量/hit、正常空格和恢复结果. 复现命令及版本见上. 临时设置/会话会清理. 所有目录、Git、账号与用量均为确定样例, 不查询真实状态、不调用模型或检查命令; 编辑器、消息、流式输出、取消和缩放使用原生 Pi.
 
 ## Tracking
 
-Issue [#110](https://github.com/jczhang02/pi-stuff/issues/110), Beads `pi-stuff-dmo`. Owner: `codex:01a0c7d6-a1a0-76d2-9995-08ea5fa365b3`. Baseline: `bb03c4e98874bbd6b0ee09c1e79ddb30e8319e31`. Source is confined to this prototype directory. Product adoption and merging require a separate decision.
+Issue [#110](https://github.com/jczhang02/pi-stuff/issues/110), draft PR [#111](https://github.com/jczhang02/pi-stuff/pull/111), Beads `pi-stuff-dmo`. Owner: `codex:01a0c7d6-a1a0-76d2-9995-08ea5fa365b3`. Baseline: `bb03c4e98874bbd6b0ee09c1e79ddb30e8319e31`. Production adoption and merging require a separate decision.
 
-中文: 任务、负责人和基线见上. 源码仅位于此原型目录. 正式接入与合并需另行决定.
+中文: 关联任务、草稿 PR、负责人和基线见上. 正式接入与合并另行决定.

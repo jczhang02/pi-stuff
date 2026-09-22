@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {TerminalControl} from '@kitlangton/terminal-control';
 import type {Session} from '@kitlangton/terminal-control';
+import {visibleWidth} from '@earendil-works/pi-tui';
 import type {Scenario} from './footer';
 import {createHost, font, root, runEffect, terminalBinary} from './host';
 import type {Palette} from './host';
@@ -17,30 +18,29 @@ const scenarios: Scenario[] = ['base', 'extended', 'long'];
 
 async function capture(session: Session, name: string): Promise<string> {
   // A PTY resize can settle before Pi's debounced redraw arrives.
-  await session.screen.waitUntil(
-    snapshot =>
-      snapshot.text
-        .split('\n')
-        .some(line => line.startsWith('~/dev/') && line.includes('hit 83.8%')),
-    {timeoutMs: 5000},
-  );
+  await session.screen.waitUntil(snapshot => snapshot.text.includes('~/dev/'), {
+    timeoutMs: 5000,
+  });
   const snapshot = await session.screen.capture({
     settleMs: 200,
     deadlineMs: 3000,
     includeAnsi: true,
   });
-  assert.equal(snapshot.frame.rows, 50);
+  assert.equal(snapshot.frame.rows, 16);
   const lines = snapshot.text.split('\n');
-  const footer = lines.filter(line => line.includes('hit 83.8%'));
-  assert.equal(footer.length, 1, snapshot.text);
-  const text = footer[0]?.trimEnd() ?? '';
-  assert.doesNotMatch(
-    text,
-    / {2}|\|/u,
-    'No repeated spaces or separator clutter',
+  const start = lines.findIndex(line => line.startsWith('~/dev/'));
+  assert.ok(start >= 0, snapshot.text);
+  const footer = lines.slice(start, start + 2).map(line => line.trimEnd());
+  assert.equal(footer.length, 2);
+  for (const line of footer) {
+    assert.ok(visibleWidth(line) <= snapshot.frame.cols);
+    assert.doesNotMatch(line, / {2}|\|/u, 'No padding or separator clutter');
+    if (line.includes('ctx')) assert.match(line, /ctx 31% ━{10}/u);
+  }
+  assert.ok(
+    lines.slice(start + 2).every(line => line.trim() === ''),
+    'Exactly two footer rows',
   );
-  if (text.includes('ctx')) assert.match(text, /ctx 31% ━{10}/u);
-  assert.doesNotMatch(footer[0] ?? '', /\+\d/u);
   const path = join(output, name);
   assert.ok(snapshot.ansi);
   await writeFile(`${path}.ansi`, snapshot.ansi);
@@ -73,7 +73,7 @@ async function capture(session: Session, name: string): Promise<string> {
     {cwd: root, stdout: 'ignore', stderr: 'inherit'},
   );
   assert.equal(await png.exited, 0);
-  return footer[0] ?? '';
+  return footer.join('\n');
 }
 
 await runEffect(async () => {
@@ -91,7 +91,7 @@ await runEffect(async () => {
             env: host.env,
             inheritEnv: false,
             host: 'opentui',
-            viewport: {cols: 150, rows: 50},
+            viewport: {cols: 150, rows: 16},
           });
           try {
             await session.screen.waitForText(
@@ -102,10 +102,14 @@ await runEffect(async () => {
             await session.keyboard.type(
               'Review the changes before committing.',
             );
+            await session.screen.waitForText(
+              'Review the changes before committing.',
+              {timeoutMs: 5000},
+            );
             const wide = await capture(session, `${theme}-${scenario}-150`);
             evidence.push(`${theme}/${scenario}/150: ${wide}`);
             for (const cols of [100, 80, 50, 150]) {
-              await session.resize({cols, rows: 50});
+              await session.resize({cols, rows: 16});
               await session.screen.waitForIdle({
                 quietForMs: 200,
                 timeoutMs: 5000,
@@ -115,26 +119,34 @@ await runEffect(async () => {
                 `${theme}-${scenario}-${cols}`,
               );
               evidence.push(`${theme}/${scenario}/${cols}: ${footer}`);
-              if (cols === 50) {
-                if (scenario === 'long') {
-                  assert.equal(
-                    footer.trimEnd(),
-                    '~/dev/研究工具/pi-stuff-statusline hit 83.8%',
-                  );
-                } else {
-                  assert.match(
-                    footer,
-                    /^~\/dev\/pi-stuff main\* ctx 31% ━{10} hit 83\.8%\s*$/u,
-                  );
-                }
-              }
               assert.ok(
                 footer.startsWith(
                   scenario === 'long'
-                    ? '~/dev/研究工具/pi-stuff-statusline '
-                    : '~/dev/pi-stuff ',
+                    ? '~/dev/研究工具/pi-stuff-statusline'
+                    : '~/dev/pi-stuff',
                 ),
               );
+              if (scenario === 'base') assert.match(footer, /main clean/u);
+              else {
+                assert.ok(
+                  footer.includes(
+                    scenario === 'long'
+                      ? 'codex/statusline-responsive-prototype'
+                      : 'main',
+                  ),
+                  'Full branch survives every tested width',
+                );
+                assert.ok(
+                  footer.includes(
+                    scenario === 'long' ? '+1 ~1 !1 ↑2 ↓1' : '+1 ~1 ?1 ↑2 ↓1',
+                  ),
+                  'All nonzero Git states survive every tested width',
+                );
+              }
+              if (scenario !== 'long' || cols >= 100) {
+                assert.match(footer, /hit 83\.8%/u);
+                assert.match(footer, /ctx 31% ━{10}/u);
+              }
               if (cols === 150)
                 assert.equal(footer, wide, 'Fields must restore after resize');
             }

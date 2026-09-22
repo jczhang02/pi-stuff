@@ -60,7 +60,7 @@ export default function statuslinePrototype(pi: ExtensionAPI): void {
               partial: message,
             });
             const chunks = [
-              'The working tree has 3 changed files.\n\n',
+              'The branch and working tree have been inspected.\n\n',
               'The checks passed. ',
               'Ready for review before committing.',
             ];
@@ -108,7 +108,7 @@ export default function statuslinePrototype(pi: ExtensionAPI): void {
     ctx.ui.setFooter((tui, theme) => {
       redraw = () => tui.requestRender();
       return {
-        render: width => [
+        render: width =>
           renderFooter(width, theme, {
             scenario,
             completed,
@@ -116,7 +116,6 @@ export default function statuslinePrototype(pi: ExtensionAPI): void {
             model: ctx.model?.id ?? 'gpt-6-astra',
             thinking: pi.getThinkingLevel(),
           }),
-        ],
         invalidate() {},
         dispose() {
           redraw = () => {};
