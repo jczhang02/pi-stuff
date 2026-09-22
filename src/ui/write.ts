@@ -1,3 +1,4 @@
+import type {UiSettings} from './settings';
 import {
   createWriteToolDefinition,
   getLanguageFromPath,
@@ -21,6 +22,7 @@ class WrittenContent implements Component {
     readonly path: string,
     private expanded: boolean,
     private theme: Theme,
+    private readonly previewLines: number,
   ) {}
 
   update(expanded: boolean, theme: Theme) {
@@ -46,7 +48,7 @@ class WrittenContent implements Component {
             wrapTextWithAnsi(line, Math.max(1, width - 4)),
           );
     const count = this.source === '' ? 0 : source.split('\n').length;
-    const visible = this.expanded ? body : body.slice(0, 3);
+    const visible = this.expanded ? body : body.slice(0, this.previewLines);
     const rows = [
       truncateToWidth(
         this.theme.fg(
@@ -74,7 +76,7 @@ class WrittenContent implements Component {
   }
 }
 
-export function createWriteDisplay(cwd: string) {
+export function createWriteDisplay(cwd: string, settings: UiSettings) {
   const tool = createWriteToolDefinition(cwd);
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) =>
@@ -107,7 +109,13 @@ export function createWriteDisplay(cwd: string) {
       previous.update(options.expanded, theme);
       return previous;
     }
-    return new WrittenContent(source, path, options.expanded, theme);
+    return new WrittenContent(
+      source,
+      path,
+      options.expanded,
+      theme,
+      settings.writePreviewLines ?? 3,
+    );
   };
   return tool;
 }

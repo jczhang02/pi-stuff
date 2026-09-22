@@ -1,3 +1,4 @@
+import type {UiSettings} from './settings';
 import {
   createEditToolDefinition,
   getLanguageFromPath,
@@ -56,6 +57,7 @@ class EditDiff implements Component {
     readonly path: string,
     private expanded: boolean,
     private theme: Theme,
+    private readonly previewLines: number,
   ) {}
 
   update(expanded: boolean, theme: Theme) {
@@ -129,7 +131,7 @@ class EditDiff implements Component {
       }
     }
     const summary = `  ⎿ Added ${added} ${added === 1 ? 'line' : 'lines'}, removed ${removed} ${removed === 1 ? 'line' : 'lines'}`;
-    const visible = this.expanded ? body : body.slice(0, 6);
+    const visible = this.expanded ? body : body.slice(0, this.previewLines);
     const rows = wrapTextWithAnsi(
       this.theme.fg('muted', summary),
       Math.max(1, width),
@@ -152,7 +154,7 @@ class EditDiff implements Component {
   }
 }
 
-export function createEditDisplay(cwd: string) {
+export function createEditDisplay(cwd: string, settings: UiSettings) {
   const tool = createEditToolDefinition(cwd);
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) =>
@@ -185,7 +187,13 @@ export function createEditDisplay(cwd: string) {
       previous.update(options.expanded, theme);
       return previous;
     }
-    return new EditDiff(patch, path, options.expanded, theme);
+    return new EditDiff(
+      patch,
+      path,
+      options.expanded,
+      theme,
+      settings.editPreviewLines ?? 6,
+    );
   };
   return tool;
 }

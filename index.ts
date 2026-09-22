@@ -6,6 +6,7 @@ import {registerWeb} from './src/web/register';
 import {registerRtk} from './src/rtk/register';
 import {registerRtkPanel} from './src/rtk/panel';
 import {registerUi} from './src/ui/register';
+import {registerUiPanel} from './src/ui/panel';
 import {displayWebTools} from './src/ui/web';
 
 export default async function (pi: ExtensionAPI) {
@@ -13,6 +14,11 @@ export default async function (pi: ExtensionAPI) {
     ConfigurationFile.load(join(getAgentDir(), 'pi-stuff.json')),
   );
   const groups = registerUi(pi, configuration.value.ui ?? {});
+  registerUiPanel(
+    pi,
+    () => configuration.value.ui ?? {},
+    settings => Effect.runPromise(configuration.saveUi(settings)),
+  );
   registerWeb(
     pi,
     configuration.value.web ?? {},

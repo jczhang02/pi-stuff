@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/ui.md) · English is normative.
 
-Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Thoughts, welcome and interactive settings are not implemented yet. The prototype remains visual reference, not production acceptance evidence.
+Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Thoughts and welcome are not implemented yet. The prototype remains visual reference, not production acceptance evidence.
 
 ## Bash
 
@@ -35,14 +35,19 @@ Add `ui` to the global `pi-stuff.json` beside existing `web`, `tools` and `rtk` 
   "ui": {
     "enabled": true,
     "retrievalGroups": true,
-    "bashPreviewLines": 3
+    "bashPreviewLines": 3,
+    "bashRunningPreviewLines": 2,
+    "writePreviewLines": 3,
+    "editPreviewLines": 6
   }
 }
 ```
 
 `retrievalGroups` defaults to `true`; `false` keeps individual retrieval tools.
 
-`enabled` defaults to `true`; `false` leaves native tool rendering in place. `bashPreviewLines` is a nonnegative integer and defaults to `3`. Zero hides the compact body while retaining its hidden-row count. It does not change model-visible output, upstream truncation or expanded content.
+`enabled` defaults to `true`; `false` leaves native tool rendering in place. All preview limits are nonnegative integers, with the defaults shown above. Zero hides the compact body while retaining the summary and hidden-row count. Limits do not change model-visible output, upstream truncation or expanded content.
+
+Open `/ui` for the global switch, retrieval grouping and common preview limits. The panel uses Pi's SettingsList and remains available when UI presentation is disabled. Settings are saved immediately; use `/reload` to apply them. A stale save is rejected if the file changed externally. Saving retains other configuration sections. Theme and Hide thinking remain in Pi's own settings.
 
 The UI implementation is owned by `src/ui/`; the entrypoint registers it after shared configuration decoding. Configuration and remaining UI controls will be extended as their behavior is implemented.
 

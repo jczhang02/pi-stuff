@@ -31,13 +31,13 @@ export function registerUi(
         tool => tool.name === 'write' && tool.sourceInfo.source === 'builtin',
       )
     )
-      pi.registerTool(createWriteDisplay(ctx.cwd));
+      pi.registerTool(createWriteDisplay(ctx.cwd, settings));
     if (
       tools.some(
         tool => tool.name === 'edit' && tool.sourceInfo.source === 'builtin',
       )
     )
-      pi.registerTool(createEditDisplay(ctx.cwd));
+      pi.registerTool(createEditDisplay(ctx.cwd, settings));
     const hostSettings = SettingsManager.create(ctx.cwd, getAgentDir(), {
       projectTrusted: ctx.isProjectTrusted(),
     });

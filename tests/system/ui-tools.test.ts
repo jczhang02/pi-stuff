@@ -355,3 +355,61 @@ test('WebSearch exposes batch failure text even when the host result is not mark
     await host.close();
   }
 }, 30000);
+
+test('Global preview limits apply to Write, Edit and running Bash without discarding content', async () => {
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"writePreviewLines":0,"editPreviewLines":1,"bashRunningPreviewLines":0}}',
+    undefined,
+    'ui',
+  );
+  try {
+    await host.invoke(
+      'write',
+      JSON.stringify({
+        path: 'limits.ts',
+        content: 'const a = 1;\nconst b = 2;\n',
+      }),
+    );
+    const written = await host.terminal.screen.text();
+    expect(written).toContain('Wrote 2 lines');
+    expect(written).toContain('2 more lines');
+    expect(written).not.toContain('const a = 1;');
+    await host.invoke(
+      'edit',
+      JSON.stringify({
+        path: 'limits.ts',
+        edits: [{oldText: 'const a = 1;', newText: 'const a = 3;'}],
+      }),
+    );
+    const edited = await host.terminal.screen.text();
+    expect(edited).toContain('Added 1 line, removed 1 line');
+    expect(edited).toContain('const a = 1;');
+    expect(edited).not.toContain('const a = 3;');
+    await host.start(
+      'bash',
+      JSON.stringify({
+        command:
+          "printf 'RUN_ONE\\nRUN_TWO\\nRUN_THREE\\nRUN_FOUR\\n'; while [ ! -f finish-preview ]; do sleep 0.05; done",
+      }),
+    );
+    await host.terminal.screen.waitForText('4 more lines', {timeoutMs: 5000});
+    const running = await host.terminal.screen.capture({
+      allowIncomplete: true,
+      deadlineMs: 200,
+    });
+    expect(running.text).toContain('⎿ 4 more lines');
+    expect(running.text).not.toMatch(/^\s+⎿ RUN_ONE$/mu);
+    expect(running.text).not.toMatch(/^\s+RUN_FOUR$/mu);
+    await writeFile(join(host.directory, 'finish-preview'), 'done');
+    await host.terminal.screen.waitForText('RTK_TURN_3_DONE', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('const a = 3;', {timeoutMs: 5000});
+    expect(await readFile(join(host.directory, 'limits.ts'), 'utf8')).toBe(
+      'const a = 3;\nconst b = 2;\n',
+    );
+  } finally {
+    await host.close();
+  }
+}, 30000);

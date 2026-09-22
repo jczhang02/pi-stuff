@@ -32,12 +32,14 @@ class BashResult implements Component {
     if (width === this.width) return this.lines;
     const bodyWidth = Math.max(1, width - 4);
     const rows = wrapTextWithAnsi(this.output || '(no output)', bodyWidth);
-    const count = this.running ? 2 : this.previewLines;
+    const count = this.previewLines;
     const shown = this.expanded
       ? rows
-      : this.running
-        ? rows.slice(-count)
-        : rows.slice(0, count);
+      : count === 0
+        ? []
+        : this.running
+          ? rows.slice(-count)
+          : rows.slice(0, count);
     const lines = shown.map((line, index) =>
       truncateToWidth(
         `${index === 0 ? '  ⎿ ' : '    '}${this.theme.fg('toolOutput', line)}`,
@@ -50,7 +52,7 @@ class BashResult implements Component {
         truncateToWidth(
           this.theme.fg(
             'muted',
-            `    ${hidden} more ${hidden === 1 ? 'line' : 'lines'}`,
+            `${shown.length === 0 ? '  ⎿ ' : '    '}${hidden} more ${hidden === 1 ? 'line' : 'lines'}`,
           ),
           width,
         ),
@@ -139,7 +141,9 @@ export function createBashDisplay(
       options.isPartial,
       metadata,
       theme,
-      settings.bashPreviewLines ?? 3,
+      options.isPartial
+        ? (settings.bashRunningPreviewLines ?? 2)
+        : (settings.bashPreviewLines ?? 3),
     );
   };
   return tool;

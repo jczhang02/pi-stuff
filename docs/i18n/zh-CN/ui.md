@@ -2,7 +2,7 @@
 
 [English](../../../docs/ui.md) · 以英文版为准.
 
-[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. Thoughts、欢迎页和交互设置尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
+[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. Thoughts 和欢迎页尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
 
 ## Bash
 
@@ -35,12 +35,17 @@ Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标�
   "ui": {
     "enabled": true,
     "retrievalGroups": true,
-    "bashPreviewLines": 3
+    "bashPreviewLines": 3,
+    "bashRunningPreviewLines": 2,
+    "writePreviewLines": 3,
+    "editPreviewLines": 6
   }
 }
 ```
 
-`enabled` 默认为 `true`, 设为 `false` 保留原生工具渲染. `bashPreviewLines` 为非负整数, 默认为 `3`. 零表示隐藏收起态正文但保留隐藏行数. 它不改变模型可见输出、上游截断或展开内容.
+`enabled` 默认为 `true`, 设为 `false` 保留原生工具渲染. 所有预览行数均为非负整数, 默认值见上例. 零表示隐藏收起态正文, 保留摘要和隐藏行数. 这些限制不改变模型可见输出、上游截断或展开内容.
+
+通过 `/ui` 调整全局开关、检索聚合和常用预览行数. 面板复用 Pi SettingsList, UI 展示关闭时仍可打开. 修改立即保存, 使用 `/reload` 生效. 文件被外部修改后拒绝覆盖, 保存保留其他配置区块. Theme 和 Hide thinking 仍在 Pi 自身设置中调整.
 
 UI 实现由 `src/ui/` 管理, 入口在共享配置解码后注册. 其余配置和 UI 控制会随对应行为的实现补充.
 
