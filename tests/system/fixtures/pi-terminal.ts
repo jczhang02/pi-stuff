@@ -46,6 +46,7 @@ export async function launchPi(
   let reloads = 0;
   let offered: string[] = [];
   let remaining: {name: string; parameters: string}[] = [];
+  let simultaneous: {name: string; parameters: string}[] = [];
   let callIndex = 0;
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -73,14 +74,14 @@ export async function launchPi(
       const delta = finished
         ? {content: `RTK_TURN_${turn}_DONE`}
         : {
-            tool_calls: [
-              {
-                index: 0,
-                id: `rtk_${turn}_${callIndex}`,
+            tool_calls: [{name: tool, parameters: args}, ...simultaneous].map(
+              (call, index) => ({
+                index,
+                id: `rtk_${turn}_${callIndex}_${index}`,
                 type: 'function',
-                function: {name: tool, arguments: args},
-              },
-            ],
+                function: {name: call.name, arguments: call.parameters},
+              }),
+            ),
           };
       const chunk = {
         id: `chat_${turn}`,
@@ -228,8 +229,10 @@ export async function launchPi(
       name: string,
       parameters: string,
       next: {name: string; parameters: string}[] = [],
+      parallel: {name: string; parameters: string}[] = [],
     ) {
       remaining = [...next];
+      simultaneous = [...parallel];
       callIndex = 0;
       tool = name;
       args = parameters;
@@ -245,6 +248,11 @@ export async function launchPi(
       close,
       command,
       start,
+      async startParallel(calls: {name: string; parameters: string}[]) {
+        const [first, ...parallel] = calls;
+        if (!first) throw new Error('A batch needs at least one call');
+        await start(first.name, first.parameters, [], parallel);
+      },
       offered: () => offered,
       async invoke(name: string, parameters: string) {
         await start(name, parameters);

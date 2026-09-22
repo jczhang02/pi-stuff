@@ -39,12 +39,16 @@ export class RetrievalGroups {
   private expanded = () => false;
 
   constructor(pi: ExtensionAPI) {
+    const reset = () => {
+      this.calls.clear();
+      this.tail = undefined;
+      this.expanded = () => false;
+    };
     const restore = (
       _event: SessionStartEvent | SessionTreeEvent,
       ctx: ExtensionContext,
     ) => {
-      this.calls.clear();
-      this.tail = undefined;
+      reset();
       this.expanded = () => ctx.ui.getToolsExpanded();
       for (const entry of ctx.sessionManager.getBranch()) {
         if (entry.type === 'message') this.message(entry.message);
@@ -53,6 +57,9 @@ export class RetrievalGroups {
       }
     };
     pi.on('session_start', restore);
+    // Pi may render old components between shutdown and the next session_start.
+    // Drop the old context before it becomes stale during session replacement.
+    pi.on('session_shutdown', reset);
     pi.on('session_tree', restore);
     pi.on('message_end', event => this.message(event.message));
   }
