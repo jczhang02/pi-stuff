@@ -1,0 +1,548 @@
+{
+  "date": "2026-09-22",
+  "client": "Claude Code 2.1.261",
+  "binarySha256": "4ae40dd1784e85753e742e09f267d29ecbb82890361ad3817d27560866d364a6",
+  "modeCommand": "/tui default",
+  "modeConfirmation": "Switched back to the classic renderer",
+  "theme": "light",
+  "terminalDefaults": {
+    "foreground": "#000000",
+    "background": "#ffffff"
+  },
+  "terminalControl": "1.2.1",
+  "bun": "1.4.0",
+  "font": "JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono",
+  "method": "Official client executes local tools; localhost SSE supplies model blocks. No account credentials or live inference. dontAsk plus explicit tool allowlist; auto classifier not exercised. Active frames are point-in-time, not settled-animation assertions.",
+  "packagedSourceChecks": [
+    "Bash final result reads timeoutMs from the last progress event (Amr); result renderer W4 emits a separate timeout child.",
+    "Mixed stdout/stderr uses actual returned content; no universal one-connector-per-stream claim."
+  ],
+  "runs": [
+    {
+      "case": "cancelled-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "cancelled",
+          "markers": 1,
+          "sha256": "aeb26ed692cde60d1e6625fd7146fd44d1370e22eadfe252a9a03f4433d632d2"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "b0184464ed346ba8651fddbb7a6a9c732114e3ef78b4e81eeb04e6b8cf376542"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "7b846b00aa728d8185a8fa3ba66d4e279de4a43b4e176199339cd91a8e0c5c11"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "3cd4c62c408b16533b82030802b1df75b59ebf17540ca271d6665ae40297b810"
+        },
+        {
+          "state": "running-late",
+          "markers": 1,
+          "sha256": "791aa192a4d9b95dedc4dd2b7b9a1bfc65409797421ae4eafcfdf0a706f58ab9"
+        },
+        {
+          "state": "running",
+          "markers": 1,
+          "sha256": "189bf177f54e7edc673604949232bcfa63dd3801abbaf94797d69cc0b7ecc18c"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "3a37fd5cee590d1c7733a742f5329398e43de4c4c6ada854fcb5c24e0fda9dee"
+        }
+      ]
+    },
+    {
+      "case": "edit-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "1d54969168f6e37bfafefc4721070e2546f8cf79241ef23a1380b020f9fb6e89"
+        },
+        {
+          "state": "expanded",
+          "markers": 2,
+          "sha256": "5fd85079b3620741254c60e7f200a17603511311d5a6381e6c198ff40b154307"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "e03abed195e7b713a12c401af5d2c6f619dea7a01471c9167a3570ade6843192"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "1d54969168f6e37bfafefc4721070e2546f8cf79241ef23a1380b020f9fb6e89"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "3f13eac64b4a4e43741df52fdab4e4e71c6f5600143ce4fc157a919f542cb997"
+        }
+      ]
+    },
+    {
+      "case": "edit-long-120",
+      "viewport": [120, 72],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "a47918d9a746c12d531c6c2786fcfe6205f6128cd07b3df45e78263844862436"
+        },
+        {
+          "state": "expanded",
+          "markers": 2,
+          "sha256": "3c4fe24216ee3fd97a51ea9849a59bc4e37cf18c2b3e01e32c5e95679a0553b1"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "932b4efc0ff6c5a89f494308b7f9de3b166fcb809b0a35ce16fcf874c56e534e"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "a47918d9a746c12d531c6c2786fcfe6205f6128cd07b3df45e78263844862436"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "48578c42fa95c0b0cbf917d967528ac1ac255f14b18612aecc78d57f4b4d69af"
+        }
+      ]
+    },
+    {
+      "case": "empty-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "e12fbbc8f37f37cbfe63abf245085ef132507871d9c6b942eb7bf8171729541a"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "ce0f5ed76b60e960db1111a2a7a8aa74df5b361d0127050045b9b6234b777161"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "ae85245039313de8c31da50ce641883d3cfb3a5f55b758b84eeaee048aba0dc2"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "e12fbbc8f37f37cbfe63abf245085ef132507871d9c6b942eb7bf8171729541a"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "48017589aa7b8292fb045d23ec706669d2f16ed71629be7f53ff053673c8aa0c"
+        }
+      ]
+    },
+    {
+      "case": "failed-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "ef2f170c2f4cd99d5b1dacb4acd323fec5752cc842bd8b74a205f024965cfe7f"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "ebe65ebbfab65886cd089ffbc6d9de88a70ac25f9c1950ae16b7b342f0ee5759"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "ae1a03bd43e7932db5e9d8a3001228702d3a13953c1dca40ae6a3ed1a786babe"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "ef2f170c2f4cd99d5b1dacb4acd323fec5752cc842bd8b74a205f024965cfe7f"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "b2df596612e33df68d488b969f56ca6a78a5f22156c893cf01aaa4b897942710"
+        }
+      ]
+    },
+    {
+      "case": "long-no-timeout-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "04e54f8f863bf045dd47b8b9aa467aa993661fc330749e8891d53fccab26aac5"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "d03acc2d0c9cd45597516d35343e05d67a904602261ca76b3e65c288f658ea80"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "78622687507e6de1f1b1ca76310e6cba57b9973d8ae38b829fd7c1026deb176d"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "04e54f8f863bf045dd47b8b9aa467aa993661fc330749e8891d53fccab26aac5"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "871ab552ba38c3b3f2ffb80abf311c90c03f83ffc8498b6dda8a49165072efd8"
+        }
+      ]
+    },
+    {
+      "case": "long-timeout-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "6424e16022041ce0156465993a501a98fd08f7c7986d485959ab979f31e10ac8"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "ddc376ab1b25a755631911fb5ee923d90fee188a357c303be15d05ca9568df70"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "838a9ece45de1d4742ce1ea4cec233451dd255587185122ab8b5a05f889a5a08"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "6424e16022041ce0156465993a501a98fd08f7c7986d485959ab979f31e10ac8"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "592755796ecf8ebda4ad6708b7d75dfebd326fb950117b7cb77e5232cf706f3a"
+        }
+      ]
+    },
+    {
+      "case": "long-timeout-80",
+      "viewport": [80, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "4bb870f4c4b18b23bf2b89a031fa16c7aaa72341f33791db938427beb497a447"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "d465af6d3b3e8e42a541d76dcb1346bf911a600a54905b32edb09154b4bca635"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "19c19bd81694619f5265d1b6526b87be70c5ffc3b19882178d8535ab59cd6fdd"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "4bb870f4c4b18b23bf2b89a031fa16c7aaa72341f33791db938427beb497a447"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "60eef1c8fa0a1a26ffe6aafcbb7d2dfa898d144fa430d98d42e517807f6353b5"
+        }
+      ]
+    },
+    {
+      "case": "mixed-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "5af1c874b7043be95da5fe69e30dedeead53c344674b1bd2558d5df62a753272"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "f47be9e083f5e7bf52c8a197d0389f81e9ca769492ce07bbdd4398ed98e93718"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "fb372426c62046b83fede254f938f4286452fdbcc39878cef02ad5e27d1703d6"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "5af1c874b7043be95da5fe69e30dedeead53c344674b1bd2558d5df62a753272"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "9d6f51ff87f25c4c8cd6c319c00e4241777312baa96bb5c11cd9df7cd9718ef8"
+        }
+      ]
+    },
+    {
+      "case": "retrieval-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 0,
+          "sha256": "f226465a8f94a66e301ea22d0092d993dc47f06246d7efd78e3fe98b9c6ae622"
+        },
+        {
+          "state": "expanded",
+          "markers": 3,
+          "sha256": "17b74991de7785adc2ea81dcefcc389ccc804324d5fcb9051687289f5f483e65"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "575808bb41b0e57179448d00863bdcca452c7689f33c9001359de18f317dc2f8"
+        },
+        {
+          "state": "restored",
+          "markers": 0,
+          "sha256": "f226465a8f94a66e301ea22d0092d993dc47f06246d7efd78e3fe98b9c6ae622"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "862329ae8e3903d6d241284f3b92d8bedbec40f13298e2c0f3b4dd35e6e96ec1"
+        }
+      ]
+    },
+    {
+      "case": "running-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 2,
+          "sha256": "0165aae98c6d18f8d7356ceaf8ff6dcf9d04811e2a1d13cf6689dfcbc04c1927"
+        },
+        {
+          "state": "expanded",
+          "markers": 2,
+          "sha256": "6b72edd4799cfb618af60fed5ade9a3aaa0c63f7c78cff7f90f9741f698c63b8"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "2d64720694056b4e3dcaa125413609f586629b5f0b35a1ce1cc20457e8588c8c"
+        },
+        {
+          "state": "restored",
+          "markers": 2,
+          "sha256": "8398faae436e4588bd542f2dc2d6b09cec6c7115e37dbe711aa2d20bed8f1e10"
+        },
+        {
+          "state": "running-late",
+          "markers": 1,
+          "sha256": "ae449fe73ed2d84542a63b622208d203bbeb00b6481a367b1217f1d45740717f"
+        },
+        {
+          "state": "running",
+          "markers": 1,
+          "sha256": "0d2113967a5b4174f1169640344f92972e99a0fcad4c34bba48602c159c022cf"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "f981a1346d6ba851dcd5215a8dadc373f7687fd2488cd6f86a8b5b6802c23099"
+        }
+      ]
+    },
+    {
+      "case": "short-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "bdaf94314f9a1d65491dadeaaa2f829dbb7c0c4cc7bb62d7284ef3dcb6668191"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "c931c880ad69b09d49d45ab56aa6816d725fdbcc4ee608c5e359603401741126"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "4ed783b28ad522c8f97ce5d2d2d74fb99dfd8d56eaf58567364b72566e252f38"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "bdaf94314f9a1d65491dadeaaa2f829dbb7c0c4cc7bb62d7284ef3dcb6668191"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "86901e128564b8701e705d5af50faab08f9bd62dd6237aa3d9751e8036499efc"
+        }
+      ]
+    },
+    {
+      "case": "slow-default-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "98277b6300c4f60ef318b414f49a5b2c8dd47ab0531637d37c03443024ae8015"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "a0a077d9a3bfa00c8a65e42e431ac24708d9331bd78469531710b7af2c9b22e5"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "7b7b41bb16c5d030ee07b9beb6816cd9ca628f910ec76dea5155b1791ded0934"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "54cd4fdc1361767fcec6ac7a980ec8ab277698bdeb0e217add98d54323b8205a"
+        },
+        {
+          "state": "running-late",
+          "markers": 1,
+          "sha256": "38006cb8b53010771b5b1bee2380501c7f3ce835eff6b0ca921bec025fb6292d"
+        },
+        {
+          "state": "running",
+          "markers": 1,
+          "sha256": "8252eac2f569dd3e0ab7506f6ab3c0e80c0694813417e52c42096d9e358f9d78"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "466bfe768219dd0b8c4d1f1affa7db51ea558763f777dfa1ebaf044ad69d2e25"
+        }
+      ]
+    },
+    {
+      "case": "timeout-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "df605b3902acafa00607c40c33b27cd17e09502a04eec9f84e36381ccc5d72f8"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "1d2709fc840a6fcac86c7aed643cb70e90c6ca3338bfb1ae069fec36c971ec35"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "c7a59bcb8267440338e3fc3fac3d8f5365993655459c237d9f1247bbaf062501"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "df605b3902acafa00607c40c33b27cd17e09502a04eec9f84e36381ccc5d72f8"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "ed14f646cc3c4bdeebba86a1bf0ce6dd7601cc47edab09096fbda07ec315e752"
+        }
+      ]
+    },
+    {
+      "case": "timeout-error-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "4039b1d187445faa9f63b3dc8f3ed94f8d885c740c24aeaeef2ef99230410a30"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "e997ab9a29d1c75d6bbc463d15e5ee128c0d442f423f270aef872d2a3aea608e"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "9c8a1d1497c861ced1eecb7533a1da566a24a6067b2f18c6da033b42a3461ed4"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "4039b1d187445faa9f63b3dc8f3ed94f8d885c740c24aeaeef2ef99230410a30"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "6243ad7f1bd8815f128816e5f2d4c4ac73f9d1721a10cfab8e3dab32311d8b1f"
+        }
+      ]
+    },
+    {
+      "case": "write-120",
+      "viewport": [120, 42],
+      "states": [
+        {
+          "state": "compact",
+          "markers": 1,
+          "sha256": "f2dd1a99fcd995c06ebfb7c6031bae7e2f481aed8da24fde2c457ef792e3929d"
+        },
+        {
+          "state": "expanded",
+          "markers": 1,
+          "sha256": "f273949e62fdd8cda5f64d8fb17de6554ff16fde5d25dbd91d601bdddb1475c8"
+        },
+        {
+          "state": "mode",
+          "markers": 0,
+          "sha256": "b4de12b27f0fe588fa150af9b2b4f252115d8d30326a77788e736a4a626c2edb"
+        },
+        {
+          "state": "restored",
+          "markers": 1,
+          "sha256": "f2dd1a99fcd995c06ebfb7c6031bae7e2f481aed8da24fde2c457ef792e3929d"
+        },
+        {
+          "state": "startup",
+          "markers": 0,
+          "sha256": "b62dc47d5d16c2bfa0122c6971e592c36411cf3e0029de054b3530e5b9ef6a35"
+        }
+      ]
+    }
+  ]
+}

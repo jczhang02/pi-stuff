@@ -1,0 +1,86 @@
+[
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "sleep 3; echo late",
+          "description": "Check pagination output",
+          "timeout": 1000
+        }
+      }
+    ]
+  },
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "sleep 3; echo late",
+          "description": "Check pagination output",
+          "timeout": 1000
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "sleep 3; echo late",
+          "description": "Check pagination output",
+          "timeout": 1000
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "sleep 3; echo late",
+          "description": "Check pagination output",
+          "timeout": 1000
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [
+      {
+        "type": "tool_result",
+        "content": "Exit code 143\nCommand timed out after 1s\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>",
+        "is_error": true,
+        "tool_use_id": "tool_one",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "PROBE_COMPLETE"
+      }
+    ]
+  }
+]

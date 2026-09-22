@@ -1,0 +1,98 @@
+{
+  "capturedAt": "2026-09-22",
+  "captureCount": 35,
+  "client": {
+    "name": "Claude Code",
+    "version": "2.1.261",
+    "binary": "/home/jc/.local/share/claude/versions/2.1.261",
+    "sha256": "4ae40dd1784e85753e742e09f267d29ecbb82890361ad3817d27560866d364a6"
+  },
+  "runner": {
+    "terminalControl": "1.2.1",
+    "bun": "1.4.0",
+    "viewport": {
+      "columns": 100,
+      "rows": 40
+    },
+    "theme": "light",
+    "fontStack": "JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono",
+    "modes": {
+      "classic": "CLAUDE_CODE_NO_FLICKER=0",
+      "fullscreen": "CLAUDE_CODE_NO_FLICKER=1"
+    }
+  },
+  "fixture": {
+    "kind": "localhost Anthropic-compatible SSE",
+    "model": "claude-sonnet-4-6",
+    "tools": ["Bash", "Read", "Edit", "Write"],
+    "permissionMode": "dontAsk",
+    "project": "fresh temporary project per run",
+    "note": "Claude Code executed the real local tool calls. The fixture supplied deterministic model blocks and the final PROBE_COMPLETE text. No live model inference or account credentials were used."
+  },
+  "runs": [
+    {
+      "scene": "two",
+      "purpose": "two independent Bash results and connector count",
+      "statesByMode": {
+        "classic": ["compact", "expanded"],
+        "fullscreen": ["compact", "expanded"]
+      }
+    },
+    {
+      "scene": "bridge",
+      "purpose": "Read, Bash and Read across response boundaries",
+      "statesByMode": {
+        "classic": ["compact", "expanded"],
+        "fullscreen": ["compact", "expanded"]
+      }
+    },
+    {
+      "scene": "multiline",
+      "purpose": "long output preview and detailed transcript",
+      "statesByMode": {
+        "classic": ["compact", "expanded"],
+        "fullscreen": ["compact", "expanded"]
+      }
+    },
+    {
+      "scene": "empty",
+      "purpose": "successful command with no output",
+      "statesByMode": {
+        "classic": ["compact", "expanded"],
+        "fullscreen": ["compact", "expanded"]
+      }
+    },
+    {
+      "scene": "failed",
+      "purpose": "non-zero exit and stderr",
+      "statesByMode": {
+        "classic": ["compact", "expanded"],
+        "fullscreen": ["compact", "expanded"]
+      }
+    },
+    {
+      "scene": "edit",
+      "purpose": "Read followed by Edit and a colored diff preview",
+      "statesByMode": {
+        "classic": ["compact", "expanded"],
+        "fullscreen": ["compact", "expanded"]
+      }
+    },
+    {
+      "scene": "thought",
+      "purpose": "thinking between two Read calls",
+      "statesByMode": {
+        "classic": ["compact", "expanded"],
+        "fullscreen": ["compact", "expanded"]
+      }
+    },
+    {
+      "scene": "running",
+      "purpose": "live output and Esc interruption",
+      "statesByMode": {
+        "classic": ["running", "cancelled", "expanded"],
+        "fullscreen": ["running", "running-expanded", "cancelled", "expanded"]
+      }
+    }
+  ]
+}

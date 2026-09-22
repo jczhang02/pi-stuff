@@ -1,0 +1,40 @@
+
+ • Read 1 file
+
+ • Thoughts · 4s
+
+ • Searched 1 pattern
+
+ • 过滤没有使用 previousIds. 接着检查测试入口.
+
+ • Searched 1 pattern
+
+ • Read(src/search/cursor.ts)
+   ⎿  File not found · src/search/cursor.ts
+     1 more line
+
+ • Read 1 file
+
+ • Bash(bun test tests/search)
+   ⎿  Exit 0 · 0.4s
+     bun test v1.4.0
+     [pass] preserves the cursor
+     [pass] skips IDs from the previous page
+     10 more lines
+
+ • 现有 8 项测试通过, 但还没有覆盖跨页重复.
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

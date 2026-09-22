@@ -1,0 +1,20 @@
+{
+  "scenario": "running",
+  "cols": 120,
+  "rows": 42,
+  "modeCommand": "/tui default",
+  "steps": [
+    [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "python3 slow.py",
+          "description": "Check pagination output",
+          "timeout": 90000
+        }
+      }
+    ]
+  ]
+}

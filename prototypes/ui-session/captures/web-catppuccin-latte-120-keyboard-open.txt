@@ -1,0 +1,40 @@
+        https://docs.example.com/pagination
+        Preserve order and carry the next cursor forward.
+     2. Search API reference
+        https://docs.example.com/search
+        Use IDs to remove overlapping results.
+     3. Pagination examples
+        https://docs.example.com/examples
+        Handle empty and repeated page boundaries.
+     web_search · provider=exa · contentId=search-01 · offset=0 · nextOffset=325
+
+ • WebFetch(docs.example.com/pagination)
+   ⎿  Retrieved pagination guide · 6 lines
+     Cursor pagination
+
+     Keep the first occurrence of each item. Pass the cursor from the response
+     unchanged to the next request, even when filtering leaves an empty page.
+
+     Do not derive the next cursor from the filtered result count.
+     fetch_content · https://docs.example.com/pagination · contentId=page-01 · offset=0 · nextOffset=228
+
+ • WebRead(docs.example.com/pagination · find "cursor")
+   ⎿  Found 2 matches
+     3   Pass the cursor from the response unchanged to the next request.
+     6   Do not derive the next cursor from the filtered result count.
+     get_search_content · contentId=page-01 · find=cursor · moreMatches=false
+
+ • WebRead(docs.example.com/pagination · continue)
+   ⎿  Read next 3 lines · more available
+     7   Empty filtered pages are valid.
+     8   Continue using the next cursor until the provider returns no cursor.
+     9   Deduplication must preserve the order of retained records.
+     get_search_content · contentId=page-01 · offset=228 · nextOffset=399 · truncated=true
+
+ Tool output: expanded
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+保留这段草稿
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

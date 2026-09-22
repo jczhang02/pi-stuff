@@ -1,0 +1,24 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    /var/tmp/agent/claude-default-pETt2L/project
+
+  Switched back to the classic renderer
+
+
+❯ Check the pagination fixture.
+
+● Bash(python3 slow.py)
+  ⎿  PROGRESS 01/12
+     PROGRESS 02/12
+     PROGRESS 03/12
+     … +9 lines (ctrl+o to expand)
+  ⎿  (timeout 1m 30s)
+
+● PROBE_COMPLETE
+
+✻ Churned for 12s · done 10:16 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ don't ask on (shift+tab to cycle) · ← for agents

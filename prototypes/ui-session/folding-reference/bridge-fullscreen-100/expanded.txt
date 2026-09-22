@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for bridge.
+
+● Read(/tmp/claude-glyph-igya0i/project/a.txt)
+  ⎿  Read 4 lines
+
+● Bash(true)
+  ⎿  (No output)
+
+● Read(/tmp/claude-glyph-igya0i/project/b.txt)
+  ⎿  Read 3 lines
+
+                                                                  10:37 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Baked for 0s · done 10:37 AM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ? for shortcuts                          verbose

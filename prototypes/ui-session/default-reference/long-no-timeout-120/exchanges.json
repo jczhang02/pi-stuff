@@ -1,0 +1,82 @@
+[
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "python3 output.py # validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering ",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "python3 output.py # validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering ",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "python3 output.py # validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering ",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "python3 output.py # validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering validate cursor boundary and retain original item ordering ",
+          "description": "Check pagination output"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [
+      {
+        "tool_use_id": "tool_one",
+        "type": "tool_result",
+        "content": "LINE 01: pagination check\nLINE 02: pagination check\nLINE 03: pagination check\nLINE 04: pagination check\nLINE 05: pagination check\nLINE 06: pagination check\nLINE 07: pagination check\nLINE 08: pagination check\nLINE 09: pagination check\nLINE 10: pagination check\nLINE 11: pagination check\nLINE 12: pagination check\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>",
+        "is_error": false,
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "PROBE_COMPLETE"
+      }
+    ]
+  }
+]

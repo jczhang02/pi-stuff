@@ -1,0 +1,47 @@
+[
+  {
+    "step": 0,
+    "results": [],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "UI probe"
+      }
+    ]
+  },
+  {
+    "step": 1,
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Bash",
+        "input": {
+          "command": "printf 'ERROR_ONE\\nERROR_TWO\\n' >&2; exit 3",
+          "description": "Inspect controlled terminal output"
+        }
+      }
+    ]
+  },
+  {
+    "step": 2,
+    "results": [
+      {
+        "type": "tool_result",
+        "content": "Exit code 3\nERROR_ONE\nERROR_TWO",
+        "is_error": true,
+        "tool_use_id": "tool_one",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "PROBE_COMPLETE"
+      }
+    ]
+  }
+]

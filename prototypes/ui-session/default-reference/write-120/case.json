@@ -1,0 +1,19 @@
+{
+  "scenario": "write",
+  "cols": 120,
+  "rows": 42,
+  "modeCommand": "/tui default",
+  "steps": [
+    [
+      {
+        "type": "tool_use",
+        "id": "write_one",
+        "name": "Write",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-18iXKf/project/new-test.ts",
+          "content": "export const sample1 = 1;\nexport const sample2 = 2;\nexport const sample3 = 3;\nexport const sample4 = 4;\nexport const sample5 = 5;\nexport const sample6 = 6;\nexport const sample7 = 7;\nexport const sample8 = 8;\nexport const sample9 = 9;\nexport const sample10 = 10;\nexport const sample11 = 11;\nexport const sample12 = 12;\nexport const sample13 = 13;\nexport const sample14 = 14;\nexport const sample15 = 15;\n"
+        }
+      }
+    ]
+  ]
+}

@@ -1,0 +1,24 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for cat.
+
+● Bash(cat multiline.txt)
+  ⎿  RESULT_LINE_1: actual shell output
+     RESULT_LINE_2: actual shell output
+     RESULT_LINE_3: actual shell output
+     RESULT_LINE_4: actual shell output
+     RESULT_LINE_5: actual shell output
+     RESULT_LINE_6: actual shell output
+     RESULT_LINE_7: actual shell output
+     RESULT_LINE_8: actual shell output
+
+                                                                  09:45 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Cooked for 0s · done 9:45 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all                       verbose

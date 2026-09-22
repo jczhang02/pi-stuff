@@ -1,0 +1,40 @@
+
+ • 先检查旧入口, 找不到就回到当前实现.
+
+ • Searched 1 pattern
+
+ • Read(src/search/cursor.ts)
+   ⎿  File not found · src/search/cursor.ts
+     1 more line
+
+ • WebFetch(docs.example.com/old-pagination)
+   ⎿  HTTP 404 · page not found
+     1 more line
+
+ • Bash(bun test tests/search)
+   ⎿  Exit 1
+     FAIL skips IDs from the previous page
+     Expected: [{id: "b"}]
+     Received: [{id: "a"}, {id: "b"}]
+     3 more lines
+
+ Tool output: collapsed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+保留这段草稿
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

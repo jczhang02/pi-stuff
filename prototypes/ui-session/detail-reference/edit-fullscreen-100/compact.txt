@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for edit.
+
+  Read 1 file
+
+● Update(a.txt)
+  ⎿  Added 3 lines, removed 2 lines
+      1 -alpha
+      2 -beta
+      1 +ALPHA
+      2 +BETA
+      3 +ADDED
+      4  gamma
+
+● PROBE_COMPLETE
+
+✻ Crunched for 0s · done 4:20 AM
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                  ● high · /effort
+────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ don't ask on (shift+tab to cycle) · ← for agents

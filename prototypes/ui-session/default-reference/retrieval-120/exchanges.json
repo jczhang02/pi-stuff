@@ -1,0 +1,140 @@
+[
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "glob_one",
+        "name": "Glob",
+        "input": {
+          "pattern": "*.ts"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/api/hello",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "glob_one",
+        "name": "Glob",
+        "input": {
+          "pattern": "*.ts"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "glob_one",
+        "name": "Glob",
+        "input": {
+          "pattern": "*.ts"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "glob_one",
+        "name": "Glob",
+        "input": {
+          "pattern": "*.ts"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [
+      {
+        "tool_use_id": "glob_one",
+        "type": "tool_result",
+        "content": "sample.ts\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "read_one",
+        "name": "Read",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-4UJr1e/project/sample.ts"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [
+      {
+        "tool_use_id": "glob_one",
+        "type": "tool_result",
+        "content": "sample.ts\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>"
+      },
+      {
+        "tool_use_id": "read_one",
+        "type": "tool_result",
+        "content": "1\texport function total(items: number[]) {\n2\t  return items.length;\n3\t}\n4\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "grep_one",
+        "name": "Grep",
+        "input": {
+          "pattern": "return",
+          "path": "/var/tmp/agent/claude-default-4UJr1e/project",
+          "output_mode": "content"
+        }
+      }
+    ]
+  },
+  {
+    "path": "/v1/messages",
+    "results": [
+      {
+        "tool_use_id": "glob_one",
+        "type": "tool_result",
+        "content": "sample.ts\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>"
+      },
+      {
+        "tool_use_id": "read_one",
+        "type": "tool_result",
+        "content": "1\texport function total(items: number[]) {\n2\t  return items.length;\n3\t}\n4\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>"
+      },
+      {
+        "tool_use_id": "grep_one",
+        "type": "tool_result",
+        "content": "sample.ts:2:  return items.length;\n\n<system-reminder>\n<total_tokens>14999860 tokens left</total_tokens>\n</system-reminder>",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "PROBE_COMPLETE"
+      }
+    ]
+  }
+]

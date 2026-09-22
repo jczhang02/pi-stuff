@@ -1,0 +1,40 @@
+{
+  "scenario": "retrieval",
+  "cols": 120,
+  "rows": 42,
+  "modeCommand": "/tui default",
+  "steps": [
+    [
+      {
+        "type": "tool_use",
+        "id": "glob_one",
+        "name": "Glob",
+        "input": {
+          "pattern": "*.ts"
+        }
+      }
+    ],
+    [
+      {
+        "type": "tool_use",
+        "id": "read_one",
+        "name": "Read",
+        "input": {
+          "file_path": "/var/tmp/agent/claude-default-4UJr1e/project/sample.ts"
+        }
+      }
+    ],
+    [
+      {
+        "type": "tool_use",
+        "id": "grep_one",
+        "name": "Grep",
+        "input": {
+          "pattern": "return",
+          "path": "/var/tmp/agent/claude-default-4UJr1e/project",
+          "output_mode": "content"
+        }
+      }
+    ]
+  ]
+}

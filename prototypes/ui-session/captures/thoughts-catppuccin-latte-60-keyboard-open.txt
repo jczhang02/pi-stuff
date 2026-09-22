@@ -1,0 +1,40 @@
+
+
+ 分页边界会出现重复结果. 请保留第一次出现的记录, 不要改变下
+ 一页游标, 并补测试.
+
+
+ • Thoughts · 4s
+
+ • 先检查分页实现和现有测试, 再对照游标规则.
+
+ • Read 1 file
+
+ • Read(src/search/paginate.ts)
+   ⎿  Read 4 lines
+     18 │ export function paginate(page, previousIds) {
+     19 │   const seen = new Set(previousIds);
+     20 │   return {items: page.items, nextCursor:
+        │ page.cursor};
+     21 │ }
+
+ • Edit(src/search/paginate.ts)
+   ⎿  Added 2 lines, removed 1 line
+     18   export function paginate(page, previousIds) {
+     19     const seen = new Set(previousIds);
+     20 -   return {items: page.items, nextCursor:
+          page.cursor};
+     20 +   const items = page.items.filter(item =>
+          !seen.has(item.id));
+     21 +   return {items, nextCursor: page.cursor};
+     22   }
+
+ Tool output: expanded
+
+
+
+────────────────────────────────────────────────────────────
+保留这段草稿
+────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                     preview

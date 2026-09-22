@@ -1,0 +1,40 @@
+                                                                                                                       │
+ • Edit(src/search/paginate.ts)                                                                                        │
+   ⎿  Added 5 lines, removed 1 line                                                                                    │
+     19     const seen = new Set(previousIds);                                                                         │
+     20 -   const items = page.items.filter(item => !seen.has(item.id));                                               │
+     20 +   const items = page.items.filter(item => {                                                                  │
+     21 +     if (seen.has(item.id)) return false;                                                                     │
+     22 +     seen.add(item.id);                                                                                       │
+     23 +     return true;                                                                                             │
+     24 +   });                                                                                                        │
+     25     return {items, nextCursor: page.cursor};                                                                   │
+                                                                                                                       │
+ • Bash(bun test tests/search --verbose)                                                                               │
+   ⎿  Exit 0                                                                                                           │
+     [pass] preserves the cursor                                                                                       │
+       case 1: cursor preserved; input unchanged                                                                       │
+       fixture: page-1; stable output order                                                                            │
+     [pass] skips previous-page IDs                                                                                    │
+       case 2: cursor preserved; input unchanged                                                                       │
+       fixture: page-2; stable output order                                                                            │
+     [pass] keeps original order                                                                                       │
+       case 3: cursor preserved; input unchanged                                                                       │
+       fixture: page-3; stable output order                                                                            │
+     [pass] accepts empty page                                                                                         │
+       case 4: cursor preserved; input unchanged                                                                       │
+       fixture: page-4; stable output order                                                                            │
+     [pass] accepts empty previous page                                                                                ┃
+       case 5: cursor preserved; input unchanged                                                                       ┃
+       fixture: page-5; stable output order                                                                            ┃
+     [pass] preserves fields                                                                                           ┃
+       case 6: cursor preserved; input unchanged                                                                       │
+       fixture: page-6; stable output order                                                                            │
+     [pass] does not mutate input                                                                                      │
+       case 7: cursor preserved; input unch ↓ Jump to latest message · End                                             │
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+下一条草稿不会被展开操作覆盖
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

@@ -1,0 +1,75 @@
+[
+  {
+    "step": 0,
+    "results": [],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "UI probe"
+      }
+    ]
+  },
+  {
+    "step": 1,
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_read",
+        "name": "Read",
+        "input": {
+          "file_path": "/tmp/claude-glyph-tvlhNb/project/a.txt"
+        }
+      }
+    ]
+  },
+  {
+    "step": 2,
+    "results": [
+      {
+        "tool_use_id": "tool_read",
+        "type": "tool_result",
+        "content": "1\talpha\n2\tbeta\n3\tgamma\n4\t",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_edit",
+        "name": "Edit",
+        "input": {
+          "file_path": "/tmp/claude-glyph-tvlhNb/project/a.txt",
+          "old_string": "alpha\nbeta",
+          "new_string": "ALPHA\nBETA\nADDED"
+        }
+      }
+    ]
+  },
+  {
+    "step": 3,
+    "results": [
+      {
+        "tool_use_id": "tool_read",
+        "type": "tool_result",
+        "content": "1\talpha\n2\tbeta\n3\tgamma\n4\t"
+      },
+      {
+        "tool_use_id": "tool_edit",
+        "type": "tool_result",
+        "content": "The file /tmp/claude-glyph-tvlhNb/project/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "PROBE_COMPLETE"
+      }
+    ]
+  }
+]

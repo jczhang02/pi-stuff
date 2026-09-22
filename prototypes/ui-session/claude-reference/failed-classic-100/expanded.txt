@@ -1,0 +1,19 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for failed.
+
+● Bash(printf 'ERROR_ONE\nERROR_TWO\n' >&2; exit 3)
+  ⎿  Error: Exit code 3
+     ERROR_ONE
+     ERROR_TWO
+
+                                                                  09:45 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Cooked for 0s · done 9:45 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all                       verbose

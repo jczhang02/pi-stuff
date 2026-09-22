@@ -1,0 +1,40 @@
+     paginate(page, previousIds) {                         │
+     src/search/paginate.ts:19    const seen = new         │
+     Set(previousIds);                                     │
+     src/search/types.ts:12     previousIds: string[];     │
+                                                           │
+ • Write(tests/search/pagination-additional.test.ts)       │
+   ⎿  Wrote 10 lines                                       │
+      1 │ test("keeps cursor when every item is filtered", │
+        │ () => {                                          │
+      2 │   const page = {items: [{id: "a"}], cursor:      │
+        │ "next"};                                         │
+      3 │   expect(paginate(page, ["a"])).toEqual({items:  │
+        │ [], nextCursor: "next"});                        │
+      4 │ });                                              │
+      5 │                                                  │
+      6 │ test("keeps first occurrence within the same     │
+        │ page", () => {                                   │
+      7 │   const first = {id: "a", title: "first"};       │
+      8 │   const page = {items: [first, {id: "a", title:  │
+        │ "later"}], cursor: "next"};                      │
+      9 │   expect(paginate(page,                          │
+        │ []).items).toEqual([first]);                     │
+     10 │ });                                              │
+                                                           ┃
+ • Bash(bun test tests/search)                             ┃
+   ⎿  Exit 1                                               ┃
+     FAIL keeps first occurrence within the same page      ┃
+     Expected: [{id: "a", title: "first"}]                 │
+     Received: [{id: "a", title: "first"}, {id: "a", title:│
+     "later"}]                                             │
+                                                           │
+     9 pass                                                │
+     1 fail                                                │
+              ↓ Jump to latest message · End               │
+
+────────────────────────────────────────────────────────────
+下一条草稿不会被展开操作覆盖
+────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                     preview

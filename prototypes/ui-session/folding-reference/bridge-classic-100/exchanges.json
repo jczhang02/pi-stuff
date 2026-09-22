@@ -1,0 +1,109 @@
+[
+  {
+    "step": 0,
+    "results": [],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "UI probe"
+      }
+    ]
+  },
+  {
+    "step": 1,
+    "results": [],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_one",
+        "name": "Read",
+        "input": {
+          "file_path": "/tmp/claude-glyph-WdQ3mi/project/a.txt"
+        }
+      }
+    ]
+  },
+  {
+    "step": 2,
+    "results": [
+      {
+        "tool_use_id": "tool_one",
+        "type": "tool_result",
+        "content": "1\talpha\n2\tbeta\n3\tgamma\n4\t",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_middle",
+        "name": "Bash",
+        "input": {
+          "command": "true",
+          "description": "Inspect controlled terminal output"
+        }
+      }
+    ]
+  },
+  {
+    "step": 3,
+    "results": [
+      {
+        "tool_use_id": "tool_one",
+        "type": "tool_result",
+        "content": "1\talpha\n2\tbeta\n3\tgamma\n4\t"
+      },
+      {
+        "tool_use_id": "tool_middle",
+        "type": "tool_result",
+        "content": "(Bash completed with no output)",
+        "is_error": false,
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "tool_use",
+        "id": "tool_two",
+        "name": "Read",
+        "input": {
+          "file_path": "/tmp/claude-glyph-WdQ3mi/project/b.txt"
+        }
+      }
+    ]
+  },
+  {
+    "step": 4,
+    "results": [
+      {
+        "tool_use_id": "tool_one",
+        "type": "tool_result",
+        "content": "1\talpha\n2\tbeta\n3\tgamma\n4\t"
+      },
+      {
+        "tool_use_id": "tool_middle",
+        "type": "tool_result",
+        "content": "(Bash completed with no output)",
+        "is_error": false
+      },
+      {
+        "tool_use_id": "tool_two",
+        "type": "tool_result",
+        "content": "1\tdelta\n2\tepsilon\n3\t",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "type": "text",
+        "text": "PROBE_COMPLETE"
+      }
+    ]
+  }
+]

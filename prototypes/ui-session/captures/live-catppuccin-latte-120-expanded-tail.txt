@@ -1,0 +1,40 @@
+       case 6: cursor preserved; input unchanged
+       fixture: page-6; stable output order
+     [pass] does not mutate input
+       case 7: cursor preserved; input unchanged
+       fixture: page-7; stable output order
+     [pass] handles missing cursor
+       case 8: cursor preserved; input unchanged
+       fixture: page-8; stable output order
+     [pass] keeps cursor on filtered empty page
+       case 9: cursor preserved; input unchanged
+       fixture: page-9; stable output order
+     [pass] keeps first same-page occurrence
+       case 10: cursor preserved; input unchanged
+       fixture: page-10; stable output order
+
+     10 pass
+     0 fail
+     Ran 10 tests across 3 files.
+
+ • Bash(git diff --check)
+   ⎿  No output · exit 0
+
+ • 两个边界都已补齐, 10 项测试通过.
+
+   ```ts
+     if (seen.has(item.id)) return false;
+     seen.add(item.id);
+     return true;
+   ```
+
+   同页和跨页重复都保留第一次出现的记录. 全空过滤页仍保留下一页 cursor. git diff --check 无输出.
+
+
+ Tool output: expanded
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+下一条草稿不会被展开操作覆盖
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+0.0%/128k (auto)                                                                                                 preview

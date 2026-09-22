@@ -1,0 +1,17 @@
+ ▐▛███▛█   Claude Code v2.1.261
+▝▜██████▀  Sonnet 4.6 · API Usage Billing
+  ▝▝ ▝▝    ~/project
+
+
+❯ Inspect the local fixture for empty.
+
+● Bash(true)
+  ⎿  (No output)
+
+                                                                  04:20 AM claude-sonnet-4-6
+● PROBE_COMPLETE
+
+✻ Baked for 0s · done 4:20 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all                       verbose
