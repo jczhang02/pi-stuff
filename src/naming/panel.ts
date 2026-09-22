@@ -51,6 +51,7 @@ class NamingPanel implements Component, Focusable {
     private readonly ctx: ExtensionContext,
     private readonly runtime: NamingRuntime,
     save: (settings: NamingSettings) => Promise<void>,
+    notifyError: (message: string) => void,
   ) {
     this.border = new DynamicBorder(text => theme.fg('borderAccent', text));
     this.actions = new SelectList(
@@ -79,6 +80,7 @@ class NamingPanel implements Component, Focusable {
       runtime,
       save,
       () => this.changePage('home'),
+      notifyError,
     );
     this.hint.onSubmit = value => {
       void this.generate(value);
@@ -257,9 +259,13 @@ export function registerNamingPanel(
 ) {
   let close: (() => void) | undefined;
   let refresh: (() => Promise<void>) | undefined;
+  let lifetime = 0;
   pi.on('session_info_changed', () => refresh?.());
   pi.on('agent_settled', () => refresh?.());
-  pi.on('session_shutdown', () => close?.());
+  pi.on('session_shutdown', () => {
+    lifetime++;
+    close?.();
+  });
   pi.on('session_before_switch', () => close?.());
   pi.on('session_before_fork', () => close?.());
   pi.on('session_before_tree', () => close?.());
@@ -272,6 +278,7 @@ export function registerNamingPanel(
         else ctx.ui.notify('/naming requires TUI mode.', 'error');
         return;
       }
+      const origin = lifetime;
       try {
         await ctx.ui.custom<void>((tui, theme, keys, done) => {
           const panel = new NamingPanel(
@@ -282,6 +289,9 @@ export function registerNamingPanel(
             ctx,
             runtime,
             save,
+            message => {
+              if (origin === lifetime) ctx.ui.notify(message, 'error');
+            },
           );
           close = () => {
             panel.dispose();

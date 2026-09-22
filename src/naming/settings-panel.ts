@@ -51,10 +51,11 @@ export class NamingSettingsPanel implements Component, Focusable {
     private readonly tui: TUI,
     private readonly theme: Theme,
     private readonly keys: KeybindingsManager,
-    private readonly ctx: ExtensionContext,
+    ctx: ExtensionContext,
     private readonly runtime: NamingRuntime,
     private readonly save: (settings: NamingSettings) => Promise<void>,
     private readonly back: () => void,
+    private readonly notifyError: (message: string) => void,
   ) {
     const openText = (field: 'prompt' | 'maxLength', close: () => void) => {
       this.editor = new TextSettingEditor(
@@ -84,7 +85,7 @@ export class NamingSettingsPanel implements Component, Focusable {
         },
         () => this.closeEditor(close),
         () => this.renderAgain(),
-        message => ctx.ui.notify(message, 'error'),
+        notifyError,
       );
       this.editor.focused = this.active;
       return this.editor;
@@ -117,7 +118,7 @@ export class NamingSettingsPanel implements Component, Focusable {
               },
               () => this.closeEditor(close),
               () => this.renderAgain(),
-              message => ctx.ui.notify(message, 'error'),
+              notifyError,
             );
             this.editor.focused = this.active;
             return this.editor;
@@ -250,7 +251,7 @@ export class NamingSettingsPanel implements Component, Focusable {
   }
   private report(error: Error) {
     const message = stripVTControlCharacters(error.message);
-    this.ctx.ui.notify(message, 'error');
+    this.notifyError(message);
     if (this.closed) return;
     this.error = message;
     this.renderAgain();
