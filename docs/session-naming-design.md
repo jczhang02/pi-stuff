@@ -1,56 +1,83 @@
-# Session naming design
+# Opening-only session naming specification
 
-[简体中文](i18n/zh-CN/session-naming-design.md). Design interview for [#104](https://github.com/jczhang02/pi-stuff/issues/104), following the [research](session-naming-research.md). This draft records confirmed choices; the final defaults below and shared-understanding confirmation are pending. It does not authorize implementation.
+[简体中文](i18n/zh-CN/session-naming-design.md). Synthesized from the maintainer's research and design interview. Product decisions are accepted; the requested two-Astra adversarial review is pending. This document specifies future implementation, not evidence that the feature exists.
 
-## Purpose and task identity
+## Problem Statement
 
-Provide a recognizable opening task label with bounded naming work. Automatic titles do not track later phases or goal changes. This deliberately accepts an imperfect opening title; users can request a replacement. Explicit generation describes the current agreed main task, not the latest incidental operation or a catalogue of all past topics.
+Unnamed sessions are difficult to distinguish and resume. Repeated automatic renaming can replace the main task with a recent debugging step, and background classification can consume tokens without producing a useful change. Users need a recognizable opening name, predictable request limits and explicit control over later replacements.
 
-## Automatic lifecycle
+## Solution
 
-| Situation                                            | Agreed behavior                                                              |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Newly created blank main session                     | After its first successful exchange settles, attempt generation at most once |
-| Name already exists before generation                | Preserve it; skip generation                                                 |
-| First exchange is cancelled or fails                 | Skip generation; do not wait for a later successful exchange                 |
-| Naming fails, times out or returns invalid output    | Keep the default display or existing name; do not retry automatically        |
-| Later input, task replacement, compaction or reload  | No new automatic generation                                                  |
-| Resume, fork (named or unnamed), background subagent | No automatic generation                                                      |
-| User explicitly requests generation                  | One requested replacement; never re-enable automatic management              |
+Name a new, blank main session once after its first successful exchange. Keep that name thereafter. Later naming is an explicit `/autoname [task hint]` operation; Pi's `/name <name>` remains direct assignment. Use a configurable model and naming-style prompt, with concise English defaults. Preserve user changes and discard stale results. Automatic naming is enabled by default and can be disabled independently of the command.
 
-Input for the opening request is the first user request and bounded final assistant text. Exclude tool results, process logs and thinking. The user request is authoritative when assistant text misinterprets it. No separate model call decides whether clarification is complete.
+## User Stories
 
-The implementation must preserve the at-most-once boundary across reload, resume and navigation. A pending result must not overwrite a later manual name or rename another session/branch. These are acceptance conditions, not a selected persistence schema or concurrency abstraction.
+1. As a Pi Stuff user, I want a new main session to receive a name after its opening exchange, so that I can recognize it in the session list.
+2. As a user of short sessions, I want naming without a three-message threshold, so that a single exchange can be identified.
+3. As a user, I want the name to describe my requested goal and object, so that it remains useful after implementation and testing begin.
+4. As a user, I want no automatic later renames, so that a temporary blocker or final commit command cannot replace the task identity.
+5. As a cost-conscious user, I want at most one automatic naming attempt, so that long conversations do not accumulate naming requests.
+6. As a user who cancels the opening exchange, I want automatic naming skipped, so that cancellation does not start another background request.
+7. As a user whose opening exchange fails, I want no deferred naming on later turns, so that the opening-only policy remains predictable.
+8. As a user, I want naming failure or invalid output to preserve the existing display without retries, so that the main task remains usable.
+9. As a user who already named a session, I want that name preserved, so that automatic naming cannot override my organization.
+10. As a user resuming or reloading a session, I want no catch-up generation, so that opening an old session does not spend tokens.
+11. As a user creating a fork, I want no automatic naming request whether or not its name is inherited, so that branching does not create hidden work.
+12. As a user running background subagents, I want them excluded from automatic naming, so that each child does not incur an extra request.
+13. As a user, I want to disable automatic naming while retaining the command, so that I can opt into generation when useful.
+14. As a user, I want `/name` to keep its native direct-assignment behavior, so that I can choose an exact title without a model call.
+15. As a user, I want `/autoname` to generate a replacement once, so that I can correct an unclear opening name.
+16. As a user whose goal has changed, I want explicit generation to name the currently agreed main task, so that the result reflects what I now intend.
+17. As a user, I want to provide an optional task hint, so that I can direct generation without sending the whole history.
+18. As a user, I want manual generation to remain explicit rather than restart automation, so that later turns leave the chosen name alone.
+19. As a user, I want a separately configured naming model to take precedence, so that I can choose its cost and speed.
+20. As a user without that configuration, I want the current session model used, so that the feature does not require extra setup.
+21. As a user, I want host-managed model authentication, so that I do not maintain a second credential store.
+22. As a user, I want a short English `type: Action object` default, so that names are consistent and easy to scan.
+23. As a user, I want technical identifiers preserved and progress omitted, so that names remain recognizable and stable.
+24. As a user, I want to replace the style prompt and length limit through configuration, so that naming conventions can evolve without extension code changes.
+25. As a user, I want configuration changes to affect future requests only, so that they do not rename existing sessions.
+26. As a user, I want bounded text input without tool results or thinking, so that naming does not resend unnecessary context.
+27. As a user, I want a request deadline and no auxiliary summarization call, so that naming remains a small background operation.
+28. As a user who renames, navigates or starts another generation while a request is pending, I want obsolete results discarded, so that the final name respects my latest action.
+29. As a user invoking the command, I want a useful failure message without losing the existing name, so that I can correct configuration or retry deliberately.
+30. As a maintainer, I want lifecycle and request counts verified through a real isolated Pi host, so that tests cover the integration rather than a simulated copy of its logic.
 
-## Manual controls
+## Implementation Decisions
 
-Keep Pi's `/name <name>` for direct assignment. Add `/autoname [task hint]` for generated replacement. A supplied hint takes priority; without one, provide bounded opening and recent user/assistant dialogue, not the entire history. The command replaces the name once and does not start a recurring process.
+1. **Ownership and host integration.** One naming capability owns generation eligibility, input preparation, command handling and result publication. The existing package entrypoint registers it and the existing configuration owner decodes its settings. Reuse Pi's name APIs, model registry and authentication. Keep strict TypeScript, the pinned Bun runtime and Effect v4 for boundaries, typed failures and necessary I/O. No new dependency or provider client is required by this specification.
+2. **Eligibility.** Automatic naming applies only to a genuinely new blank main session observed from its opening. Startup alone is insufficient evidence: Pi can start with an existing session. Resume, import, reload, fork, background subagent sessions and already named sessions are ineligible. A later removal of the name does not create a fresh automatic opportunity. Child-session exclusion must use verified host/integration evidence, not assume every parent link or every RPC invocation means a child.
+3. **Opening exchange.** Use the first delivered user request and its final visible assistant answer, including the tools and internal continuations needed to answer that request. A settled event alone is not success. Check final assistant completion and exclude cancellation/error outcomes. Queued separate user requests must not reset the opportunity or contaminate the opening snapshot. If the opening cannot be identified safely, skip automatic naming instead of guessing from the latest reply. A failed or cancelled opening consumes the opportunity, including observable preflight failure; never defer it to a later successful exchange.
+4. **Once-only state.** Mark the automatic opportunity consumed before awaiting model I/O. Repeated events, failure, invalid output, configuration changes and navigation do not rearm it. Restart/resume/reload never replay it. Prefer native session identity/history plus local request state; add persisted metadata only if actual host behavior proves it necessary. Any metadata must match Pi's session-wide name semantics. Do not rewrite session history or introduce a separate session database.
+5. **Commands.** Preserve `/name <name>`. Register `/autoname [task hint]` as an explicit, one-request replacement, available with automatic naming disabled. A supplied hint has priority over inferred task intent; otherwise infer the current main task from bounded opening and recent dialogue. Hint text is naming input, not a command to run tools or change lifecycle policy. Successful explicit generation replaces the name; failure keeps it. It never enables automatic naming.
+6. **Configuration.** Expose an automatic-enable switch (default true), an optional naming-model selection, an optional replacement style prompt and `maxLength` (default 80). Reuse the host configuration reload contract, without a new settings UI or watcher. The optional model identifies provider and model unambiguously. Missing model configuration selects the current model; invalid selection, unavailable authentication or a failed configured model does not silently select another provider/model. Capture configuration and model choices at request start. Reject invalid configuration with actionable diagnostics under existing configuration behavior.
+7. **Default style.** English `type: Action object`; types `research / feat / fix / refactor / docs / chore`; prefer 4-8 description words; preserve technical identifier casing; omit parenthesized scope, dates, progress and completion state. Type describes the whole requested task, not a research/test/commit phase within it. The default is prompt guidance, not a promise of semantic correctness.
+8. **Custom style and validation.** A replacement prompt may change language, type vocabulary and format. It cannot change request eligibility, input selection, retries, model routing or publication guards. `maxLength` stays an independent positive character limit. After trimming outer whitespace, accept only nonempty single-line output within that limit and without control characters. Do not truncate an overlong generated title into a misleading partial title, invoke a repair model, or enforce default English/types against a custom prompt. Invalid output is a failed attempt. Count text limits consistently in Unicode code points and document this meaning of character.
+9. **Input limits.** Automatic conversation text is capped at 2,000 characters in total across the first request and final answer. Explicit generation is capped at 4,000 characters across the hint and selected conversation text, with hint priority. Preserve some opening user intent and bounded recent user/assistant text when no hint is supplied. Selection and truncation are deterministic; do not use a second model to summarize. Avoid prefix-only clipping that can lose a request appearing after long pasted logs; retain useful boundaries and label omitted content. Exclude tool-result messages, thinking, process logs, images and loaded system/skill instructions. Assistant text can still quote such material: message-role filtering is not a secrecy guarantee. Custom style instructions and request framing consume additional tokens outside these conversation limits.
+10. **Resources and routing.** Use a 15-second end-to-end deadline per naming attempt and abort host work when it expires. Make at most one extension-level generation request per automatic opportunity or explicit command. Disable SDK/client retries where supported; no fallback-model chain, autonomous retry, periodic timer, extra classifier or summarizer. Request no additional reasoning where supported and a finite output budget appropriate to `maxLength`; document provider mappings and include hidden reasoning/transport retries in compatibility evidence. These controls bound work but are not a universal exact token or billing cap. Abort cannot recover tokens already used remotely.
+11. **Concurrent publication.** Re-read session identity, branch/navigation generation and name revision before applying a result. A manual name change, new explicit generation, session switch, tree navigation, reload or shutdown invalidates prior work even if a title string later returns to the same value. Cancellation is best effort; the final validity check is mandatory. New ordinary user text alone does not authorize a new naming attempt. Do not queue multiple explicit generations; a newer explicit request supersedes the older result without automatically retrying it. Session-wide names remain session-wide; this feature does not create per-branch titles.
+12. **Failure and delivery.** Keep automatic naming unobtrusive and do not delay the main conversation on the title request. An explicit command reports missing model/auth, timeout, invalid output or supersession through the host's existing command feedback. Do not dump prompt/history or credentials in diagnostics. Preserve existing names and normal default display after failure. Native responsiveness, interruption and session recovery must remain intact.
 
-Manual naming remains authoritative until the user changes it or explicitly requests a generated replacement. Editing naming configuration does not retroactively rename sessions.
+## Testing Decisions
 
-## Model and naming rules
+- **Primary seam, confirmed by the maintainer:** reuse the existing real Pi host launcher and controlled local model endpoint. Keep actual extension registration, configuration, event delivery, commands and session persistence. Extend only the external model fixture to capture naming payloads, request counts and completion ordering. Do not mock modules or construct a parallel fake lifecycle to prove it agrees with itself.
+- **Prior art:** the current Pi terminal lifecycle/configuration tests already launch isolated regular/fullscreen sessions, issue `/new` and `/reload`, capture real provider traffic and inspect session files. The current configuration-owner tests exercise real temporary files and stale writes. Reuse these patterns; use Terminal Control for visible terminal acceptance and the maintainer's Bun-compiled Pi profile.
+- **One-shot cases:** first successful exchange yields one request/name; later turns and repeated settlement yield none; opening error/abort/preflight failure, pre-existing name, disabled mode, resume/reload/import, both kinds of fork and background child yield none. Cover queued user input, internal retries/compaction and new-session transitions using the actual host.
+- **Explicit cases:** `/name` makes no model request; `/autoname` works with auto disabled and can replace a manual name; hints take priority; no command enables later auto updates. Missing configured model/auth does not call a fallback. Count both logical calls and actual fixture HTTP requests where the adapter supports zero retries.
+- **Races and recovery:** hold model responses while manually naming (including change-away-and-back), navigating, reloading, switching sessions or issuing a newer command. Only the still-authorized result may publish. Verify persisted names after process restart and branch navigation; failed/aborted work cannot rearm automatic naming.
+- **Boundaries:** directly test configuration decoding and deterministic input/output boundaries only where needed: Unicode lengths, long logs before a request, oversized hints, custom prompts/types/languages, newline/control output, 2,000/4,000-character budgets and configured title length. Assert externally visible payloads/results, not private helper arrangement or prompt wording verbatim.
+- **Failure limits:** controlled endpoint tests for deadline, malformed output, no response and provider error must preserve the existing name and release local work. Record retry/reasoning behavior for supported provider adapters, rather than infer it from a short visible title.
+- **Semantic checks:** review a small recorded set of representative opening/hint examples for main-task relevance and identifier preservation. Keep this distinct from deterministic lifecycle tests; a fixture returning a good title is not evidence that a live model will do so. A live quality benchmark or account spend is not required by this publication.
+- Run required repository static checks and applicable offline product tests for implementation. Record actual Pi/Bun/provider versions, compiled-host acceptance and concurrency/persistence review. This specification delivery runs documentation checks only and makes no production acceptance claim.
 
-Use the configured naming model when present, otherwise the current session model, through Pi's model registry and authentication. Do not create a separate provider client. A naming failure does not cause automatic retries or a chain of fallback models.
+## Out of Scope
 
-Default style:
+Periodic or goal-following automatic renaming; waiting for three messages; adaptive clarification classification; retry/fallback-model chains; renaming historical sessions in bulk; automatic fork/subagent names; progress titles; new model/auth clients; a settings UI, template language or watcher; changes to Pi's session/branch identity; host source forks; unapproved dependencies; implementing or merging the feature during specification work.
 
-- English `type: Action object`, with `research / feat / fix / refactor / docs / chore`.
-- Prefer 4-8 description words; complete name at most 80 characters.
-- Preserve technical identifier casing. No scope parentheses, dates, progress or completion state.
-- Classify the whole task, not its current research/test/commit phase.
+## Further Notes
 
-Users can replace the naming-style prompt in configuration. `maxLength` is a separate setting, defaulting to 80. Basic output validation remains: nonempty, single-line text within the configured length, without control characters. Do not enforce the default type enumeration or English when the style prompt was replaced. A custom prompt does not alter input selection, request eligibility or retry behavior.
-
-## Host facts that constrain implementation
-
-Pi 0.85.1 emits `agent_settled` without a success field. Check the preceding persisted assistant state, not settlement alone; preflight failures may occur before a settled event. `session_start` can mean startup, reload, new, resume or fork, and startup can open an existing session. A fork copies the path to the selected leaf, including only names on that path. The name itself is read across the session's entries, so branch-local naming ownership alone is insufficient. Sources: [events](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/extensions/types.ts), [lifecycle](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts), [session manager](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/session-manager.ts).
-
-## Final defaults to confirm
-
-The following are proposals, not confirmed decisions:
-
-- Enable automatic opening naming by default; a configuration switch disables automatic naming while keeping `/autoname` available.
-- Bound conversation text to 2,000 characters automatically and 4,000 for explicit generation. Custom style instructions and request framing add input beyond these conversation budgets. Use deterministic selection, not a second summarization request.
-- Use a 15-second request deadline and a small output budget. Disable client-side retries where supported and request no extra reasoning where the provider supports it. Exact output accounting depends on the provider; do not equate an 80-character title with an 80-token bill.
-
-These numbers are conservative design starting points, not measured optimal values. Configuration field names and the persistence representation remain implementation work, subject to the agreed behavior and repository review requirements.
+- Decisions and sources come from [research #104](https://github.com/jczhang02/pi-stuff/issues/104) and [documentation PR #105](https://github.com/jczhang02/pi-stuff/pull/105). This implementation task is distinct from the research task. Claim it and establish its owner/branch before product work; do not reuse the research owner claim as implementation authorization.
+- Inspected host: Pi 0.85.1 and Bun 1.4.0. Pi settlement carries no success flag; startup can open existing sessions; fork copies only its selected path; name lookup spans the whole session. Revalidate the actual implementation baseline, including the existing configuration owner and child-session integration.
+- Accepted tradeoffs: an ambiguous or failed opening can leave a poor or absent title permanently until manual generation; unnamed forks remain unnamed automatically; partial text can omit context. No periodic repair is implied.
+- Cost limitation: custom prompt size, model tokenization, required provider reasoning and adapters that cannot disable transport retries prevent claiming a universal token ceiling. Default-current-model routing is convenient, but not a guarantee of low monetary cost. Preserve this limitation in user documentation.
+- Reviewers may challenge these choices. Distinguish an accepted product tradeoff from a contradictory or unimplementable contract. Correct specification defects without silently reversing the maintainer's chosen opening-only policy.
