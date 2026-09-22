@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/ui.md) · English is normative.
 
-Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write and Edit presentation. Other tool types, Thoughts, welcome, retrieval grouping and interactive settings are not implemented yet. The prototype remains visual reference, not production acceptance evidence.
+Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools, Thoughts, welcome, retrieval grouping and interactive settings are not implemented yet. The prototype remains visual reference, not production acceptance evidence.
 
 ## Bash
 
@@ -17,6 +17,10 @@ Write retains native file execution and shows the written source with Pi syntax 
 ## Edit
 
 Edit renders the native result patch with one line-number gutter, removal numbers from the old file and addition/context numbers from the new file. It highlights the available old and new source separately within each hunk, adds semantic backgrounds and shows six rendered rows before disclosure. Wrapped rows do not repeat the gutter. The summary counts added and removed source lines. Opening an old result uses its recorded patch even if the file has since changed. Syntax context outside the recorded hunks is unavailable.
+
+## Retrieval tools
+
+Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mouse disclosure or Ctrl+O reveals their text. No-match, empty and error results remain visible, as do upstream truncation and result-limit warnings. Ls is used only for an actual `ls` tool call; shell commands keep their Bash identity. Native Read image-resizing settings are preserved. Cross-tool aggregation remains under implementation.
 
 ## Configuration
 

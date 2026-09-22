@@ -2,7 +2,7 @@
 
 [English](../../../docs/ui.md) · 以英文版为准.
 
-[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write 和 Edit 展示. 其他工具、Thoughts、欢迎页、检索聚合和交互设置尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
+[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具、Thoughts、欢迎页、检索聚合和交互设置尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
 
 ## Bash
 
@@ -17,6 +17,10 @@ Write 保留原生文件执行, 使用 Pi 语法高亮显示写入源码. 收起
 ## Edit
 
 Edit 使用原生结果中的 patch, 采用单一行号栏, 删除行用旧行号, 新增和上下文用新行号. 每个 hunk 中可用的旧/新源码分别高亮, 配合增删背景, 展开前显示六个渲染行. 折行不重复行号栏. 摘要统计增删源码行数. 即使文件后来改变, 展开历史结果仍使用记录中的 patch. 记录 hunk 之外的语法上下文不可用.
+
+## 检索工具
+
+Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标展开或 Ctrl+O 显示文本. 无匹配、空结果、错误以及上游截断/结果数量限制警告保持可见. 只有实际 `ls` 工具调用显示 Ls, Shell 命令保留 Bash 身份. 保留原生 Read 图片缩放设置. 跨工具聚合仍在实现中.
 
 ## 配置
 

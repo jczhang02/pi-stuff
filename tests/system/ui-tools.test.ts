@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test';
-import {readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
@@ -190,6 +190,80 @@ test('Edit disclosure uses the recorded patch after the file changes again', asy
     const expanded = await host.terminal.screen.text();
     expect(expanded).not.toContain('UNRELATED_CURRENT_FILE');
     expect(expanded).not.toContain('more lines');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Read and Ls retain their native identity and reveal results only on disclosure', async () => {
+  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  try {
+    await writeFile(
+      join(host.directory, 'retrieval.txt'),
+      'RETRIEVAL_ONE\nRETRIEVAL_TWO\n',
+    );
+    expect(
+      await host.invoke('read', JSON.stringify({path: 'retrieval.txt'})),
+    ).toContain('RETRIEVAL_TWO');
+    const compact = await host.terminal.screen.text();
+    expect(compact).toContain('Read(retrieval.txt)');
+    expect(compact).not.toContain('RETRIEVAL_TWO');
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('RETRIEVAL_TWO', {timeoutMs: 5000});
+    await host.invoke('ls', JSON.stringify({path: '.'}));
+    expect(await host.terminal.screen.text()).toContain('Ls(.)');
+    await host.invoke('bash', JSON.stringify({command: 'ls retrieval.txt'}));
+    expect(await host.terminal.screen.text()).toContain(
+      'Bash(ls retrieval.txt)',
+    );
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Grep and Find keep native results and make no-match outcomes visible', async () => {
+  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  try {
+    await writeFile(join(host.directory, 'needle.txt'), 'distinctive_needle\n');
+    expect(
+      await host.invoke(
+        'grep',
+        JSON.stringify({pattern: 'distinctive_needle', path: 'needle.txt'}),
+      ),
+    ).toContain('distinctive_needle');
+    expect(await host.terminal.screen.text()).toContain(
+      'Grep(distinctive_needle, needle.txt)',
+    );
+    await host.invoke(
+      'grep',
+      JSON.stringify({pattern: 'NO_MATCH_TOKEN', path: 'needle.txt'}),
+    );
+    expect(await host.terminal.screen.text()).toContain('No matches found');
+    expect(
+      await host.invoke('find', JSON.stringify({pattern: '*.txt', path: '.'})),
+    ).toContain('needle.txt');
+    expect(await host.terminal.screen.text()).toContain('Find(*.txt, .)');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Ls exposes upstream limits while keeping retained entries compact', async () => {
+  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  try {
+    await mkdir(join(host.directory, 'entries'));
+    await writeFile(join(host.directory, 'entries/aaa.txt'), 'a');
+    await writeFile(join(host.directory, 'entries/bbb.txt'), 'b');
+    const result = await host.invoke(
+      'ls',
+      JSON.stringify({path: 'entries', limit: 1}),
+    );
+    expect(result).toContain('aaa.txt');
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('Result limit reached: 1');
+    expect(screen).not.toContain('aaa.txt');
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('aaa.txt', {timeoutMs: 5000});
   } finally {
     await host.close();
   }

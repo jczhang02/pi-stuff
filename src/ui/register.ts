@@ -1,5 +1,9 @@
 import {
   getAgentDir,
+  createReadToolDefinition,
+  createGrepToolDefinition,
+  createFindToolDefinition,
+  createLsToolDefinition,
   SettingsManager,
   type ExtensionAPI,
   type BashToolOptions,
@@ -7,6 +11,7 @@ import {
 import {createBashDisplay} from './bash';
 import {createWriteDisplay} from './write';
 import {createEditDisplay} from './edit';
+import {displayRetrieval} from './retrieval';
 import type {UiSettings} from './settings';
 
 export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
@@ -27,11 +32,48 @@ export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
       )
     )
       pi.registerTool(createEditDisplay(ctx.cwd));
-    const bash = tools.find(tool => tool.name === 'bash');
-    if (bash?.sourceInfo.source !== 'builtin') return;
     const hostSettings = SettingsManager.create(ctx.cwd, getAgentDir(), {
       projectTrusted: ctx.isProjectTrusted(),
     });
+    const native = (name: string) =>
+      tools.some(
+        tool => tool.name === name && tool.sourceInfo.source === 'builtin',
+      );
+    if (native('read'))
+      pi.registerTool(
+        displayRetrieval(
+          createReadToolDefinition(ctx.cwd, {
+            autoResizeImages: hostSettings.getImageAutoResize(),
+          }),
+          'Read',
+          args => args.path ?? '',
+        ),
+      );
+    if (native('grep'))
+      pi.registerTool(
+        displayRetrieval(
+          createGrepToolDefinition(ctx.cwd),
+          'Grep',
+          args => `${args.pattern ?? ''}, ${args.path ?? '.'}`,
+        ),
+      );
+    if (native('find'))
+      pi.registerTool(
+        displayRetrieval(
+          createFindToolDefinition(ctx.cwd),
+          'Find',
+          args => `${args.pattern ?? ''}, ${args.path ?? '.'}`,
+        ),
+      );
+    if (native('ls'))
+      pi.registerTool(
+        displayRetrieval(
+          createLsToolDefinition(ctx.cwd),
+          'Ls',
+          args => args.path ?? '.',
+        ),
+      );
+    if (!native('bash')) return;
     const options: BashToolOptions = {};
     const prefix = hostSettings.getShellCommandPrefix();
     const shell = hostSettings.getShellPath();
