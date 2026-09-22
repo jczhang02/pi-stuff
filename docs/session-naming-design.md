@@ -1,6 +1,6 @@
 # Opening-only session naming specification
 
-[简体中文](i18n/zh-CN/session-naming-design.md). Synthesized from the maintainer's research and design interview. Product decisions are accepted; the requested two-Astra adversarial review is pending. This document specifies future implementation, not evidence that the feature exists.
+[简体中文](i18n/zh-CN/session-naming-design.md). Synthesized from the maintainer's research and design interview. Two independent GPT-6 Astra reviewers rechecked the four fixes at `8c11554` and reported no remaining specification blockers; see the [review record](https://github.com/jczhang02/pi-stuff/issues/108#issuecomment-5771952855). This document specifies future implementation, not evidence that the feature exists.
 
 ## Problem Statement
 

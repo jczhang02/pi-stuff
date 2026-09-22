@@ -1,6 +1,6 @@
 # 仅开场自动命名规格
 
-[English](../../session-naming-design.md). 本规格汇总维护者在调研与设计访谈中接受的选择. 用户要求的两位 Astra 对抗审查尚待完成. 这里定义后续实现, 不代表功能已存在.
+[English](../../session-naming-design.md). 本规格汇总维护者的调研与设计访谈. 两位独立 GPT-6 Astra reviewer 已复核 `8c11554` 的四项修订, 报告无剩余规格阻塞项, 见[审查记录](https://github.com/jczhang02/pi-stuff/issues/108#issuecomment-5771952855). 这里定义后续实现, 不代表功能已存在.
 
 ## Problem Statement
 
