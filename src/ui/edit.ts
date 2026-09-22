@@ -1,4 +1,5 @@
 import {ToolHeading} from './heading';
+import {ResultBlock} from './result-block';
 import type {UiSettings} from './settings';
 import {
   createEditToolDefinition,
@@ -7,7 +8,6 @@ import {
   type Theme,
 } from '@earendil-works/pi-coding-agent';
 import {
-  Text,
   truncateToWidth,
   wrapTextWithAnsi,
   type Component,
@@ -163,16 +163,13 @@ export function createEditDisplay(cwd: string, settings: UiSettings) {
   tool.renderResult = (result, options, theme, context) => {
     const patch = result.details?.patch;
     if (context.isError || !patch)
-      return new Text(
-        theme.fg(
-          context.isError ? 'error' : 'toolOutput',
-          `  ⎿ ${result.content
-            .filter(block => block.type === 'text')
-            .map(block => block.text)
-            .join('\n    ')}`,
-        ),
-        0,
-        0,
+      return new ResultBlock(
+        result.content
+          .filter(block => block.type === 'text')
+          .map(block => block.text)
+          .join('\n'),
+        theme,
+        context.isError ? 'error' : 'toolOutput',
       );
     const previous = context.lastComponent;
     const path = context.args.path ?? '';

@@ -1,11 +1,12 @@
 import {ToolHeading} from './heading';
+import {ResultBlock} from './result-block';
 import type {RetrievalGroups} from './groups';
 import type {Static, TSchema} from 'typebox';
 import type {
   ToolDefinition,
   TruncationResult,
 } from '@earendil-works/pi-coding-agent';
-import {Text, wrapTextWithAnsi, truncateToWidth} from '@earendil-works/pi-tui';
+import {wrapTextWithAnsi, truncateToWidth} from '@earendil-works/pi-tui';
 
 interface RetrievalDetails {
   truncation?: TruncationResult;
@@ -68,7 +69,7 @@ export function displayRetrieval<
       .replace(/\n$/u, '');
     if (context.isError) {
       groups?.finish(context.toolCallId, false);
-      return new Text(theme.fg('error', `  ⎿ ${output}`), 0, 0);
+      return new ResultBlock(output, theme, 'error');
     }
     const notices = inspect?.(output) ?? [];
     const details = result.details;
@@ -90,11 +91,15 @@ export function displayRetrieval<
       output === '(empty directory)';
     if (!options.isPartial)
       groups?.finish(context.toolCallId, notices.length === 0 && !empty);
+    const noticeBlocks = notices.map(
+      notice => new ResultBlock(notice, theme, 'warning'),
+    );
     let cachedWidth = -1;
     let cached: string[] = [];
     return {
       invalidate() {
         cachedWidth = -1;
+        for (const block of noticeBlocks) block.invalidate();
       },
       render(width) {
         if (groups && !groups.visible(context.toolCallId)) return [];
@@ -120,13 +125,7 @@ export function displayRetrieval<
                 width,
               ),
             ];
-        for (const notice of notices)
-          body.push(
-            ...wrapTextWithAnsi(
-              theme.fg('warning', `  ⎿ ${notice}`),
-              Math.max(1, width),
-            ),
-          );
+        for (const block of noticeBlocks) body.push(...block.render(width));
         cachedWidth = width;
         cached = body;
         return body;

@@ -42,6 +42,10 @@ Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标�
 
 既有 Web access 工具分别显示为 WebSearch、WebFetch 和 WebRead. 紧凑标题显示操作数量或保留内容标签, 展开后显示 query/URL/content ID 以及分页/find 参数. 原 API 名称、输出和缓存行为不变. 批次失败项和保留内容分页提示在收起时仍可见. 展开本身不抓取更多内容.
 
+工具错误和提示每个结果块只保留一个 `⎿`, 折行后与正文对齐. 下方60列截图包含真实 Read/Write 错误和 Web 认证警告, 未显示凭据值.
+
+![工具错误与 Web 警告, 60列](../../assets/ui/tool-errors-dark-60.png)
+
 ## 配置
 
 在全局 `pi-stuff.json` 中添加 `ui`, 与已有 `web`、`tools`、`rtk` 并列. 编辑后 reload Pi. 这些选项不读取项目配置.

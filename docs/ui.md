@@ -42,6 +42,10 @@ Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mo
 
 The existing Web access tools display as WebSearch, WebFetch and WebRead. Compact headings show the operation count or retained-content label; expanded headings show query/URL/content ID and paging/find arguments. Their original API names, output and cache behavior are unchanged. Batch-item errors and retained-content paging notices remain visible while compact. This presentation does not fetch additional content on disclosure.
 
+Tool errors and notices keep one `⎿` per result block, with wrapped continuations aligned beneath the text. The 60-column capture includes actual Read/Write errors and a Web authentication warning; no credential value is displayed.
+
+![Tool errors and Web warning, 60 columns](assets/ui/tool-errors-dark-60.png)
+
 ## Configuration
 
 Add `ui` to the global `pi-stuff.json` beside existing `web`, `tools` and `rtk` settings. Reload Pi after editing. Project configuration is not read for these options.

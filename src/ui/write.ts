@@ -1,4 +1,5 @@
 import {ToolHeading} from './heading';
+import {ResultBlock} from './result-block';
 import type {UiSettings} from './settings';
 import {
   createWriteToolDefinition,
@@ -7,7 +8,6 @@ import {
   type Theme,
 } from '@earendil-works/pi-coding-agent';
 import {
-  Text,
   wrapTextWithAnsi,
   truncateToWidth,
   type Component,
@@ -84,16 +84,13 @@ export function createWriteDisplay(cwd: string, settings: UiSettings) {
     new ToolHeading('Write', args.path ?? '', theme, context);
   tool.renderResult = (result, options, theme, context) => {
     if (context.isError)
-      return new Text(
-        theme.fg(
-          'error',
-          `  ⎿ ${result.content
-            .filter(block => block.type === 'text')
-            .map(block => block.text)
-            .join('\n    ')}`,
-        ),
-        0,
-        0,
+      return new ResultBlock(
+        result.content
+          .filter(block => block.type === 'text')
+          .map(block => block.text)
+          .join('\n'),
+        theme,
+        'error',
       );
     const previous = context.lastComponent;
     const source = context.args.content ?? '';
