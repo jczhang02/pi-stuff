@@ -171,3 +171,129 @@ test('Tool display does not send retained terminal palette commands to the termi
     await host.close();
   }
 }, 30000);
+
+test.each([
+  ['regular', false],
+  ['regular', true],
+  ['fullscreen', false],
+  ['fullscreen', true],
+] as const)(
+  'UI lifecycle emits no palette setters or resets (%s, UI enabled: %s)',
+  async (mode, enabled) => {
+    const host = await launchPi(
+      JSON.stringify({rtk: {rewrite: false}, ui: {enabled}}),
+      undefined,
+      'ui',
+      mode,
+    );
+    try {
+      await host.command('/host-theme catppuccin-latte');
+      await host.terminal.screen.waitForText('HOST_THEME:catppuccin-latte', {
+        timeoutMs: 5000,
+      });
+      await host.start(
+        'bash',
+        JSON.stringify({command: 'echo RUNNING; sleep 60'}),
+      );
+      await host.terminal.screen.waitForText(/^\s*(?:⎿ )?RUNNING\s*$/mu, {
+        timeoutMs: 5000,
+      });
+      await host.terminal.keyboard.press('Escape');
+      await host.terminal.screen.waitForText(/aborted/iu, {timeoutMs: 5000});
+      await host.command('/host-theme dark');
+      await host.terminal.screen.waitForText('HOST_THEME:dark', {
+        timeoutMs: 5000,
+      });
+      await host.invoke('bash', JSON.stringify({command: 'echo RECOVERED'}));
+      await host.command('/quit');
+      expect(await host.terminal.waitForExit({timeoutMs: 5000})).toMatchObject({
+        reason: 'exited',
+        exit: {code: 0, signal: null, success: true},
+      });
+      const transcript = await host.terminal.transcript.ansi();
+      expect(new TextDecoder().decode(transcript)).toContain('RECOVERED');
+      expect(paletteMutations(transcript)).toEqual([]);
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);
+
+// Xterm color OSCs: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+function paletteMutations(bytes: Uint8Array): string[] {
+  const mutations: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset++) {
+    const start = offset;
+    if (bytes[offset] === 0x1b && bytes[offset + 1] === 0x5d) offset += 2;
+    else if (bytes[offset] === 0x9d) offset++;
+    else continue;
+    const bodyStart = offset;
+    while (
+      offset < bytes.length &&
+      bytes[offset] !== 0x07 &&
+      bytes[offset] !== 0x9c &&
+      bytes[offset] !== 0x1b
+    )
+      offset++;
+    const body = Buffer.from(bytes.subarray(bodyStart, offset)).toString(
+      'latin1',
+    );
+    const [selector = '', ...values] = body.split(';');
+    const terminated =
+      bytes[offset] === 0x07 ||
+      bytes[offset] === 0x9c ||
+      (bytes[offset] === 0x1b && bytes[offset + 1] === 0x5c);
+    if (!terminated) {
+      offset--;
+      continue;
+    }
+    if (!/^[0-9]+$/u.test(selector)) continue;
+    const code = Number(selector);
+    const parameters = values.length ? `;${values.join(';')}` : '';
+    const mutation =
+      code >= 10 && code <= 19
+        ? !/^(?:;\?)+$/u.test(parameters)
+        : code === 4 || code === 5
+          ? !/^(?:;[0-9]+;\?)+$/u.test(parameters)
+          : code === 6 ||
+            (code >= 104 && code <= 106) ||
+            (code >= 110 && code <= 119);
+    const end = offset + (bytes[offset] === 0x1b ? 2 : 1);
+    if (mutation)
+      mutations.push(
+        Buffer.from(bytes.subarray(start, end)).toString('latin1'),
+      );
+    offset = end - 1;
+  }
+  return mutations;
+}
+
+test('Palette assertions distinguish raw setters, resets and queries', () => {
+  for (const begin of ['\x1b]', '\x9d']) {
+    for (const end of ['\x07', '\x1b\\', '\x9c']) {
+      for (const body of [
+        '4;1;#123456;2;?',
+        '5;0;#123456',
+        '6;1;1',
+        '010;#123456',
+        '11;?;#123456',
+        '104',
+        '105;1',
+        '106;0;1',
+        '110',
+        '119',
+      ]) {
+        const sequence = `${begin}${body}${end}`;
+        expect(paletteMutations(Buffer.from(sequence, 'latin1'))).toEqual([
+          sequence,
+        ]);
+      }
+      for (const body of ['4;1;?;2;?', '5;0;?', '010;?;?', '0;window title']) {
+        expect(
+          paletteMutations(Buffer.from(`${begin}${body}${end}`, 'latin1')),
+        ).toEqual([]);
+      }
+    }
+  }
+});
