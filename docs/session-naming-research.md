@@ -129,3 +129,9 @@ The local legacy checkout was inspected at `21b636eaccc487a08362165ec69ffe364e87
 The old successful-settlement proposal and default periodic cooldown are therefore not adopted as conclusions of this expanded report. Naming before a reply, after settlement, after early clarification, and after a session has ended are all real patterns in the surveyed systems. Which is suitable here depends on the desired balance between early discoverability and correction of an initially unclear task.
 
 No runtime behavior, configuration, dependency or persistence format was changed. Live model quality, costs and end-to-end host lifecycle remain unmeasured. This report supports the next design discussion; implementation and its concurrency/persistence review require a separately agreed scope.
+
+## Design interview: confirmed decisions and open questions
+
+The maintainer requested a design interview after reviewing the research. Confirmed so far: manual names remain authoritative until explicit return to automatic management; automatically generated names use English. Whether one-off explicit regeneration also resumes automatic management remains open.
+
+The exact English naming format is undecided. Whether an automatic name should follow an explicitly replaced main task is also undecided: the maintainer raised hidden token consumption as a concern. Goal-following policy and the mechanism/cost of detecting a change must be decided separately. No per-turn classification, cadence, model route or token budget has been approved. These partial decisions do not authorize implementation.
