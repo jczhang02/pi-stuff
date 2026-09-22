@@ -11,7 +11,7 @@ export default async function (pi: ExtensionAPI) {
   const configuration = await Effect.runPromise(
     ConfigurationFile.load(join(getAgentDir(), 'pi-stuff.json')),
   );
-  registerUi(pi);
+  registerUi(pi, configuration.value.ui ?? {});
   registerWeb(pi, configuration.value.web ?? {}, configuration.value.tools);
   const rtk = registerRtk(pi, configuration.value.rtk ?? {});
   registerRtkPanel(pi, rtk, async settings => {

@@ -21,6 +21,8 @@ The package also includes ten light and dark [themes](docs/themes.md) from Catpp
 
 The tested target is Linux Bun-compiled Pi `0.85.1`. The stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Other platforms/host versions are unverified. Beyond Web access, RTK integration and themes, the capabilities below describe product direction, not implemented features.
 
+[Conversation UI](docs/ui.md) is being implemented. This branch currently provides configurable native Bash previews; the complete UI and live-model acceptance remain in progress.
+
 ## About
 
 Pi Stuff aims to keep everyday work inside Pi while making conversations easier to read and longer tasks easier to manage. The planned capabilities fall into four areas:
@@ -53,6 +55,7 @@ The [source-layout rules](docs/agents/engineering.md#source-layout) govern entry
 - [src/pi/](src/pi/) owns shared host configuration and tool-switch policy.
 - [src/web/](src/web/) owns Web access, including its tools, authentication, transport and session lifecycle. Other capabilities belong in sibling directories when implemented.
 - [src/rtk/](src/rtk/) owns RTK discovery, command rewriting, final-result cleanup and the inline panel.
+- [src/ui/](src/ui/) owns conversation presentation and its settings.
 - [themes/](themes/) contains static Pi theme resources declared by the package.
 - [tests/component/](tests/component/) exercises module behavior; [tests/system/](tests/system/) loads the extension in the real Pi host.
 

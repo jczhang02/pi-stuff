@@ -8,6 +8,7 @@ import {
   wrapTextWithAnsi,
   type Component,
 } from '@earendil-works/pi-tui';
+import type {UiSettings} from './settings';
 
 // Pi owns disclosure and execution. This component only lays out retained text.
 class BashResult implements Component {
@@ -20,6 +21,7 @@ class BashResult implements Component {
     private readonly running: boolean,
     private readonly metadata: string[],
     private readonly theme: Theme,
+    private readonly previewLines: number,
   ) {}
 
   invalidate() {
@@ -30,7 +32,7 @@ class BashResult implements Component {
     if (width === this.width) return this.lines;
     const bodyWidth = Math.max(1, width - 4);
     const rows = wrapTextWithAnsi(this.output || '(no output)', bodyWidth);
-    const count = this.running ? 2 : 3;
+    const count = this.running ? 2 : this.previewLines;
     const shown = this.expanded
       ? rows
       : this.running
@@ -70,7 +72,11 @@ class BashResult implements Component {
   }
 }
 
-export function createBashDisplay(cwd: string, options: BashToolOptions) {
+export function createBashDisplay(
+  cwd: string,
+  options: BashToolOptions,
+  settings: UiSettings,
+) {
   const tool = createBashToolDefinition(cwd, options);
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) => {
@@ -133,6 +139,7 @@ export function createBashDisplay(cwd: string, options: BashToolOptions) {
       options.isPartial,
       metadata,
       theme,
+      settings.bashPreviewLines ?? 3,
     );
   };
   return tool;

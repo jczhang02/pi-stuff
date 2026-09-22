@@ -60,3 +60,41 @@ test('Bash keeps timeout as a separate result block and retains host shell confi
     await host.close();
   }
 }, 30000);
+
+test('Global UI settings can disable tool presentation without changing execution', async () => {
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"enabled":false}}',
+  );
+  try {
+    const result = await host.invoke(
+      'bash',
+      JSON.stringify({command: 'printf native'}),
+    );
+    expect(result).toBe('native');
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('$ printf native');
+    expect(screen).not.toContain('Bash(');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Global Bash preview limit changes visible rows while retaining the full result', async () => {
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"bashPreviewLines":1}}',
+  );
+  try {
+    expect(
+      await host.invoke(
+        'bash',
+        JSON.stringify({command: "printf 'one\\ntwo\\nthree\\n'"}),
+      ),
+    ).toBe('one\ntwo\nthree\n');
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('⎿ one');
+    expect(screen).toContain('2 more lines');
+    expect(screen).not.toMatch(/^\s+two$/mu);
+  } finally {
+    await host.close();
+  }
+}, 30000);
