@@ -14,7 +14,7 @@ gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goa
 catppuccin-latte/extended/100: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
 gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
 catppuccin-latte/extended/80: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
-gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex use
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
 catppuccin-latte/extended/50: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
 gpt-6-astra medium  ctx 31% ━━━━━━━━━━  hit 83.8%
 catppuccin-latte/extended/150: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)

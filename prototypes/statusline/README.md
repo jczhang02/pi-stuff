@@ -48,7 +48,7 @@ The PNGs are actual headless Terminal Control captures at 150/100/80/50 columns 
 ![Light, extended, 150 columns](captures/catppuccin-latte-extended-150.png)
 ![Dark, long directory and branch, 50 columns](captures/catppuccin-mocha-long-50.png)
 
-The one-shot driver covers each theme/scenario at 150 → 100 → 80 → 50 → 150, then editing, submit, cancellation and resubmit. Assertions check two rows, full sample identities and Git states at every width, continuous meter and hit when space allows, bounded group spacing, whole extension groups, absence of removed details and restoration. See [verification.txt](captures/verification.txt).
+The one-shot driver covers each theme/scenario at 150 → 100 → 80 → 50 → 150, then editing, submit, cancellation and resubmit. Assertions check two rows, full sample identities and Git states at every width, continuous meter and hit when space allows, bounded group spacing, whole extension groups, absence of removed details and restoration. The driver waits for a complete optional group or its disappearance after resize, then captures a stable frame; partial goal/quota tails fail verification. See [verification.txt](captures/verification.txt).
 
 ```sh
 PI_TEST_HOST=/opt/bin/pi bun prototypes/statusline/capture.ts /tmp/pi-statusline-captures
@@ -58,7 +58,7 @@ git diff --check
 
 Environment: Bun 1.4.0, compiled Pi 0.87.1, Terminal Control 1.2.1, repository API declarations at Pi 0.85.1. Temporary settings/sessions are cleaned up. The local provider and all displayed directory/Git/account/usage data are deterministic samples; no Git status, account quota, real model request or check command is executed. The native editor, message rendering, streaming, cancellation and resize are real Pi behavior. The provider uses Pi's [documented extension API](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/custom-provider.md).
 
-中文: PNG 来自真实无头 Terminal Control, 包含完整 16 行终端视口, 覆盖明暗主题和 150/100/80/50 列, 字体栈见上. 它们不是裁剪的设计图或原生 Ghostty/合成器截图. 一次性驱动验证各场景的缩窄与恢复、编辑、提交、取消和再次提交, 检查双行、完整目录/分支/Git 计数、可容纳时的连续进度条/hit、有限组间距、扩展组整体显隐、无已移除明细及恢复结果. 复现命令及版本见上. 临时设置/会话会清理. 所有目录、Git、账号与用量均为确定样例, 不查询真实状态、不调用模型或检查命令; 编辑器、消息、流式输出、取消和缩放使用原生 Pi.
+中文: PNG 来自真实无头 Terminal Control, 包含完整 16 行终端视口, 覆盖明暗主题和 150/100/80/50 列, 字体栈见上. 它们不是裁剪的设计图或原生 Ghostty/合成器截图. 一次性驱动验证各场景的缩窄与恢复、编辑、提交、取消和再次提交, 检查双行、完整目录/分支/Git 计数、可容纳时的连续进度条/hit、有限组间距、扩展组整体显隐、无已移除明细及恢复结果. 缩放后等待可选组完整出现或消失再抓稳定帧, 截断的 goal/额度尾巴会导致验证失败. 复现命令及版本见上. 临时设置/会话会清理. 所有目录、Git、账号与用量均为确定样例, 不查询真实状态、不调用模型或检查命令; 编辑器、消息、流式输出、取消和缩放使用原生 Pi.
 
 ## Tracking
 

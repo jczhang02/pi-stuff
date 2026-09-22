@@ -18,12 +18,24 @@ const scenarios: Scenario[] = ['base', 'extended', 'long'];
 
 async function capture(session: Session, name: string): Promise<string> {
   // A PTY resize can settle before Pi's debounced redraw arrives.
-  await session.screen.waitUntil(snapshot => snapshot.text.includes('~/dev/'), {
-    timeoutMs: 5000,
-  });
+  await session.screen.waitUntil(
+    snapshot => {
+      const lines = snapshot.text.split('\n');
+      const start = lines.findIndex(line => line.startsWith('~/dev/'));
+      const runtime = lines[start + 1] ?? '';
+      // Resized old frames can end in a partial meter as well as a partial extension.
+      const completeTail =
+        runtime.trimEnd().endsWith('hit 83.8%') ||
+        runtime
+          .trimEnd()
+          .endsWith('goal active · Codex used 5h 41% · week 63%');
+      return start >= 0 && completeTail;
+    },
+    {timeoutMs: 5000},
+  );
   const snapshot = await session.screen.capture({
-    settleMs: 200,
-    deadlineMs: 3000,
+    settleMs: 500,
+    deadlineMs: 5000,
     includeAnsi: true,
   });
   assert.equal(snapshot.frame.rows, 16);
@@ -42,11 +54,12 @@ async function capture(session: Session, name: string): Promise<string> {
     /R620k|W8k|est \$|openai-codex|auto/u,
     'Routine detail fields do not return at wider widths',
   );
-  assert.equal(
-    footer.join(' ').includes('goal'),
-    footer.join(' ').includes('Codex'),
-    'Extension group is shown or hidden together',
-  );
+  if (footer.join(' ').includes('goal') || footer.join(' ').includes('Codex')) {
+    assert.ok(
+      footer[1]?.includes('goal active · Codex used 5h 41% · week 63%'),
+      'Extension group must be complete, not a clipped resize frame',
+    );
+  }
   for (const line of footer) {
     assert.ok(visibleWidth(line) <= snapshot.frame.cols);
     assert.doesNotMatch(
