@@ -1,11 +1,18 @@
 import {mkdtemp, mkdir, writeFile, rm, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
-import {TerminalControl, type Session} from '@kitlangton/terminal-control';
+import {
+  TerminalControl,
+  type Session,
+  type LaunchOptions,
+} from '@kitlangton/terminal-control';
 import {Schema} from 'effect';
 
 const Request = Schema.Struct({
   model: Schema.String,
+  max_tokens: Schema.optional(Schema.Number),
+  max_completion_tokens: Schema.optional(Schema.Number),
+  reasoning_effort: Schema.optional(Schema.String),
   messages: Schema.Array(
     Schema.Struct({
       role: Schema.String,
@@ -41,6 +48,7 @@ export async function launchPi(
     body: ModelRequest,
     signal: AbortSignal,
   ) => Response | undefined | Promise<Response | undefined>,
+  startupArgs: readonly string[] = [],
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
   const agent = join(directory, 'agent');
@@ -147,7 +155,7 @@ export async function launchPi(
         DBUS_SESSION_BUS_ADDRESS: undefined,
       },
     });
-    terminal = await driver.launch({
+    const launchOptions: LaunchOptions = {
       command: [
         process.env.PI_TEST_HOST ?? process.execPath,
         ...(process.env.PI_TEST_HOST
@@ -178,6 +186,7 @@ export async function launchPi(
         '-e',
         resolve('tests/system/fixtures/host-controls.ts'),
         ...(extraExtension === undefined ? [] : ['-e', extraExtension]),
+        ...startupArgs,
       ],
       cwd: directory,
       viewport:
@@ -211,8 +220,9 @@ export async function launchPi(
         MISE_CACHE_DIR: join(directory, 'mise-cache'),
         MISE_STATE_DIR: join(directory, 'mise-state'),
       },
-    });
-    const screen = terminal;
+    };
+    terminal = await driver.launch(launchOptions);
+    let screen = terminal;
     await screen.screen.waitForText('fixture', {timeoutMs: 15000});
     async function command(text: string) {
       // Trailing space dismisses exact argument completion before submission.
@@ -230,7 +240,19 @@ export async function launchPi(
     return {
       directory,
       agent,
-      terminal: screen,
+      get terminal() {
+        return screen;
+      },
+      async restart(args: readonly string[]) {
+        await screen.stop();
+        if (!driver) throw new Error('Fixture driver is closed');
+        terminal = await driver.launch({
+          ...launchOptions,
+          command: [...launchOptions.command, ...args],
+        });
+        screen = terminal;
+        await screen.screen.waitForText('fixture', {timeoutMs: 15000});
+      },
       close,
       command,
       start,

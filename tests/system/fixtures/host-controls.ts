@@ -6,6 +6,20 @@ import {resolveExa} from '../../../src/web/exa-auth';
 
 // Test-only controls/observations. Never substitutes the extension's registration or I/O.
 export default function (pi: ExtensionAPI) {
+  pi.registerCommand('host-tree', {
+    description:
+      'Offline acceptance fixture: navigate to the opening user entry',
+    handler: async (_args, ctx) => {
+      const target = ctx.sessionManager
+        .getEntries()
+        .find(
+          entry => entry.type === 'message' && entry.message.role === 'user',
+        );
+      if (!target) throw new Error('Fixture requires a user entry');
+      await ctx.navigateTree(target.id, {summarize: false});
+      ctx.ui.notify('HOST_TREE_READY', 'info');
+    },
+  });
   pi.registerCommand('host-parent-session', {
     description:
       'Offline acceptance fixture: create a parent-linked native session',
