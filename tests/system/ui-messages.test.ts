@@ -62,7 +62,9 @@ test('Thoughts retain native global and local disclosure independently of tools'
     await host.terminal.resize({cols: 100, rows: 45});
     await host.startResponse('FIRST_ANSWER', 'FIRST_THOUGHT');
     await host.terminal.screen.waitForText('FIRST_ANSWER', {timeoutMs: 5000});
-    expect(await host.terminal.screen.text()).toContain('FIRST_THOUGHT');
+    expect(await host.terminal.screen.text()).toContain(
+      '• Thoughts: FIRST_THOUGHT',
+    );
     await host.terminal.keyboard.press('Control+T');
     await host.terminal.screen.waitUntil(
       snapshot => !snapshot.text.includes('FIRST_THOUGHT'),
@@ -72,6 +74,8 @@ test('Thoughts retain native global and local disclosure independently of tools'
     await host.terminal.screen.waitForText('SECOND_ANSWER', {timeoutMs: 5000});
     expect(host.sentAssistant()).toBe('"FIRST_ANSWER"');
     const hidden = await host.terminal.screen.text();
+    expect(hidden).toContain('• Thoughts');
+    expect(hidden).not.toContain('Thinking...');
     expect(hidden).not.toContain('FIRST_THOUGHT');
     expect(hidden).not.toContain('SECOND_THOUGHT');
     await host.terminal.keyboard.press('Control+O');
@@ -98,6 +102,17 @@ test('Thoughts retain native global and local disclosure independently of tools'
         !snapshot.text.includes('SECOND_THOUGHT'),
       {timeoutMs: 5000},
     );
+    await host.reload();
+    expect(await host.terminal.screen.text()).toContain('• Thoughts');
+    await host.command('/host-session new');
+    await host.terminal.screen.waitForText('HOST_SESSION_NEW', {
+      timeoutMs: 5000,
+    });
+    await host.startResponse('AFTER_REPLACEMENT', 'REPLACED_THOUGHT');
+    await host.terminal.screen.waitForText('AFTER_REPLACEMENT', {
+      timeoutMs: 5000,
+    });
+    expect(await host.terminal.screen.text()).toContain('• Thoughts');
   } catch (error) {
     console.error(await host.terminal.screen.text());
     throw error;

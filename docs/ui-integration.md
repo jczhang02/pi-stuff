@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/ui-integration.md) · English is normative.
 
-These experiments examine gaps between Pi's extension API and the accepted UI. The maintainer has [approved the assistant/Thoughts display adaptation](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). The first implementation adds the assistant gutter; Thoughts typography and timing remain unfinished. Tool-history integration must first compare public-API early registration with the lookup patch, as [decided separately](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338).
+These experiments examine gaps between Pi's extension API and the accepted UI. The maintainer has [approved the assistant/Thoughts display adaptation](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). The implementation adds the assistant gutter and Thoughts labels; per-block timing remains unfinished. Tool-history integration must first compare public-API early registration with the lookup patch, as [decided separately](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338).
 
 ## Assistant and Thoughts: public API limits
 
@@ -57,6 +57,18 @@ Real-host tests cover list-first answers, reload, dark/light theme changes, 60/8
 This compiled Pi 0.87.0 / Bun 1.4.0 capture uses an isolated deterministic provider, 80×24 cells and Pi's dark theme. Terminal Control exported the virtual terminal as SVG, then rsvg-convert produced the PNG. It is not a Ghostty-window screenshot.
 
 ![Assistant gutter with native list and code rendering](assets/ui/assistant-gutter-dark-80.png)
+
+### Thoughts labels
+
+The next slice decorates the child inside Pi's existing Thoughts mouse region. Visible thinking begins with `• Thoughts: `; hidden thinking shows `• Thoughts`. Native italic Markdown is retained, as allowed by the maintainer. The label reserves width without altering the Markdown source, so lists keep their structure. Continuation rows use the same two-column gutter as the assistant text. Timing is not implemented yet, so these captures contain no duration.
+
+Ctrl+T and local clicks still use Pi's visibility state. Review reproduced a crash when reloading and replacing a session containing Thoughts: the initial styling callback retained a stale extension context. The corrected callback retains Pi's live theme proxy instead. The regression test covers that transition and the next response.
+
+The captures below use the same compiled host, isolated provider, 80×24 virtual terminal and SVG-to-PNG export as the assistant capture. They use Terminal Control's default export fonts, not the maintainer's Ghostty font stack.
+
+![Visible Thoughts with native Markdown](assets/ui/thoughts-visible-dark-80.png)
+
+![Hidden Thoughts without invented timing](assets/ui/thoughts-hidden-dark-80.png)
 
 The tool experiment below remains a candidate alongside early public-API registration.
 

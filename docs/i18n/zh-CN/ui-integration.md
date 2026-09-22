@@ -2,7 +2,7 @@
 
 [English](../../../docs/ui-integration.md) · 以英文版为准.
 
-这些实验检查 Pi 扩展 API 与已确认 UI 之间的差距. 维护者已[批准 assistant/Thoughts 展示适配](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). 首段实现添加 assistant 前导栏, Thoughts 字体样式与计时仍未完成. 工具历史接入按[另行决定](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338), 先比较公共 API 提前注册与 lookup patch.
+这些实验检查 Pi 扩展 API 与已确认 UI 之间的差距. 维护者已[批准 assistant/Thoughts 展示适配](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). 目前已添加 assistant 前导栏和 Thoughts 标签, 各块独立计时仍未完成. 工具历史接入按[另行决定](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338), 先比较公共 API 提前注册与 lookup patch.
 
 ## Assistant 和 Thoughts: 公共 API 的限制
 
@@ -57,6 +57,18 @@ PI_TEST_HOST=/opt/bin/pi bun test tests/system/ui-messages.test.ts
 下图使用编译 Pi 0.87.0 / Bun 1.4.0、隔离确定性 provider、80×24终端及 Pi 默认暗色主题. Terminal Control 将虚拟终端导出 SVG, 再由 rsvg-convert 转为 PNG, 不是 Ghostty 窗口截图.
 
 ![Assistant 前导栏与原生列表、代码渲染](../../assets/ui/assistant-gutter-dark-80.png)
+
+### Thoughts 标签
+
+后续实现修饰 Pi 原有 Thoughts 鼠标区域中的子组件. 展开时以 `• Thoughts: ` 开头, 收起时显示 `• Thoughts`. 按维护者允许的方案保留原生斜体 Markdown. 标签预留宽度但不改写 Markdown 源文, 列表结构不变. 续行与 assistant 正文一样保留两列前导区域. 计时尚未实现, 因而截图没有时长.
+
+Ctrl+T 和局部点击仍使用 Pi 的可见性状态. 审查复现了含 Thoughts 会话 reload 后再新建会话的崩溃: 初版样式回调保留了失效的扩展 context. 修正后仅保留 Pi 动态主题代理. 回归测试覆盖这次切换及下一次回答.
+
+以下截图与 assistant 图使用相同编译宿主、隔离 provider、80×24虚拟终端和 SVG 转 PNG 方式. 使用 Terminal Control 默认导出字体, 不是维护者的 Ghostty 字体配置.
+
+![展开的 Thoughts 与原生 Markdown](../../assets/ui/thoughts-visible-dark-80.png)
+
+![收起的 Thoughts, 不编造时长](../../assets/ui/thoughts-hidden-dark-80.png)
 
 下方工具实验仍是与公共 API 提前注册并列的候选.
 
