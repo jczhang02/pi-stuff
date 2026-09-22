@@ -1,13 +1,9 @@
 import {
-  DynamicBorder,
-  getSelectListTheme,
-  keyText,
   type ExtensionAPI,
   type ExtensionContext,
   type Theme,
 } from '@earendil-works/pi-coding-agent';
 import {
-  Input,
   Key,
   matchesKey,
   SelectList,
@@ -24,15 +20,14 @@ import {stripVTControlCharacters} from 'node:util';
 import type {NamingSettings} from './settings';
 import type {NamingRuntime} from './register';
 import {NamingSettingsPanel} from './settings-panel';
-import {readablePanelLines} from '../pi/panel-style';
+import {PanelLayout, panelMenu} from '../pi/panel-layout';
 
-type Page = 'home' | 'settings' | 'hint';
+type Page = 'home' | 'settings';
 
 class NamingPanel implements Component, Focusable {
-  private readonly border: DynamicBorder;
+  private readonly layout: PanelLayout;
   private readonly actions: SelectList;
   private readonly settings: NamingSettingsPanel;
-  private readonly hint = new Input({placeholder: 'Optional task hint'});
   private page: Page = 'home';
   private saved: boolean | undefined;
   private observation = 0;
@@ -53,25 +48,23 @@ class NamingPanel implements Component, Focusable {
     save: (settings: NamingSettings) => Promise<void>,
     notifyError: (message: string) => void,
   ) {
-    this.border = new DynamicBorder(text => theme.fg('borderAccent', text));
-    this.actions = new SelectList(
-      [
-        {
-          value: 'generate',
-          label: 'Generate name',
-          description: 'Use the task or supply a hint',
-        },
-        {
-          value: 'settings',
-          label: 'Settings',
-          description: 'Automatic naming, model and rules',
-        },
-      ],
-      2,
-      getSelectListTheme(),
-    );
-    this.actions.onSelect = item =>
-      this.changePage(item.value === 'generate' ? 'hint' : 'settings');
+    this.layout = new PanelLayout(theme);
+    this.actions = panelMenu([
+      {
+        value: 'settings',
+        label: 'Settings',
+        description: 'Automation, model and rules',
+      },
+      {
+        value: 'generate',
+        label: 'Generate name',
+        description: 'Use the current conversation',
+      },
+    ]);
+    this.actions.onSelect = item => {
+      if (item.value === 'generate') void this.generate();
+      else this.changePage('settings');
+    };
     this.settings = new NamingSettingsPanel(
       tui,
       theme,
@@ -81,10 +74,8 @@ class NamingPanel implements Component, Focusable {
       save,
       () => this.changePage('home'),
       notifyError,
+      this.layout,
     );
-    this.hint.onSubmit = value => {
-      void this.generate(value);
-    };
     void this.refresh();
   }
 
@@ -93,7 +84,6 @@ class NamingPanel implements Component, Focusable {
   }
   set focused(value: boolean) {
     this.active = value;
-    this.hint.focused = value && this.page === 'hint';
     this.settings.focused = value && this.page === 'settings';
   }
 
@@ -102,6 +92,10 @@ class NamingPanel implements Component, Focusable {
   }
   private changePage(page: Page) {
     if (this.closed) return;
+    if (page === 'settings') {
+      this.generation?.abort();
+      this.generation = undefined;
+    }
     this.page = page;
     this.error = '';
     this.focused = this.active;
@@ -125,12 +119,12 @@ class NamingPanel implements Component, Focusable {
     this.saved = saved;
     this.renderAgain();
   }
-  private async generate(hint: string) {
+  private async generate() {
     if (this.generation || this.closed) return;
     const request = new AbortController();
     this.generation = request;
     this.error = '';
-    const result = await this.runtime.request(this.ctx, hint, request.signal);
+    const result = await this.runtime.request(this.ctx, '', request.signal);
     if (this.generation === request) this.generation = undefined;
     if (this.closed || request.signal.aborted) return;
     if (result.kind === 'failed') this.error = result.message;
@@ -146,11 +140,6 @@ class NamingPanel implements Component, Focusable {
     if (matchesKey(data, Key.escape)) {
       if (this.tooSmall() || this.page === 'home') this.done();
       else if (this.page === 'settings') this.settings.handleInput(data);
-      else {
-        this.generation?.abort();
-        this.generation = undefined;
-        this.changePage('home');
-      }
       return;
     }
     if (this.keys.matches(data, 'tui.select.cancel') || this.tooSmall()) return;
@@ -160,25 +149,14 @@ class NamingPanel implements Component, Focusable {
         this.namePage = Math.min(this.namePages - 1, this.namePage + 1);
       else this.actions.handleInput(data);
     } else if (this.page === 'settings') this.settings.handleInput(data);
-    else if (!this.generation) this.hint.handleInput(data);
     this.renderAgain();
   }
   private tooSmall() {
     return this.tui.terminal.columns < 56 || this.tui.terminal.rows < 24;
   }
   render(width: number) {
-    const border = this.border.render(width)[0] ?? '';
     const inner = Math.max(12, width - 4);
-    if (this.tooSmall())
-      return [
-        border,
-        ...[
-          'Naming needs more room',
-          'Resize to at least 56 columns and 24 rows.',
-          'Esc Close',
-        ].flatMap(line => wrapTextWithAnsi(line, Math.max(1, width))),
-        border,
-      ];
+    if (this.tooSmall()) return this.layout.tooSmall(width, 'AutoName', 24);
     let lines: string[];
     if (this.page === 'home') {
       const name = stripVTControlCharacters(
@@ -188,62 +166,40 @@ class NamingPanel implements Component, Focusable {
       this.namePages = Math.max(1, Math.ceil(wrapped.length / 3));
       this.namePage = Math.min(this.namePage, this.namePages - 1);
       const slice = wrapped.slice(this.namePage * 3, this.namePage * 3 + 3);
-      lines = [
-        this.theme.fg(
-          'muted',
-          `Current name${this.namePages > 1 ? ` · ${this.namePage + 1}/${this.namePages} · [ / ]` : ''}`,
-        ),
-        ...slice,
-        ...Array<string>(3 - slice.length).fill(''),
-        this.ctx.sessionManager.getSessionName() && this.saved === false
-          ? this.theme.fg('warning', 'Not saved yet')
-          : '',
-        this.ctx.sessionManager.getSessionName() && this.saved === false
-          ? this.ctx.sessionManager.getSessionFile()
-            ? 'Saved with the first assistant reply.'
-            : 'Session storage is disabled for this session.'
-          : '',
-        '',
-        ...this.actions.render(inner),
-        '',
-        this.theme.fg(
-          'dim',
-          `${keyText('tui.select.up')}/${keyText('tui.select.down')} Navigate · ${keyText('tui.select.confirm')} Open · Esc Close`,
-        ),
-      ];
-    } else if (this.page === 'settings') lines = this.settings.render(inner);
-    else
-      lines = [
-        'Use recent dialogue, or provide a task hint.',
-        '',
-        ...this.hint.render(inner),
-        '',
-        `${keyText('tui.input.submit')} Generate · Esc Back and cancel`,
-      ];
-    return readablePanelLines(
-      [
-        border,
-        this.theme.bold(
+      lines = this.layout.home(
+        inner,
+        'Configure automatic naming and name this session.',
+        [
           this.theme.fg(
-            'accent',
-            this.page === 'home'
-              ? 'Naming'
-              : `Naming / ${this.page === 'hint' ? 'Generate' : 'Settings'}`,
+            'muted',
+            `Current name${this.namePages > 1 ? ` · ${this.namePage + 1}/${this.namePages} · [ / ]` : ''}`,
           ),
-        ),
-        '',
-        ...lines,
-        truncateToWidth(this.theme.fg('error', this.error), inner),
-        border,
-      ],
-      this.theme,
+          ...slice,
+          ...Array<string>(3 - slice.length).fill(''),
+          this.ctx.sessionManager.getSessionName() && this.saved === false
+            ? this.theme.fg('warning', 'Not saved yet')
+            : '',
+          this.ctx.sessionManager.getSessionName() && this.saved === false
+            ? this.ctx.sessionManager.getSessionFile()
+              ? 'Saved with the first assistant reply.'
+              : 'Session storage is disabled for this session.'
+            : '',
+        ],
+        this.actions,
+      );
+    } else lines = this.settings.render(inner);
+    if (this.page === 'home')
+      lines.push(truncateToWidth(this.theme.fg('error', this.error), inner));
+    return this.layout.frame(
+      width,
+      this.page === 'home' ? 'AutoName' : 'AutoName / Settings',
+      lines,
     );
   }
   invalidate() {
-    this.border.invalidate();
+    this.layout.invalidate();
     this.actions.invalidate();
     this.settings.invalidate();
-    this.hint.invalidate();
   }
   dispose() {
     this.closed = true;
@@ -281,13 +237,18 @@ export function registerNamingPanel(
   pi.on('session_before_switch', () => close?.());
   pi.on('session_before_fork', () => close?.());
   pi.on('session_before_tree', () => close?.());
-  pi.registerCommand('naming', {
-    description: 'Open naming settings and session actions',
-    handler: async (_args, ctx) => {
+  pi.registerCommand('autoname', {
+    description: 'Generate a session name, or open the AutoName panel',
+    handler: async (args, ctx) => {
+      if (args.trim() !== 'panel') {
+        const work = runtime.request(ctx, args);
+        if (ctx.mode === 'print' || ctx.mode === 'json') await work;
+        return;
+      }
       if (ctx.mode !== 'tui') {
         if (ctx.mode === 'print' || ctx.mode === 'json')
-          console.error('/naming requires TUI mode.');
-        else ctx.ui.notify('/naming requires TUI mode.', 'error');
+          console.error('/autoname panel requires TUI mode.');
+        else ctx.ui.notify('/autoname panel requires TUI mode.', 'error');
         return;
       }
       const origin = lifetime;

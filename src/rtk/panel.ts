@@ -1,17 +1,9 @@
 import type {ExtensionAPI, Theme} from '@earendil-works/pi-coding-agent';
 import {
-  DynamicBorder,
-  getSelectListTheme,
-  getSettingsListTheme,
-} from '@earendil-works/pi-coding-agent';
-import {
   SelectList,
   SettingsList,
   Key,
   matchesKey,
-  visibleWidth,
-  truncateToWidth,
-  wrapTextWithAnsi,
   type Component,
   type Focusable,
   type KeybindingsManager,
@@ -23,7 +15,7 @@ import type {RtkRuntime} from './runtime';
 import {ExecutableEditor} from './executable-editor';
 import {UsageView} from './usage';
 import {dataRow, fillRows} from './display';
-import {readablePanelLines} from '../pi/panel-style';
+import {PanelLayout, panelMenu, panelSettingsTheme} from '../pi/panel-layout';
 import {DiagnosticsView} from './diagnostics';
 
 type Page = 'Settings' | 'Usage' | 'Diagnostics';
@@ -39,7 +31,7 @@ class RtkPanel implements Component, Focusable {
   private page: Page | undefined;
   private readonly sections: SelectList;
   private readonly settings: SettingsList;
-  private readonly border: DynamicBorder;
+  private readonly layout: PanelLayout;
   private readonly controller = new AbortController();
   private probeController: AbortController | undefined;
   private status = 'checking';
@@ -78,29 +70,24 @@ class RtkPanel implements Component, Focusable {
       () => tui.requestRender(),
       message => notify(message, 'error'),
     );
-    this.border = new DynamicBorder(text => theme.fg('borderAccent', text));
-    this.sections = new SelectList(
-      [
-        {
-          value: 'Settings',
-          label: 'Settings',
-          description: 'Rewrite, cleanup, executable',
-        },
-        {
-          value: 'Usage',
-          label: 'Usage',
-          description: 'Totals, periods and history',
-        },
-        {
-          value: 'Diagnostics',
-          label: 'Diagnostics',
-          description: 'Resolution and configuration',
-        },
-      ],
-      3,
-      getSelectListTheme(),
-      {minPrimaryColumnWidth: 18, maxPrimaryColumnWidth: 18},
-    );
+    this.layout = new PanelLayout(theme);
+    this.sections = panelMenu([
+      {
+        value: 'Settings',
+        label: 'Settings',
+        description: 'Rewrite, cleanup, executable',
+      },
+      {
+        value: 'Usage',
+        label: 'Usage',
+        description: 'Totals, periods and history',
+      },
+      {
+        value: 'Diagnostics',
+        label: 'Diagnostics',
+        description: 'Resolution and configuration',
+      },
+    ]);
     this.sections.onSelect = item => {
       this.usage.cancelPending();
       this.diagnostics.cancelPending();
@@ -142,6 +129,7 @@ class RtkPanel implements Component, Focusable {
           submenu: (_value, close) => {
             this.editor = new ExecutableEditor(
               theme,
+              this.layout,
               runtime.settings.executable,
               runtime.settings.executable ?? this.runtimeInfo?.path ?? '',
               cwd,
@@ -169,10 +157,7 @@ class RtkPanel implements Component, Focusable {
         },
       ],
       5,
-      {
-        ...getSettingsListTheme(),
-        hint: () => theme.fg('dim', '  ↑↓ Navigate · Enter Change · Esc Back'),
-      },
+      panelSettingsTheme(theme),
       (id, value) => {
         void this.change(id, value);
       },
@@ -256,69 +241,34 @@ class RtkPanel implements Component, Focusable {
   }
 
   render(width: number) {
-    const border = this.border.render(width)[0] ?? '';
     const inner = Math.max(12, width - 4);
-    if (this.tooSmall())
-      return readablePanelLines(
-        [
-          border,
-          this.theme.fg('warning', 'RTK needs more room'),
-          ...wrapTextWithAnsi(
-            'Resize to at least 56 columns and 26 rows.',
-            inner,
-          ),
-          '',
-          'Esc close',
-          border,
-        ],
-        this.theme,
-      );
-    const title = this.theme.bold(
-      this.theme.fg('accent', this.page ? `RTK / ${this.page}` : 'RTK'),
-    );
-    const gap =
-      width < 76
-        ? 2
-        : Math.max(2, inner - visibleWidth(title) - visibleWidth(this.status));
+    if (this.tooSmall()) return this.layout.tooSmall(width, 'RTK', 26);
     const lines =
       this.page === undefined
-        ? [
+        ? this.layout.home(
+            inner,
             'Configure RTK and inspect usage.',
-            '',
-            this.theme.fg('muted', this.usage.titleStatus()),
-            ...fillRows(this.usage.rootSummary(inner), 2),
-            '',
-            ...this.sections.render(inner),
-            '',
-            this.theme.fg('dim', '↑↓ Navigate · Enter Open · Esc Close'),
-          ]
+            [
+              this.theme.fg('muted', this.usage.titleStatus()),
+              ...fillRows(this.usage.rootSummary(inner), 2),
+            ],
+            this.sections,
+          )
         : this.page === 'Settings'
           ? this.settingsLines(inner)
           : this.page === 'Usage'
             ? this.usage.render(inner)
             : this.diagnostics.render(inner);
-    return readablePanelLines(
-      [
-        border,
-        `${title}${' '.repeat(gap)}${this.theme.fg('muted', this.status)}`,
-        '',
-        ...lines,
-        border,
-      ],
-      this.theme,
+    return this.layout.frame(
+      width,
+      this.page ? `RTK / ${this.page}` : 'RTK',
+      lines,
+      this.status,
     );
   }
 
   private settingsLines(width: number): string[] {
-    const settings = this.settings.render(width);
-    if (this.editor) return settings;
-    // Match native SettingsList's description width; reserve only its longest
-    // description so selection does not move the feedback or keyboard hint.
-    const descriptionRows = Math.max(
-      ...Object.values(SETTINGS_DESCRIPTIONS).map(
-        text => wrapTextWithAnsi(text, width - 4).length,
-      ),
-    );
+    if (this.editor) return this.settings.render(width);
     return [
       this.theme.bold('Runtime'),
       dataRow(
@@ -335,10 +285,12 @@ class RtkPanel implements Component, Focusable {
         width,
       ),
       '',
-      this.theme.bold('Behavior'),
-      ...fillRows(settings.slice(0, -1), 5 + descriptionRows),
-      truncateToWidth(this.error.replace(/\s+/gu, ' '), width),
-      settings.at(-1) ?? '',
+      ...this.layout.settings(
+        width,
+        this.settings,
+        Object.values(SETTINGS_DESCRIPTIONS),
+        this.error,
+      ),
     ];
   }
 
@@ -346,7 +298,7 @@ class RtkPanel implements Component, Focusable {
     return this.tui.terminal.columns < 56 || this.tui.terminal.rows < 26;
   }
   invalidate() {
-    this.border.invalidate();
+    this.layout.invalidate();
     this.sections.invalidate();
     this.settings.invalidate();
     this.usage.invalidate();

@@ -320,19 +320,13 @@ export function registerNaming(pi: ExtensionAPI, initial: NamingSettings = {}) {
     invalidate();
     const input = explicitInput(hint, ctx.sessionManager.getBranch());
     if (input === undefined) {
-      const message = 'Add a task hint: /autoname <task>.';
+      const message =
+        'No dialogue to name yet. Start a task, then use /autoname.';
       notify(ctx, message, 'error');
       return {kind: 'failed', message};
     }
     return generate(ctx, input, true, signal);
   }
-  pi.registerCommand('autoname', {
-    description: 'Generate a session name, optionally guided by a task hint',
-    handler: async (hint, ctx) => {
-      const work = request(ctx, hint);
-      if (ctx.mode === 'print' || ctx.mode === 'json') await work;
-    },
-  });
   pi.on('agent_settled', (_event, ctx) => {
     if (!available || opening === undefined) return;
     available = false;

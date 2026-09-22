@@ -1,7 +1,6 @@
 import {
   getSelectListTheme,
   keyText,
-  getSettingsListTheme,
   type ExtensionContext,
   type Theme,
 } from '@earendil-works/pi-coding-agent';
@@ -11,7 +10,6 @@ import {
   SelectList,
   SettingsList,
   truncateToWidth,
-  wrapTextWithAnsi,
   type Component,
   type Focusable,
   type KeybindingsManager,
@@ -22,6 +20,7 @@ import {stripVTControlCharacters} from 'node:util';
 import {DEFAULT_NAMING_PROMPT, NamingSettings} from './settings';
 import type {NamingRuntime} from './register';
 import {NamingModelPicker, TextSettingEditor} from './editors';
+import {PanelLayout, panelSettingsTheme} from '../pi/panel-layout';
 
 const descriptions = {
   automatic:
@@ -56,12 +55,14 @@ export class NamingSettingsPanel implements Component, Focusable {
     private readonly save: (settings: NamingSettings) => Promise<void>,
     private readonly back: () => void,
     private readonly notifyError: (message: string) => void,
+    private readonly layout: PanelLayout,
   ) {
     const openText = (field: 'prompt' | 'maxLength', close: () => void) => {
       this.editor = new TextSettingEditor(
         tui,
         theme,
         field === 'prompt' ? 'Naming rules' : 'Maximum length',
+        layout,
         field === 'prompt'
           ? (runtime.settings.prompt ?? DEFAULT_NAMING_PROMPT)
           : String(runtime.settings.maxLength ?? 80),
@@ -147,14 +148,7 @@ export class NamingSettingsPanel implements Component, Focusable {
         },
       ],
       5,
-      {
-        ...getSettingsListTheme(),
-        hint: () =>
-          theme.fg(
-            'dim',
-            `${keyText('tui.select.up')}/${keyText('tui.select.down')} Navigate · ${keyText('tui.select.confirm')} Change · Esc Back`,
-          ),
-      },
+      panelSettingsTheme(theme),
       (id, value) => {
         this.error = '';
         if (id === 'reset') {
@@ -285,21 +279,12 @@ export class NamingSettingsPanel implements Component, Focusable {
         '',
         `${keyText('tui.select.confirm')} Select · Esc Back`,
       ];
-    const lines = this.list.render(width);
-    const body = lines.slice(0, -1);
-    const rows =
-      7 +
-      Math.max(
-        ...Object.values(descriptions).map(
-          text => wrapTextWithAnsi(text, width - 4).length,
-        ),
-      );
-    return [
-      ...body,
-      ...Array<string>(Math.max(0, rows - body.length)).fill(''),
-      truncateToWidth(this.theme.fg('error', this.error), width),
-      lines.at(-1) ?? '',
-    ];
+    return this.layout.settings(
+      width,
+      this.list,
+      Object.values(descriptions),
+      this.error,
+    );
   }
   invalidate() {
     this.list.invalidate();

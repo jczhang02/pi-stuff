@@ -119,6 +119,9 @@ test('RTK keeps native selection remaps but reserves literal Escape for panel ex
     await host.terminal.screen.waitForText('Configure RTK and inspect usage.', {
       timeoutMs: 3000,
     });
+    expect(await host.terminal.screen.text()).toContain(
+      'k/j Navigate · ctrl+y Open · Esc Close',
+    );
     await host.terminal.keyboard.type('jj');
     await host.terminal.keyboard.press('Control+Y');
     await host.terminal.screen.waitForText('RTK / Diagnostics', {

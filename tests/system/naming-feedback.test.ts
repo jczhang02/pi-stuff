@@ -15,7 +15,7 @@ test('empty explicit input makes no request and consumes opening automation', as
   );
   try {
     await host.command('/autoname');
-    await host.terminal.screen.waitForText('Add a task hint', {
+    await host.terminal.screen.waitForText('No dialogue to name yet', {
       timeoutMs: 4000,
     });
     expect(provider.requests).toHaveLength(0);
@@ -49,7 +49,7 @@ test('saved names succeed silently and blank-session hints only report the unsav
     expect(await host.terminal.logs.text()).not.toContain('persisted exchange');
     await host.invoke('', '{}');
     provider.title = 'fix: Preserve the saved session name';
-    await host.command('/autoname Fix session naming');
+    await host.command('/autoname');
     await host.terminal.screen.waitForText(provider.title, {timeoutMs: 4000});
     expect(provider.requests).toHaveLength(2);
     expect(await host.terminal.logs.text()).not.toContain('Session named:');
@@ -61,11 +61,10 @@ test('saved names succeed silently and blank-session hints only report the unsav
 test('the naming panel opens with session actions and editable settings', async () => {
   const host = await launchPi();
   try {
-    await host.command('/naming');
+    await host.command('/autoname panel');
     await host.terminal.screen.waitForText('Generate name', {
       timeoutMs: 4000,
     });
-    await host.terminal.keyboard.press('ArrowDown');
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Automatic naming', {
       timeoutMs: 4000,
@@ -82,6 +81,32 @@ test('the naming panel opens with session actions and editable settings', async 
       {timeoutMs: 4000},
     );
     await host.invoke('', '{}');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('opening AutoName does not request a name or consume opening automation', async () => {
+  const provider = new NamingProvider();
+  const host = await launchPi(
+    JSON.stringify({naming: {model: {provider: 'fixture', id: 'naming'}}}),
+    undefined,
+    'rtk',
+    'fullscreen',
+    provider.reply,
+  );
+  try {
+    await host.command('/autoname panel');
+    await host.terminal.screen.waitForText('Generate name', {timeoutMs: 4000});
+    expect(provider.requests).toHaveLength(0);
+    await host.terminal.keyboard.press('Escape');
+    await host.terminal.screen.waitUntil(
+      screen => !screen.text.includes('Generate name'),
+      {timeoutMs: 4000},
+    );
+    await host.invoke('', '{}');
+    await host.waitForName(provider.title);
+    expect(provider.requests).toHaveLength(1);
   } finally {
     await host.close();
   }

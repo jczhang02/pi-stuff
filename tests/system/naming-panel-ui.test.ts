@@ -16,7 +16,7 @@ const configured = {
 
 function height(screen: string) {
   const lines = screen.split('\n');
-  const title = lines.findIndex(line => line.startsWith('Naming'));
+  const title = lines.findIndex(line => line.startsWith('AutoName'));
   const bottom = lines.findIndex(
     (line, i) => i > title && line.startsWith('─'),
   );
@@ -42,16 +42,15 @@ test.each(['light', 'dark'])(
       await host.command('/name ' + name);
       await host.waitForName(name);
       await host.terminal.resize({cols: 56, rows: 24});
-      await host.command('/naming');
+      await host.command('/autoname panel');
       await host.terminal.screen.waitForText('Current name', {timeoutMs: 4000});
       expect(await host.terminal.screen.text()).toContain('Not saved yet');
       const firstHeight = height(await host.terminal.screen.text());
       await host.terminal.keyboard.type(']');
       await host.terminal.screen.waitForText('END_OF_TASK', {timeoutMs: 4000});
       expect(height(await host.terminal.screen.text())).toBe(firstHeight);
-      await host.terminal.keyboard.press('ArrowDown');
       await host.terminal.keyboard.press('Enter');
-      await host.terminal.screen.waitForText('Automatic naming', {
+      await host.terminal.screen.waitForText('AutoName / Settings', {
         timeoutMs: 4000,
       });
       const settingsHeight = height(await host.terminal.screen.text());
@@ -60,7 +59,7 @@ test.each(['light', 'dark'])(
         expect(height(await host.terminal.screen.text())).toBe(settingsHeight);
       }
       await host.terminal.resize({cols: 45, rows: 20});
-      await host.terminal.screen.waitForText('Naming needs more room', {
+      await host.terminal.screen.waitForText('AutoName needs more room', {
         timeoutMs: 4000,
       });
       expect(await host.terminal.screen.text()).toContain('Esc Close');
@@ -136,10 +135,9 @@ test('native selection remaps work while Escape remains back and exit through ed
       }),
     );
     await host.reload();
-    await host.command('/naming');
+    await host.command('/autoname panel');
     await host.terminal.screen.waitForText('Generate name', {timeoutMs: 4000});
     expect(await host.terminal.screen.text()).toContain('ctrl+y Open');
-    await host.terminal.keyboard.type('j');
     await host.terminal.keyboard.press('Control+Y');
     await host.terminal.screen.waitForText('Automatic naming', {
       timeoutMs: 4000,
@@ -159,12 +157,12 @@ test('native selection remaps work while Escape remains back and exit through ed
     });
     expect((await namingConfiguration(host)).naming?.prompt).toBeUndefined();
     await host.terminal.resize({cols: 45, rows: 20});
-    await host.terminal.screen.waitForText('Naming needs more room', {
+    await host.terminal.screen.waitForText('AutoName needs more room', {
       timeoutMs: 4000,
     });
     await host.terminal.keyboard.press('Control+G');
     expect(await host.terminal.screen.text()).toContain(
-      'Naming needs more room',
+      'AutoName needs more room',
     );
     await host.terminal.resize({cols: 20, rows: 12});
     await host.terminal.screen.waitForText('Esc Close', {timeoutMs: 4000});
@@ -205,15 +203,12 @@ test('panel applies a name immediately and refreshes unsaved status when the fir
   try {
     await host.start('', '{}');
     await host.terminal.screen.waitUntil(() => mainStarted, {timeoutMs: 4000});
-    await host.command('/naming');
+    await host.command('/autoname panel');
     await host.terminal.screen.waitForText('Generate name', {timeoutMs: 4000});
+    await host.terminal.keyboard.press('ArrowDown');
     await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Optional task hint', {
-      timeoutMs: 4000,
-    });
-    await host.terminal.keyboard.type('Research OAuth persistence');
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Current name', {timeoutMs: 4000});
+    await host.waitForName(provider.title);
+    await host.terminal.screen.waitForText(provider.title, {timeoutMs: 4000});
     expect(await host.terminal.screen.text({settleMs: 0})).toContain(
       provider.title,
     );

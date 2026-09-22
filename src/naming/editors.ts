@@ -19,6 +19,7 @@ import {
 } from '@earendil-works/pi-tui';
 import {stripVTControlCharacters} from 'node:util';
 import type {NamingSettings} from './settings';
+import {PanelLayout, navigationHint} from '../pi/panel-layout';
 
 // Each editor owns only unsubmitted text. Durable saves remain with the file owner.
 export class TextSettingEditor implements Component, Focusable {
@@ -34,6 +35,7 @@ export class TextSettingEditor implements Component, Focusable {
     tui: TUI,
     private readonly theme: Theme,
     private readonly label: string,
+    private readonly layout: PanelLayout,
     initial: string,
     multiline: boolean,
     private readonly save: (value: string | undefined) => Promise<void>,
@@ -116,24 +118,17 @@ export class TextSettingEditor implements Component, Focusable {
     this.renderAgain();
   }
   render(width: number) {
-    return [
-      this.theme.bold(this.label),
-      '',
-      ...(this.editing ? this.input.render(width) : this.choices.render(width)),
-      truncateToWidth(this.theme.fg('error', this.error), width),
-      '',
-      ...wrapTextWithAnsi(
-        this.theme.fg(
-          'dim',
-          this.editing
-            ? this.input instanceof Editor
-              ? `${keyText('tui.input.submit')} Save · ${keyText('tui.input.newLine')} Newline · Esc Back`
-              : `${keyText('tui.input.submit')} Save · Esc Back`
-            : `${keyText('tui.select.up')}/${keyText('tui.select.down')} Navigate · ${keyText('tui.select.confirm')} Select · Esc Back`,
-        ),
-        width,
-      ),
-    ];
+    return this.layout.editor(
+      width,
+      this.label,
+      this.editing ? this.input.render(width) : this.choices.render(width),
+      this.theme.fg('error', this.error),
+      this.editing
+        ? this.input instanceof Editor
+          ? `${keyText('tui.input.submit')} Save · ${keyText('tui.input.newLine')} Newline · Esc Back`
+          : `${keyText('tui.input.submit')} Save · Esc Back`
+        : navigationHint('Select', 'Back'),
+    );
   }
   invalidate() {
     this.input.invalidate();

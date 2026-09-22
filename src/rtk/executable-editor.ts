@@ -1,14 +1,18 @@
-import {getSelectListTheme, type Theme} from '@earendil-works/pi-coding-agent';
+import {
+  getSelectListTheme,
+  keyText,
+  type Theme,
+} from '@earendil-works/pi-coding-agent';
 import {
   Input,
   SelectList,
   Key,
   matchesKey,
-  truncateToWidth,
   type Component,
 } from '@earendil-works/pi-tui';
 import {stripVTControlCharacters} from 'node:util';
 import {RtkRuntime} from './runtime';
+import {PanelLayout, navigationHint} from '../pi/panel-layout';
 
 // Validation is temporary work. Only a successful probe reaches the durable save.
 export class ExecutableEditor implements Component {
@@ -20,6 +24,7 @@ export class ExecutableEditor implements Component {
 
   constructor(
     private readonly theme: Theme,
+    private readonly layout: PanelLayout,
     current: string | undefined,
     initialPath: string,
     private readonly cwd: string,
@@ -116,27 +121,19 @@ export class ExecutableEditor implements Component {
     this.requestRender();
   }
   render(width: number) {
-    return [
-      this.theme.bold('RTK executable'),
-      '',
-      ...(this.mode === 'input'
+    return this.layout.editor(
+      width,
+      'RTK executable',
+      this.mode === 'input'
         ? ['Enter an absolute RTK path.', ...this.input.render(width)]
-        : this.choices.render(width)),
-      // Keep one feedback row. The existing Pi notification retains full errors.
-      truncateToWidth(
-        this.pending
-          ? this.theme.fg('muted', 'Validating and saving...')
-          : this.theme.fg('error', this.error.replace(/\s+/gu, ' ')),
-        width,
-      ),
-      '',
-      this.theme.fg(
-        'dim',
-        this.mode === 'input'
-          ? 'Enter Save · Esc Choices'
-          : '↑↓ Navigate · Enter Select · Esc Back',
-      ),
-    ];
+        : this.choices.render(width),
+      this.pending
+        ? this.theme.fg('muted', 'Validating and saving...')
+        : this.theme.fg('error', this.error),
+      this.mode === 'input'
+        ? `${keyText('tui.input.submit')} Save · Esc Choices`
+        : navigationHint('Select', 'Back'),
+    );
   }
   invalidate() {
     this.input.invalidate();

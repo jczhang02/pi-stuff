@@ -231,59 +231,88 @@ test.each([false, true])(
   30000,
 );
 
-test('panel generation rejects empty input and cancels on back without a late name or notice', async () => {
-  const provider = new NamingProvider();
-  provider.held = true;
-  let aborted = false;
-  const host = await launchPi(
-    JSON.stringify(configured),
-    undefined,
-    'rtk',
-    'fullscreen',
-    (body, signal) => {
-      if (body.model === 'naming')
-        signal.addEventListener(
-          'abort',
-          () => {
-            aborted = true;
-          },
-          {once: true},
-        );
-      return provider.reply(body, signal);
-    },
-  );
-  try {
-    await host.command('/naming');
-    await host.terminal.screen.waitForText('Generate name', {timeoutMs: 4000});
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Optional task hint', {
-      timeoutMs: 4000,
-    });
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Add a task hint', {
-      timeoutMs: 4000,
-    });
-    expect(provider.requests).toHaveLength(0);
-    await host.terminal.keyboard.type('Research OAuth compatibility');
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitUntil(() => provider.requests.length === 1, {
-      timeoutMs: 4000,
-    });
-    expect(await host.terminal.screen.text()).not.toContain('Naming...');
-    await backToNamingHome(host);
-    await host.terminal.screen.waitUntil(() => aborted, {timeoutMs: 4000});
-    await closeNamingHome(host);
-    provider.release();
-    await host.invoke('', '{}');
-    await host.command('/name');
-    await host.terminal.screen.waitForText('Usage: /name', {timeoutMs: 4000});
-    expect(provider.requests).toHaveLength(1);
-    expect(await host.terminal.logs.text()).not.toContain('Naming superseded');
-    expect(await host.terminal.logs.text()).not.toContain(
-      'Name not saved yet.',
+test.each(['close', 'settings'])(
+  'panel generation rejects empty input and cancels on %s without a late name or notice',
+  async destination => {
+    const provider = new NamingProvider();
+    provider.held = true;
+    let aborted = false;
+    const host = await launchPi(
+      JSON.stringify(configured),
+      undefined,
+      'rtk',
+      'fullscreen',
+      (body, signal) => {
+        if (body.model === 'naming')
+          signal.addEventListener(
+            'abort',
+            () => {
+              aborted = true;
+            },
+            {once: true},
+          );
+        return provider.reply(body, signal);
+      },
     );
-  } finally {
-    provider.release();
-    await host.close();
-  }
-}, 30000);
+    try {
+      await host.command('/autoname panel');
+      await host.terminal.screen.waitForText('Generate name', {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.press('ArrowDown');
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText('No dialogue to name yet', {
+        timeoutMs: 4000,
+      });
+      expect(provider.requests).toHaveLength(0);
+      await closeNamingHome(host);
+      await host.invoke('', '{}');
+      await host.command('/autoname panel');
+      await host.terminal.screen.waitForText('Generate name', {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.press('ArrowDown');
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitUntil(
+        () => provider.requests.length === 1,
+        {
+          timeoutMs: 4000,
+        },
+      );
+      expect(await host.terminal.screen.text()).not.toContain('Naming...');
+      await host.terminal.keyboard.press('Enter');
+      expect(provider.requests).toHaveLength(1);
+      if (destination === 'settings') {
+        await host.terminal.keyboard.press('ArrowUp');
+        await host.terminal.keyboard.press('Enter');
+        await host.terminal.screen.waitForText('Automatic naming', {
+          timeoutMs: 4000,
+        });
+      } else await closeNamingHome(host);
+      await host.terminal.screen.waitUntil(() => aborted, {timeoutMs: 4000});
+      if (destination === 'settings') {
+        provider.release();
+        expect(await host.terminal.screen.text()).toContain(
+          'AutoName / Settings',
+        );
+        await backToNamingHome(host);
+        await closeNamingHome(host);
+      }
+      provider.release();
+      await host.invoke('', '{}');
+      await host.command('/name');
+      await host.terminal.screen.waitForText('Usage: /name', {timeoutMs: 4000});
+      expect(provider.requests).toHaveLength(1);
+      expect(await host.terminal.logs.text()).not.toContain(
+        'Naming superseded',
+      );
+      expect(await host.terminal.logs.text()).not.toContain(
+        'Name not saved yet.',
+      );
+    } finally {
+      provider.release();
+      await host.close();
+    }
+  },
+  30000,
+);
