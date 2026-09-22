@@ -6,7 +6,7 @@ Pi Stuff names a fresh foreground TUI session after its first successful exchang
 
 Use Pi's native `/name Exact title` for a direct assignment. `/autoname` generates a replacement from the opening request and recent dialogue; `/autoname Document OAuth migration risks` gives the model a task hint with priority over that dialogue. Accepting `/autoname` permanently ends automation for that session, including when generation fails. A newer command supersedes a pending request.
 
-The command shows `Naming...`, then a success or actionable failure message. Automatic requests run quietly in the background. A pending result cannot overwrite a later direct rename, navigation or another generation. Names belong to the whole session, including its branches.
+In TUI mode, the command shows `Naming...`, then a success or actionable failure message. Print/JSON commands wait for completion and send feedback to stderr, leaving JSON stdout machine-readable. Automatic requests run quietly in the background. A pending result cannot overwrite a later direct rename, navigation or another generation. Names belong to the whole session, including its branches.
 
 ## Configuration
 
@@ -60,7 +60,7 @@ Tests use real isolated Pi commands, lifecycle events and native session files w
 
 ## Acceptance evidence (2026-09-22)
 
-The runtime checks use Linux, Bun 1.4.0, Pi 0.85.1 from the pinned dependency and the maintainer's compiled Pi 0.87.0 (runtime-reported Bun 1.4.0). Terminal Control 1.2.1 drives real regular/fullscreen sessions with isolated settings, session files and working directories. The controlled model verifies request counts, errors, deadlines, navigation races, forks, reload/restart, preflight failure and compaction queue replay. A readonly session file and Linux `/dev/full` exercise native write failures. The extension preflights known unwritable files; an unexpected failure during Pi's write restores the prior name in memory and tells the user to fix file access and restart with that session before continuing. This is necessary because Pi mutates its in-memory history before its write succeeds.
+The runtime checks use Linux, Bun 1.4.0, Pi 0.85.1 from the pinned dependency and the maintainer's compiled Pi 0.87.0 (runtime-reported Bun 1.4.0). Terminal Control 1.2.1 drives real regular/fullscreen sessions with isolated settings, session files and working directories. The controlled model verifies request counts, errors, deadlines, navigation races, forks, reload/restart, preflight failure and compaction queue replay. A readonly session file and Linux `/dev/full` exercise native write failures. The extension preflights known unwritable files; an unexpected failure during Pi's write can leave the displayed name changed but unsaved. The extension tells the user to fix file access and restart with that session before continuing. It does not append a compensating rename: Pi advances its in-memory history before writing, so a second write could persist a broken parent link. Recovery checks reopen the repaired file and verify its existing messages and parent chain.
 
 Run offline checks with `bun run check` and `bun run test`. To repeat compiled-host naming acceptance, set `PI_TEST_HOST` to the compiled executable and run `bun test tests/system/naming*.test.ts`. Live account tests are separate from this offline suite.
 

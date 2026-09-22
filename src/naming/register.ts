@@ -13,6 +13,16 @@ class NamingError extends Schema.TaggedError<NamingError>()('NamingError', {
   requiresRecovery: Schema.optional(Schema.Boolean),
 }) {}
 
+function notify(
+  ctx: ExtensionContext,
+  message: string,
+  level: 'info' | 'error',
+) {
+  // Print modes have a no-op UI; stderr leaves JSON stdout machine-readable.
+  if (ctx.mode === 'print' || ctx.mode === 'json') console.error(message);
+  else ctx.ui.notify(message, level);
+}
+
 export function registerNaming(
   pi: ExtensionAPI,
   settings: NamingSettings = {},
@@ -50,7 +60,8 @@ export function registerNaming(
     if (!model) {
       pending = undefined;
       if (explicit)
-        ctx.ui.notify(
+        notify(
+          ctx,
           'Naming failed: model unavailable. Check naming.model and /reload.',
           'error',
         );
@@ -59,7 +70,8 @@ export function registerNaming(
     if (!ctx.modelRegistry.hasConfiguredAuth(model)) {
       pending = undefined;
       if (explicit)
-        ctx.ui.notify(
+        notify(
+          ctx,
           'Naming failed: authentication unavailable. Configure the selected provider with /login or its API key, then try /autoname.',
           'error',
         );
@@ -144,12 +156,13 @@ export function registerNaming(
                 .findLast(entry => entry.type === 'session_info')?.id
           ) {
             if (explicit)
-              ctx.ui.notify('Naming superseded. Existing name kept.', 'info');
+              notify(ctx, 'Naming superseded. Existing name kept.', 'info');
             return Effect.void;
           }
           if (result.stopReason !== 'stop') {
             if (explicit)
-              ctx.ui.notify(
+              notify(
+                ctx,
                 'Naming failed. Existing name kept. Try /autoname again.',
                 'error',
               );
@@ -165,13 +178,13 @@ export function registerNaming(
             /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(name)
           ) {
             if (explicit)
-              ctx.ui.notify(
+              notify(
+                ctx,
                 'Naming failed: invalid name. Existing name kept. Adjust naming rules or try /autoname again.',
                 'error',
               );
             return Effect.void;
           }
-          const previousName = ctx.sessionManager.getSessionName() ?? '';
           return Effect.try({
             try: () => pi.setSessionName(name),
             catch: () =>
@@ -181,17 +194,12 @@ export function registerNaming(
                 requiresRecovery: true,
               }),
           }).pipe(
-            Effect.catch(error =>
-              Effect.try({
-                try: () => pi.setSessionName(previousName),
-                catch: () => error,
-              }).pipe(Effect.ignore, Effect.andThen(Effect.fail(error))),
-            ),
             Effect.tap(() =>
               Effect.sync(() => {
                 pending = undefined;
                 if (explicit)
-                  ctx.ui.notify(
+                  notify(
+                    ctx,
                     `Session named: ${name}${saved ? '' : '. Unsaved session: this name can be lost on exit before a persisted exchange.'}`,
                     'info',
                   );
@@ -206,7 +214,8 @@ export function registerNaming(
                 (error._tag === 'NamingError' && error.requiresRecovery)) &&
               origin === lifetime
             )
-              ctx.ui.notify(
+              notify(
+                ctx,
                 pending === request ||
                   (error._tag === 'NamingError' && error.requiresRecovery)
                   ? error._tag === 'TimeoutError'

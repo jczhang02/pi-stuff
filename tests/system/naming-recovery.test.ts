@@ -1,4 +1,5 @@
 import {expect, test} from 'bun:test';
+import {SessionManager} from '@earendil-works/pi-coding-agent';
 import {readdir, chmod, rename, symlink, unlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
@@ -38,12 +39,18 @@ test('a native write failure after preflight keeps Pi alive and explains session
     expect((await host.terminal.status()).state).toBe('running');
     expect(await host.terminal.screen.text()).not.toContain('Naming...');
     await host.command('/name');
-    await host.terminal.screen.waitForText('Session name: Before', {
+    await host.terminal.screen.waitForText(`Session name: ${provider.title}`, {
       timeoutMs: 4000,
     });
     await unlink(file);
     await rename(file + '.backup', file);
     replaced = false;
+    const recovered = SessionManager.open(file);
+    expect(recovered.buildSessionContext().messages).toHaveLength(2);
+    for (const entry of recovered.getBranch()) {
+      if (entry.parentId)
+        expect(recovered.getEntry(entry.parentId)).toBeDefined();
+    }
     await host.restart(['--session', file]);
     await host.command('/name');
     await host.terminal.screen.waitForText('Session name: Before', {
@@ -97,6 +104,9 @@ test.each(['json', 'text'])(
       expect(exit.reason).toBe('exited');
       if (exit.reason === 'exited') expect(exit.exit.code).toBe(0);
       expect(provider.requests).toHaveLength(1);
+      expect(await host.terminal.logs.text()).toContain(
+        `Session named: ${provider.title}`,
+      );
       await host.restart(['--session', file]);
       await host.command('/name');
       await host.terminal.screen.waitForText(
