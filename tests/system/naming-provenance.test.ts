@@ -51,7 +51,7 @@ test('nonpersistent TUI sessions only allow explicit generation', async () => {
     await host.invoke('', '{}');
     expect(provider.requests).toHaveLength(0);
     await host.command('/autoname Research temporary sessions');
-    await host.terminal.screen.waitForText('Unsaved session', {
+    await host.terminal.screen.waitForText('Name not saved yet.', {
       timeoutMs: 4000,
     });
     expect(provider.requests).toHaveLength(1);
@@ -129,13 +129,7 @@ test('RPC sessions skip automation but retain the explicit command', async () =>
     await host.terminal.screen.waitUntil(() => provider.requests.length === 1, {
       timeoutMs: 4000,
     });
-    await host.terminal.screen.waitUntil(
-      async () =>
-        new TextDecoder()
-          .decode(await host.terminal.transcript.ansi())
-          .includes('Session named:'),
-      {timeoutMs: 4000},
-    );
+    await host.waitForName(provider.title);
   } finally {
     await host.close();
   }

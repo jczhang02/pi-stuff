@@ -6,7 +6,23 @@ Pi Stuff 会在新建前台 TUI 会话的首次成功问答后尝试命名一次
 
 Pi 原生 `/name Exact title` 用于直接赋名. `/autoname` 根据开场请求和最近对话生成替代名称; `/autoname Document OAuth migration risks` 提供优先于对话的任务提示. 一旦接受 `/autoname`, 该会话就永久停止自动命名, 即使生成失败也一样. 新命令会取代尚未完成的请求.
 
-命令执行期间不显示进度或状态提示, 完成后反馈成功或可操作的失败原因. Print/JSON 命令会等待完成并将反馈写入 stderr, 保持 JSON stdout 可供机器解析. 自动请求在后台安静运行. 旧结果不能覆盖后来的直接改名、导航或新生成. 名称属于整个会话, 各分支共用.
+生成期间没有进度提示, 成功后只更新原生会话名称. 错误使用 Pi 原生聊天区提醒. 名称尚未落盘时, 唯一与成功相关的提醒是 `Name not saved yet.`. Print/JSON 命令会等待完成并将反馈写入 stderr, 保持 JSON stdout 可供机器解析. 自动请求在后台安静运行. 旧结果不能覆盖后来的直接改名、导航或新生成. 名称属于整个会话, 各分支共用.
+
+## 命名面板
+
+在 TUI 中执行 `/naming`, 可以查看当前名称、生成替代名称或修改设置. 生成时可补充任务提示, 结果直接应用. 对话文本和提示都为空时, 会要求补充提示, 不调用模型. 返回或关闭会取消面板启动的未完成请求, 保留已经应用的名称.
+
+设置逐项保存并立即生效:
+
+- **Automatic naming** 开关控制开场自动命名. 启用不会恢复当前会话的自动机会.
+- **Naming model** 搜索 Pi 已有认证的模型, 不改变对话模型. 选择 `Use current session model` 清除独立模型配置. 已配置但不可用的模型仍可查看; 生成失败时不回退.
+- **Naming rules** 使用 Pi 多行编辑器修改完整规则. `Use default` 恢复内置英文规则.
+- **Maximum length** 接受正整数. `Use default` 恢复 80 码点.
+- **Restore defaults** 确认后重置命名设置, 保留当前名称.
+
+配置提交成功会取消旧命名请求, 不重试. 保存失败则保留生效配置和未完成请求. 不覆盖外部文件修改, 需先 `/reload` 再重试. 已确认的设置会保存; Esc 放弃未提交文本, 不撤销已经开始的保存.
+
+面板沿用 Pi 主题、原生选择和输入按键. 即使重新绑定 cancel, Esc 仍用于返回或关闭. 长名称和模型标识符可用 `[` / `]` 翻页. 最小尺寸为 56 列、24 行, 更小终端显示尺寸提示并保留退出方式. Naming 与 RTK 共用已有的 Pi 内置浅色主题局部对比度修正, 不修改自定义主题.
 
 ## 配置
 
@@ -24,7 +40,7 @@ Pi 原生 `/name Exact title` 用于直接赋名. `/autoname` 根据开场请求
 
 `model` 可省略. 省略时每次请求使用当前会话模型; 配置后, Pi 使用指定的 provider/model 和已有认证. 模型或认证不可用时直接失败, 不自动换模型. 示例不代表成本推荐.
 
-将 `automatic` 设为 `false` 可只保留 `/autoname`. `prompt` 替换命名风格指令, 支持其他语言和格式. 例如:
+将 `automatic` 设为 `false` 后, 仅通过 `/autoname` 或面板手动生成. `prompt` 替换命名风格指令, 支持其他语言和格式. 例如:
 
 ```json
 {
@@ -38,7 +54,7 @@ Pi 原生 `/name Exact title` 用于直接赋名. `/autoname` 根据开场请求
 
 默认风格为英文 `type: Action object`, 类型为 `research`、`feat`、`fix`、`refactor`、`docs` 或 `chore`. 描述优先采用 4-8 个单词, 保留标识符大小写, 省略日期、括号 scope 和进度. 例如 `research: Compare OAuth provider compatibility`. 这是模型指引, 不保证语义总是准确. 即使替换风格, 用户请求也优先于助手的错误理解.
 
-`maxLength` 独立生效, 是按 Unicode 码点计数的正整数. 空白、多行、含控制字符或过长的输出直接失败, 不截断也不调用模型修复. 空白 prompt/model 标识符和无效配置使用包现有的配置错误提示. reload 后的配置影响未来请求, 不改名也不恢复自动命名资格.
+`maxLength` 独立生效, 是按 Unicode 码点计数的正整数. 空白、多行、含控制字符或过长的输出直接失败, 不截断也不调用模型修复. 空白 prompt/model 标识符和无效配置使用包现有的配置错误提示. 文件修改在 `/reload` 后生效, 面板保存立即生效. 两条路径都不会改名或恢复已有会话的自动机会.
 
 ## 适用范围与持久化
 
@@ -46,7 +62,7 @@ Pi 原生 `/name Exact title` 用于直接赋名. `/autoname` 根据开场请求
 
 Pi 扩展 API 没有通用的子代理标志. 将子代理伪装成普通前台 TUI 的第三方启动器必须关闭自动命名; 这种启动方式不在支持范围内.
 
-空白会话的名称可能只保留在内存, 直到一次助手问答触发 Pi 正常持久化. `/autoname` 会提示会话尚未保存. 立即退出可能丢失名称, 完成一次问答则会保留. Pi Stuff 不强制写历史, 也不维护单独的名称数据库.
+空白会话的名称可能只保留在内存, 直到一次助手问答触发 Pi 正常持久化. 命令提示 `Name not saved yet.`, 面板显示 `Not saved yet` 并解释第一次助手回复会保存名称. 立即退出可能丢失名称, 完成一次问答则会保留. 使用 `--no-session` 时存储被禁用, 即使收到回复名称也仍是临时的, 面板会说明这一点. Pi Stuff 不强制写历史, 也不维护单独的名称数据库.
 
 ## 请求限制
 
@@ -77,8 +93,12 @@ Pi 0.85.1 API 映射请求 SSE、`maxRetries: 0` 和有限的 `maxTokens`. OpenA
 | 主任务改为 OAuth 风险文档后执行 `/autoname`                 | `docs: Document OAuth migration risks only`                            |
 | `/autoname Fix session rename races in Pi` 优先于之前的对话 | `fix: Resolve session rename races in Pi`                              |
 
-以下真实终端截图覆盖失败、成功, 以及从 100×30 缩到 56×24 的状态. 浅色终端在启动 Pi 前将默认前景/背景设为黑/白. 导出明确使用 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. 这是无窗口终端证据, 不代表原生窗口或合成器体验. 窄终端底栏会截断长名称; `/name` 可换行显示全文. 请求期间仍可输入, 生成失败会保留原名称.
+面板测试覆盖逐项保存和重置、多行规则、无效长度、拒绝外部修改冲突、保存成功后取消旧请求、关闭面板取消、按键重映射、持久化状态刷新及长值分页. 下图来自编译版 Pi 0.87.0 和本地受控模型, 通过真实命令在 100×30 与 56×24 终端中取得. 图中名称由 fixture 返回, 与上面的真实模型样本分开记录.
 
-![56 列浅色主题中的生成失败](../../assets/session-naming/light-invalid.png)
+浅色终端的默认前景/背景为黑/白, 深色为黑底浅色文字. 导出明确使用 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. 这些是无窗口终端截图, 不代表原生窗口或合成器体验.
 
-![56 列下的完整名称和未保存会话提示](../../assets/session-naming/narrow-success.png)
+![深色面板中刚应用的临时名称](../../assets/session-naming/panel-dark.png)
+
+![浅色命名设置面板](../../assets/session-naming/panel-light.png)
+
+![最小 56×24 尺寸下的模型选择](../../assets/session-naming/panel-narrow.png)

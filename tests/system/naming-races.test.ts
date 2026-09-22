@@ -21,10 +21,7 @@ test('a newer command supersedes pending work and a direct rename away and back 
     provider.title = 'research: Compare the current OAuth providers';
     provider.held = false;
     await host.command('/autoname Current request');
-    await host.terminal.screen.waitForText(
-      'Session named: research: Compare the current OAuth providers',
-      {timeoutMs: 4000},
-    );
+    await host.waitForName(provider.title);
     expect(provider.requests).toHaveLength(2);
     provider.held = true;
     await host.command('/autoname Obsolete third request');

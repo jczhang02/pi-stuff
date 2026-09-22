@@ -106,9 +106,7 @@ test.each(['json', 'text'])(
       expect(exit.reason).toBe('exited');
       if (exit.reason === 'exited') expect(exit.exit.code).toBe(0);
       expect(provider.requests).toHaveLength(1);
-      expect(await host.terminal.logs.text()).toContain(
-        `Session named: ${provider.title}`,
-      );
+      expect(await host.terminal.logs.text()).not.toContain('Session named:');
       await host.restart(['--session', file]);
       await host.command('/name');
       await host.terminal.screen.waitForText(
@@ -181,7 +179,7 @@ test('a blank-session name reports delayed persistence and survives restart afte
   );
   try {
     await host.command('/autoname Research persistence');
-    await host.terminal.screen.waitForText('Unsaved session', {
+    await host.terminal.screen.waitForText('Name not saved yet.', {
       timeoutMs: 4000,
     });
     expect(
@@ -191,7 +189,7 @@ test('a blank-session name reports delayed persistence and survives restart afte
     await host.command('/name');
     await host.terminal.screen.waitForText('Usage: /name', {timeoutMs: 4000});
     await host.command('/autoname Research persistence');
-    await host.terminal.screen.waitForText('Unsaved session', {
+    await host.terminal.screen.waitForText('Name not saved yet.', {
       timeoutMs: 4000,
     });
     await host.invoke('', '{}');

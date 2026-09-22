@@ -22,7 +22,8 @@ import type {RtkSettings} from './settings';
 import type {RtkRuntime} from './runtime';
 import {ExecutableEditor} from './executable-editor';
 import {UsageView} from './usage';
-import {dataRow, fillRows, readablePanelLines} from './display';
+import {dataRow, fillRows} from './display';
+import {readablePanelLines} from '../pi/panel-style';
 import {DiagnosticsView} from './diagnostics';
 
 type Page = 'Settings' | 'Usage' | 'Diagnostics';

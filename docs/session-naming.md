@@ -6,7 +6,23 @@ Pi Stuff names a fresh foreground TUI session after its first successful exchang
 
 Use Pi's native `/name Exact title` for a direct assignment. `/autoname` generates a replacement from the opening request and recent dialogue; `/autoname Document OAuth migration risks` gives the model a task hint with priority over that dialogue. Accepting `/autoname` permanently ends automation for that session, including when generation fails. A newer command supersedes a pending request.
 
-The command runs without a progress/status notice, then reports success or an actionable failure. Print/JSON commands wait for completion and send feedback to stderr, leaving JSON stdout machine-readable. Automatic requests run quietly in the background. A pending result cannot overwrite a later direct rename, navigation or another generation. Names belong to the whole session, including its branches.
+Generation has no progress notice and succeeds silently by updating the native session name. Errors use Pi's native chat-area notification. If the name has not reached storage, the only success-related notice is `Name not saved yet.`. Print/JSON commands wait for completion and send feedback to stderr, leaving JSON stdout machine-readable. Automatic requests run quietly in the background. A pending result cannot overwrite a later direct rename, navigation or another generation. Names belong to the whole session, including its branches.
+
+## Naming panel
+
+Open `/naming` in a TUI to see the current name, generate a replacement or change settings. Generation accepts an optional task hint and applies the result immediately. If neither dialogue text nor a hint exists, it asks for a hint without calling the model. Back/close cancels an unfinished request started by the panel; an applied name is kept.
+
+Settings save individually and take effect immediately:
+
+- **Automatic naming** enables or disables opening naming. Enabling it does not rearm the current session.
+- **Naming model** searches Pi's authenticated models without changing the conversation model. Choose `Use current session model` to remove the override. An existing unavailable override remains inspectable; generation still fails without a fallback.
+- **Naming rules** edits the full prompt in Pi's multiline editor. `Use default` restores the built-in English rules.
+- **Maximum length** accepts a positive integer. `Use default` restores 80 code points.
+- **Restore defaults** confirms a reset of naming settings while keeping the current name.
+
+A committed configuration change cancels older naming requests without retrying. A failed save keeps the active settings and any pending request. External file edits are not overwritten: use `/reload` before retrying. Confirmed settings are durable; Esc abandons unsubmitted text, not a save already started.
+
+The panel uses Pi's theme, native selection and input bindings. Esc always goes back or closes, including under remapped cancel bindings. Long names and model identifiers have `[` / `]` pages. The minimum size is 56 columns by 24 rows; smaller terminals show a resize notice with an exit action. Both Naming and RTK reuse the existing local contrast correction for Pi's built-in light palette, without changing custom themes.
 
 ## Configuration
 
@@ -24,7 +40,7 @@ Add `naming` to the existing `pi-stuff.json` in Pi's agent directory, then use `
 
 `model` is optional. Without it, each request uses the current session model. With it, Pi resolves that exact provider/model and its existing authentication; an unavailable model or credential fails without selecting a fallback. The example is not a cost recommendation.
 
-Set `automatic` to `false` to retain only `/autoname`. `prompt` replaces the naming style guidance, so another language or format is supported. For example:
+Set `automatic` to `false` to keep generation manual, through `/autoname` or the panel. `prompt` replaces the naming style guidance, so another language or format is supported. For example:
 
 ```json
 {
@@ -38,7 +54,7 @@ Set `automatic` to `false` to retain only `/autoname`. `prompt` replaces the nam
 
 The default style is English `type: Action object`, with `research`, `feat`, `fix`, `refactor`, `docs` or `chore`. It prefers 4-8 description words, preserves identifier casing and omits dates, scope parentheses and progress. For example: `research: Compare OAuth provider compatibility`. This is model guidance, not a semantic guarantee. The user's request takes precedence over an assistant misunderstanding even with a custom style.
 
-`maxLength` is an independent positive integer counted in Unicode code points. Empty, multiline, control-containing and overlong outputs fail without truncation or a repair call. Blank prompts/model identifiers and invalid configuration use the package's existing configuration diagnostic. Configuration changes apply to future requests after reload; they do not rename or rearm existing sessions.
+`maxLength` is an independent positive integer counted in Unicode code points. Empty, multiline, control-containing and overlong outputs fail without truncation or a repair call. Blank prompts/model identifiers and invalid configuration use the package's existing configuration diagnostic. File edits apply after `/reload`; panel saves apply immediately. Neither path renames or rearms existing sessions.
 
 ## Eligibility and persistence
 
@@ -46,7 +62,7 @@ Automatic naming supports regular/fullscreen TUI sessions with a fresh native se
 
 There is no universal child flag in Pi's extension API. A third-party launcher that disguises a child as an ordinary foreground TUI must disable automatic naming; that launch shape is not supported.
 
-Pi can keep the name of a blank session only in memory until an assistant exchange causes normal persistence. `/autoname` identifies this as an unsaved session. Exiting immediately can lose the name; completing an exchange preserves it. Pi Stuff does not force a history write or maintain a separate name database.
+Pi can keep the name of a blank session only in memory until an assistant exchange causes normal persistence. The command reports `Name not saved yet.` and the panel shows `Not saved yet`, with an explanation that the first assistant reply saves it. Exiting immediately can lose the name; completing an exchange preserves it. With `--no-session`, storage is disabled and the name stays temporary even after a reply; the panel explains that distinction. Pi Stuff does not force a history write or maintain a separate name database.
 
 ## Request limits
 
@@ -77,8 +93,12 @@ The following eight names came from actual `openai-codex/gpt-6-astra` requests t
 | `/autoname` after the agreed task changes to OAuth risk documentation           | `docs: Document OAuth migration risks only`                            |
 | `/autoname Fix session rename races in Pi` overrides earlier dialogue           | `fix: Resolve session rename races in Pi`                              |
 
-The actual terminal captures below cover failure, success and resizing from 100×30 to 56×24. The light terminal's default foreground/background were set to black/white before launching Pi. Exports explicitly use `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. They are headless terminal evidence, not native window/compositor evidence. The narrow footer truncates a long title; `/name` displays its complete wrapped text. Input remains available while a request is pending, and failed generation preserves the prior name.
+The panel tests cover field saves and resets, multiline rules, invalid length, stale-file refusal, committed-save cancellation, panel cancellation, remapped keys, persistence status refresh and long-value pagination. The captures below were taken from compiled Pi 0.87.0 with a controlled local model, using real commands at 100×30 and 56×24. Their displayed title is fixture output; the live-model samples above are separate evidence.
 
-![Light theme with a failed request at 56 columns](assets/session-naming/light-invalid.png)
+The light terminal uses black/white default foreground/background; dark uses light text on black. Exports explicitly use `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. These are headless terminal captures, not native window/compositor evidence.
 
-![Full name and unsaved-session feedback at 56 columns](assets/session-naming/narrow-success.png)
+![Dark naming panel after applying a temporary name](assets/session-naming/panel-dark.png)
+
+![Light naming settings panel](assets/session-naming/panel-light.png)
+
+![Model selection at the minimum 56×24 size](assets/session-naming/panel-narrow.png)

@@ -10,6 +10,7 @@ import {randomUUID} from 'node:crypto';
 import {Effect, Schema} from 'effect';
 import {ConfigurationError, readConfiguration} from './configuration';
 import type {RtkSettings} from '../rtk/settings';
+import type {NamingSettings} from '../naming/settings';
 
 type Configuration = Effect.Success<ReturnType<typeof readConfiguration>>;
 const missing = Schema.is(Schema.Struct({code: Schema.Literal('ENOENT')}));
@@ -75,6 +76,17 @@ export class ConfigurationFile {
   }
 
   saveRtk(settings: RtkSettings) {
+    return this.save('rtk', settings);
+  }
+
+  saveNaming(settings: NamingSettings) {
+    return this.save('naming', settings);
+  }
+
+  private save<K extends 'rtk' | 'naming'>(
+    section: K,
+    settings: NonNullable<Configuration[K]>,
+  ) {
     return Effect.tryPromise({
       try: async () => {
         const lockPath = `${this.target}.lock`;
@@ -82,7 +94,7 @@ export class ConfigurationFile {
         const temporary = `${this.target}.${randomUUID()}.tmp`;
         let staged = false;
         try {
-          const next = `${JSON.stringify({...this.value, rtk: settings}, null, 2)}\n`;
+          const next = `${JSON.stringify({...this.value, [section]: settings}, null, 2)}\n`;
           const file = await open(temporary, 'wx', 0o600);
           staged = true;
           try {
@@ -103,7 +115,7 @@ export class ConfigurationFile {
           await rename(temporary, this.target);
           staged = false;
           this.text = next;
-          this.current = {...this.current, rtk: settings};
+          this.current = {...this.current, [section]: settings};
         } finally {
           try {
             if (staged) await unlink(temporary);
@@ -117,8 +129,7 @@ export class ConfigurationFile {
         Schema.is(ConfigurationError)(error)
           ? error
           : new ConfigurationError({
-              message:
-                'Could not finish saving RTK settings. Check permissions or a concurrent save, then /reload to verify.',
+              message: `Could not finish saving ${section === 'rtk' ? 'RTK' : 'naming'} settings. Check permissions or a concurrent save, then /reload to verify.`,
             }),
     });
   }

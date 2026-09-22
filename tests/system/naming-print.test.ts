@@ -6,7 +6,7 @@ for (const mode of ['json', 'text']) {
   test.each([
     ['missing', 'Naming failed: model unavailable', 0],
     ['invalid', 'Naming failed: invalid name', 1],
-    ['unsaved', 'Unsaved session', 1],
+    ['unsaved', 'Name not saved yet.', 1],
   ] as const)(
     `${mode} print reports %s naming feedback before exit`,
     async (scenario, feedback, count) => {

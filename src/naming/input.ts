@@ -43,8 +43,7 @@ export function explicitInput(hint: string, entries: readonly SessionEntry[]) {
   const selected = dialogue.filter(
     (_message, index) => index === first || index >= dialogue.length - 5,
   );
-  if (!selected.length)
-    return 'No conversation text. Generate a general session name.';
+  if (!selected.length) return undefined;
   const budget = Math.floor(3900 / selected.length);
   return selected
     .map(

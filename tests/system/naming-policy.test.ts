@@ -64,7 +64,7 @@ test('provider failures make one HTTP request and keep explicit generation avail
     await host.invoke('', '{}');
     expect(provider.requests).toHaveLength(0);
     await host.command('/autoname Investigate recovery');
-    await host.terminal.screen.waitForText('Session named:', {timeoutMs: 4000});
+    await host.waitForName(provider.title);
     const request = provider.requests[0];
     expect(
       request?.max_tokens ?? request?.max_completion_tokens,
@@ -133,9 +133,7 @@ test('manual-only naming applies a custom language and independent length limit'
     await host.invoke('', '{}');
     expect(provider.requests).toHaveLength(0);
     await host.command('/autoname 研究 RTK 的调用约定');
-    await host.terminal.screen.waitForText('Session named: 调查 RTK 调用约定', {
-      timeoutMs: 4000,
-    });
+    await host.waitForName(provider.title);
     expect(provider.requests).toHaveLength(1);
     expect(JSON.stringify(provider.requests[0]?.messages)).toContain(
       '用中文描述主任务, 保留标识符',

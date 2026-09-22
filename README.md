@@ -17,7 +17,7 @@ This checkout contains a development web extension with independent search, page
 
 [RTK integration](docs/rtk.md) adds supported Bash rewriting, independent final-result ANSI cleanup and an inline `/rtk` panel for settings, native usage and diagnostics. It resolves mise-managed installations without changing PATH and retains Pi's built-in Bash execution.
 
-[Session naming](docs/session-naming.md) generates an opening title once, with explicit `/autoname` replacements and configurable model/style limits.
+[Session naming](docs/session-naming.md) generates an opening title once, with explicit `/autoname` replacements and an RTK-style `/naming` panel for names, model, rules and length.
 
 The package also includes ten light and dark [themes](docs/themes.md) from Catppuccin, Tokyo Night, Gruvbox and Rosé Pine. Choose them through Pi's theme settings; loading the package preserves your current choice.
 
@@ -52,10 +52,10 @@ To try the reviewed source extension, follow [Web access](docs/web-access.md#loa
 The [source-layout rules](docs/agents/engineering.md#source-layout) govern entrypoints and module ownership.
 
 - [index.ts](index.ts) is the sole Pi entrypoint. It loads configuration and registers capabilities directly; Pi's local extension list shows the checkout name.
-- [src/pi/](src/pi/) owns shared host configuration and tool-switch policy.
+- [src/pi/](src/pi/) owns shared host configuration, tool-switch policy and panel theme compatibility.
 - [src/web/](src/web/) owns Web access, including its tools, authentication, transport and session lifecycle. Other capabilities belong in sibling directories when implemented.
 - [src/rtk/](src/rtk/) owns RTK discovery, command rewriting, final-result cleanup and the inline panel.
-- [src/naming/](src/naming/) owns naming eligibility, bounded requests and guarded publication.
+- [src/naming/](src/naming/) owns naming eligibility, bounded requests, guarded publication and the naming panel.
 - [themes/](themes/) contains static Pi theme resources declared by the package.
 - [tests/component/](tests/component/) exercises module behavior; [tests/system/](tests/system/) loads the extension in the real Pi host.
 

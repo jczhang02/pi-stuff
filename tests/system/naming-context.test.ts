@@ -151,8 +151,9 @@ test('tool continuations finish the opening without including tool output in eit
     expect(JSON.stringify(provider.requests[0]?.messages)).toContain(
       'RTK_TURN_1_DONE',
     );
+    provider.title = 'research: Review the agreed task';
     await host.command('/autoname');
-    await host.terminal.screen.waitForText('Session named:', {timeoutMs: 4000});
+    await host.waitForName(provider.title);
     expect(provider.requests).toHaveLength(2);
     expect(JSON.stringify(provider.requests[1]?.messages)).not.toContain(
       'TOOL_RESULT_EXCLUDED',
@@ -187,8 +188,9 @@ test('raw skill requests and manual context omit loaded skill instructions', asy
       '/skill:naming-fixture Research OAuth compatibility',
     );
     expect(opening).not.toContain('SKILL_INSTRUCTIONS_EXCLUDED');
+    provider.title = 'research: Review the agreed task';
     await host.command('/autoname');
-    await host.terminal.screen.waitForText('Session named:', {timeoutMs: 4000});
+    await host.waitForName(provider.title);
     const manual = JSON.stringify(provider.requests[1]?.messages);
     expect(manual).toContain('Research OAuth compatibility');
     expect(manual).not.toContain('SKILL_INSTRUCTIONS_EXCLUDED');

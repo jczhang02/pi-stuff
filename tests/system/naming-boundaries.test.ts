@@ -65,9 +65,7 @@ test('output validation counts Unicode code points after trimming', async () => 
   try {
     provider.title = '  ' + '𠮷'.repeat(8) + '  ';
     await host.command('/autoname A custom eight character name');
-    await host.terminal.screen.waitForText('Session named: ' + '𠮷'.repeat(8), {
-      timeoutMs: 4000,
-    });
+    await host.waitForName(provider.title.trim());
     expect(provider.requests).toHaveLength(1);
   } finally {
     await host.close();
@@ -85,7 +83,7 @@ test('the current model is used when naming.model is absent', async () => {
   );
   try {
     await host.command('/autoname Research default model selection');
-    await host.terminal.screen.waitForText('Session named:', {timeoutMs: 4000});
+    await host.waitForName(provider.title);
     expect(provider.requests).toHaveLength(1);
     expect(provider.requests[0]?.model).toBe('fixture');
   } finally {

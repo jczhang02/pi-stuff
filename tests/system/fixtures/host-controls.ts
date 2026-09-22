@@ -6,6 +6,19 @@ import {resolveExa} from '../../../src/web/exa-auth';
 
 // Test-only controls/observations. Never substitutes the extension's registration or I/O.
 export default function (pi: ExtensionAPI) {
+  pi.on('session_info_changed', async (_event, ctx) => {
+    await Effect.runPromise(
+      Effect.tryPromise({
+        try: () =>
+          writeFile(
+            join(ctx.cwd, 'observed-session-name'),
+            ctx.sessionManager.getSessionName() ?? '',
+          ),
+        catch: cause =>
+          new Error('Could not record native session name', {cause}),
+      }),
+    );
+  });
   pi.registerCommand('host-fork', {
     description:
       'Offline acceptance fixture: fork before or at the opening request',

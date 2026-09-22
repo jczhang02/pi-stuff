@@ -69,7 +69,7 @@ test('parent-linked sessions skip automatic naming but retain explicit generatio
     await host.terminal.screen.waitForText('Usage: /name', {timeoutMs: 4000});
     expect(provider.requests).toHaveLength(0);
     await host.command('/autoname Research linked sessions');
-    await host.terminal.screen.waitForText('Session named:', {timeoutMs: 4000});
+    await host.waitForName(provider.title);
     expect(provider.requests).toHaveLength(1);
   } finally {
     await host.close();
@@ -139,7 +139,7 @@ test('a failed opening is never named or deferred to a later successful exchange
     await host.invoke('', '{}');
     expect(provider.requests).toHaveLength(0);
     await host.command('/autoname Research opening failures');
-    await host.terminal.screen.waitForText('Session named:', {timeoutMs: 4000});
+    await host.waitForName(provider.title);
     expect(provider.requests).toHaveLength(1);
   } finally {
     await host.close();
@@ -157,10 +157,7 @@ test('an explicit opening name prevents automatic generation and preserves direc
   );
   try {
     await host.command('/autoname Research RTK command output');
-    await host.terminal.screen.waitForText(
-      'Session named: research: Investigate RTK command output',
-      {timeoutMs: 4000},
-    );
+    await host.waitForName(provider.title);
     await host.invoke('', '{}');
     expect(provider.requests).toHaveLength(1);
     provider.held = true;

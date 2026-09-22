@@ -116,9 +116,7 @@ test.each(['before', 'at'])(
       await host.invoke('', '{}');
       expect(provider.requests).toHaveLength(previousRequests);
       await host.command('/autoname Research the fork');
-      await host.terminal.screen.waitForText('Session named:', {
-        timeoutMs: 4000,
-      });
+      await host.waitForName(provider.title);
       expect(provider.requests).toHaveLength(previousRequests + 1);
     } finally {
       await host.close();

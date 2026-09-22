@@ -245,6 +245,7 @@ export async function launchPi(
       },
       async restart(args: readonly string[], waitForTui = true) {
         await screen.stop();
+        await rm(join(directory, 'observed-session-name'), {force: true});
         if (!driver) throw new Error('Fixture driver is closed');
         terminal = await driver.launch({
           ...launchOptions,
@@ -256,6 +257,23 @@ export async function launchPi(
       },
       close,
       command,
+      async waitForName(name: string) {
+        await screen.screen.waitUntil(
+          async () => {
+            try {
+              return (
+                (await readFile(
+                  join(directory, 'observed-session-name'),
+                  'utf8',
+                )) === name
+              );
+            } catch {
+              return false;
+            }
+          },
+          {timeoutMs: 4000},
+        );
+      },
       start,
       offered: () => offered,
       async invoke(name: string, parameters: string) {
