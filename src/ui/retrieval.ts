@@ -22,14 +22,15 @@ export function displayRetrieval<
 >(
   tool: ToolDefinition<Params, Details, State>,
   label: string,
-  target: (args: Static<Params>) => string,
+  target: (args: Static<Params>, expanded: boolean) => string,
+  inspect?: (output: string) => string[],
 ) {
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) => ({
     invalidate() {},
     render(width) {
       const rows = wrapTextWithAnsi(
-        `${label}(${target(args)})`,
+        `${label}(${target(args, context.expanded)})`,
         Math.max(1, width - 2),
       );
       const visible = context.expanded ? rows : rows.slice(0, 2);
@@ -58,7 +59,7 @@ export function displayRetrieval<
       .replace(/\n$/u, '');
     if (context.isError)
       return new Text(theme.fg('error', `  ⎿ ${output}`), 0, 0);
-    const notices: string[] = [];
+    const notices = inspect?.(output) ?? [];
     const details = result.details;
     if (details?.truncation?.truncated)
       notices.push(

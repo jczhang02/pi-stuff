@@ -268,3 +268,58 @@ test('Ls exposes upstream limits while keeping retained entries compact', async 
     await host.close();
   }
 }, 30000);
+
+test('WebFetch and WebRead share retrieval disclosure and preserve retained content', async () => {
+  const host = await launchPi('{}', undefined, 'web');
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch: () =>
+      new Response('WEB_BODY_ONE\nWEB_BODY_TWO\n', {
+        headers: {'content-type': 'text/plain'},
+      }),
+  });
+  try {
+    const result = await host.invoke(
+      'fetch_content',
+      JSON.stringify({urls: [String(server.url)], mode: 'raw'}),
+    );
+    expect(result).toContain('WEB_BODY_TWO');
+    const compact = await host.terminal.screen.text();
+    expect(compact).toContain('WebFetch(');
+    expect(compact).not.toContain('WEB_BODY_TWO');
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('WEB_BODY_TWO', {timeoutMs: 5000});
+    const id = /contentId: ([^\s]+)/u.exec(result)?.[1];
+    expect(id).toBeDefined();
+    await host.invoke(
+      'get_search_content',
+      JSON.stringify({contentId: id, find: 'WEB_BODY_TWO'}),
+    );
+    expect(await host.terminal.screen.text()).toContain('WebRead(');
+  } finally {
+    await server.stop(true);
+    await host.close();
+  }
+}, 30000);
+
+test('WebSearch exposes batch failure text even when the host result is not marked as an error', async () => {
+  const host = await launchPi('{}', undefined, 'web');
+  try {
+    await writeFile(
+      join(host.agent, 'auth.json'),
+      JSON.stringify({exa: {type: 'api_key', key: 'invalid\nfixture'}}),
+    );
+    const result = await host.invoke(
+      'web_search',
+      JSON.stringify({queries: ['offline authentication failure']}),
+    );
+    expect(result).toContain('error: authentication:');
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('WebSearch(');
+    expect(screen).toContain('error: authentication:');
+    expect(screen).not.toContain('invalid');
+  } finally {
+    await host.close();
+  }
+}, 30000);

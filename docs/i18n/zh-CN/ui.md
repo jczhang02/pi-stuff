@@ -2,7 +2,7 @@
 
 [English](../../../docs/ui.md) · 以英文版为准.
 
-[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具、Thoughts、欢迎页、检索聚合和交互设置尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
+[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. Thoughts、欢迎页、检索聚合和交互设置尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
 
 ## Bash
 
@@ -21,6 +21,10 @@ Edit 使用原生结果中的 patch, 采用单一行号栏, 删除行用旧行�
 ## 检索工具
 
 Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标展开或 Ctrl+O 显示文本. 无匹配、空结果、错误以及上游截断/结果数量限制警告保持可见. 只有实际 `ls` 工具调用显示 Ls, Shell 命令保留 Bash 身份. 保留原生 Read 图片缩放设置. 跨工具聚合仍在实现中.
+
+## Web 工具
+
+既有 Web access 工具分别显示为 WebSearch、WebFetch 和 WebRead. 紧凑标题显示操作数量或保留内容标签, 展开后显示 query/URL/content ID 以及分页/find 参数. 原 API 名称、输出和缓存行为不变. 批次失败项和保留内容分页提示在收起时仍可见. 展开本身不抓取更多内容.
 
 ## 配置
 

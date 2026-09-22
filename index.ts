@@ -6,13 +6,19 @@ import {registerWeb} from './src/web/register';
 import {registerRtk} from './src/rtk/register';
 import {registerRtkPanel} from './src/rtk/panel';
 import {registerUi} from './src/ui/register';
+import {displayWebTools} from './src/ui/web';
 
 export default async function (pi: ExtensionAPI) {
   const configuration = await Effect.runPromise(
     ConfigurationFile.load(join(getAgentDir(), 'pi-stuff.json')),
   );
   registerUi(pi, configuration.value.ui ?? {});
-  registerWeb(pi, configuration.value.web ?? {}, configuration.value.tools);
+  registerWeb(
+    pi,
+    configuration.value.web ?? {},
+    configuration.value.tools,
+    configuration.value.ui?.enabled === false ? undefined : displayWebTools,
+  );
   const rtk = registerRtk(pi, configuration.value.rtk ?? {});
   registerRtkPanel(pi, rtk, async settings => {
     try {
