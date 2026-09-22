@@ -691,3 +691,9 @@ Browse states by scenario. Text and raw terminal output accompany each image.
 ![welcome-catppuccin-latte-120-main](welcome-catppuccin-latte-120-main.png)
 
 [Text](welcome-catppuccin-latte-120-main.txt) · [ANSI](welcome-catppuccin-latte-120-main.ansi)
+
+### 默认 / Default · mocha · 80 columns
+
+![直角欢迎页, 深色80列](welcome-catppuccin-mocha-80-main.png)
+
+[Text](welcome-catppuccin-mocha-80-main.txt) · [ANSI](welcome-catppuccin-mocha-80-main.ansi)

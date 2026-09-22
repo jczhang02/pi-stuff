@@ -22,7 +22,7 @@
  • 两个边界都已补齐, 10 项测试通过.                                            │
                                                                                │
    ```ts                                                                       │
-     if (seen.has(item.id)) return false;                                      ┃
+     if (seen.has(item.id)) return false;                                      │
      seen.add(item.id);                                                        ┃
      return true;                                                              ┃
    ```                                                                         ┃

@@ -46,7 +46,7 @@ await runEffect(async () => {
             : replay
               ? 'Checking pagination'
               : SettingsManager.create(root).getHideThinkingBlock()
-                ? 'Thoughts for 4s'
+                ? 'Thoughts · 4s'
                 : 'Thoughts:',
           {timeoutMs: 15000},
         );

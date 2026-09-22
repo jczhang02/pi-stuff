@@ -174,7 +174,7 @@ function toolRows(
     ? detail
     : tool.state === 'running'
       ? detail.slice(-2)
-      : tool.name === 'Bash'
+      : tool.name === 'Bash' || (tool.name === 'Write' && tool.state === 'done')
         ? detail.slice(0, 3)
         : tool.name === 'Edit' && tool.state === 'done'
           ? bodyRows(tool.body, Math.max(1, width - 4), theme, true).slice(0, 6)
@@ -261,7 +261,7 @@ function textRows(
       ? `Thinking · ${entry.seconds}s`
       : open
         ? 'Thoughts:'
-        : `Thoughts for ${entry.seconds}s`;
+        : `Thoughts · ${entry.seconds}s`;
     const available = Math.max(1, width - 2);
     if (!open)
       return wrapTextWithAnsi(theme.fg('muted', label), available).map(

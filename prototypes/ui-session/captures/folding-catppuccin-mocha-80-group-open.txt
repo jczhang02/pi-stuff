@@ -4,7 +4,7 @@
  • Read(src/search/paginate.ts)
    ⎿  Read 4 lines · expand
 
- • Thoughts for 4s
+ • Thoughts · 4s
 
  • Searched 1 pattern · expand
 

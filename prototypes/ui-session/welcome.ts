@@ -43,10 +43,10 @@ export function welcomeLines(
   ).map(text => theme.fg('accent', text));
   const leading = wide ? '───' : '─';
   const top =
-    border('╭' + leading) +
+    border('┌' + leading) +
     theme.bold(' Pi Stuff ') +
-    border('─'.repeat(width - leading.length - 12) + '╮');
-  const bottom = border('╰' + '─'.repeat(width - 2) + '╯');
+    border('─'.repeat(width - leading.length - 12) + '┐');
+  const bottom = border('└' + '─'.repeat(width - 2) + '┘');
   const model = theme.fg('accent', 'gpt-5.4');
   if (!wide)
     return [

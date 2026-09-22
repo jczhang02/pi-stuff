@@ -4,7 +4,7 @@
 
 ## Review scope
 
-Use this spec to review the conversation UI at prototype `d89f1a6`, product baseline `cd0f174`, Pi 0.85.1 and Bun 1.4.0. Production adoption is pending. Three unimplemented proposals appear at the end.
+Use this spec to review the conversation UI in the current prototype on `codex/ui-session-prototype`, product baseline `cd0f174`, Pi 0.85.1 and Bun 1.4.0. Production adoption is pending. Three unimplemented proposals appear at the end.
 
 Preserve native user messages, footer, input and session controls. Todo, agents, Goal, background tasks, BTW, notification systems, session naming and a separate tool inspector are excluded. Native compaction/branch/skill/direct-shell output remains in the research inventory; old candidates do not establish new requirements.
 
@@ -14,11 +14,15 @@ Preserve native user messages, footer, input and session controls. Todo, agents,
 
 ### Welcome, user messages and footer
 
-Welcome retains the old Pi Stuff boxed composition and responsive narrow layout. User messages use native UserMessageComponent, including Markdown, background and padding. The editor, scrolling and footer remain Pi-owned; no custom statusline is installed. Welcome inventory and model labels in the fixed fixture are samples, not live product counts.
+Welcome uses square corners (┌ ┐ └ ┘), retaining the old Pi Stuff boxed composition and responsive narrow layout. User messages use native UserMessageComponent, including Markdown, background and padding. The editor, scrolling and footer remain Pi-owned; no custom statusline is installed. Welcome inventory and model labels in the fixed fixture are samples, not live product counts.
 
 Welcome, Default, latte, 120 columns
 
 ![Welcome, Default, latte, 120 columns](../prototypes/ui-session/captures/welcome-catppuccin-latte-120-main.png)
+
+Welcome, square corners, mocha, 80 columns
+
+![Welcome, square corners, mocha, 80 columns](../prototypes/ui-session/captures/welcome-catppuccin-mocha-80-main.png)
 
 Live session, First turn complete, latte, 120 columns
 
@@ -26,7 +30,7 @@ Live session, First turn complete, latte, 120 columns
 
 ### Thoughts: hidden and visible
 
-Both states retain a muted leading dot. Completed hidden form: • Thoughts for 4s. Visible form: • Thoughts: body, with upright muted Markdown on the same line, continuation aligned with message text and elapsed time adjacent to the end. Running form currently uses Thinking · Ns. There is no separate card or heading row. Pi hideThinkingBlock determines the default. Clicking changes one entry; native Ctrl+T or /settings changes the default and clears local overrides. Ctrl+O changes tools only.
+Both states retain a muted leading dot. Completed hidden form: • Thoughts · 4s. Visible form: • Thoughts: body, with upright muted Markdown on the same line, continuation aligned with message text and elapsed time adjacent to the end. Running form currently uses Thinking · Ns. There is no separate card or heading row. Pi hideThinkingBlock determines the default. Clicking changes one entry; native Ctrl+T or /settings changes the default and clears local overrides. Ctrl+O changes tools only.
 
 Hidden Thoughts, Default, latte, 120 columns
 
@@ -96,7 +100,7 @@ Web tools, WebFetch expanded, latte, 120 columns
 
 ### Edit, Write and syntax
 
-Edit uses a unified diff with one line-number gutter: deletions use old numbers, additions/context use new numbers. +/- signs and added/removed backgrounds preserve meaning alongside syntax colors. Old/new source is highlighted separately. Compact Edit shows at most six rendered changed rows; expanded Edit restores context and the full target. Wrapped rows do not repeat line numbers or signs. Write defaults to path and line count; expansion shows highlighted content. Diff rows are authored fixture data.
+Edit uses a unified diff with one line-number gutter: deletions use old numbers, additions/context use new numbers. +/- signs and added/removed backgrounds preserve meaning alongside syntax colors. Old/new source is highlighted separately. Compact Edit shows at most six rendered changed rows; expanded Edit restores context and the full target. Wrapped rows do not repeat line numbers or signs. Write defaults to path, line count and the first three rendered rows of highlighted content. Short content appears in full; expansion reveals the remaining rows. Diff rows are authored fixture data.
 
 Edit and Write, Ctrl+O expanded, latte, 120 columns
 

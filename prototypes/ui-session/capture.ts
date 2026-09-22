@@ -183,7 +183,7 @@ await runEffect(async () => {
         await save(
           session,
           'completed',
-          ['Thoughts for 4s', '8 passed', draft],
+          ['Thoughts · 4s', '8 passed', draft],
           host.palette,
           theme,
         );
@@ -246,7 +246,7 @@ await runEffect(async () => {
             host.palette,
             theme,
           );
-          await click(session, 'Thoughts for 4s');
+          await click(session, 'Thoughts · 4s');
           await session.screen.waitForText('Thoughts:', wait);
           await save(
             session,
@@ -260,15 +260,15 @@ await runEffect(async () => {
           scene.name === 'thoughts-visible'
         ) {
           const hidden = scene.name === 'thoughts';
-          await click(session, hidden ? 'Thoughts for 4s' : 'Thoughts:');
+          await click(session, hidden ? 'Thoughts · 4s' : 'Thoughts:');
           await session.screen.waitForText(
-            hidden ? 'Thoughts:' : 'Thoughts for 4s',
+            hidden ? 'Thoughts:' : 'Thoughts · 4s',
             wait,
           );
           await save(
             session,
             'open',
-            [hidden ? 'Thoughts:' : 'Thoughts for 4s', draft],
+            [hidden ? 'Thoughts:' : 'Thoughts · 4s', draft],
             host.palette,
             theme,
           );
@@ -278,19 +278,19 @@ await runEffect(async () => {
             wait,
           );
           await session.screen.waitForText(
-            hidden ? 'Thoughts:' : 'Thoughts for 4s',
+            hidden ? 'Thoughts:' : 'Thoughts · 4s',
             wait,
           );
           await save(
             session,
             'setting-toggled',
-            [hidden ? 'Thoughts:' : 'Thoughts for 4s', draft],
+            [hidden ? 'Thoughts:' : 'Thoughts · 4s', draft],
             host.palette,
             theme,
           );
           await session.keyboard.press('Control+T');
           await session.screen.waitForText(
-            hidden ? 'Thoughts for 4s' : 'Thoughts:',
+            hidden ? 'Thoughts · 4s' : 'Thoughts:',
             wait,
           );
         } else if (scene.name === 'web') {
@@ -363,7 +363,7 @@ await runEffect(async () => {
           scene.name === 'failures'
             ? 'Received:'
             : scene.name === 'thoughts'
-              ? 'Thoughts for 4s'
+              ? 'Thoughts · 4s'
               : scene.name === 'thoughts-visible'
                 ? 'Thoughts:'
                 : scene.name === 'web'

@@ -8,7 +8,10 @@
      21 +   return {items, nextCursor: page.cursor};
 
  • Write(tests/search/pagination-boundary.test.ts)
-   ⎿  Wrote 7 lines · expand
+   ⎿  Wrote 7 lines · 4 more lines · expand
+     1 │ test("skips IDs from the previous page", () => {
+     2 │   const page = {items: [{id: "a"}, {id: "b"}], cursor: "next"};
+     3 │   const result = paginate(page, ["a"]);
 
  • Bash(bun test tests/search)
    ⎿  8 passed · 0 failed · 0.4s · 10 more lines · expand
@@ -19,9 +22,6 @@
  • 已修复分页重复: 保留结果顺序, 游标原样传递.
 
    新增边界测试, 8 项测试通过.
-
-
-
 
 
 

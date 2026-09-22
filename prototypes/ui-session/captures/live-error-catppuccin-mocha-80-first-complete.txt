@@ -1,8 +1,8 @@
-
- • Read web content 3 times · expand
-
  • Write(tests/search/pagination-boundary.test.ts)
-   ⎿  Wrote 7 lines · expand
+   ⎿  Wrote 7 lines · 4 more lines · expand
+     1 │ test("skips IDs from the previous page", () => {
+     2 │   const page = {items: [{id: "a"}, {id: "b"}], cursor: "next"};
+     3 │   const result = paginate(page, ["a"]);
 
  • Bash(bun test tests/search)
    ⎿  Exit 1 · skips IDs from the previous page · 3 more lines · expand

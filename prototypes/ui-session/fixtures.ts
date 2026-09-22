@@ -293,7 +293,7 @@ export const scenes = [
     name: 'folding',
     title: '折叠边界',
     note: '展开工具与普通消息对齐; Thoughts 独立服从 Pi 设置, 失败调用仍可见.',
-    tokens: ['Thoughts for 4s', 'File not found', '8 passed'],
+    tokens: ['Thoughts · 4s', 'File not found', '8 passed'],
   },
   {
     name: 'tools',
@@ -334,8 +334,8 @@ export const scenes = [
   {
     name: 'thoughts',
     title: 'Thoughts · hidden',
-    note: 'hideThinkingBlock=true: 默认显示 • Thoughts for 4s. 点击后显示 • Thoughts: 正文, 前缀与正文同一行.',
-    tokens: ['Thoughts for 4s'],
+    note: 'hideThinkingBlock=true: 默认显示 • Thoughts · 4s. 点击后显示 • Thoughts: 正文, 前缀与正文同一行.',
+    tokens: ['Thoughts · 4s'],
   },
   {
     name: 'thoughts-visible',
@@ -365,7 +365,7 @@ export const scenes = [
     name: 'replay',
     title: '动态执行',
     note: '从思考到工具运行再到完成, 验证自动收起和 Esc 中断.',
-    tokens: ['Thoughts for 4s'],
+    tokens: ['Thoughts · 4s'],
   },
 ] as const;
 export type SceneName = (typeof scenes)[number]['name'];

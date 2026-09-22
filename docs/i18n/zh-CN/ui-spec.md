@@ -4,7 +4,7 @@
 
 ## 审阅范围
 
-本文用于审阅会话 UI. 当前规则对应原型 `d89f1a6`, 产品基线为 `cd0f174`, 使用 Pi 0.85.1 和 Bun 1.4.0. 生产实现尚未采纳, 待讨论的三项建议列在文末.
+本文用于审阅会话 UI. 当前规则对应 `codex/ui-session-prototype` 分支的原型, 产品基线为 `cd0f174`, 使用 Pi 0.85.1 和 Bun 1.4.0. 生产实现尚未采纳, 待讨论的三项建议列在文末.
 
 用户消息、状态栏、原生输入与会话控制保留现状. Todo、agents、Goal、后台任务、BTW、通知系统、会话命名和独立工具检查器不纳入. 原生上下文摘要、分支摘要、Skill 和直接 shell 输出见研究盘点.
 
@@ -14,11 +14,15 @@
 
 ### 欢迎页、用户消息与状态栏
 
-欢迎页保留 pi-stuff-old 的盒式结构及窄屏布局. 用户消息复用原生 UserMessageComponent, 保留 Markdown、背景和边距. 输入框、滚动和状态栏由 Pi 管理, 不安装自定义 footer. 欢迎页的模型和加载数量是固定样例, 不代表实时产品清单.
+欢迎页使用直角边框 (┌ ┐ └ ┘), 保留 pi-stuff-old 的盒式结构及窄屏布局. 用户消息复用原生 UserMessageComponent, 保留 Markdown、背景和边距. 输入框、滚动和状态栏由 Pi 管理, 不安装自定义 footer. 欢迎页的模型和加载数量是固定样例, 不代表实时产品清单.
 
 欢迎页, 默认状态, 浅色 120 列
 
 ![欢迎页, 默认状态, 浅色 120 列](../../../prototypes/ui-session/captures/welcome-catppuccin-latte-120-main.png)
+
+欢迎页, 直角边框, 深色 80 列
+
+![欢迎页, 直角边框, 深色 80 列](../../../prototypes/ui-session/captures/welcome-catppuccin-mocha-80-main.png)
 
 连续会话, 第一轮完成, 浅色 120 列
 
@@ -26,7 +30,7 @@
 
 ### Thoughts 的显示与隐藏
 
-两种状态均保留灰色前导点. 完成后 hidden 显示 • Thoughts for 4s. no hidden 显示 • Thoughts: 正文, 前缀与低对比度的正体 Markdown 同行, 续行与消息正文对齐, 耗时紧随末尾. 运行中当前使用 Thinking · Ns. 不增加独立卡片或标题行. 默认服从 Pi hideThinkingBlock. 点击改变单条, 原生 Ctrl+T 或 /settings 改变默认并清除局部覆盖, Ctrl+O 只改变工具.
+两种状态均保留灰色前导点. 完成后 hidden 显示 • Thoughts · 4s. no hidden 显示 • Thoughts: 正文, 前缀与低对比度的正体 Markdown 同行, 续行与消息正文对齐, 耗时紧随末尾. 运行中当前使用 Thinking · Ns. 不增加独立卡片或标题行. 默认服从 Pi hideThinkingBlock. 点击改变单条, 原生 Ctrl+T 或 /settings 改变默认并清除局部覆盖, Ctrl+O 只改变工具.
 
 思考收起, 默认状态, 浅色 120 列
 
@@ -96,7 +100,7 @@ Web 工具, 展开 WebFetch, 浅色 120 列
 
 ### Edit、Write 与语法高亮
 
-Edit 使用统一 diff 与单列行号: 删除用旧行号, 新增及上下文用新行号. +/- 标记和增删底色与语法颜色共同表达改动. 新旧源码分别高亮. 收起最多显示六行渲染后的改动行, 展开恢复上下文与完整目标. 折行不重复行号或增删符号. Write 默认显示路径与行数, 展开显示高亮正文. Diff 行由样例指定.
+Edit 使用统一 diff 与单列行号: 删除用旧行号, 新增及上下文用新行号. +/- 标记和增删底色与语法颜色共同表达改动. 新旧源码分别高亮. 收起最多显示六行渲染后的改动行, 展开恢复上下文与完整目标. 折行不重复行号或增删符号. Write 默认显示路径、写入行数与前三行渲染后的高亮正文. 短内容完整显示, 展开后显示其余内容. Diff 行由样例指定.
 
 Edit 与 Write, Ctrl+O 展开, 浅色 120 列
 
