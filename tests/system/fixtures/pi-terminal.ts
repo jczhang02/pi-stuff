@@ -11,6 +11,11 @@ interface ModelCall {
   thinking?: string;
 }
 
+interface InputPause {
+  offset: number;
+  until: Promise<void>;
+}
+
 const Request = Schema.Struct({
   messages: Schema.Array(
     Schema.Struct({
@@ -55,6 +60,7 @@ export async function launchPi(
   let offered: string[] = [];
   let remaining: ModelCall[] = [];
   let simultaneous: ModelCall[] = [];
+  let inputPause: InputPause | undefined;
   let callIndex = 0;
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -78,6 +84,7 @@ export async function launchPi(
         callIndex++;
       }
       const finished = (last?.role === 'tool' && !next) || !tool;
+      const pause = finished ? undefined : inputPause;
       if (last?.role === 'tool')
         result = Schema.is(Schema.String)(last.content)
           ? last.content
@@ -89,7 +96,13 @@ export async function launchPi(
                 index,
                 id: `rtk_${turn}_${callIndex}_${index}`,
                 type: 'function',
-                function: {name: call.name, arguments: call.parameters},
+                function: {
+                  name: call.name,
+                  arguments:
+                    index === 0 && pause
+                      ? call.parameters.slice(0, pause.offset)
+                      : call.parameters,
+                },
               })),
             }
           : {content: response?.text ?? `RTK_TURN_${turn}_DONE`};
@@ -119,19 +132,56 @@ export async function launchPi(
             })}\n\n`,
         )
         .join('');
-      return new Response(
-        `${preamble}data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({
+      const initial = `${preamble}data: ${JSON.stringify(chunk)}\n\n`;
+      const completion = `data: ${JSON.stringify({
+        ...chunk,
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: finished ? 'stop' : 'tool_calls',
+          },
+        ],
+      })}\n\ndata: [DONE]\n\n`;
+      if (pause && tool) {
+        const rest = `data: ${JSON.stringify({
           ...chunk,
           choices: [
             {
               index: 0,
-              delta: {},
-              finish_reason: finished ? 'stop' : 'tool_calls',
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    function: {arguments: tool.parameters.slice(pause.offset)},
+                  },
+                ],
+              },
+              finish_reason: null,
             },
           ],
-        })}\n\ndata: [DONE]\n\n`,
-        {headers: {'content-type': 'text/event-stream'}},
-      );
+        })}\n\n`;
+        let cancelled = false;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async start(controller) {
+              const encoder = new TextEncoder();
+              controller.enqueue(encoder.encode(initial));
+              await pause.until;
+              if (cancelled || request.signal.aborted) return;
+              controller.enqueue(encoder.encode(rest + completion));
+              controller.close();
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          {headers: {'content-type': 'text/event-stream'}},
+        );
+      }
+      return new Response(initial + completion, {
+        headers: {'content-type': 'text/event-stream'},
+      });
     },
   });
   let driver: TerminalControl | undefined;
@@ -264,9 +314,11 @@ export async function launchPi(
       call: ModelCall,
       next: ModelCall[] = [],
       parallel: ModelCall[] = [],
+      pause?: InputPause,
     ) {
       remaining = [...next];
       simultaneous = [...parallel];
+      inputPause = pause;
       callIndex = 0;
       tool = call.name ? call : undefined;
       response = undefined;
@@ -280,9 +332,16 @@ export async function launchPi(
       command,
       start: (name: string, parameters: string) =>
         startCall({name, parameters}),
+      startPartialInput: (
+        name: string,
+        parameters: string,
+        offset: number,
+        until: Promise<void>,
+      ) => startCall({name, parameters}, [], [], {offset, until}),
       sentAssistant: () => sentAssistant,
       async startResponse(text: string, thinking = '') {
         tool = undefined;
+        inputPause = undefined;
         remaining = [];
         simultaneous = [];
         response = {text, thinking};

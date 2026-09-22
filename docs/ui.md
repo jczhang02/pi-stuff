@@ -32,6 +32,8 @@ Setup and spawn errors remain visible even with a zero-row preview. The followin
 
 Write retains native file execution and shows the written source with Pi syntax highlighting. The compact result shows three rendered rows and a hidden-row count; native disclosure reveals the complete retained source. The result summary counts source lines rather than terminal wrapping. Error results retain the actual tool error text.
 
+While model arguments are still streaming, the tool heading stays visible without claiming a completed write. Real-host tests check typing, resizing to 60 columns, completion and Esc before the arguments finish. The cancelled call creates no file, and the next turn can write normally.
+
 CRLF content uses the same display normalization as native Write, so previews do not insert blank rows between source lines. Files retain their original line endings and tabs. Tool targets, Bash output, retrieval text, result blocks and code previews use Pi's terminal-sequence stripping helper before styling. This cleaning affects presentation only and remains active when RTK's model-result cleanup is disabled.
 
 ## Edit
@@ -59,6 +61,8 @@ Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mo
 Parallel calls keep their original order even when they finish in a different order. A pending call remains visible; when it succeeds, it joins adjacent successful calls without crossing a failure. Session shutdown releases the old context before Pi can render a transition frame, so creating a new session does not crash or retain the previous group's members.
 
 The group summary can collapse its members even after Ctrl+O expanded all tools. A later Ctrl+O change resets that local override. Assistant text, Thoughts (including hidden Thoughts), writes and new user turns separate groups. Host tests also cover local result limits, no-match outcomes and Web batch failures between successful reads.
+
+Cancelling a pending Web call between completed reads leaves its result visible in place. The successful reads remain separate groups, and a later turn does not merge across the cancelled call or replay the request. The assistant's cancellation message remains native.
 
 These 100-column captures show global expansion followed by a click on the group summary. Pi 0.87.0 / Bun 1.4.0, default dark theme, isolated deterministic provider, with native quiet startup enabled. Export fonts match the welcome captures. The global status remains expanded after the local group closes.
 
