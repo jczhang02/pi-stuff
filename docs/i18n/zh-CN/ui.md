@@ -2,7 +2,7 @@
 
 [English](../../../docs/ui.md) · 以英文版为准.
 
-[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. Thoughts、欢迎页、检索聚合和交互设置尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
+[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)正在实现. 本分支目前修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. Thoughts、欢迎页和交互设置尚未实现. 原型仍是视觉参考, 不代表生产验收通过.
 
 ## Bash
 
@@ -20,7 +20,7 @@ Edit 使用原生结果中的 patch, 采用单一行号栏, 删除行用旧行�
 
 ## 检索工具
 
-Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标展开或 Ctrl+O 显示文本. 无匹配、空结果、错误以及上游截断/结果数量限制警告保持可见. 只有实际 `ls` 工具调用显示 Ls, Shell 命令保留 Bash 身份. 保留原生 Read 图片缩放设置. 跨工具聚合仍在实现中.
+Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标展开或 Ctrl+O 显示文本. 无匹配、空结果、错误以及上游截断/结果数量限制警告保持可见. 只有实际 `ls` 工具调用显示 Ls, Shell 命令保留 Bash 身份. 保留原生 Read 图片缩放设置. 连续成功的本地和 Web 调用现在组成紧凑检索组. 点击摘要显示左侧对齐的紧凑工具, 再点击工具展开保留结果. Ctrl+O 通过原生工具展开显示组内结果. 运行中、空结果、警告、失败和普通 Bash 保持在组外. 索引只保存调用标识和计数, 不复制输出.
 
 ## Web 工具
 
@@ -34,6 +34,7 @@ Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标�
 {
   "ui": {
     "enabled": true,
+    "retrievalGroups": true,
     "bashPreviewLines": 3
   }
 }
@@ -46,3 +47,5 @@ UI 实现由 `src/ui/` 管理, 入口在共享配置解码后注册. 其余配�
 ## 验证状态
 
 首批系统测试使用 Bun 1.4.0 下真实 Pi 0.85.1 和隔离的确定性 provider, 检查收起/展开、模型可见内容、超时块、宿主 Shell 设置和全局 UI 控制. 编译宿主、完整 UI、独立审查、性能和真实模型长时间验收仍待完成.
+
+当前真实宿主回归测试在 reload 后失败: Pi 在 session_start 注册回调之前重建历史工具组件, 这些组件因此保留原生 renderer. 当前会话聚合和单工具展开已通过, 历史展示尚未通过, 交付前必须修复. `retrievalGroups` 默认开启, 设为 `false` 则分别显示检索工具.

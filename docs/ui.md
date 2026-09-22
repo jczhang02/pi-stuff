@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/ui.md) · English is normative.
 
-Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Thoughts, welcome, retrieval grouping and interactive settings are not implemented yet. The prototype remains visual reference, not production acceptance evidence.
+Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Thoughts, welcome and interactive settings are not implemented yet. The prototype remains visual reference, not production acceptance evidence.
 
 ## Bash
 
@@ -20,7 +20,7 @@ Edit renders the native result patch with one line-number gutter, removal number
 
 ## Retrieval tools
 
-Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mouse disclosure or Ctrl+O reveals their text. No-match, empty and error results remain visible, as do upstream truncation and result-limit warnings. Ls is used only for an actual `ls` tool call; shell commands keep their Bash identity. Native Read image-resizing settings are preserved. Cross-tool aggregation remains under implementation.
+Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mouse disclosure or Ctrl+O reveals their text. No-match, empty and error results remain visible, as do upstream truncation and result-limit warnings. Ls is used only for an actual `ls` tool call; shell commands keep their Bash identity. Native Read image-resizing settings are preserved. Successful adjacent local and Web calls now form a compact group. Click its summary to show aligned compact tools, then click a tool to reveal its retained result. Ctrl+O reveals grouped results through native tool expansion. Pending calls, empty results, warnings, failures and ordinary Bash remain outside groups. The index stores call identities and counts, not duplicate output.
 
 ## Web tools
 
@@ -34,10 +34,13 @@ Add `ui` to the global `pi-stuff.json` beside existing `web`, `tools` and `rtk` 
 {
   "ui": {
     "enabled": true,
+    "retrievalGroups": true,
     "bashPreviewLines": 3
   }
 }
 ```
+
+`retrievalGroups` defaults to `true`; `false` keeps individual retrieval tools.
 
 `enabled` defaults to `true`; `false` leaves native tool rendering in place. `bashPreviewLines` is a nonnegative integer and defaults to `3`. Zero hides the compact body while retaining its hidden-row count. It does not change model-visible output, upstream truncation or expanded content.
 
@@ -45,4 +48,4 @@ The UI implementation is owned by `src/ui/`; the entrypoint registers it after s
 
 ## Verification status
 
-The initial system tests use actual Pi 0.85.1 under Bun 1.4.0 with an isolated deterministic provider. They check compact/expanded output, model-visible content, timeout blocks, host shell settings and global UI controls. Compiled-host, full UI, independent review, performance and extended real-model acceptance remain outstanding.
+The initial system tests use actual Pi 0.85.1 under Bun 1.4.0 with an isolated deterministic provider. They check compact/expanded output, model-visible content, timeout blocks, host shell settings and global UI controls. A real-host regression test currently fails after reload: Pi rebuilds historical tool components before the session-start registration callbacks run, so those components retain native renderers. Live grouping and individual disclosure pass, but history acceptance does not. This lifecycle issue must be fixed before delivery. Compiled-host, full UI, independent review, performance and extended real-model acceptance remain outstanding.

@@ -45,6 +45,8 @@ export async function launchPi(
   let result = '';
   let reloads = 0;
   let offered: string[] = [];
+  let remaining: {name: string; parameters: string}[] = [];
+  let callIndex = 0;
   const server = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
@@ -57,7 +59,13 @@ export async function launchPi(
       const body = Schema.decodeUnknownSync(Request)(await request.json());
       offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
-      const finished = last?.role === 'tool' || tool === '';
+      const next = last?.role === 'tool' ? remaining.shift() : undefined;
+      if (next) {
+        tool = next.name;
+        args = next.parameters;
+        callIndex++;
+      }
+      const finished = (last?.role === 'tool' && !next) || tool === '';
       if (last?.role === 'tool')
         result = Schema.is(Schema.String)(last.content)
           ? last.content
@@ -68,7 +76,7 @@ export async function launchPi(
             tool_calls: [
               {
                 index: 0,
-                id: `rtk_${turn}`,
+                id: `rtk_${turn}_${callIndex}`,
                 type: 'function',
                 function: {name: tool, arguments: args},
               },
@@ -161,7 +169,7 @@ export async function launchPi(
           : [
               '--tools',
               profile === 'ui'
-                ? 'bash,read,write,edit,grep,find,ls'
+                ? 'bash,read,write,edit,grep,find,ls,web_search,fetch_content,get_search_content'
                 : 'bash,read',
             ]),
         '--provider',
@@ -216,7 +224,13 @@ export async function launchPi(
       await screen.keyboard.type(text.includes(' ') ? `${text} ` : text);
       await screen.keyboard.press('Enter');
     }
-    async function start(name: string, parameters: string) {
+    async function start(
+      name: string,
+      parameters: string,
+      next: {name: string; parameters: string}[] = [],
+    ) {
+      remaining = [...next];
+      callIndex = 0;
       tool = name;
       args = parameters;
       result = '';
@@ -244,6 +258,14 @@ export async function launchPi(
           throw error;
         }
         return result;
+      },
+      async sequence(calls: {name: string; parameters: string}[]) {
+        const [first, ...next] = calls;
+        if (!first) throw new Error('A sequence needs at least one call');
+        await start(first.name, first.parameters, next);
+        await screen.screen.waitForText(`RTK_TURN_${turn}_DONE`, {
+          timeoutMs: 15000,
+        });
       },
       async reload() {
         reloads++;

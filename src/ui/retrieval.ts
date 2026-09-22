@@ -1,3 +1,4 @@
+import type {RetrievalGroups} from './groups';
 import type {Static, TSchema} from 'typebox';
 import type {
   ToolDefinition,
@@ -24,11 +25,26 @@ export function displayRetrieval<
   label: string,
   target: (args: Static<Params>, expanded: boolean) => string,
   inspect?: (output: string) => string[],
+  groups?: RetrievalGroups,
 ) {
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) => ({
     invalidate() {},
+    handleMouse(event) {
+      if (event.y !== 0 || !groups?.summary(context.toolCallId)) return;
+      if (event.type === 'click' && event.button === 'left') {
+        groups.toggle(context.toolCallId);
+        context.invalidate();
+        return {handled: true};
+      }
+      return undefined;
+    },
     render(width) {
+      const summary = groups?.summary(context.toolCallId);
+      const heading = summary
+        ? [truncateToWidth(theme.fg('muted', `• ${summary}`), width)]
+        : [];
+      if (groups && !groups.visible(context.toolCallId)) return heading;
       const rows = wrapTextWithAnsi(
         `${label}(${target(args, context.expanded)})`,
         Math.max(1, width - 2),
@@ -38,16 +54,19 @@ export function displayRetrieval<
         context.isError ? 'error' : context.isPartial ? 'warning' : 'success',
         '•',
       );
-      return visible.map((line, index) => {
-        const shortened = !context.expanded && index === 1 && rows.length > 2;
-        const text = shortened
-          ? truncateToWidth(`${line}…`, Math.max(1, width - 2), '…')
-          : line;
-        return truncateToWidth(
-          `${index === 0 ? `${dot} ` : '  '}${theme.fg('toolTitle', text)}`,
-          width,
-        );
-      });
+      return [
+        ...heading,
+        ...visible.map((line, index) => {
+          const shortened = !context.expanded && index === 1 && rows.length > 2;
+          const text = shortened
+            ? truncateToWidth(`${line}…`, Math.max(1, width - 2), '…')
+            : line;
+          return truncateToWidth(
+            `${index === 0 ? `${dot} ` : '  '}${theme.fg('toolTitle', text)}`,
+            width,
+          );
+        }),
+      ];
     },
   });
   tool.renderResult = (result, options, theme, context) => {
@@ -57,8 +76,10 @@ export function displayRetrieval<
       )
       .join('\n')
       .replace(/\n$/u, '');
-    if (context.isError)
+    if (context.isError) {
+      groups?.finish(context.toolCallId, false);
       return new Text(theme.fg('error', `  ⎿ ${output}`), 0, 0);
+    }
     const notices = inspect?.(output) ?? [];
     const details = result.details;
     if (details?.truncation?.truncated)
@@ -77,6 +98,8 @@ export function displayRetrieval<
       output === 'No matches found' ||
       output === 'No files found matching pattern' ||
       output === '(empty directory)';
+    if (!options.isPartial)
+      groups?.finish(context.toolCallId, notices.length === 0 && !empty);
     let cachedWidth = -1;
     let cached: string[] = [];
     return {
@@ -84,6 +107,7 @@ export function displayRetrieval<
         cachedWidth = -1;
       },
       render(width) {
+        if (groups && !groups.visible(context.toolCallId)) return [];
         if (width === cachedWidth) return cached;
         const rows = wrapTextWithAnsi(
           output || '(no output)',

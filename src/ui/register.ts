@@ -8,14 +8,20 @@ import {
   type ExtensionAPI,
   type BashToolOptions,
 } from '@earendil-works/pi-coding-agent';
+import {RetrievalGroups} from './groups';
 import {createBashDisplay} from './bash';
 import {createWriteDisplay} from './write';
 import {createEditDisplay} from './edit';
 import {displayRetrieval} from './retrieval';
 import type {UiSettings} from './settings';
 
-export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
+export function registerUi(
+  pi: ExtensionAPI,
+  settings: UiSettings,
+): RetrievalGroups | undefined {
   if (settings.enabled === false) return;
+  const groups =
+    settings.retrievalGroups === false ? undefined : new RetrievalGroups(pi);
   pi.on('session_start', (_event, ctx) => {
     if (!ctx.hasUI) return;
     // Only replace a native definition. Other extensions retain their renderers.
@@ -47,6 +53,8 @@ export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
           }),
           'Read',
           args => args.path ?? '',
+          undefined,
+          groups,
         ),
       );
     if (native('grep'))
@@ -55,6 +63,8 @@ export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
           createGrepToolDefinition(ctx.cwd),
           'Grep',
           args => `${args.pattern ?? ''}, ${args.path ?? '.'}`,
+          undefined,
+          groups,
         ),
       );
     if (native('find'))
@@ -63,6 +73,8 @@ export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
           createFindToolDefinition(ctx.cwd),
           'Find',
           args => `${args.pattern ?? ''}, ${args.path ?? '.'}`,
+          undefined,
+          groups,
         ),
       );
     if (native('ls'))
@@ -71,6 +83,8 @@ export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
           createLsToolDefinition(ctx.cwd),
           'Ls',
           args => args.path ?? '.',
+          undefined,
+          groups,
         ),
       );
     if (!native('bash')) return;
@@ -81,4 +95,5 @@ export function registerUi(pi: ExtensionAPI, settings: UiSettings): void {
     if (shell !== undefined) options.shellPath = shell;
     pi.registerTool(createBashDisplay(ctx.cwd, options, settings));
   });
+  return groups;
 }

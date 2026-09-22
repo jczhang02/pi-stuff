@@ -1,3 +1,4 @@
+import type {RetrievalGroups} from './groups';
 import type {createWebTools} from '../web/tools';
 import {displayRetrieval} from './retrieval';
 
@@ -21,6 +22,7 @@ function webNotices(output: string): string[] {
 
 export function displayWebTools(
   tools: ReturnType<typeof createWebTools>,
+  groups?: RetrievalGroups,
 ): void {
   displayRetrieval(
     tools.webSearch,
@@ -30,6 +32,7 @@ export function displayWebTools(
         ? (args.queries?.join('; ') ?? '')
         : `${args.queries?.length ?? 0} ${args.queries?.length === 1 ? 'query' : 'queries'}`,
     webNotices,
+    groups,
   );
   displayRetrieval(
     tools.fetchContent,
@@ -39,6 +42,7 @@ export function displayWebTools(
         ? (args.urls?.join('; ') ?? '')
         : `${args.urls?.length ?? 0} ${args.urls?.length === 1 ? 'page' : 'pages'}`,
     webNotices,
+    groups,
   );
   displayRetrieval(
     tools.getSearchContent,
@@ -48,5 +52,6 @@ export function displayWebTools(
         ? `${args.contentId ?? ''}${args.find === undefined ? `, offset ${args.offset ?? 0}${args.limit === undefined ? '' : `, limit ${args.limit}`}` : `, find ${args.find}`}`
         : 'retained content',
     webNotices,
+    groups,
   );
 }

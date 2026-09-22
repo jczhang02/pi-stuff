@@ -12,12 +12,14 @@ export default async function (pi: ExtensionAPI) {
   const configuration = await Effect.runPromise(
     ConfigurationFile.load(join(getAgentDir(), 'pi-stuff.json')),
   );
-  registerUi(pi, configuration.value.ui ?? {});
+  const groups = registerUi(pi, configuration.value.ui ?? {});
   registerWeb(
     pi,
     configuration.value.web ?? {},
     configuration.value.tools,
-    configuration.value.ui?.enabled === false ? undefined : displayWebTools,
+    configuration.value.ui?.enabled === false
+      ? undefined
+      : tools => displayWebTools(tools, groups),
   );
   const rtk = registerRtk(pi, configuration.value.rtk ?? {});
   registerRtkPanel(pi, rtk, async settings => {

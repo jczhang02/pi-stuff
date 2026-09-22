@@ -100,7 +100,11 @@ test('Global Bash preview limit changes visible rows while retaining the full re
 }, 30000);
 
 test('Write previews three source rows and reveals the complete written file', async () => {
-  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"retrievalGroups":false}}',
+    undefined,
+    'ui',
+  );
   try {
     const content =
       'export const first = 1;\nexport const second = 2;\nexport const third = 3;\nexport const fourth = 4;\n';
@@ -123,7 +127,11 @@ test('Write previews three source rows and reveals the complete written file', a
 }, 30000);
 
 test('Edit displays real source line numbers and added/removed counts', async () => {
-  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"retrievalGroups":false}}',
+    undefined,
+    'ui',
+  );
   try {
     await writeFile(
       join(host.directory, 'change.ts'),
@@ -156,7 +164,11 @@ test('Edit displays real source line numbers and added/removed counts', async ()
 }, 30000);
 
 test('Edit disclosure uses the recorded patch after the file changes again', async () => {
-  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"retrievalGroups":false}}',
+    undefined,
+    'ui',
+  );
   try {
     const before =
       Array.from(
@@ -196,7 +208,11 @@ test('Edit disclosure uses the recorded patch after the file changes again', asy
 }, 30000);
 
 test('Read and Ls retain their native identity and reveal results only on disclosure', async () => {
-  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"retrievalGroups":false}}',
+    undefined,
+    'ui',
+  );
   try {
     await writeFile(
       join(host.directory, 'retrieval.txt'),
@@ -222,7 +238,11 @@ test('Read and Ls retain their native identity and reveal results only on disclo
 }, 30000);
 
 test('Grep and Find keep native results and make no-match outcomes visible', async () => {
-  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"retrievalGroups":false}}',
+    undefined,
+    'ui',
+  );
   try {
     await writeFile(join(host.directory, 'needle.txt'), 'distinctive_needle\n');
     expect(
@@ -249,7 +269,11 @@ test('Grep and Find keep native results and make no-match outcomes visible', asy
 }, 30000);
 
 test('Ls exposes upstream limits while keeping retained entries compact', async () => {
-  const host = await launchPi('{"rtk":{"rewrite":false}}', undefined, 'ui');
+  const host = await launchPi(
+    '{"rtk":{"rewrite":false},"ui":{"retrievalGroups":false}}',
+    undefined,
+    'ui',
+  );
   try {
     await mkdir(join(host.directory, 'entries'));
     await writeFile(join(host.directory, 'entries/aaa.txt'), 'a');
@@ -270,7 +294,11 @@ test('Ls exposes upstream limits while keeping retained entries compact', async 
 }, 30000);
 
 test('WebFetch and WebRead share retrieval disclosure and preserve retained content', async () => {
-  const host = await launchPi('{}', undefined, 'web');
+  const host = await launchPi(
+    '{"ui":{"retrievalGroups":false}}',
+    undefined,
+    'web',
+  );
   const server = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
@@ -304,7 +332,11 @@ test('WebFetch and WebRead share retrieval disclosure and preserve retained cont
 }, 30000);
 
 test('WebSearch exposes batch failure text even when the host result is not marked as an error', async () => {
-  const host = await launchPi('{}', undefined, 'web');
+  const host = await launchPi(
+    '{"ui":{"retrievalGroups":false}}',
+    undefined,
+    'web',
+  );
   try {
     await writeFile(
       join(host.agent, 'auth.json'),
