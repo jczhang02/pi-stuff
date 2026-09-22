@@ -1,66 +1,66 @@
-catppuccin-latte/base/150: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
-catppuccin-latte/base/100: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub)
-catppuccin-latte/base/80: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k hit 83.8% ↑120k ↓28k R620k W8k
-catppuccin-latte/base/50: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8%
-catppuccin-latte/base/150: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
+catppuccin-latte/base/150: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
+catppuccin-latte/base/100: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
+catppuccin-latte/base/80: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
+catppuccin-latte/base/50: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━  hit 83.8%
+catppuccin-latte/base/150: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
 catppuccin-latte/base: editing, submit, cancel, resubmit passed
-catppuccin-latte/extended/150: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
-catppuccin-latte/extended/100: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub)
-catppuccin-latte/extended/80: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k hit 83.8% ↑120k ↓28k R620k W8k
-catppuccin-latte/extended/50: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8%
-catppuccin-latte/extended/150: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
+catppuccin-latte/extended/150: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
+catppuccin-latte/extended/100: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
+catppuccin-latte/extended/80: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex use
+catppuccin-latte/extended/50: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━  hit 83.8%
+catppuccin-latte/extended/150: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
 catppuccin-latte/extended: editing, submit, cancel, resubmit passed
-catppuccin-latte/long/150: ~/dev/研究工具/pi-stuff-statusline codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
-catppuccin-latte/long/100: ~/dev/研究工具/pi-stuff-statusline codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1 goal active
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub)
-catppuccin-latte/long/80: ~/dev/研究工具/pi-stuff-statusline codex/statusline-responsive-prototype
-+1 ~1 !1 ↑2 ↓1 gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k hit 83.8% R620k W8k
+catppuccin-latte/long/150: ~/dev/研究工具/pi-stuff-statusline (codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
+catppuccin-latte/long/100: ~/dev/研究工具/pi-stuff-statusline (codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
+catppuccin-latte/long/80: ~/dev/研究工具/pi-stuff-statusline (codex/statusline-responsive-prototype)
+(+1 ~1 !1 ↑2 ↓1)  gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
 catppuccin-latte/long/50: ~/dev/研究工具/pi-stuff-statusline +1 ~1 !1 ↑2 ↓1
-codex/statusline-responsive-prototype hit 83.8%
-catppuccin-latte/long/150: ~/dev/研究工具/pi-stuff-statusline codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
+(codex/statusline-responsive-prototype)  hit 83.8%
+catppuccin-latte/long/150: ~/dev/研究工具/pi-stuff-statusline (codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
 catppuccin-latte/long: editing, submit, cancel, resubmit passed
-catppuccin-mocha/base/150: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
-catppuccin-mocha/base/100: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub)
-catppuccin-mocha/base/80: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k hit 83.8% ↑120k ↓28k R620k W8k
-catppuccin-mocha/base/50: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8%
-catppuccin-mocha/base/150: ~/dev/pi-stuff main clean
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
+catppuccin-mocha/base/150: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
+catppuccin-mocha/base/100: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
+catppuccin-mocha/base/80: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
+catppuccin-mocha/base/50: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━  hit 83.8%
+catppuccin-mocha/base/150: ~/dev/pi-stuff (main clean)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
 catppuccin-mocha/base: editing, submit, cancel, resubmit passed
-catppuccin-mocha/extended/150: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
-catppuccin-mocha/extended/100: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub)
-catppuccin-mocha/extended/80: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k hit 83.8% ↑120k ↓28k R620k W8k
-catppuccin-mocha/extended/50: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ hit 83.8%
-catppuccin-mocha/extended/150: ~/dev/pi-stuff main +1 ~1 ?1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
+catppuccin-mocha/extended/150: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
+catppuccin-mocha/extended/100: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
+catppuccin-mocha/extended/80: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
+catppuccin-mocha/extended/50: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━  hit 83.8%
+catppuccin-mocha/extended/150: ~/dev/pi-stuff (main +1 ~1 ?1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
 catppuccin-mocha/extended: editing, submit, cancel, resubmit passed
-catppuccin-mocha/long/150: ~/dev/研究工具/pi-stuff-statusline codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
-catppuccin-mocha/long/100: ~/dev/研究工具/pi-stuff-statusline codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1 goal active
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub)
-catppuccin-mocha/long/80: ~/dev/研究工具/pi-stuff-statusline codex/statusline-responsive-prototype
-+1 ~1 !1 ↑2 ↓1 gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k hit 83.8% R620k W8k
+catppuccin-mocha/long/150: ~/dev/研究工具/pi-stuff-statusline (codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
+catppuccin-mocha/long/100: ~/dev/研究工具/pi-stuff-statusline (codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
+catppuccin-mocha/long/80: ~/dev/研究工具/pi-stuff-statusline (codex/statusline-responsive-prototype)
+(+1 ~1 !1 ↑2 ↓1)  gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%
 catppuccin-mocha/long/50: ~/dev/研究工具/pi-stuff-statusline +1 ~1 !1 ↑2 ↓1
-codex/statusline-responsive-prototype hit 83.8%
-catppuccin-mocha/long/150: ~/dev/研究工具/pi-stuff-statusline codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1 goal active Codex used 5h 41% · week 63%
-gpt-6-astra · medium ctx 31% ━━━━━━━━━━ /272k auto hit 83.8% ↑120k ↓28k R620k W8k est $0.920 (sub) (openai-codex)
+(codex/statusline-responsive-prototype)  hit 83.8%
+catppuccin-mocha/long/150: ~/dev/研究工具/pi-stuff-statusline (codex/statusline-responsive-prototype +1 ~1 !1 ↑2 ↓1)
+gpt-6-astra medium  ctx 31% ━━━━━━━━━━ /272k  hit 83.8%  goal active · Codex used 5h 41% · week 63%
 catppuccin-mocha/long: editing, submit, cancel, resubmit passed

@@ -11,27 +11,25 @@ export interface FooterState {
   running: boolean;
 }
 
-interface Field {
+interface Group {
   priority: number;
   text: string;
 }
 
-// Keep each optional field whole, then render selected fields in reading order.
-function fit(prefix: string, fields: Field[], width: number): string {
-  const selected = new Set<Field>();
-  let used = visibleWidth(prefix);
-  for (const field of [...fields].sort((a, b) => b.priority - a.priority)) {
-    const needed = visibleWidth(field.text) + (used > 0 ? 1 : 0);
-    if (used + needed > width) continue;
-    selected.add(field);
-    used += needed;
+const joinGroups = (groups: string[]) => groups.filter(Boolean).join('  ');
+
+// Drop complete secondary groups, without backfilling gaps with small fields.
+function fit(prefix: string, groups: Group[], width: number): string {
+  const selected = [...groups];
+  const line = () => joinGroups([prefix, ...selected.map(group => group.text)]);
+  while (visibleWidth(line()) > width && selected.length > 0) {
+    const lowest = Math.min(...selected.map(group => group.priority));
+    selected.splice(
+      selected.findIndex(group => group.priority === lowest),
+      1,
+    );
   }
-  return [
-    prefix,
-    ...fields.filter(field => selected.has(field)).map(field => field.text),
-  ]
-    .filter(Boolean)
-    .join(' ');
+  return line();
 }
 
 export function renderFooter(
@@ -54,71 +52,56 @@ export function renderFooter(
       : 'main';
   const changes =
     state.scenario === 'base'
-      ? theme.fg('success', 'clean')
-      : `${theme.fg('success', '+1')} ${theme.fg('warning', '~1')} ${state.scenario === 'long' ? theme.fg('error', '!1') : theme.fg('warning', '?1')} ${theme.fg('muted', '↑2 ↓1')}`;
-  const git = `${theme.fg('muted', branch)} ${changes}`;
+      ? theme.fg('muted', 'clean')
+      : theme.fg('muted', '+1 ~1 ') +
+        (state.scenario === 'long'
+          ? theme.fg('error', '!1')
+          : theme.fg('muted', '?1')) +
+        theme.fg('muted', ' ↑2 ↓1');
+  const bracket = (text: string) =>
+    theme.fg('muted', '(') + text + theme.fg('muted', ')');
+  const branchText = theme.fg('muted', branch);
+  const git = bracket(`${branchText} ${changes}`);
+  const names = bracket(branchText);
+  const counts = bracket(changes);
   const identitiesFit = visibleWidth(project) + 1 + visibleWidth(git) <= width;
-  const namesFit = visibleWidth(project) + 1 + visibleWidth(branch) <= width;
+  const namesFit = visibleWidth(project) + 1 + visibleWidth(names) <= width;
   const directoryWidth = namesFit
     ? width
     : Math.max(0, width - visibleWidth(changes) - 1);
   const directory = theme.bold(truncateToWidth(project, directoryWidth, '…'));
   const identity = truncateToWidth(
-    `${directory} ${identitiesFit ? git : namesFit ? theme.fg('muted', branch) : changes}`,
+    `${directory} ${identitiesFit ? git : namesFit ? names : changes}`,
     width,
     '…',
   );
-  // Keep directory and branch together when possible, moving counts before metrics.
   const gitOverflow = identitiesFit
     ? ''
     : namesFit
-      ? changes
-      : theme.fg('muted', truncateToWidth(branch, width, '…'));
-  const extras: Field[] =
-    state.scenario === 'base' || !identitiesFit
-      ? []
-      : [
-          {
-            priority: 20,
-            text: theme.fg(
-              'muted',
-              `goal ${state.running ? 'running' : 'active'}`,
-            ),
-          },
-          {
-            priority: 10,
-            text: theme.fg('muted', 'Codex used 5h 41% · week 63%'),
-          },
-        ];
-  const statistics: Field[] = [
-    {
-      priority: 80,
-      text: `${state.model} · ${theme.fg('muted', state.thinking)}`,
-    },
-    {
-      priority: 100,
-      text: `ctx ${theme.fg('thinkingMedium', `${context}%`)} ${meter}`,
-    },
-    {priority: 70, text: theme.fg('muted', '/272k')},
-    {priority: 30, text: theme.fg('muted', 'auto')},
-    {priority: 90, text: 'hit 83.8%'},
-    {
-      priority: 60,
-      text: theme.fg(
-        'muted',
-        `↑${119 + state.completed}k ↓${27 + state.completed}k`,
-      ),
-    },
-    {priority: 50, text: theme.fg('muted', 'R620k')},
-    {priority: 40, text: theme.fg('muted', 'W8k')},
-    {
-      priority: 20,
-      text: theme.fg(
-        'muted',
-        `est $${(0.91 + state.completed * 0.01).toFixed(3)} (sub)`,
-      ),
-    },
-    {priority: 10, text: theme.fg('muted', '(openai-codex)')},
+      ? counts
+      : truncateToWidth(names, width, '…');
+
+  const model = `${state.model} ${theme.fg('muted', state.thinking)}`;
+  const cache = theme.fg('muted', 'hit 83.8%');
+  const contextCore = `${theme.fg('muted', 'ctx')} ${context}% ${meter}`;
+  const contextFull = `${contextCore} ${theme.fg('muted', '/272k')}`;
+  const contextText =
+    visibleWidth(joinGroups([gitOverflow, model, contextFull, cache])) <= width
+      ? contextFull
+      : contextCore;
+  const groups: Group[] = [
+    {priority: 80, text: model},
+    {priority: 90, text: contextText},
+    {priority: 100, text: cache},
   ];
-  return [fit(identity, extras, width), fit(gitOverflow, statistics, width)];
+  if (state.scenario !== 'base' && identitiesFit) {
+    groups.push({
+      priority: 10,
+      text: theme.fg(
+        'muted',
+        `goal ${state.running ? 'running' : 'active'} · Codex used 5h 41% · week 63%`,
+      ),
+    });
+  }
+  return [identity, fit(gitOverflow, groups, width)];
 }

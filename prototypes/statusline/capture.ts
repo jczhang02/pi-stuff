@@ -32,9 +32,28 @@ async function capture(session: Session, name: string): Promise<string> {
   assert.ok(start >= 0, snapshot.text);
   const footer = lines.slice(start, start + 2).map(line => line.trimEnd());
   assert.equal(footer.length, 2);
+  assert.doesNotMatch(
+    footer[0] ?? '',
+    /goal|Codex|ctx|hit/u,
+    'Repository row stays focused',
+  );
+  assert.doesNotMatch(
+    footer.join(' '),
+    /R620k|W8k|est \$|openai-codex|auto/u,
+    'Routine detail fields do not return at wider widths',
+  );
+  assert.equal(
+    footer.join(' ').includes('goal'),
+    footer.join(' ').includes('Codex'),
+    'Extension group is shown or hidden together',
+  );
   for (const line of footer) {
     assert.ok(visibleWidth(line) <= snapshot.frame.cols);
-    assert.doesNotMatch(line, / {2}|\|/u, 'No padding or separator clutter');
+    assert.doesNotMatch(
+      line,
+      / {3}|\|/u,
+      'Group gaps stay bounded; no alignment padding',
+    );
     if (line.includes('ctx')) assert.match(line, /ctx 31% ━{10}/u);
   }
   assert.ok(
