@@ -24,43 +24,17 @@ const Request = Schema.Struct({
   ),
   tools: Schema.optional(
     Schema.Array(
-      Schema.Struct({
-        function: Schema.Struct({
-          name: Schema.String,
-          description: Schema.optional(Schema.String),
-        }),
-      }),
+      Schema.Struct({function: Schema.Struct({name: Schema.String})}),
     ),
   ),
 });
-
-export type PiFixtureRequest = Schema.Schema.Type<typeof Request>;
-
-export type PiFixtureResponse =
-  | {readonly type: 'error'; readonly message: string}
-  | {
-      readonly type: 'content';
-      readonly content: string;
-      readonly usage?: {readonly input: number; readonly output: number};
-    }
-  | {
-      readonly type: 'tool_call';
-      readonly name: string;
-      readonly arguments: string;
-    };
-
-export type PiFixtureResponseCallback = (
-  request: PiFixtureRequest,
-) => PiFixtureResponse | undefined | Promise<PiFixtureResponse | undefined>;
 
 // The real host loads the product entrypoint. Only the external model is deterministic.
 export async function launchPi(
   configuration = '{}',
   extraExtension?: string,
-  profile: 'rtk' | 'web' | 'subagent' = 'rtk',
+  profile: 'rtk' | 'web' = 'rtk',
   mode: 'regular' | 'fullscreen' = 'fullscreen',
-  responseCallback?: PiFixtureResponseCallback,
-  extraTools: readonly string[] = [],
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
   const agent = join(directory, 'agent');
@@ -69,10 +43,8 @@ export async function launchPi(
   let args = '{}';
   let turn = 0;
   let result = '';
-  let issued = false;
   let reloads = 0;
   let offered: string[] = [];
-  const completedTurns = new Set<number>();
   const server = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
@@ -85,77 +57,23 @@ export async function launchPi(
       const body = Schema.decodeUnknownSync(Request)(await request.json());
       offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
-      const currentTurn = body.messages.some(message => {
-        if (message.role !== 'user') return false;
-        const content = message.content;
-        const text = Schema.is(Schema.String)(content)
-          ? content
-          : content?.map(block => block.text ?? '').join('');
-        return text === `Run RTK turn ${turn}`;
-      });
-      for (const message of body.messages) {
-        if (
-          message.role !== 'assistant' ||
-          !Schema.is(Schema.String)(message.content)
-        )
-          continue;
-        const completed = /^RTK_TURN_(\d+)_DONE$/.exec(message.content);
-        if (completed?.[1]) completedTurns.add(Number(completed[1]));
-      }
-      if (last?.role === 'tool' && currentTurn)
+      const finished = last?.role === 'tool' || tool === '';
+      if (last?.role === 'tool')
         result = Schema.is(Schema.String)(last.content)
           ? last.content
           : JSON.stringify(last.content);
-      const callbackResponse = responseCallback
-        ? await responseCallback(body)
-        : undefined;
-      if (callbackResponse?.type === 'error')
-        return Response.json(
-          {
-            error: {
-              message: callbackResponse.message,
-              type: 'invalid_request_error',
-            },
-          },
-          {status: 400},
-        );
-      const finished = callbackResponse
-        ? callbackResponse.type === 'content'
-        : issued || !currentTurn || last?.role === 'tool' || tool === '';
-      if (!callbackResponse && !finished) issued = true;
-      const delta = callbackResponse
-        ? callbackResponse.type === 'content'
-          ? {content: callbackResponse.content}
-          : {
-              tool_calls: [
-                {
-                  index: 0,
-                  id: `fixture_${turn}_${body.messages.length}`,
-                  type: 'function',
-                  function: {
-                    name: callbackResponse.name,
-                    arguments: callbackResponse.arguments,
-                  },
-                },
-              ],
-            }
-        : finished
-          ? {
-              content:
-                currentTurn && (last?.role === 'tool' || tool === '')
-                  ? `RTK_TURN_${turn}_DONE`
-                  : 'No additional action.',
-            }
-          : {
-              tool_calls: [
-                {
-                  index: 0,
-                  id: `rtk_${turn}`,
-                  type: 'function',
-                  function: {name: tool, arguments: args},
-                },
-              ],
-            };
+      const delta = finished
+        ? {content: `RTK_TURN_${turn}_DONE`}
+        : {
+            tool_calls: [
+              {
+                index: 0,
+                id: `rtk_${turn}`,
+                type: 'function',
+                function: {name: tool, arguments: args},
+              },
+            ],
+          };
       const chunk = {
         id: `chat_${turn}`,
         object: 'chat.completion.chunk',
@@ -166,16 +84,6 @@ export async function launchPi(
       return new Response(
         `data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({
           ...chunk,
-          usage:
-            callbackResponse?.type === 'content' && callbackResponse.usage
-              ? {
-                  prompt_tokens: callbackResponse.usage.input,
-                  completion_tokens: callbackResponse.usage.output,
-                  total_tokens:
-                    callbackResponse.usage.input +
-                    callbackResponse.usage.output,
-                }
-              : undefined,
           choices: [
             {
               index: 0,
@@ -250,12 +158,7 @@ export async function launchPi(
         '--no-approve',
         ...(profile === 'web'
           ? ['--no-builtin-tools']
-          : [
-              '--tools',
-              profile === 'subagent'
-                ? ['bash', 'read', 'subagent', ...extraTools].join(',')
-                : 'bash,read',
-            ]),
+          : ['--tools', 'bash,read']),
         '--provider',
         'fixture',
         '--model',
@@ -312,7 +215,6 @@ export async function launchPi(
       tool = name;
       args = parameters;
       result = '';
-      issued = false;
       turn++;
       await screen.keyboard.type(`Run RTK turn ${turn}`);
       await screen.keyboard.press('Enter');
@@ -328,18 +230,9 @@ export async function launchPi(
       async invoke(name: string, parameters: string) {
         await start(name, parameters);
         try {
-          // A background notice can replace the frame before it is painted.
-          // Accept either rendered output or the completed assistant message
-          // returned by the real host in its next provider request.
-          const marker = `RTK_TURN_${turn}_DONE`;
-          await screen.screen.waitUntil(
-            async () =>
-              completedTurns.has(turn) ||
-              new TextDecoder()
-                .decode(await screen.transcript.ansi())
-                .includes(marker),
-            {timeoutMs: 15000},
-          );
+          await screen.screen.waitForText(`RTK_TURN_${turn}_DONE`, {
+            timeoutMs: 15000,
+          });
         } catch (error) {
           console.error(await screen.screen.text());
           console.error(await screen.logs.text());

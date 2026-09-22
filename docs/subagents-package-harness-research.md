@@ -137,7 +137,7 @@ These are source-review findings for the fixed revision, not claims that every r
 
 ### Later Arhen audit: version 1.3.55
 
-The later redevelopment audit used [1.3.55 at `676b11e`](https://github.com/arhen/pi-extensions/tree/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent), recorded in the [redevelopment spec](subagents-redevelopment-spec.md). The size table deliberately retains the earlier 1.3.54 measurement; no new SLOC count is implied.
+The later redevelopment audit used [1.3.55 at `676b11e`](https://github.com/arhen/pi-extensions/tree/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent), recorded in the [redevelopment spec](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/subagents-redevelopment-spec.md). The size table deliberately retains the earlier 1.3.54 measurement; no new SLOC count is implied.
 
 Read-only tasks inspect the selected cwd directly. Writers start from Git HEAD or a selected predecessor branch, not a snapshot of uncommitted parent files. Dependencies pass predecessor reports; multiple writer predecessors do not automatically merge their branches. The runner selects one code base. The wave barrier can also delay a ready dependent until unrelated work in the same wave finishes.
 

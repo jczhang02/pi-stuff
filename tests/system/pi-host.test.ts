@@ -119,7 +119,6 @@ test.each([['regular'], ['fullscreen']] as const)(
       expect(host.offered().toSorted()).toEqual([
         'fetch_content',
         'get_search_content',
-        'subagent',
         'web_search',
       ]);
       const sessions = join(directory, 'sessions');
@@ -213,7 +212,6 @@ test.each([['regular'], ['fullscreen']] as const)(
       await invoke('', '{}');
       expect(host.offered().toSorted()).toEqual([
         'get_search_content',
-        'subagent',
         'web_search',
       ]);
       await terminal.keyboard.type(
@@ -238,7 +236,6 @@ test.each([['regular'], ['fullscreen']] as const)(
       expect(host.offered().toSorted()).toEqual([
         'fetch_content',
         'get_search_content',
-        'subagent',
         'web_search',
       ]);
       await host.start(

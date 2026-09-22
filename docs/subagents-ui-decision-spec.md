@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/subagents-ui-decision-spec.md) · Companion: [Package and harness research](subagents-package-harness-research.md).
 
-**Status: development paused; for review.** Consolidated on 2026-09-22. This document records existing UI decisions. It does not authorize further development or treat the current implementation and passing tests as product acceptance. Code and historical evidence remain preserved.
+**Status: development paused; for review.** Consolidated on 2026-09-22. This document records existing UI decisions. It does not authorize further development or treat the current implementation and passing tests as product acceptance. Only this research/spec pair and its referenced images remain in the branch. The discarded implementation and earlier documents are available only through Git history.
 
 ## 1. Reading this spec
 
@@ -158,7 +158,7 @@ Actions must suit a 60% keyboard and tmux. An editor-edge Up/Down action enters 
 | Main-chat tool messages | Native tool-expansion binding, normally Ctrl+O                                                                          |
 | Back                    | Fixed Esc returns one level and restores focus/selection                                                                |
 
-Hints reflect actual configured matchers. Feature letters belong only to their local surfaces. The current implementation's handling of global shortcuts inside inspection is not a new product decision.
+Hints reflect actual configured matchers. Feature letters belong only to their local surfaces. The former prototype's handling of global shortcuts inside inspection is not a new product decision.
 
 ## 8. Long content and narrow screens
 
@@ -189,20 +189,20 @@ The maintainer remains dissatisfied with the product. Record these choices for r
 | Internal messages should not flood main | Compact per-task notices may still coexist with a run summary                       | Folding and parent-answer roles are decided; final message density has no renewed satisfaction approval |
 | Simple but complete detail              | Several local letter entries and current help wrapping                              | Preserve the binding record, not an assertion that current hint density looks final                     |
 
-### Figure 9. Current implementation for comparison
+### Figure 9. Removed prototype, retained for comparison
 
 ![Figure 9. Actual bottom detail and compact notices, not a newly approved design](assets/subagents-redevelopment-acceptance/ux-final-detail-dark.png)
 
-This is a 2026-09-22 compiled-Pi/real-model PTY capture, not a new concept or native Ghostty-window screenshot. It establishes what was displayed, not user approval. Compare it with figure 3 for header hierarchy, reading space, repeated notices and hint density. No prototype changes are made in this document round.
+This is a 2026-09-22 compiled-Pi/real-model PTY capture, not a new concept or native Ghostty-window screenshot. It establishes what was displayed, not user approval. Compare it with figure 3 for header hierarchy, reading space, repeated notices and hint density. The prototype implementation has been removed; this image remains as historical comparison.
 
 ## 11. Rejected alternatives and sources
 
 Excluded: overlays, switching the actual host agent, retaining main editor/statusline/Fleet inside detail, full-row selection, an extra icon gutter, main description, task numbers, a tree for every workflow, a tree/list/graph picker, category-directory detail, persistent side navigation, invented UI summaries or Read/Applied receipts.
 
-- [Original UIR01-UIR09 illustrated discussion](subagents-redevelopment-ui.md): discussion history and more state concepts.
-- [Formal redevelopment spec](subagents-redevelopment-spec.md): sections 5-9 supply this consolidation; earlier F/Q/UI contracts do not automatically override it.
-- [Pi-native/harness UI review](subagents-redevelopment-ui-review.md): reusable primitives and host capabilities that cannot be copied directly.
-- [Image prompts and provenance](assets/subagents-redevelopment-ui/generation.json): figures 1-8, retained without editing away decision differences.
-- [Implementation acceptance record](subagents-redevelopment-acceptance.md): figure 9 and actual test limits, not product acceptance.
+- [Original UIR01-UIR09 illustrated discussion](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/subagents-redevelopment-ui.md): discussion history and more state concepts.
+- [Formal redevelopment spec](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/subagents-redevelopment-spec.md): sections 5-9 supply this consolidation; earlier F/Q/UI contracts do not automatically override it.
+- [Pi-native/harness UI review](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/subagents-redevelopment-ui-review.md): reusable primitives and host capabilities that cannot be copied directly.
+- [Image prompts and provenance](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/assets/subagents-redevelopment-ui/generation.json): figures 1-8, retained without editing away decision differences.
+- [Implementation acceptance record](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/subagents-redevelopment-acceptance.md): figure 9 and actual test limits, not product acceptance.
 
 During the development pause, these records preserve intent and history. Resuming implementation requires a new instruction; passing tests or an existing PR do not supply it.

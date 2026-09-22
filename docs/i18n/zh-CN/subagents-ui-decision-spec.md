@@ -2,7 +2,7 @@
 
 [English](../../subagents-ui-decision-spec.md) · 配套阅读: [Package 与 harness 调研](subagents-package-harness-research.md).
 
-**状态: 开发暂停, 供 review.** 整理日期为 2026-09-22. 本文汇总已经讨论过的 UI 决策, 不授权继续开发, 不把当前实现或测试通过视为用户接受产品. 代码与历史资料保留.
+**状态: 开发暂停, 供 review.** 整理日期为 2026-09-22. 本文汇总已经讨论过的 UI 决策, 不授权继续开发, 不把当前实现或测试通过视为用户接受产品. 分支只保留 research、UI spec 及引用图片. 已删除的实现与旧资料仅通过 Git 历史追溯.
 
 ## 1. 如何读这份 spec
 
@@ -158,7 +158,7 @@ FleetView 有焦点时, 帮助位于 **statusline 下方、列表上方**; 焦�
 | 主对话工具消息 | Pi 工具展开绑定, 通常为 Ctrl+O                                                  |
 | 返回           | Esc 固定返回上一层, 恢复原焦点和选择                                            |
 
-提示使用实际配置的键, 不写死与 matcher 不同的提示. 详情功能字母只在对应局部界面生效. 当前实现对全局快捷键在检查区域内的传递方式, 不应被误读为新的产品决策.
+提示使用实际配置的键, 不写死与 matcher 不同的提示. 详情功能字母只在对应局部界面生效. 原型当时对全局快捷键在检查区域内的传递方式, 不应被误读为新的产品决策.
 
 ## 8. 长内容与小屏
 
@@ -189,20 +189,20 @@ Pi 公共组件不等于现成的 subagent 详情页. 已研究的扩展 API 中
 | 编排消息不能淹没主对话       | 紧凑通知仍可能有逐任务和整批两种消息                      | 折叠与父代理结论的职责已确定; 最终通知密度未获新的满意确认 |
 | 简洁而完整的详情             | 多个局部字母入口及当前帮助换行                            | 记录按键合同, 不把当前帮助密度当作最终美观结论             |
 
-### 图 9. 当前实现, 用于与意图对照
+### 图 9. 已移除的原型, 仅作历史对照
 
 ![图 9. 真实原型的底部详情与紧凑通知, 并非重新批准的视觉方案](../../assets/subagents-redevelopment-acceptance/ux-final-detail-dark.png)
 
-这是 2026-09-22 编译 Pi/真实模型的 PTY 截图, 不是新概念图, 也不是原生 Ghostty 窗口截图. 它能证明当时画面实际如此, 不能证明用户接受它. 对照图 3 可 review 标题层次、正文空间、通知重复和帮助密度. 本轮不继续修改原型.
+这是 2026-09-22 编译 Pi/真实模型的 PTY 截图, 不是新概念图, 也不是原生 Ghostty 窗口截图. 它能证明当时画面实际如此, 不能证明用户接受它. 对照图 3 可 review 标题层次、正文空间、通知重复和帮助密度. 原型实现已删除, 本图仅作历史参考.
 
 ## 11. 已排除的方案与来源
 
 明确排除: overlay、真正切换当前宿主 agent、详情里继续保留主 editor/statusline/FleetView、全行选中、icon 额外左留白、main description、任务编号、给所有场景套一棵树、tree/list/graph 模式选择器、分类目录详情、持久侧栏、凭空生成 UI 摘要或 Read/Applied 回执.
 
-- [UIR01-UIR09 原始图文记录](subagents-redevelopment-ui.md): 保留逐轮讨论和更多状态图.
-- [正式 redevelopment spec](subagents-redevelopment-spec.md): 第 5-9 节是本次归纳的合同来源; 更早 F/Q/UI 版本不能自动覆盖它.
-- [Pi 原生能力及 harness UI 审查](subagents-redevelopment-ui-review.md): 记录可复用组件和不能直接复用的宿主能力.
-- [图像 prompts 与来源](../../assets/subagents-redevelopment-ui/generation.json): 图 1-8 的生成记录, 未修改旧图来掩盖决策差异.
-- [真实实现验收记录](subagents-redevelopment-acceptance.md): 包含图 9 与实际测试边界, 不替代产品接受.
+- [UIR01-UIR09 原始图文记录](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/i18n/zh-CN/subagents-redevelopment-ui.md): 保留逐轮讨论和更多状态图.
+- [正式 redevelopment spec](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/i18n/zh-CN/subagents-redevelopment-spec.md): 第 5-9 节是本次归纳的合同来源; 更早 F/Q/UI 版本不能自动覆盖它.
+- [Pi 原生能力及 harness UI 审查](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/i18n/zh-CN/subagents-redevelopment-ui-review.md): 记录可复用组件和不能直接复用的宿主能力.
+- [图像 prompts 与来源](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/assets/subagents-redevelopment-ui/generation.json): 图 1-8 的生成记录, 未修改旧图来掩盖决策差异.
+- [真实实现验收记录](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/i18n/zh-CN/subagents-redevelopment-acceptance.md): 包含图 9 与实际测试边界, 不替代产品接受.
 
 开发暂停期间, 以上文档是可供复查的历史与意图. 恢复开发需要新的指示, 不能由测试通过或已有 PR 推断.

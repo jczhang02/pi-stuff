@@ -141,7 +141,7 @@ arhen 用较少代码组合了依赖调度、mailbox 和 worktree. gotgenes 的�
 
 ### 后续 1.3.55 审计补充
 
-重新开发阶段检查了 [1.3.55 / `676b11e`](https://github.com/arhen/pi-extensions/tree/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent), 记录见 [redevelopment spec](subagents-redevelopment-spec.md). 统计表仍使用早期 1.3.54 的代码量, 没有冒充重新计数.
+重新开发阶段检查了 [1.3.55 / `676b11e`](https://github.com/arhen/pi-extensions/tree/676b11eb415cd46fbede712b5bbb075ff3f043bf/packages/core/pi-core-subagent), 记录见 [redevelopment spec](https://github.com/jczhang02/pi-stuff/blob/f139909d42ea2ae81129521ab1e7b4776119750c/docs/i18n/zh-CN/subagents-redevelopment-spec.md). 统计表仍使用早期 1.3.54 的代码量, 没有冒充重新计数.
 
 只读任务直接读指定 cwd. 写任务从 Git HEAD 或选定的前置分支起步, 不包含父目录未提交改动的自动快照. 多个前置会传入多份报告, **不会自动合并多个写入分支**, runner 只选一个代码基线. 波次屏障还可能使已就绪的下游等待同波其他独立任务.
 
