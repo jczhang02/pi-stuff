@@ -16,7 +16,7 @@
 
 [RTK 集成](rtk.md)提供受支持的 Bash 改写、独立的最终结果 ANSI 清理, 以及包含设置、原生用量和诊断的内联 `/rtk` 面板. 它能发现 mise 管理的安装, 不修改 PATH, 保留 Pi 内置 Bash 执行.
 
-[会话命名](session-naming.md)只在开场生成一次名称, 支持手动 `/autoname` 替换, 并提供参考 RTK 的 `/naming` 面板, 管理名称、模型、规则和长度.
+[会话命名](session-naming.md)只在开场生成一次名称, 支持手动 `/autoname` 替换, 并提供与 RTK 共用组件的 `/autoname panel` 面板, 管理名称、模型、规则和长度.
 
 包内还提供 Catppuccin、Tokyo Night、Gruvbox 和 Rosé Pine 共十款明暗[主题](themes.md). 通过 Pi 主题设置选择, 加载包会保留当前选择.
 
@@ -51,7 +51,7 @@ cd pi-stuff
 [源码布局规则](agents/engineering.md#源码布局)约束入口和模块职责.
 
 - [index.ts](../../../index.ts) 是唯一的 Pi 入口, 直接读取配置并注册各项能力; Pi 的本地扩展列表显示检出目录名.
-- [src/pi/](../../../src/pi/) 管理共用的宿主配置、工具开关策略和面板主题兼容.
+- [src/pi/](../../../src/pi/) 管理共用的宿主配置、工具开关策略、共用面板布局和主题兼容.
 - [src/web/](../../../src/web/) 管理网页访问, 包含工具, 认证, 网络实现和会话生命周期. 其他能力实现时放在同级目录.
 - [src/rtk/](../../../src/rtk/) 管理 RTK 发现、命令改写、最终结果清理和内联面板.
 - [src/naming/](../../../src/naming/) 管理命名资格、请求限制、结果发布保护和命名面板.

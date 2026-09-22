@@ -4,13 +4,13 @@
 
 Pi Stuff names a fresh foreground TUI session after its first successful exchange. It makes one attempt and leaves that name alone on later turns. A cancelled, failed or ambiguous opening leaves the session unnamed until you choose a name yourself.
 
-Use Pi's native `/name Exact title` for a direct assignment. `/autoname` generates a replacement from the opening request and recent dialogue; `/autoname Document OAuth migration risks` gives the model a task hint with priority over that dialogue. Accepting `/autoname` permanently ends automation for that session, including when generation fails. A newer command supersedes a pending request.
+Use Pi's native `/name Exact title` for a direct assignment. `/autoname` generates a replacement from the opening request and recent dialogue; `/autoname Document OAuth migration risks` gives the model a task hint with priority over that dialogue. Accepting a generation request permanently ends automation for that session, including when generation fails. A newer command supersedes a pending request.
 
 Generation has no progress notice and succeeds silently by updating the native session name. Errors use Pi's native chat-area notification. If the name has not reached storage, the only success-related notice is `Name not saved yet.`. Print/JSON commands wait for completion and send feedback to stderr, leaving JSON stdout machine-readable. Automatic requests run quietly in the background. A pending result cannot overwrite a later direct rename, navigation or another generation. Names belong to the whole session, including its branches.
 
-## Naming panel
+## AutoName panel
 
-Open `/naming` in a TUI to see the current name, generate a replacement or change settings. Generation accepts an optional task hint and applies the result immediately. If neither dialogue text nor a hint exists, it asks for a hint without calling the model. Back/close cancels an unfinished request started by the panel; an applied name is kept.
+Open `/autoname panel` in a TUI to see the current name, change settings or generate a replacement. Settings is the first menu item. Generate name uses the current dialogue directly and applies the result without a hint page. A blank conversation stays unnamed and makes no model request. Closing the panel or opening Settings cancels an unfinished panel request; an applied name is kept. Opening the panel alone does not consume opening automation. The exact argument `panel` is reserved for this view; other `/autoname` text remains an optional task hint.
 
 Settings save individually and take effect immediately:
 
@@ -22,7 +22,7 @@ Settings save individually and take effect immediately:
 
 A committed configuration change cancels older naming requests without retrying. A failed save keeps the active settings and any pending request. External file edits are not overwritten: use `/reload` before retrying. Confirmed settings are durable; Esc abandons unsubmitted text, not a save already started. Session replacement or reload waits for confirmed saves to finish before loading settings into the next runtime.
 
-The panel uses Pi's theme, native selection and input bindings. Esc always goes back or closes, including under remapped cancel bindings. Long names and model identifiers have `[` / `]` pages. The minimum size is 56 columns by 24 rows; smaller terminals show a resize notice with an exit action. Both Naming and RTK reuse the existing local contrast correction for Pi's built-in light palette, without changing custom themes.
+The panel uses Pi's theme, native selection and input bindings. Esc always goes back or closes, including under remapped cancel bindings. Long names and model identifiers have `[` / `]` pages. The minimum size is 56 columns by 24 rows; smaller terminals show a resize notice with an exit action. AutoName and RTK share title/borders, menu columns/spacing, settings and editor layout, keyboard hints and the local contrast correction for Pi's built-in light palette. Their actions and request/save lifetimes remain feature-owned. Custom themes are unchanged.
 
 ## Configuration
 
@@ -74,7 +74,7 @@ The Pi 0.85.1 API mapping requests SSE, `maxRetries: 0` and a finite `maxTokens`
 
 Tests use real isolated Pi commands, lifecycle events and native session files with a controlled HTTP model. See [issue #108](https://github.com/jczhang02/pi-stuff/issues/108) for specification, runtime acceptance, recorded model examples and review evidence.
 
-## Acceptance evidence (2026-09-22)
+## Acceptance evidence (2026-09-22-23)
 
 The runtime checks use Linux, Bun 1.4.0, Pi 0.85.1 from the pinned dependency and the maintainer's compiled Pi 0.87.0 (runtime-reported Bun 1.4.0). Terminal Control 1.2.1 drives real regular/fullscreen sessions with isolated settings, session files and working directories. The controlled model verifies request counts, errors, deadlines, navigation races, forks, reload/restart, preflight failure and compaction queue replay. A readonly session file and Linux `/dev/full` exercise native write failures. The extension preflights known unwritable files; an unexpected failure during Pi's write can leave the displayed name changed but unsaved. The extension tells the user to fix file access and restart with that session before continuing. It does not append a compensating rename: Pi advances its in-memory history before writing, so a second write could persist a broken parent link. Recovery checks reopen the repaired file and verify its existing messages and parent chain.
 
@@ -93,12 +93,22 @@ The following eight names came from actual `openai-codex/gpt-6-astra` requests t
 | `/autoname` after the agreed task changes to OAuth risk documentation           | `docs: Document OAuth migration risks only`                            |
 | `/autoname Fix session rename races in Pi` overrides earlier dialogue           | `fix: Resolve session rename races in Pi`                              |
 
-The panel tests cover field saves and resets, multiline rules, invalid length, stale-file refusal, committed-save cancellation, panel cancellation, remapped keys, persistence status refresh and long-value pagination. The captures below were taken from compiled Pi 0.87.0 with a controlled local model, using real commands at 100×30 and 56×24. Their displayed title is fixture output; the live-model samples above are separate evidence.
+The panel tests cover field saves and resets, multiline rules, invalid length, stale-file refusal, committed-save cancellation, panel cancellation, remapped keys, persistence status refresh and long-value pagination. The captures below were taken from compiled Pi 0.87.0 with a controlled local model, using real commands at 100×30, 56×26 and 56×24. RTK comparison captures use a local executable fixture with synthetic statistics. Their displayed title is fixture output; the live-model samples above are separate evidence.
 
 The light terminal uses black/white default foreground/background; dark uses light text on black. Exports explicitly use `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. These are headless terminal captures, not native window/compositor evidence.
 
-![Dark naming panel after applying a temporary name](assets/session-naming/panel-dark.png)
+![Dark AutoName panel after generating from dialogue](assets/session-naming/panel-dark.png)
 
-![Light naming settings panel](assets/session-naming/panel-light.png)
+![Light AutoName settings panel](assets/session-naming/panel-light.png)
 
 ![Model selection at the minimum 56×24 size](assets/session-naming/panel-narrow.png)
+
+The same shared components render the RTK views below. Feature summaries differ, while heading, menu columns, settings group and keyboard hints use the same layout.
+
+![Dark RTK home at the same 100×30 viewport](assets/session-naming/rtk-root-dark.png)
+
+![Light RTK settings at the same 100×30 viewport](assets/session-naming/rtk-settings-light.png)
+
+![AutoName home at 56×26](assets/session-naming/autoname-root-narrow.png)
+
+![RTK home at 56×26](assets/session-naming/rtk-root-narrow.png)

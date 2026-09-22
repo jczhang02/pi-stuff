@@ -4,13 +4,13 @@
 
 Pi Stuff 会在新建前台 TUI 会话的首次成功问答后尝试命名一次, 后续轮次不再改名. 首轮取消、失败或含义不明时会保持未命名, 等待手动处理.
 
-Pi 原生 `/name Exact title` 用于直接赋名. `/autoname` 根据开场请求和最近对话生成替代名称; `/autoname Document OAuth migration risks` 提供优先于对话的任务提示. 一旦接受 `/autoname`, 该会话就永久停止自动命名, 即使生成失败也一样. 新命令会取代尚未完成的请求.
+Pi 原生 `/name Exact title` 用于直接赋名. `/autoname` 根据开场请求和最近对话生成替代名称; `/autoname Document OAuth migration risks` 提供优先于对话的任务提示. 一旦接受生成请求, 该会话就永久停止自动命名, 即使生成失败也一样. 新命令会取代尚未完成的请求.
 
 生成期间没有进度提示, 成功后只更新原生会话名称. 错误使用 Pi 原生聊天区提醒. 名称尚未落盘时, 唯一与成功相关的提醒是 `Name not saved yet.`. Print/JSON 命令会等待完成并将反馈写入 stderr, 保持 JSON stdout 可供机器解析. 自动请求在后台安静运行. 旧结果不能覆盖后来的直接改名、导航或新生成. 名称属于整个会话, 各分支共用.
 
-## 命名面板
+## AutoName 面板
 
-在 TUI 中执行 `/naming`, 可以查看当前名称、生成替代名称或修改设置. 生成时可补充任务提示, 结果直接应用. 对话文本和提示都为空时, 会要求补充提示, 不调用模型. 返回或关闭会取消面板启动的未完成请求, 保留已经应用的名称.
+在 TUI 中执行 `/autoname panel`, 可以查看当前名称、修改设置或生成替代名称. Settings 是首个菜单项. Generate name 直接根据当前对话生成并应用, 不再先进入 hint 页. 空白对话保持未命名, 不调用模型. 关闭面板或进入 Settings 会取消面板启动的未完成请求, 保留已经应用的名称. 仅打开面板不消耗开场自动机会. 完整参数 `panel` 保留给面板入口, 其他 `/autoname` 文本仍作为可选任务提示.
 
 设置逐项保存并立即生效:
 
@@ -22,7 +22,7 @@ Pi 原生 `/name Exact title` 用于直接赋名. `/autoname` 根据开场请求
 
 配置提交成功会取消旧命名请求, 不重试. 保存失败则保留生效配置和未完成请求. 不覆盖外部文件修改, 需先 `/reload` 再重试. 已确认的设置会保存; Esc 放弃未提交文本, 不撤销已经开始的保存. 会话替换或 reload 会等待已确认的保存结束, 再为新 runtime 加载设置.
 
-面板沿用 Pi 主题、原生选择和输入按键. 即使重新绑定 cancel, Esc 仍用于返回或关闭. 长名称和模型标识符可用 `[` / `]` 翻页. 最小尺寸为 56 列、24 行, 更小终端显示尺寸提示并保留退出方式. Naming 与 RTK 共用已有的 Pi 内置浅色主题局部对比度修正, 不修改自定义主题.
+面板沿用 Pi 主题、原生选择和输入按键. 即使重新绑定 cancel, Esc 仍用于返回或关闭. 长名称和模型标识符可用 `[` / `]` 翻页. 最小尺寸为 56 列、24 行, 更小终端显示尺寸提示并保留退出方式. AutoName 与 RTK 共用标题边框、菜单列宽间距、设置和编辑页布局、按键提示, 以及 Pi 内置浅色主题的局部对比度修正. 各功能分别管理操作、请求和保存生命周期, 不修改自定义主题.
 
 ## 配置
 
@@ -74,7 +74,7 @@ Pi 0.85.1 API 映射请求 SSE、`maxRetries: 0` 和有限的 `maxTokens`. OpenA
 
 测试使用真实隔离的 Pi 命令、生命周期和原生会话文件, 只控制 HTTP 模型服务. 规格、运行时验收、真实模型名称样本及审查证据见 [Issue #108](https://github.com/jczhang02/pi-stuff/issues/108).
 
-## 验收证据 (2026-09-22)
+## 验收证据 (2026-09-22-23)
 
 运行环境为 Linux、Bun 1.4.0、固定依赖中的 Pi 0.85.1, 以及维护者的编译版 Pi 0.87.0 (宿主实际报告 Bun 1.4.0). Terminal Control 1.2.1 驱动真实 regular/fullscreen 会话, 设置、会话文件和工作目录均隔离. 受控模型验证请求数、错误、截止时间、导航竞态、fork、reload/重启、预检失败和 compaction 队列回放. 只读会话文件和 Linux `/dev/full` 用于验证原生写入失败. 扩展会提前检查已知不可写文件; 如果 Pi 实际写入时仍意外失败, 显示的名称可能已经改变但尚未保存. 扩展会要求修复文件访问后带该会话重启再继续, 不再追加一次改名来补偿: Pi 在写入前就推进了内存历史, 第二次写入可能将断开的父链保存到磁盘. 恢复测试会重新打开修复后的文件, 检查原有消息和父链.
 
@@ -93,12 +93,22 @@ Pi 0.85.1 API 映射请求 SSE、`maxRetries: 0` 和有限的 `maxTokens`. OpenA
 | 主任务改为 OAuth 风险文档后执行 `/autoname`                 | `docs: Document OAuth migration risks only`                            |
 | `/autoname Fix session rename races in Pi` 优先于之前的对话 | `fix: Resolve session rename races in Pi`                              |
 
-面板测试覆盖逐项保存和重置、多行规则、无效长度、拒绝外部修改冲突、保存成功后取消旧请求、关闭面板取消、按键重映射、持久化状态刷新及长值分页. 下图来自编译版 Pi 0.87.0 和本地受控模型, 通过真实命令在 100×30 与 56×24 终端中取得. 图中名称由 fixture 返回, 与上面的真实模型样本分开记录.
+面板测试覆盖逐项保存和重置、多行规则、无效长度、拒绝外部修改冲突、保存成功后取消旧请求、关闭面板取消、按键重映射、持久化状态刷新及长值分页. 下图来自编译版 Pi 0.87.0 和本地受控模型, 通过真实命令在 100×30、56×26 与 56×24 终端中取得. RTK 对照图使用本地可执行 fixture 和人工构造的统计. 图中名称由 fixture 返回, 与上面的真实模型样本分开记录.
 
 浅色终端的默认前景/背景为黑/白, 深色为黑底浅色文字. 导出明确使用 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. 这些是无窗口终端截图, 不代表原生窗口或合成器体验.
 
-![深色面板中刚应用的临时名称](../../assets/session-naming/panel-dark.png)
+![深色 AutoName 面板中根据对话生成的名称](../../assets/session-naming/panel-dark.png)
 
-![浅色命名设置面板](../../assets/session-naming/panel-light.png)
+![浅色 AutoName 设置面板](../../assets/session-naming/panel-light.png)
 
 ![最小 56×24 尺寸下的模型选择](../../assets/session-naming/panel-narrow.png)
+
+下方 RTK 界面由同一套共享组件渲染. 功能摘要各异, 标题、菜单列、设置分组和按键提示使用共同布局.
+
+![相同 100×30 尺寸下的深色 RTK 首页](../../assets/session-naming/rtk-root-dark.png)
+
+![相同 100×30 尺寸下的浅色 RTK 设置](../../assets/session-naming/rtk-settings-light.png)
+
+![56×26 的 AutoName 首页](../../assets/session-naming/autoname-root-narrow.png)
+
+![56×26 的 RTK 首页](../../assets/session-naming/rtk-root-narrow.png)
