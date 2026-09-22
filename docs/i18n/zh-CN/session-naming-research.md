@@ -1,38 +1,110 @@
-# 自动 Session 命名调研
+# Session 命名: 规则、时机与任务稳定性
 
-[English](../../session-naming-research.md). 调研日期: 2026-09-22. 本文建议尚不是已批准的实现契约.
+[English](../../session-naming-research.md). 调研日期: 2026-09-22. 本文是调研报告, 不是已批准的实现规格.
 
-自动命名值得恢复, 它帮助用户辨认并恢复并行会话. 目标是得到稳定、可辨认的任务名称. 长会话发生实际主题变化时可以更新名称, 但时间过去本身不构成改名理由. 这是产品建议, 不是经过用户实验测得的结论.
+问题是: 当对话经历澄清、实现和排查时, Session 名称如何持续识别用户的主要任务. 源码检查可以确定输入、提示词、触发器和更新条件. 如果不把生成名称放到有代表性的对话中评测, 就不能确定实际名称质量.
 
-## 证据与当前状态
+本次修订替换了之前关于默认冷却期的建议. 冷却期可以限制请求频率, 但不能阻止标题跟随最新子任务. 反过来, 只生成一次的名称之后不会漂移, 但可能永久保留早期误解. 两种失败模式都需要考虑.
 
-当前基线为 `cd0f174f65bdbacdca265646b4e191943063d0ac`. [入口](../../../index.ts) 注册 Web 和 RTK, [配置](../../../src/pi/configuration.ts) 只接受 `tools`、`web` 和 `rtk`, 尚无命名功能或设置. 未知配置字段会被拒绝, 因此直接复制旧版的 `sessionNaming` 配置不是当前版本支持的接入方式.
+## 什么算作证据
 
-本次检查的旧版本地快照为 `21b636eaccc487a08362165ec69ffe364e8730fb`, 具体文件包括 `packages/pi-stuff/src/session-naming/{index,controller,state,prompt,model,settings}.ts`、`conversation-ui/{index,agent-run-origin}.ts` 和 `docs/adr/0020-add-automatic-session-naming.md`. 这些文件在该工作树中没有修改. 当前 GitHub 仓库无法解析这个提交, 因此这些属于本地源码观察, 不是可公开访问的证据. 旧 ADR 记录历史决策, 不属于重建后仓库的现行 ADR.
+我们比较的是持久化的 Session/任务标题, 以及用作 Session 列表标签的持久化摘要. 终端窗口状态、compaction 摘要和 commit 消息承担不同用途. 有源码依据的行会标出版本或 commit. 只来自文档的行为会明确标注. 公开 issue 报告是已观察到的失败示例, 不能证明每个用户或当前版本都有同样缺陷. 独立 package 会与同一命名实现的改编版本区分.
 
-旧版实现来自 [pi-autoname 的 73d25ca](https://github.com/ssdiwu/pi-autoname/tree/73d25caa9ff33dadfaa8187ad3f7d1495a01cec9), 检查时它仍是该上游的 main. 上游 README 记录首轮对话命名、冷却后重新判断、显式 `/autoname` 以及可配置的手动名称策略. 上游跟随用户语言, 旧版分支则明确要求英文.
+本次扩展调研没有安装或执行任何外部源码, 也没有发起实时命名模型请求. 之前针对 Pi 0.85.1 的内存元数据探针仍然有效, 但其用途限制见下文.
 
-| 源码中观察到的旧版行为                                                              | 对新版的判断                                                                                          |
-| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| 默认开启, 用户一轮工作结束且距上次命名满十分钟后重新判断                            | 保留按事件判断. 十分钟可作为初始值, 不是测量得到的最优值. 不需要空闲定时器.                           |
-| `respectManualName: false`                                                          | 建议更改默认值: 手动名称保留到用户显式重新生成. 这是对旧行为的修改建议.                               |
-| 最近六条用户/助手消息, 每条在转义前最多取 700 字符, 排除工具结果消息、图片和思考块  | 保留输入限额. 同时保留初始任务信息, 避免局部追问覆盖整体任务名称. 助手文字仍可能转述工具里的敏感数据. |
-| 提示词要求英文 2-4 词; 校验实际接受含英文字母的 3-30 个 ASCII 字符                  | 不能声称严格校验词数. 语言和显示宽度政策需要重新决定, 支持中文也必须修改校验.                         |
-| 指定模型、指定后备模型、当前会话模型依次尝试; 单次 12 秒、总计 30 秒、输出 64 token | 复用宿主模型注册表. 默认跟随当前模型或使用一个显式指定的模型, 这种辅助功能不需要隐式跨提供商回退.     |
-| 自动生成、强制生成和观察到的手动命名写入自定义记录                                  | 恢复会话后仍需识别名称归属, 但记录的作用范围要与 Pi 的全会话名称语义一致.                             |
-| 关闭自动命名后仍可执行 `/autoname`                                                  | 保留. 自动失败保持安静, 显式调用需要有用的失败提示.                                                   |
+## 其他 harness
 
-旧代码已经会拒绝被手动改名或关闭操作取代的旧结果, 按子进程约定排除子会话, 并取消受管理的请求. 这些要求值得保留, 但不说明可以照搬它的完整生命周期框架.
+下表区分持久化身份和临时状态. 每一行有源码依据的内容都固定到了 commit. Claude Code 和 Codex 行只报告检查到的官方文档内容.
 
-Pi 0.85.1 对应上游提交 `d981de1229ef899957bbe968bc8dcda02a21f477`. 下文安装包代码观察对应的公开来源是 [扩展类型](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/extensions/types.ts)、[Agent 生命周期](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts)、[Session 元数据](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/session-manager.ts) 和 [会话选择器](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/modes/interactive/components/session-selector.ts). 没有名称时, 选择器显示首条消息.
+| Harness / 检查版本                     | 命名规则与输入                                                                                                                                                                                       | 何时命名或更新                                                                                                                                             | 稳定性与限制                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenCode 2.0.9, `6608799`              | 初始使用第一条可见用户消息. 单行, 使用用户语言, prompt 目标不超过 50 个字符, 保留技术术语和标识符, 实际存储上限为 100. 显式重新生成时保留首个请求, 最多 2,000 字符, 加近期用户/助手文本, 总计 8,000. | 根 Session 的输入变得可见且标题仍是默认时间戳时异步命名. 之后的重新生成是显式操作.                                                                         | 后续子任务不会自动替换标题. 提交时的标题相等检查和事件序号保护并发变化. 不明确的首个请求可能一直导致错误标题. [Prompt](https://github.com/anomalyco/opencode/blob/6608799d35d96c2821a48ac1d4b26a3b84b4e433/packages/core/src/plugin/agent.ts#L26-L69), [generation](https://github.com/anomalyco/opencode/blob/6608799d35d96c2821a48ac1d4b26a3b84b4e433/packages/core/src/session/title.ts), [trigger](https://github.com/anomalyco/opencode/blob/6608799d35d96c2821a48ac1d4b26a3b84b4e433/packages/core/src/session/runner/llm.ts#L162-L179).                                                |
+| Goose 1.51.0, `1a4249a`                | 使用前三条可见用户消息. Prompt 目标是不超过 4 个词, 重点是任务主题而不是机械操作, 优先保留 issue/project/document 标识符, 不自行编造细节.                                                            | 普通 provider 会在前三条用户消息期间重新考虑. provider 管理的上下文只使用第一条. 在助手完成回复前开始.                                                     | 有限的早期修正, 然后冻结. 持久化的 `user_set_name` 只在入口处排除手动名称. 在检查的路径中没有找到写回时的顺序保护或手动来源复查, 因此较早请求可能覆盖较新的自动名称或手动名称. [Prompt](https://github.com/block/goose/blob/1a4249ac9f23c6e6e2526d4b54dbbf3bb09ba204/crates/goose/src/prompts/session_name.md), [input](https://github.com/block/goose/blob/1a4249ac9f23c6e6e2526d4b54dbbf3bb09ba204/crates/goose/src/session/session_naming.rs), [gate](https://github.com/block/goose/blob/1a4249ac9f23c6e6e2526d4b54dbbf3bb09ba204/crates/goose/src/session/session_manager.rs#L565-L651). |
+| Gemini CLI, `d5b3e3a`                  | 持久化摘要要求用一句话表达用户的主要意图, 不超过 80 个字符. 最多 20 条 user/Gemini 消息, 消息超过 20 条时取前 10 条和后 10 条, 每条最多 500 字符.                                                    | 启动和 Session 列表可能为最近一次符合条件的旧 Session 生成摘要. 需要超过 1 条用户消息, 排除当前 Session、subagent Session 和 scratchpad. 已有摘要会被复用. | 持久化后, 后续输入不会持续重写它. 这个列表标签是延迟生成的. [Prompt/input](https://github.com/google-gemini/gemini-cli/blob/d5b3e3accb26000d273abf16e0f1dd83aa5428a9/packages/core/src/services/sessionSummaryService.ts), [selection/save](https://github.com/google-gemini/gemini-cli/blob/d5b3e3accb26000d273abf16e0f1dd83aa5428a9/packages/core/src/services/sessionSummaryUtils.ts#L321-L566), [display](https://github.com/google-gemini/gemini-cli/blob/d5b3e3accb26000d273abf16e0f1dd83aa5428a9/packages/cli/src/utils/sessionUtils.ts#L319-L335).                                    |
+| Kimi CLI public 1.51.0, `5c7db06`      | 使用首个 wire turn 的 user 和 assistant 文本, 每一方只取前 300 个字符. 使用通用的简短标题提示, 上限 50 个字符.                                                                                       | Web 首轮 callback 在 idle/stopped 时触发. 后端首次成功后定名, 多次失败后则固定回退名称.                                                                    | 持久化的 `title_generated` 会冻结成功或手动设置的标题. 在模型 await 返回后重新读取, 保护已经完成的名称. 文本稳定性很强, 但修正机会有限. [Backend](https://github.com/MoonshotAI/kimi-cli/blob/5c7db06c24a175b17a3fb44fa58872235c1888e8/src/kimi_cli/web/api/sessions.py#L590-L901), [callback](https://github.com/MoonshotAI/kimi-cli/blob/5c7db06c24a175b17a3fb44fa58872235c1888e8/web/src/hooks/useSessionStream.ts#L517-L568).                                                                                                                                                             |
+| oh-my-pi, `df624f5`                    | 使用提交消息中的任务, 大约五个词. 确定性低信号过滤器会在调用模型前拒绝问候语/填充语. 输出非法时 Session 可以保持未命名.                                                                              | 符合条件且未命名的输入开始命名. 已有名称或请求正在执行时跳过. 另有一个受设置控制的独立 replan refresh.                                                     | Session/名称重新读取保护首次生成. replan refresh 尊重持久化的用户标题来源. 低信号词汇主要是英文, 不是通用的多语言意图分类器. [Prompt](https://github.com/can1357/oh-my-pi/blob/df624f56b0508c51067a70422606cac898ac2bcb/packages/coding-agent/src/prompts/system/title-system.md), [filter](https://github.com/can1357/oh-my-pi/blob/df624f56b0508c51067a70422606cac898ac2bcb/packages/coding-agent/src/tiny/text.ts), [lifecycle](https://github.com/can1357/oh-my-pi/blob/df624f56b0508c51067a70422606cac898ac2bcb/packages/coding-agent/src/session/agent-session.ts#L7991-L8142).         |
+| Claude Code, 2026-09-22 检查的官方文档 | 不带名称的 `/rename` 会根据对话历史生成名称. 支持显式名称和 hook 提供的标题. Changelog 描述了更短、更具体的自动名称.                                                                                 | Changelog 记录了特定界面上的首个 prompt/第三条消息变化. 这些内容不能确定 CLI、Desktop 和 Remote Control 之间有一个统一的更新时机.                          | 检查到的公开文档没有确定具体的自动 prompt、输入窗口和更新优先级. [Commands](https://code.claude.com/docs/en/commands), [hooks](https://code.claude.com/docs/en/hooks), [changelog](https://code.claude.com/docs/en/changelog).                                                                                                                                                                                                                                                                                                                                                                |
+| Codex, 2026-09-22 检查的官方文档       | CLI 0.150.0 changelog 描述了未命名终端任务的描述性自动标题, 以及基于对话生成、可编辑的 `/rename` 建议.                                                                                               | 文档说明了用户控制, 没有确定具体的首次/更新事件或输入选择.                                                                                                 | 不要推断 Desktop 和 CLI 使用同一算法. `thread/name/set` 和独立的 goal API 不能证明标题来自 goal. [Changelog](https://learn.chatgpt.com/docs/changelog), [commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli), [app server](https://learn.chatgpt.com/docs/app-server).                                                                                                                                                                                                                                                                                                   |
 
-## 两个接入陷阱
+Gemini 做了一个有用的区分: `update_topic` 在内存中跟踪逻辑章节或策略变化, 而持久化的 Session summary 提供可复用的 Session 标签. topic 指令明确允许从 research 变化到 implementation. 把这种更新频率 直接复制到 Session 标题会改变产品含义. 来源: [topic instructions](https://github.com/google-gemini/gemini-cli/blob/d5b3e3accb26000d273abf16e0f1dd83aa5428a9/packages/core/src/prompts/snippets.ts#L668-L684), [topic state](https://github.com/google-gemini/gemini-cli/blob/d5b3e3accb26000d273abf16e0f1dd83aa5428a9/packages/core/src/tools/topicTool.ts#L45-L102).
 
-已安装的 `@earendil-works/pi-coding-agent@0.85.1` 提供 `getSessionName`、`setSessionName`、`appendEntry`、`modelRegistry.complete`、`session_info_changed`、`session_start`、`session_shutdown` 和 `session_tree`. 自动命名不需要新增提供商客户端或直接编辑 JSONL.
+上面的 Kimi 公开源码是一个具体实现. 它较新的 [hosted server API 文档](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/server-api.html)描述了不同的 title endpoint 和输入模式, 本文不把这些细节拼成一个虚构的单一版本. oh-my-pi 也有终端状态标题, 表格行讨论的是持久化 Session 名称及其显式 replan 路径.
 
-`AgentSettledEvent` 只有事件类型. `dist/core/agent-session.js` 中的 `_runAgentPrompt` 在 `finally` 中发出该事件, 因此结束不代表成功, 也不代表来自用户. `InputEvent.source` 可区分 `interactive`、`rpc` 和 `extension`, 但仍需确认输入实际进入了执行流程. 旧版共享来源跟踪器处理了这一区别, 然而检查到的结束事件发布路径没有核对助手停止原因. 因此该路径不能证明旧 ADR 承诺的失败/取消排除. 新版必须显式验证成功、中断、失败、被拦截输入、排队的 steer/follow-up 以及自动续跑.
+## Pi packages
 
-Pi 的 `SessionManager.getSessionName()` 扫描全部记录, 旧版却从 `getBranch()` 恢复命名标记. 本次用真实 Pi 0.85.1 的内存 Session 写入名称和标记, 然后回到两者之前的分支, 得到:
+下面十个 package 展示了不同于 旧版派生实现 的选择. 版本来自链接 commit 中的源码 manifest, 不表示它们与当前固定的 Pi runtime 兼容. 已检查 package 源码, 没有安装. 名称中共享一个短语的 repository 不因此成为同一个实现. 旧版 Pi Stuff 对 `pi-autoname` 的派生实现 不作为额外独立样本计算.
+
+| Package / 版本                                                                                                                            | 输入与命名规则                                                                                                                                                                      | 触发时机、更新条件与手动策略                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`pi-session-namer` 0.3.2](https://github.com/joshua-zyy/pi-session-namer/blob/1d10dfd719438f457a29641ae05973af21e795d4/src/index.ts)     | 持久化 `type/topic/progress`. 使用 5,000 字符的最新文本预算和已有 segments. 当当前内容仍然有效时要求精确复用 type/topic, 支持 `KEEP`/`SKIP`.                                        | 首次 settled, 之后每四次 settled run 检查一次; compaction 会安排下一次 settled 检查. 持久化手动名称锁. progress 变化仍可能静默更新显示名称.   |
+| [`pi-autoname` 0.6.8](https://github.com/ssdiwu/pi-autoname/tree/73d25caa9ff33dadfaa8187ad3f7d1495a01cec9)                                | 首次使用首轮对话; 周期检查使用最近六条消息. 输入当前标题并要求除非发生 material shift, 否则原样保留.                                                                                | settled 加冷却期, 支持显式 `/autoname`. 默认 `respectManualName=false`, 因此除非配置开启, 手动命名不是永久锁定.                               |
+| [`patlux/pi-auto-session-name` 0.1.1](https://github.com/patlux/pi-auto-session-name/tree/19a83557d77638a25b065755be6779eaad901101)       | 使用当前分支 中最早的有界有效文本, 处理 compaction checkpoint. 标题具体描述任务/结果, 使用用户语言, 大约 3-8 个词, 保留标识符, 上限 80 字符.                                        | 只处理未命名 Session, 在 settled 或 60 秒 运行期间的超时触发 时触发. 冷却期只抑制重复尝试, 不会周期性替换已有名称. 显式 force 路径会确认替换. |
+| [`@jhlabs/pi-auto-name` 0.1.1](https://github.com/jhlabs/pi-auto-name/tree/798da56ad23dde4658051604784f9091f1951823)                      | 使用首个用户请求加最新窗口. Prompt 强调完整对话和最新活动目标.                                                                                                                      | 先生成本地 fallback, 首次 settled 时修正, 之后每三条用户消息检查. 手动变化会禁用管理; 异步路径检查 session 文件和 leaf.                       |
+| [`@fyeeme/pi-session-name` 1.0.4](https://github.com/fyeeme/pi-packages/tree/d5fb76cef700244bbd62a1a2bf206422c18257b1)                    | 最多八条非空 user/assistant 消息中的首条加最新七条, 每条最多 600 字符; 输入当前标题和 同级会话标题. Auto 决策可以返回 `KEEP`.                                                       | 默认是 `first`; 独立的 `auto` 模式 每次 settled 检查. 外部 rename 会形成持久锁定.                                                             |
+| [`@camillof/pi-session-autoname` 0.1.2](https://github.com/camillof/pi-session-autoname/tree/5574493a147bfe5c99a3546ced7fc7eb57950a91)    | 使用首个用户请求加最终 assistant response, 上下文 4,000 字符. 关注持久任务/结果而不是临时回复, 使用用户语言.                                                                        | 新的未命名 Session 在首轮 settled exchange 后尝试一次. 显式 refresh 独立; 写入前检查 Session/request generation 和当前名称.                   |
+| [`@furbyhaxx/pi-session-naming` 0.2.1](https://github.com/furbyhaxx/pi-session-naming/tree/5ae08175e317c4c50bf4a09fad071be7ea516a4c)      | 使用类似 Conventional Commits 的 type/scope/description, 包含用户输入中的具体名词. 输入模糊时使用中性的 日期时间占位名称. 可选项目/git 上下文; 范围更宽的对话记录 可能包含工具结果. | 首次 agent run 前触发. 临时标题在十次 settled 事件 后重试, 最多三次; 普通自动标题会冻结. 持久化手动名称锁.                                    |
+| [`pi-auto-session-titles` 1.1.2](https://github.com/edxeth/pi-auto-session-titles/blob/6f8293d2776f01cef687aa9be00718f815d0ac87/index.ts) | 使用原始请求、最终 assistant summary、工具名称和有界的规范化文件路径. 排除工具结果/文件内容、bash 命令和 thinking.                                                                  | 只在首次 settled 时触发. resume/compaction 不触发周期性重命名. 任何 session-info 变化都会停止自动路径; 显式命令独立.                          |
+| [`@nicknisi/pi-session-name` 0.1.10](https://github.com/nicknisi/pi-extensions/tree/0d6345c249ca7351f0203e53e5c8b02e3eff1c12)             | 默认启发式方法 使用首条用户消息的第一行; 可选 LLM 使用首个请求和首个助手回复的开头.                                                                                                 | 只在首次 settled 时触发. 手动命名/清空会形成会话级保护标记. 这里没有看到一般性的后续目标修正证据.                                             |
+| [`pi-session-title` 1.1.0](https://github.com/djdembeck/pi-session-title/tree/5d2b75b21eaaf5a84072adfbf07bda34a7a13296)                   | 使用首个非 command 输入, 最多 2,000 字符; 默认约六个词, 可选 cwd/time 模板. 支持包括 oh-my-pi 在内的 Pi-compatible host.                                                            | 一次性的输入触发, print mode 有 fallback; 跳过已有名称, 在支持时使用 automatic title source.                                                  |
+
+### 最相关的 package 实际保证了什么
+
+`pi-session-namer` 是区分 任务身份字段和进度 的最清晰示例. 它比较 segments, 可以区分 仅进度变化和主题变化. 但是新 type/topic 仍由模型决定, 上下文也偏向最新内容. 相等检查 不能证明 topic 变化合理; `taskChanged` 只影响通知, 不影响写入资格. progress 仍属于渲染后的名称, 因此这是语义锚定, 不是不可变的标题文本. [Prompt and update path](https://github.com/joshua-zyy/pi-session-namer/blob/1d10dfd719438f457a29641ae05973af21e795d4/src/index.ts#L206-L315).
+
+`patlux/pi-auto-session-name` 解决的是另一个问题: 提供有用的早期标签, 然后停止自动替换. 运行期间的超时触发 帮助较长的首轮运行, 同时保留开头上下文, 减少后续偶然工作带来的影响. compaction 后, summary 是输入锚点而不是原始请求的逐字内容, 因此 摘要忠实度 很重要. [Excerpt construction](https://github.com/patlux/pi-auto-session-name/blob/19a83557d77638a25b065755be6779eaad901101/src/title.ts#L56-L101), [eligibility](https://github.com/patlux/pi-auto-session-name/blob/19a83557d77638a25b065755be6779eaad901101/src/index.ts#L164-L255).
+
+`@furbyhaxx/pi-session-naming` 和 oh-my-pi 都承认有些开场无法支持有意义的名称. 延迟命名或保留明确的临时占位名称, 比制造虚假的具体性更好. 十轮重试和英文填充词过滤器 都是实现选择, 不能证明它们是最优的澄清检测器.
+
+## 值得评估的命名规则
+
+反复出现且有用的规则是识别请求的结果及其对象, 保留少数能让任务可检索的标识符. 各来源对长度的规定差异很大: 四个词、五个词、3-8 个词、50/80 个字符. 这些是产品选择, 不是已建立的通用标准. 中文标题需要处理字符数/显示宽度, 不能套用英文词数规则.
+
+针对本任务, 建议示例为 `Session 自动命名规则调研`, 如果范围之后明确进入实现, 则可用 `实现 Session 自动命名`. 搜索工具、lint 失败或 commit 步骤不应导致名称在原始命名任务仍然有效时变成 `修复 lint` 或 `提交代码`. 这些示例是拟议的验收案例, 不是本次调研观察到的模型输出.
+
+候选 prompt 应指定: 用户的主要目标; 具体对象; 原始技术标识符; 用户语言; 不得编造细节; 不得加入状态或偶然步骤; 当前名称仍正确时原样保留; 区分澄清/纠正和目标替换. 可以由代码保证的输入选择和写入条件, 应由代码执行. 单靠 prompt 不能保证语义判断.
+
+## 什么能防止漂移, 什么不能
+
+| 机制                       | 实际控制内容                   | 剩余弱点                               |
+| -------------------------- | ------------------------------ | -------------------------------------- |
+| 生成一次后冻结             | 后续消息不能替换标题           | 模糊开场或早期错误理解会一直保留       |
+| 使用固定的开头对话窗口     | 后续实现细节不会进入命名输入   | 窗口之外的纠正不可见                   |
+| 保留原始请求加近期文本     | 保留对起始任务的明确引用       | 近期文本仍可能占主导; 初始误解仍需纠正 |
+| 要求模型保留当前标题       | 通过 prompt 指导减少无必要变化 | 没有结构性保证; 是否应变化仍由模型决定 |
+| 延迟或重复早期命名         | 让澄清有机会影响标题           | 固定轮数不能证明澄清已经完成           |
+| 冷却期或每 N 轮检查        | 限制请求频率                   | 不说明任务身份是否发生变化             |
+| 手动名称锁定和过期写入检查 | 保护用户意图和并发更新         | 不能让自动生成的标题在语义上变得正确   |
+
+稳定标题和正确标题是两个属性. 限制后续写入或输入能直接约束名称变化. 最难解决的问题是: 哪些后续用户消息纠正或替换主要任务, 哪些只是描述通往它的一步.
+
+## 对 Pi Stuff 的影响
+
+调研到的规则应根据维护者的要求评估: 用主要请求的结果及其对象命名, 只有能区分任务时才加入 范围限制. 局部排查步骤、状态更新或工作阶段不应只因为最近就成为 Session 身份. 这是我们提出的评估标准, 不是每个 harness 都实现了这样的模型.
+
+证据支持对"有限的早期命名/修正策略"和"一次性基线"进行测试. 它不支持把十分钟、三轮或五轮 当作最优阈值. 独立持久化的核心任务记录在生态中有结构化命名先例, 但其必要性仍未得到证明. 应将它与更简单的方案比较: 保留选定的初始用户指令和用户明确给出的后续纠正. 如果需要显示进度, 应提供独立字段, 让稳定的任务标签不会在普通阶段变化.
+
+在选择策略前, 比较这些对话:
+
+| 对话案例                                 | 期望属性                             |
+| ---------------------------------------- | ------------------------------------ |
+| 开场模糊, 之后出现明确目标               | 最终名称反映澄清结果, 而不是冻结开场 |
+| 对同一功能进行调研、实现和测试           | 阶段变化保留任务身份                 |
+| 临时 lint、环境或依赖阻塞                | 标题不会变成阻塞子任务的名称         |
+| 用户纠正了被误解的目标                   | 错误的初始名称可以被修正             |
+| 用户明确替换主要目标                     | 策略可以区分目标替换和附带请求       |
+| 实际请求之前有很长的初始日志或注入上下文 | 输入截断不会丢掉任务                 |
+| 中文内容 加英文技术标识符                | 标题保留含义和可识别的标识符         |
+| 生成尚未结束时手动改名                   | 生成结果不能覆盖手动选择             |
+
+应分别测量主要目标匹配、临时步骤污染、澄清后的纠正和不必要的标题变化. 同时跟踪命名请求数和延迟等运行成本. 这些是拟议的评估案例, 不是已完成的实验或虚构的分数.
+
+## 已有的 Pi 接入 证据
+
+当前 Pi Stuff 基线 `cd0f174f65bdbacdca265646b4e191943063d0ac` 注册 Web 和 RTK, 没有命名能力. 它的配置会拒绝未知字段, 因此不能直接把旧版 `sessionNaming` 设置复制到当前版本. Pi 0.85.1 提供名称读写和 模型 API, 不需要新的模型服务客户端.
+
+[Pi lifecycle](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts) 在 `finally` 中发出 `agent_settled`. settled 既不等于成功, 也不表示输入直接来自用户. 命名时机必须考虑这一点, 不能假定助手 turn 完成就表示用户任务完成.
+
+[Session manager](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/session-manager.ts) 会读取所有条目 中最新的名称. 旧版派生实现 却从当前分支 恢复归属标记. 之前真实的内存探针退回名称和标记之前的分支后返回:
 
 ```json
 {
@@ -42,40 +114,18 @@ Pi 的 `SessionManager.getSessionName()` 扫描全部记录, 旧版却从 `getBr
 }
 ```
 
-名称仍存在, 标记却已离开当前分支. 旧版 `restore()` 会把缺少匹配标记的名称当成手动名称, 命名模块也没有监听 `session_tree`. 这证明状态范围不一致并缺少导航处理, 不是一次端到端误覆盖复现. 建议按整个 Session 跟踪名称归属, 并单独在切换分支时使未完成请求失效. fork 到新 Session 时也需要明确名称继承规则.
-
-在安装了固定依赖的工作树中复现:
+使用固定版本的 Pi 依赖 重现:
 
 ```sh
 bun -e 'import {SessionManager} from "@earendil-works/pi-coding-agent"; const s=SessionManager.inMemory(); const root=s.appendMessage({role:"user",content:"Investigate RTK",timestamp:0}); s.appendSessionInfo("RTK Review"); s.appendCustomEntry("research-marker",{name:"RTK Review"}); s.branch(root); console.log(JSON.stringify({name:s.getSessionName(),branchTypes:s.getBranch().map(e=>e.type),allTypes:s.getEntries().map(e=>e.type)}));'
 ```
 
-## OpenCode 对照
+这证明的是元数据范围, 不是模型质量或端到端覆盖. resume、树导航、fork 和 未完成请求 仍是实现验收案例. 公开接口和持久化变更需要单独约定实现范围.
 
-OpenCode v2.0.9 (`6608799`) 在未命名根会话的输入变得可见时就启动自动命名, 不等待主回复完成. 它的 [runner](https://github.com/anomalyco/opencode/blob/6608799d35d96c2821a48ac1d4b26a3b84b4e433/packages/core/src/session/runner/llm.ts#L156-L173) 按 Session 去重并发命名任务. 这种方式更早提供名称; 等第一轮完成则能利用助手提供的任务上下文. 两种时机都不是唯一正确答案. 对本仓库, 我倾向后者, 与旧版设计意图一致.
+## 旧版来源与范围
 
-它的 [标题服务](https://github.com/anomalyco/opencode/blob/6608799d35d96c2821a48ac1d4b26a3b84b4e433/packages/core/src/session/title.ts#L93-L141) 在重新生成时组合初始请求与有长度限制的近期文字, 写入前重新读取名称, 跳过已被修改或完全相同的名称, 并用事件序号检查保护发布. 这些做法可用于保持名称稳定并保护手动改名. 这是源码证据, 不是 OpenCode 实机测试. 首条输入命名是周期性主题更新的另一种选择, 不能据此声称 OpenCode 使用旧版十分钟策略.
+检查了本地旧版工作副本 `21b636eaccc487a08362165ec69ffe364e8730fb`: `packages/pi-stuff/src/session-naming/{index,controller,state,prompt,model,settings}.ts`、`conversation-ui/{index,agent-run-origin}.ts` 和 ADR 0020. 这些文件没有修改. GitHub 无法在当前仓库 中解析该 commit, 所以这部分只是本地证据. 该 fork 来自 `pi-autoname`, 要求英文 2-4 词标题和 3-30 ASCII 字符校验, 使用最近六条消息上下文和十分钟默认冷却期, 并默认关闭手动名称保护. 其历史 ADR 不约束重建后的仓库.
 
-## 建议的首版行为
+因此, 旧版关于成功 settled 和默认周期冷却的提案不作为本次扩展报告的结论. 在回复前、settled 后、早期澄清后以及 Session 结束后命名, 都是调研系统中的真实模式. 这里适合哪一种, 取决于早期可发现性和纠正初始模糊任务之间的取舍.
 
-未命名的父会话在第一轮用户对话成功结束后命名. 启动有时间上限的后台请求, 不在结束事件处理器中等待它. 后续用户对话成功结束且经过冷却期时, 只重新判断自动命名拥有的名称. 当前名称仍适用就要求模型原样返回. 单次工具完成、空闲时间流逝、自动续跑或子任务完成不单独触发命名.
-
-保留 `/name` 作为手动覆盖, `/autoname` 作为显式重新生成. 生成结果写入前, 必须确认仍是同一个 Session、分支、输入版本和名称归属. 新输入、树导航、会话替换、手动改名、关闭功能和扩展重载应使旧请求失效或被取消. 取消与写入前检查都需要, 因为提供商可能恰好在取消过程中返回.
-
-输入只保留辨认任务所需的文字, 排除工具和思考内容. 拒绝空值、多行/控制字符及过长输出. 凭据模式脱敏可以减少明显泄露, 不能保证移除所有私密信息. 用户应知道命名请求发往哪个模型, 使用其他提供商必须明确. 更新失败就保留原名. 未命名会话可以继续使用 Pi 列表已有的回退显示, 等待下一次合格尝试; 本地截词回退是可选项, 不应导致每轮重复请求.
-
-复用当前宿主配置的所有者, 从根入口注册独立命名能力. 不要只为获取生命周期信号而搬回旧版整个 conversation UI 框架. 按实际调用者确定最小的来源跟踪逻辑, 并与正在进行的 subagent 工作协调子会话约定. 新命令、配置命名空间和持久化归属标记涉及公开接口与持久化, 实现前需要维护者同意. 本报告没有修改这些内容.
-
-我的语言建议是跟随用户任务语言, 保留技术标识符. 如果维护者希望会话列表统一英文, 旧版英文策略仍是合理偏好. 仓库要求 Issue/PR 标题用英文, 不能据此推导 Session 名称也必须英文.
-
-## 验收场景与限制
-
-- 第一轮成功用户对话只生成一次简短可辨认的名称; 重试、压缩和排队续跑不产生重复请求.
-- 同主题追问保留原名; 冷却后发生实质任务变化, 可替换自动拥有的名称.
-- 手动名称在恢复和后续对话中保持. 显式重新生成可以替换它; 关闭自动命名不影响显式命令.
-- 延迟结果不能改到其他 Session、新选择的树分支、更新后的任务或已被手动命名的会话.
-- 无凭据、超时、提供商失败和非法输出不影响主任务, 不破坏已有名称. 连续失败的重试频率有边界.
-- 中文、英文、混合标识符、超长内容和合成的凭据样式文本符合选定的语言及显示约束.
-- 在固定版本的 Bun 编译 Pi 宿主中验证实际提供商流量、元数据持久化及 resume/tree/fork 行为. 单元测试不能证明这一接入成立.
-
-本次阅读了源码, 执行了内存元数据探针. 没有调用真实模型、评测名称质量、测量 token 费用、认证旧扩展或修改运行时行为. 费用取决于输入限额、实际请求频率和选定提供商; 即使返回相同名称, 仍然消耗一次生成调用. 生产实现及其并发/持久化独立审查属于后续工作.
+没有修改运行时行为、配置、依赖或持久化格式. 实时模型质量、成本和宿主端到端生命周期仍未测量. 本报告支持下一步设计讨论; 实现及其并发/持久化审查需要单独约定范围.
