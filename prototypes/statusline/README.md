@@ -59,7 +59,7 @@ bun run check
 git diff --check
 ```
 
-Verified locally with Bun 1.4.0, compiled Pi 0.87.0, Terminal Control 1.2.1 and the repository's Pi API declarations at 0.85.1. The host uses temporary settings/session directories and a local custom streaming provider. Replies, project/branch, token/cost, context, hit, goal and quota values are deterministic samples; no account usage or repository changes are queried. No real model request or check command is executed. The editor, message rendering, streaming, cancellation and terminal resize are Pi's real behavior. The custom provider uses Pi's [documented extension API](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/custom-provider.md).
+Verified locally with Bun 1.4.0, compiled Pi 0.87.1, Terminal Control 1.2.1 and the repository's Pi API declarations at 0.85.1. The host uses temporary settings/session directories and a local custom streaming provider. Replies, project/branch, token/cost, context, hit, goal and quota values are deterministic samples; no account usage or repository changes are queried. No real model request or check command is executed. The editor, message rendering, streaming, cancellation and terminal resize are Pi's real behavior. The custom provider uses Pi's [documented extension API](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/custom-provider.md).
 
 中文: 截图来自真实 Terminal Control 会话, 覆盖 150/100/80/50 列、50 行、明暗主题及指定字体栈, 保留整个 Pi 屏幕. 它们是无头终端证据, 不是 Ghostty 原生窗口或合成器截图. 六组场景均完成缩窄及恢复、编辑、提交、取消和再次提交, 验证完整目录、单空格分隔、可见时完整的进度条、单行 cache hit 及放宽后的字段恢复. 运行环境及复现命令见上. 项目名、分支、回复和所有统计值都是确定样例, 不读取账号额度或实际仓库状态, 不请求模型或执行检查命令. 编辑器、消息、流式响应、取消及缩放由真实 Pi 提供. 临时设置和会话目录在退出时清理.
 
