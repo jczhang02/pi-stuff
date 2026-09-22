@@ -10,6 +10,10 @@ Preserve native user messages, footer, input and session controls. Todo, agents,
 
 [Messages](#conversation-frame-and-messages) · [Tools](#tool-presentation) · [Long sessions](#interaction-and-long-sessions) · [Open decisions](#proposals-awaiting-review-not-implemented)
 
+## Production implementation constraints
+
+Performance and reuse of Pi take priority over pixel-for-pixel prototype fidelity. Preserve native presentation when reproducing a style would require disproportionate work. Acceptance must cover responsive input, scrolling, streaming, disclosure and resizing, plus comparison against the same workload without the new UI for runtime and memory regressions. Long sessions must not accumulate UI overhead without bound. Concrete scenarios and thresholds remain undecided. Prefer existing Pi capabilities and concise code. Production architecture and implementation are still under discussion; prototype approval does not settle them.
+
 ## Conversation frame and messages
 
 ### Welcome, user messages and footer
