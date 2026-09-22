@@ -70,11 +70,21 @@ Read 含有图片的结果留在文本检索组之外, 结果渲染交回 Pi. �
 
 隐藏行数只统计保留的正文渲染行. 原生 Read 的后续读取说明、本地结果数量限制提示单独可见, 不计入行数或重复显示. Web 标头与 excerpt 位置仅在展开时显示, 保持原始条目顺序.
 
+原生 Read 范围若产生无法可靠拆分的续读提示, 如小数 limit, 就完整显示结果. 展示层不缩窄 Pi 接受的参数范围.
+
 ## Web 工具
 
 既有 Web access 工具分别显示为 WebSearch、WebFetch 和 WebRead. 紧凑标题显示操作数量或保留内容标签, 展开后显示 query/URL/content ID 以及分页/find 参数. 原 API 名称、输出和缓存行为不变. 批次失败项和保留内容分页提示在收起时仍可见. 展开本身不抓取更多内容.
 
 WebRead find 没有 excerpt 时显示 `No matches found`; 空页按实际情况显示 `No content` 或 `End of content`, 均不加入成功检索组. 展示层按工具的 UTF-16 内容范围区分标头与正文, 页内类似元信息的示例仍作为正文. 若先前的结果 hook 已使边界无法识别, 则在组外完整显示结果, 不猜测隐藏行数.
+
+WebSearch 的 query/provider/selection/fallback 标头也仅在展开时显示. 搜索正文为空时显示 `No results found`. 源文本中类似标头的内容仍保留, 包括抓取页面和多行 query.
+
+以下 Pi 0.87.0 / Bun 1.4.0 截图使用测试别名下的实际搜索实现和确定性传输, 默认暗色主题、100列, 导出字体与欢迎页相同. 它们验证展示, 不代表真实搜索服务或分组验收.
+
+![收起的 Search 结果](../../assets/ui/search-compact.png)
+
+![展开的 Search 结果](../../assets/ui/search-expanded.png)
 
 以下 Pi 0.87.0 / Bun 1.4.0 编译宿主截图展示限制行数的 Read、两页抓取及无匹配的 WebRead, 分别为收起和展开状态. 使用隔离的确定性 provider、默认暗色主题和100列, 导出字体与欢迎页截图相同. 展开后每页元信息与对应正文保持相邻.
 
@@ -125,4 +135,4 @@ Write/Edit 在展开状态变化时复用高亮源码和当前宽度的折行结
 
 当前真实宿主回归测试在 reload 和 resume 后失败, 历史工具组件保留原生 renderer. reload 在 session_start 注册回调之前重建这些组件. 当前会话聚合、并行完成、单工具展开和新建会话已通过, 历史展示尚未通过, 交付前必须修复. `retrievalGroups` 默认开启, 设为 `false` 则分别显示检索工具.
 
-对 `bb03c4e..c43c503` 的中途独立审查发现四项阻断问题. 关闭 RTK 清理后的终端序列回归、Ctrl+O 后无法局部收起检索组已有验证修复. 元信息计数与 WebRead 无匹配的修复现已通过真实宿主回归测试, 待独立定向复核. 最终全量 diff 审查仍未完成. 原生行为测试通过不代表 assistant/Thoughts 实现或完整验收完成.
+对 `bb03c4e..c43c503` 的中途独立审查发现四项阻断问题. 定向复核已确认终端序列、局部组收起、检索元信息计数和 WebRead 无匹配的修复, 包括小数 Read limit 与 WebSearch 内层标头. Search 展示测试使用实际工具实现、确定性传输和测试别名, 不代表生产注册或分组验收. 最终全量 diff 审查仍未完成. 原生行为测试通过不代表 assistant/Thoughts 实现或完整验收完成.

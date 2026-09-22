@@ -66,12 +66,13 @@ export function readParts(
   // User-requested Read limits have no structured details in Pi. Validate the
   // native suffix against the requested range before separating it from text.
   const footer =
-    /\n\n\[([1-9]\d*) more lines in file\. Use offset=(\d+) to continue\.\]$/u.exec(
+    /\n\n\[([\d.eE+-]+) more lines in file\. Use offset=([\d.eE+-]+) to continue\.\]$/u.exec(
       output,
     );
   if (
     footer &&
     limit !== undefined &&
+    Number.isSafeInteger(Number(footer[1])) &&
     Number.isSafeInteger(limit) &&
     limit > 0 &&
     Number(footer[2]) === Math.max(1, offset) + limit &&

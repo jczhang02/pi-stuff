@@ -70,11 +70,21 @@ Read results containing images stay outside text groups and delegate result rend
 
 Hidden-row hints count retained body rows only. Native Read continuation instructions and local result-limit notices remain visible once, outside that count. Web headers and excerpt positions appear only on expansion, in their original item order.
 
+If a native Read range produces a continuation notice that cannot be separated reliably, such as a fractional limit, the complete result remains visible. Presentation does not narrow Pi's accepted arguments.
+
 ## Web tools
 
 The existing Web access tools display as WebSearch, WebFetch and WebRead. Compact headings show the operation count or retained-content label; expanded headings show query/URL/content ID and paging/find arguments. Their original API names, output and cache behavior are unchanged. Batch-item errors and retained-content paging notices remain visible while compact. This presentation does not fetch additional content on disclosure.
 
 WebRead find with no excerpts shows `No matches found`; an empty page shows `No content` or `End of content` as applicable. These outcomes stay outside successful groups. The display follows the tool's UTF-16 content ranges to separate headers from source text, so header-like examples inside a page remain body content. When an earlier result hook makes those boundaries unrecognizable, the complete result remains visible outside groups without a guessed hidden-row count.
+
+WebSearch's query/provider/selection/fallback header is also expansion-only. An empty search body shows `No results found`. Source text that resembles this header is retained, including fetched pages and multiline queries.
+
+These Pi 0.87.0 / Bun 1.4.0 captures use the real search implementation with deterministic transport under a test alias, at 100 columns in the default dark theme. They verify display, not live search or grouping. Export fonts match the welcome captures.
+
+![Compact Search results](assets/ui/search-compact.png)
+
+![Expanded Search results](assets/ui/search-expanded.png)
 
 The following compiled Pi 0.87.0 / Bun 1.4.0 captures show a limited Read, two fetched pages and a WebRead with no matches, first compact and then expanded. They use an isolated deterministic provider, default dark theme and 100 columns; export fonts match the welcome captures. The expanded view retains each page's metadata beside its body.
 
@@ -125,4 +135,4 @@ A bounded disclosure experiment used Pi 0.85.1, Bun 1.4.0 and an 80×36 terminal
 
 The initial system tests use actual Pi 0.85.1 under Bun 1.4.0 with an isolated deterministic provider. They check compact/expanded output, model-visible content, timeout blocks, host shell settings and global UI controls. History regressions currently fail after reload and resume: historical tool components retain native renderers. Reload rebuilds those components before the session-start registration callbacks run. Live grouping, parallel completion, individual disclosure and starting a new session pass, but history acceptance does not. This lifecycle issue must be fixed before delivery. Compiled-host, full UI, independent review, performance and extended real-model acceptance remain outstanding.
 
-An intermediate independent review of `bb03c4e..c43c503` found four blockers. The terminal-sequence regression with RTK cleanup disabled and local group collapse after Ctrl+O have verified fixes. The metadata-count and WebRead no-match fixes now pass real-host regression tests and await focused independent review. Final full-diff review remains pending. Passing preservation tests do not establish assistant/Thoughts implementation or complete acceptance.
+An intermediate independent review of `bb03c4e..c43c503` found four blockers. Focused follow-ups verified the terminal-sequence, local group collapse, retrieval metadata-count and WebRead no-match fixes, including fractional Read limits and WebSearch's inner header. The Search display test uses the actual tool implementation with deterministic transport and a test alias; it does not establish production registration or grouping acceptance. Final full-diff review remains pending. Passing preservation tests do not establish assistant/Thoughts implementation or complete acceptance.

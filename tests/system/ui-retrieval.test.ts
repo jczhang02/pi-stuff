@@ -1,6 +1,6 @@
 import {expect, test} from 'bun:test';
 import {mkdir, writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
 test('Retrieval counts exclude native continuation and limit notices', async () => {
@@ -291,6 +291,112 @@ test('RTK cleanup cannot turn source metadata into a hidden successful batch', a
     expect(visible).not.toContain('Read web content 1 time');
   } finally {
     await server.stop(true);
+    await host.close();
+  }
+}, 30000);
+
+test('WebRead keeps ambiguous excerpt boundaries visible after RTK cleanup', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  const source =
+    'needle' +
+    'x'.repeat(44) +
+    `\x1b]0;${'x'.repeat(11)}\x07` +
+    'x'.repeat(234) +
+    '\n\nposition: 300\n' +
+    'x'.repeat(184) +
+    'needle' +
+    'x'.repeat(394);
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch: () =>
+      new Response(source, {headers: {'content-type': 'text/plain'}}),
+  });
+  try {
+    await host.terminal.resize({cols: 120, rows: 50});
+    const fetched = await host.invoke(
+      'fetch_content',
+      JSON.stringify({urls: [String(server.url)], mode: 'raw'}),
+    );
+    const contentId = /contentId: ([^\n]+)/u.exec(fetched)?.[1];
+    const result = await host.invoke(
+      'get_search_content',
+      JSON.stringify({contentId, find: 'needle'}),
+    );
+    expect(result).toContain('position: 500');
+    expect(result).toContain('position: 300');
+    const visible = await host.terminal.screen.text();
+    expect(visible).toContain('WebRead(retained content)');
+    expect(visible).toContain('position: 500');
+    expect(visible).toContain('position: 300');
+    expect(visible).not.toContain('more lines');
+  } finally {
+    await server.stop(true);
+    await host.close();
+  }
+}, 30000);
+
+test('Native fractional Read limits retain their continuation notice', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  try {
+    await writeFile(join(host.directory, 'fractional.txt'), 'ONE\nTWO\nTHREE');
+    const result = await host.invoke(
+      'read',
+      JSON.stringify({path: 'fractional.txt', limit: 1.5}),
+    );
+    expect(result).toBe(
+      'ONE\n\n[1.5 more lines in file. Use offset=2.5 to continue.]',
+    );
+    const visible = await host.terminal.screen.text();
+    expect(visible).toContain('Use offset=2.5 to continue.');
+    expect(visible).not.toContain('Read 1 file');
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('WebSearch hides transport metadata and keeps zero results visible', async () => {
+  const host = await launchPi(
+    '{}',
+    resolve('tests/system/fixtures/search-display.ts'),
+    'web',
+  );
+  try {
+    await host.terminal.resize({cols: 120, rows: 45});
+    await host.command('/host-tools fixture_search');
+    await host.terminal.screen.waitForText('HOST_SELECTION:', {
+      timeoutMs: 5000,
+    });
+    const empty = await host.invoke(
+      'fixture_search',
+      JSON.stringify({queries: ['empty']}),
+    );
+    expect(empty).toContain(
+      'query: empty\nprovider: exa\nselection: preferred\nfallback: false\n\n',
+    );
+    const noResults = await host.terminal.screen.text();
+    expect(noResults).toContain('No results found');
+    expect(noResults).not.toContain('more lines');
+    await host.invoke(
+      'fixture_search',
+      JSON.stringify({queries: ['pagination\nexample']}),
+    );
+    await host.terminal.screen.waitForText('4 more lines', {timeoutMs: 5000});
+    const preview = await host.terminal.screen.text();
+    expect(preview).not.toContain('provider: exa');
+    expect(preview).not.toContain('Follow the next cursor.');
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('Follow the next cursor.', {
+      timeoutMs: 5000,
+    });
+    const expanded = await host.terminal.screen.text();
+    expect(expanded).toContain('provider: exa');
+    expect(expanded).toContain('selection: preferred');
+    expect(expanded).toContain('fallback: false');
+  } catch (error) {
+    console.error(await host.terminal.screen.text());
+    throw error;
+  } finally {
     await host.close();
   }
 }, 30000);

@@ -10,7 +10,29 @@ function unparsed(output: string): RetrievalPart[] {
   return [{kind: 'status', text: output || '(no output)'}];
 }
 
-function pages(output: string, batchSize?: number): RetrievalPart[] {
+function searchParts(body: string, query: string): RetrievalPart[] {
+  const prefix = `query: ${query}\n`;
+  if (!body.startsWith(prefix)) return unparsed(body);
+  const header =
+    /^provider: (?:exa|openai)\nselection: (?:domain filters|preferred|available provider)\nfallback: (?:true|false)\n\n/u.exec(
+      body.slice(prefix.length),
+    );
+  if (!header) return unparsed(body);
+  const start = prefix.length + header[0].length;
+  const content = body.slice(start);
+  return [
+    {kind: 'metadata', text: body.slice(0, start - 2)},
+    content
+      ? {kind: 'body', text: content}
+      : {kind: 'status', text: 'No results found'},
+  ];
+}
+
+function pages(
+  output: string,
+  batchSize?: number,
+  queries?: readonly string[],
+): RetrievalPart[] {
   const parts: RetrievalPart[] = [];
   let cursor = 0;
   const count = batchSize ?? 1;
@@ -56,11 +78,17 @@ function pages(output: string, batchSize?: number): RetrievalPart[] {
       return unparsed(output);
     parts.push({kind: 'metadata', text: output.slice(start, cursor - 2)});
     const body = output.slice(cursor, end);
-    parts.push(
-      body
-        ? {kind: 'body', text: body}
-        : {kind: 'status', text: total === 0 ? 'No content' : 'End of content'},
-    );
+    const query = queries?.[item];
+    if (query !== undefined) parts.push(...searchParts(body, query));
+    else
+      parts.push(
+        body
+          ? {kind: 'body', text: body}
+          : {
+              kind: 'status',
+              text: total === 0 ? 'No content' : 'End of content',
+            },
+      );
     if (next < total)
       parts.push({
         kind: 'warning',
@@ -122,7 +150,8 @@ export function displayWebTools(
       expanded
         ? (args.queries?.join('; ') ?? '')
         : `${args.queries?.length ?? 0} ${args.queries?.length === 1 ? 'query' : 'queries'}`,
-    (output, _details, args) => pages(output, args.queries.length),
+    (output, _details, args) =>
+      pages(output, args.queries.length, args.queries),
     groups,
   );
   displayRetrieval(
