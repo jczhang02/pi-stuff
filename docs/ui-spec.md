@@ -14,6 +14,10 @@ Preserve native user messages, footer, input and session controls. Todo, agents,
 
 Performance and reuse of Pi take priority over pixel-for-pixel prototype fidelity. Preserve native presentation when reproducing a style would require disproportionate work. Acceptance must cover responsive input, scrolling, streaming, disclosure and resizing, plus comparison against the same workload without the new UI for runtime and memory regressions. Long sessions must not accumulate UI overhead without bound. Concrete scenarios and thresholds remain undecided. Prefer existing Pi capabilities and concise code. Production architecture and implementation are still under discussion; prototype approval does not settle them.
 
+The current implementation scope changes Pi Stuff only. Prefer public Pi extension APIs; discuss monkey patches only for concrete problems, without pre-approving or categorically prohibiting a patch. The UI changes presentation only: preserve tool execution, model-visible results and stored session records. Apply the new presentation to old sessions without rewriting history; omit missing fields. Verify the assistant leading dot for list-first Markdown during real E2E after implementation, not through a separate investigation now.
+
+Resolve technical choices from Pi and comparable packages before asking for product trade-offs. Reference: [pi-tool-display 0.5.0 at 91cef758](https://github.com/MasuRii/pi-tool-display/tree/91cef7580078371f8dc49a8607222807ad6a424d). Referencing its implementation does not authorize a new dependency or wholesale port.
+
 ## Conversation frame and messages
 
 ### Welcome, user messages and footer
