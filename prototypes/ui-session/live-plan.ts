@@ -134,7 +134,7 @@ export function followupPlan(): Step[] {
         name: 'Write',
         target: path,
         state: 'done',
-        summary: 'Wrote 10 lines · 2 additional boundary tests',
+        summary: 'Wrote 10 lines',
         body: {kind: 'code', path, start: 1, text},
       },
     },
@@ -145,7 +145,7 @@ export function followupPlan(): Step[] {
         name: 'Bash',
         target: 'bun test tests/search',
         state: 'failed',
-        summary: '9 passed · 1 failed · duplicate within page',
+        summary: 'Exit 1',
         body: {
           kind: 'text',
           text: 'FAIL keeps first occurrence within the same page\nExpected: [{id: "a", title: "first"}]\nReceived: [{id: "a", title: "first"}, {id: "a", title: "later"}]\n\n9 pass\n1 fail',
@@ -205,7 +205,7 @@ export function followupPlan(): Step[] {
         name: 'Bash',
         target: 'bun test tests/search --verbose',
         state: 'done',
-        summary: '10 passed · 0 failed',
+        summary: 'Exit 0',
         body: {
           kind: 'text',
           text: cases

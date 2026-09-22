@@ -16,7 +16,7 @@
      fetch_content · https://docs.example.com/old-pagination · HTTP 404
 
  • Bash(bun test tests/search)
-   ⎿  Exit 1 · skips IDs from the previous page · collapse
+   ⎿  Exit 1 · collapse
      FAIL skips IDs from the previous page
      Expected: [{id: "b"}]
      Received: [{id: "a"}, {id: "b"}]

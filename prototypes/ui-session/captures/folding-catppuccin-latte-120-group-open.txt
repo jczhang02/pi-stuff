@@ -18,7 +18,7 @@
  • Read 1 file · expand
 
  • Bash(bun test tests/search)
-   ⎿  8 passed · 0 failed · 0.4s · 10 more lines · expand
+   ⎿  Exit 0 · 0.4s · 10 more lines · expand
      bun test v1.4.0
      [pass] preserves the cursor
      [pass] skips IDs from the previous page

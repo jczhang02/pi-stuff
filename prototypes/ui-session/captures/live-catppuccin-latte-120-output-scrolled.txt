@@ -11,7 +11,7 @@
      25     return {items, nextCursor: page.cursor};                                                                   │
                                                                                                                        │
  • Bash(bun test tests/search --verbose)                                                                               │
-   ⎿  10 passed · 0 failed · collapse                                                                                  │
+   ⎿  Exit 0 · collapse                                                                                                │
      [pass] preserves the cursor                                                                                       │
        case 1: cursor preserved; input unchanged                                                                       │
        fixture: page-1; stable output order                                                                            │

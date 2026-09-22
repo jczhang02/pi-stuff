@@ -1,5 +1,5 @@
  • Bash(bun test tests/search)
-   ⎿  9 passed · 1 failed · duplicate within page · 3 more lines · expand
+   ⎿  Exit 1 · 3 more lines · expand
      FAIL keeps first occurrence within the same page
      Expected: [{id: "a", title: "first"}]
      Received: [{id: "a", title: "first"}, {id: "a", title: "later"}]
@@ -14,7 +14,7 @@
      24 +   });
 
  • Bash(bun test tests/search --verbose)
-   ⎿  10 passed · 0 failed · 31 more lines · expand
+   ⎿  Exit 0 · 31 more lines · expand
      [pass] preserves the cursor
        case 1: cursor preserved; input unchanged
        fixture: page-1; stable output order

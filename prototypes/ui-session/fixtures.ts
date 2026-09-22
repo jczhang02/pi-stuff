@@ -96,7 +96,7 @@ const test: Tool = {
   kind: 'tool',
   name: 'Bash',
   target: 'bun test tests/search',
-  summary: '8 passed · 0 failed · 0.4s',
+  summary: 'Exit 0 · 0.4s',
   state: 'done',
   body: {
     kind: 'text',
@@ -106,7 +106,7 @@ const test: Tool = {
 const failed: Tool = {
   ...test,
   state: 'failed',
-  summary: 'Exit 1 · skips IDs from the previous page',
+  summary: 'Exit 1',
   body: {
     kind: 'text',
     text: 'FAIL skips IDs from the previous page\nExpected: [{id: "b"}]\nReceived: [{id: "a"}, {id: "b"}]\n\n7 pass\n1 fail',
@@ -240,7 +240,7 @@ const webFailed: Tool = {
 const truncated: Tool = {
   ...test,
   target: 'bun test --verbose',
-  summary: '8 passed · output truncated',
+  summary: 'Exit 0 · output truncated',
   warning:
     'Showing the retained tail. Full output: /tmp/pi-pagination-tests.log',
   body: {
@@ -293,7 +293,7 @@ export const scenes = [
     name: 'folding',
     title: '折叠边界',
     note: '展开工具与普通消息对齐; Thoughts 独立服从 Pi 设置, 失败调用仍可见.',
-    tokens: ['Thoughts · 4s', 'File not found', '8 passed'],
+    tokens: ['Thoughts · 4s', 'File not found', 'Exit 0'],
   },
   {
     name: 'tools',
@@ -310,8 +310,8 @@ export const scenes = [
   {
     name: 'changes',
     title: '修改与验证',
-    note: 'Edit 默认展示最多 6 行高亮差异; Write 只报写入结果, 点击查看高亮代码.',
-    tokens: ['Added 2 lines', '8 passed'],
+    note: 'Edit 默认展示最多 6 行高亮差异; Write 默认预览 3 行高亮代码, 点击查看完整内容.',
+    tokens: ['Added 2 lines', 'Exit 0'],
   },
   {
     name: 'running',
@@ -526,5 +526,5 @@ function scenarioEntries(name: string): Entry[] {
 }
 export const replayResult: Tool = {
   ...test,
-  summary: '8 passed · 0 failed · 4.0s',
+  summary: 'Exit 0 · 4.0s',
 };

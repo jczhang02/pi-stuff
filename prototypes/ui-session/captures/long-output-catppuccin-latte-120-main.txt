@@ -1,6 +1,6 @@
 
  • Bash(bun test --verbose)
-   ⎿  8 passed · output truncated · 21 more lines · expand
+   ⎿  Exit 0 · output truncated · 21 more lines · expand
      test runner diagnostic 1
      test runner diagnostic 2
      test runner diagnostic 3

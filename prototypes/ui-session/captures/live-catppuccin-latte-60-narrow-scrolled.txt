@@ -4,8 +4,7 @@
      src/search/types.ts:12     previousIds: string[];     │
                                                            │
  • Write(tests/search/pagination-additional.test.ts)       │
-   ⎿  Wrote 10 lines · 2 additional boundary tests ·       │
-      collapse                                             │
+   ⎿  Wrote 10 lines · collapse                            │
       1 │ test("keeps cursor when every item is filtered", │
         │ () => {                                          │
       2 │   const page = {items: [{id: "a"}], cursor:      │
@@ -20,18 +19,19 @@
       8 │   const page = {items: [first, {id: "a", title:  │
         │ "later"}], cursor: "next"};                      │
       9 │   expect(paginate(page,                          │
-        │ []).items).toEqual([first]);                     ┃
-     10 │ });                                              ┃
+        │ []).items).toEqual([first]);                     │
+     10 │ });                                              │
                                                            ┃
  • Bash(bun test tests/search)                             ┃
-   ⎿  9 passed · 1 failed · duplicate within page ·        │
-      collapse                                             │
-     FAIL keeps first occurrence within the same page      │
+   ⎿  Exit 1 · collapse                                    ┃
+     FAIL keeps first occurrence within the same page      ┃
      Expected: [{id: "a", title: "first"}]                 │
      Received: [{id: "a", title: "first"}, {id: "a", title:│
      "later"}]                                             │
                                                            │
-     9 pass   ↓ Jump to latest message · End               │
+     9 pass                                                │
+     1 fail                                                │
+              ↓ Jump to latest message · End               │
 
 ────────────────────────────────────────────────────────────
 下一条草稿不会被展开操作覆盖

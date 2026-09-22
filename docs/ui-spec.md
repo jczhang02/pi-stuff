@@ -116,6 +116,8 @@ Long diff, Ctrl+O expanded, mocha, 80 columns
 
 ### Bash, empty results and truncation
 
+The tool result summary uses deterministic data: Edit counts added/removed source lines, and Write counts written source lines. Bash shows the exit code and available elapsed time; it does not parse test counts or generate semantic summaries. Test results remain in the original output. The prototype uses authored summaries to demonstrate this rule; it does not implement result extraction.
+
 Completed Bash retains three output rows. Running tools show the last two output rows; expansion restores retained detail. No output, no matches, tool failure and cancellation have distinct text. Upstream truncation and the retained log path remain visible even when folded. Expanding cannot restore content that the upstream tool never returned.
 
 Running, Default, latte, 120 columns

@@ -183,7 +183,7 @@ await runEffect(async () => {
         await save(
           session,
           'completed',
-          ['Thoughts · 4s', '8 passed', draft],
+          ['Thoughts · 4s', 'Exit 0', draft],
           host.palette,
           theme,
         );
