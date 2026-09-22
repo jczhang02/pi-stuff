@@ -32,6 +32,12 @@ Pi Stuff must not use either of these multi-section control overlays: a modal wi
 
 A feature that needs comparable multi-section navigation must use another structure and follow the applicable real-component prototype process before that structure is accepted. Rejecting these overlays does not approve the drilldown prototype or any other replacement.
 
+## Shared panel components
+
+Use RTK as the reference for common panel structure, interaction and appearance. RTK and AutoName must share components for the title and borders, menu columns and spacing, settings layout, and keyboard hints. Reusing Pi's primitives alone does not satisfy this requirement. Keep these conventions in their shared owner so subsequent changes reach both panels. Features retain ownership of their content, actions and business logic.
+
+RTK and AutoName home pages follow the same order: feature description, summary, then navigation. AutoName's summary shows the current name and the agreed persistence state; its menu places Settings before Generate name. Use the same navigation and settings-editing conventions, adapting fields and actions to each feature. Reuse these components for matching patterns in future panels. Shared presentation does not authorize new progress or status notices.
+
 ## Information and state
 
 Make the current operation, key result and available next action easy to identify. Choose the layout and supporting detail with the feature.
