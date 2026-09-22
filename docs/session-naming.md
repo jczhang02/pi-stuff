@@ -20,7 +20,7 @@ Settings save individually and take effect immediately:
 - **Maximum length** accepts a positive integer. `Use default` restores 80 code points.
 - **Restore defaults** confirms a reset of naming settings while keeping the current name.
 
-A committed configuration change cancels older naming requests without retrying. A failed save keeps the active settings and any pending request. External file edits are not overwritten: use `/reload` before retrying. Confirmed settings are durable; Esc abandons unsubmitted text, not a save already started.
+A committed configuration change cancels older naming requests without retrying. A failed save keeps the active settings and any pending request. External file edits are not overwritten: use `/reload` before retrying. Confirmed settings are durable; Esc abandons unsubmitted text, not a save already started. Session replacement or reload waits for confirmed saves to finish before loading settings into the next runtime.
 
 The panel uses Pi's theme, native selection and input bindings. Esc always goes back or closes, including under remapped cancel bindings. Long names and model identifiers have `[` / `]` pages. The minimum size is 56 columns by 24 rows; smaller terminals show a resize notice with an exit action. Both Naming and RTK reuse the existing local contrast correction for Pi's built-in light palette, without changing custom themes.
 

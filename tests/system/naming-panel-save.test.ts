@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test';
-import {writeFile, unlink, readdir, rename} from 'node:fs/promises';
+import {writeFile, unlink, readdir, rename, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 import {
@@ -10,6 +10,30 @@ import {
 
 const rules =
   'Use a precise English task name.\nPreserve OAuth identifiers and user intent.';
+
+async function beginReplacement(
+  host: Awaited<ReturnType<typeof launchPi>>,
+  action: string,
+) {
+  const command = `/${action}`;
+  await host.terminal.keyboard.type(command);
+  await host.terminal.screen.waitForText(command, {timeoutMs: 4000});
+  await host.terminal.keyboard.press('Enter');
+  await host.terminal.screen.waitUntil(
+    screen => !screen.text.includes(command),
+    {timeoutMs: 4000},
+  );
+}
+
+async function finishReplacement(
+  host: Awaited<ReturnType<typeof launchPi>>,
+  action: string,
+) {
+  await host.terminal.screen.waitForText(
+    action === 'new' ? 'New session started' : 'Reloaded keybindings',
+    {timeoutMs: 4000},
+  );
+}
 
 test('failed rules saves retain the complete editable draft', async () => {
   const host = await launchPi('{"naming":{"automatic":false}}');
@@ -142,13 +166,7 @@ test.each(['new', 'reload'])(
       await closeNamingHome(host);
       await rename(path, held);
       await writeFile(path, '{"naming":{"automatic":false}}');
-      if (action === 'reload') await host.reload();
-      else {
-        await host.command('/new');
-        await host.terminal.screen.waitForText('New session started', {
-          timeoutMs: 4000,
-        });
-      }
+      await beginReplacement(host, action);
       writer = Bun.spawn(
         [
           'sh',
@@ -166,11 +184,70 @@ test.each(['new', 'reload'])(
         {timeoutMs: 4000},
       );
       expect(await writer.exited).toBe(0);
+      await finishReplacement(host, action);
       await host.invoke('', '{}');
       expect((await host.terminal.status()).state).toBe('running');
       const logs = await host.terminal.logs.text();
       expect(logs).not.toContain('This extension ctx is stale');
       expect(logs).not.toContain('Settings changed on disk.');
+    } finally {
+      writer?.kill();
+      await host.close();
+    }
+  },
+  30000,
+);
+
+test.each(['new', 'reload'])(
+  'a confirmed model save is active after %s replaces its session',
+  async action => {
+    const original = '{"naming":{"automatic":false}}';
+    const host = await launchPi(original);
+    let writer: ReturnType<typeof Bun.spawn> | undefined;
+    try {
+      await openNamingSettings(host);
+      await host.terminal.keyboard.press('ArrowDown');
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText('Search models', {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.type('fixture/naming');
+      await host.terminal.screen.waitForText('> fixture/naming', {
+        timeoutMs: 4000,
+      });
+      const path = join(host.agent, 'pi-stuff.json');
+      const held = join(host.agent, 'pending-pipe');
+      await unlink(path);
+      expect(Bun.spawnSync(['mkfifo', path]).exitCode).toBe(0);
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitUntil(
+        async () =>
+          (await readdir(host.agent)).some(file => file.endsWith('.tmp')),
+        {timeoutMs: 4000},
+      );
+      await host.terminal.keyboard.press('Escape');
+      await host.terminal.screen.waitForText('Automatic naming', {
+        timeoutMs: 4000,
+      });
+      await backToNamingHome(host);
+      await closeNamingHome(host);
+      await rename(path, held);
+      await writeFile(path, original);
+      await beginReplacement(host, action);
+      writer = Bun.spawn(
+        ['sh', '-c', 'printf %s "$2" > "$1"', 'naming-fixture', held, original],
+        {stdout: 'ignore', stderr: 'pipe'},
+      );
+      await host.terminal.screen.waitUntil(
+        async () =>
+          !(await readdir(host.agent)).some(file => file.endsWith('.lock')),
+        {timeoutMs: 4000},
+      );
+      expect(await writer.exited).toBe(0);
+      expect(await readFile(path, 'utf8')).toContain('"id": "naming"');
+      await finishReplacement(host, action);
+      await openNamingSettings(host);
+      expect(await host.terminal.screen.text()).toContain('fixture/naming');
     } finally {
       writer?.kill();
       await host.close();

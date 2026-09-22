@@ -260,11 +260,23 @@ export function registerNamingPanel(
   let close: (() => void) | undefined;
   let refresh: (() => Promise<void>) | undefined;
   let lifetime = 0;
+  const saves = new Set<Promise<void>>();
+  async function persist(settings: NamingSettings) {
+    const pending = save(settings);
+    saves.add(pending);
+    try {
+      await pending;
+    } finally {
+      saves.delete(pending);
+    }
+  }
   pi.on('session_info_changed', () => refresh?.());
   pi.on('agent_settled', () => refresh?.());
-  pi.on('session_shutdown', () => {
+  pi.on('session_shutdown', async () => {
     lifetime++;
     close?.();
+    // Replacement must load the result of every already-confirmed save.
+    await Promise.allSettled(saves);
   });
   pi.on('session_before_switch', () => close?.());
   pi.on('session_before_fork', () => close?.());
@@ -288,7 +300,7 @@ export function registerNamingPanel(
             () => close?.(),
             ctx,
             runtime,
-            save,
+            persist,
             message => {
               if (origin === lifetime) ctx.ui.notify(message, 'error');
             },
