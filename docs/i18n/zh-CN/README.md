@@ -16,9 +16,11 @@
 
 [RTK 集成](rtk.md)提供受支持的 Bash 改写、独立的最终结果 ANSI 清理, 以及包含设置、原生用量和诊断的内联 `/rtk` 面板. 它能发现 mise 管理的安装, 不修改 PATH, 保留 Pi 内置 Bash 执行.
 
+[会话命名](session-naming.md)只在开场生成一次名称, 支持手动 `/autoname` 替换, 可配置模型、风格和长度限制.
+
 包内还提供 Catppuccin、Tokyo Night、Gruvbox 和 Rosé Pine 共十款明暗[主题](themes.md). 通过 Pi 主题设置选择, 加载包会保留当前选择.
 
-已测试目标是 Linux Bun 编译版 Pi `0.85.1`. 技术栈为 TypeScript、Bun `1.4.0` 和 Effect v4 (`4.0.0-rc.112`), 纯算法保留为普通函数. 其他平台/宿主版本尚未验证. 除网页访问、RTK 集成和主题外, 下方能力仍是产品方向, 不是已实现功能.
+已测试目标是 Linux Bun 编译版 Pi `0.85.1`. 技术栈为 TypeScript、Bun `1.4.0` 和 Effect v4 (`4.0.0-rc.112`), 纯算法保留为普通函数. 其他平台/宿主版本尚未验证. 除网页访问、RTK 集成、会话命名和主题外, 下方能力仍是产品方向, 不是已实现功能.
 
 ## 项目目标
 
@@ -52,6 +54,7 @@ cd pi-stuff
 - [src/pi/](../../../src/pi/) 管理共用的宿主配置和工具开关策略.
 - [src/web/](../../../src/web/) 管理网页访问, 包含工具, 认证, 网络实现和会话生命周期. 其他能力实现时放在同级目录.
 - [src/rtk/](../../../src/rtk/) 管理 RTK 发现、命令改写、最终结果清理和内联面板.
+- [src/naming/](../../../src/naming/) 管理命名资格、请求限制和结果发布保护.
 - [themes/](../../../themes/) 保存包声明中的静态 Pi 主题资源.
 - [tests/component/](../../../tests/component/) 验证模块行为; [tests/system/](../../../tests/system/) 在真实 Pi 宿主中加载扩展.
 
@@ -63,6 +66,7 @@ Web 宿主注册位于 `src/web/register.ts`, 工具定义位于 `src/web/tools.
 | ------------------------------------------------- | ---------------------------------------- |
 | [网页访问](web-access.md)                         | 加载、设置、凭据、工具与限制             |
 | [RTK 集成](rtk.md)                                | Rewrite、ANSI 清理、设置、原生统计与恢复 |
+| [会话命名](session-naming.md)                     | 开场自动命名、手动生成、限制和持久化     |
 | [主题](themes.md)                                 | 主题选择、自动配对、色板来源与限制       |
 | [贡献指南](CONTRIBUTING.md)                       | Issue、聚焦的变更、验证与 PR             |
 | [代理指令](AGENTS.md)                             | 代理写作与 Git 工作流要求的中文阅读参考  |

@@ -2,13 +2,14 @@ import type {ModelRequest} from './pi-terminal';
 
 // Only the remote model is controlled. Pi still owns commands and session state.
 export class NamingProvider {
+  constructor(private readonly modelId = 'naming') {}
   readonly requests: ModelRequest[] = [];
   title = 'research: Investigate RTK command output';
   held = false;
   private pending: Array<() => void> = [];
 
   reply = async (body: ModelRequest, signal: AbortSignal) => {
-    if (body.model !== 'naming') return undefined;
+    if (body.model !== this.modelId) return undefined;
     this.requests.push(body);
     if (this.held)
       await new Promise<void>(resolve => {

@@ -6,6 +6,24 @@ import {resolveExa} from '../../../src/web/exa-auth';
 
 // Test-only controls/observations. Never substitutes the extension's registration or I/O.
 export default function (pi: ExtensionAPI) {
+  pi.registerCommand('host-fork', {
+    description:
+      'Offline acceptance fixture: fork before or at the opening request',
+    handler: async (position, ctx) => {
+      const target = ctx.sessionManager
+        .getEntries()
+        .find(
+          entry => entry.type === 'message' && entry.message.role === 'user',
+        );
+      if (!target) throw new Error('Fixture requires a user entry');
+      await ctx.fork(target.id, {
+        position: position === 'before' ? 'before' : 'at',
+        withSession: async next => {
+          next.ui.notify('HOST_FORK_READY', 'info');
+        },
+      });
+    },
+  });
   pi.registerCommand('host-tree', {
     description:
       'Offline acceptance fixture: navigate to the opening user entry',

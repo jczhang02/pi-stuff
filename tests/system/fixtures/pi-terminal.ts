@@ -243,7 +243,7 @@ export async function launchPi(
       get terminal() {
         return screen;
       },
-      async restart(args: readonly string[]) {
+      async restart(args: readonly string[], waitForTui = true) {
         await screen.stop();
         if (!driver) throw new Error('Fixture driver is closed');
         terminal = await driver.launch({
@@ -251,7 +251,8 @@ export async function launchPi(
           command: [...launchOptions.command, ...args],
         });
         screen = terminal;
-        await screen.screen.waitForText('fixture', {timeoutMs: 15000});
+        if (waitForTui)
+          await screen.screen.waitForText('fixture', {timeoutMs: 15000});
       },
       close,
       command,
