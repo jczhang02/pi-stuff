@@ -37,7 +37,7 @@ The reference behavior is documented in pi-stuff-old ADR 0017, `fenced-visualiza
 
 Pi 0.87.1 expands a skill only when the input starts with `/skill:`. Its `_expandSkillCommand` loads a matching skill and appends the user arguments to an internal `<skill>` block. Unknown skills pass through unchanged. The [official skill documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md) describes explicit invocation as a way to ensure skill instructions are loaded, alongside model-directed loading.
 
-The checked documentation does not state why invocation is restricted to the beginning. Separating command syntax from incidental mentions and avoiding multi-skill parsing are reasonable inferences from the implementation, not an attributed maintainer rationale. Changing invocation placement is not yet authorized; discuss this third, separately from editor coloring.
+The checked documentation does not state why invocation is restricted to the beginning. Separating command syntax from incidental mentions and avoiding multi-skill parsing are reasonable inferences from the implementation, not an attributed maintainer rationale. The maintainer confirmed retaining native skill triggering, expansion and model-directed loading. Do not add invocation at arbitrary positions or multi-skill expansion. Editor highlighting remains independent of invocation.
 
 ## Unified skill-message display
 
@@ -50,8 +50,8 @@ Discuss the exact combined label/prompt layout, access to skill instructions, sk
 ## Ordered interview
 
 1. Editor-only coloring is confirmed: text matching rather than invocation, regex entries with expression-defined boundaries, case-insensitive defaults with per-rule overrides, and invalid-entry isolation. Preserve input responsiveness when evaluating user patterns; implementation details require verification, not additional product exceptions.
-2. Chart/tree is confirmed against the full compatibility contract above, including user-message projection without retro recoloring. Continue with native skill triggering.
-3. Explain native beginning-only invocation, then establish whether a behavior change is desired.
+2. Chart/tree is confirmed against the full compatibility contract above, including user-message projection without retro recoloring.
+3. Native skill triggering is confirmed unchanged. Continue with unified skill-message display.
 4. Define the single visible skill/prompt message using the old display as a reference and normal user-message colors.
 
 Production work still awaits final shared-understanding confirmation after these topics.
