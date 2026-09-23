@@ -194,7 +194,10 @@ export function readParts(
 // These tools share retained text and native disclosure, but keep their own
 // schema, execution and metadata. The adapter never rewrites a tool result.
 export function displayRetrieval<Params extends TSchema, Details, State>(
-  tool: ToolDefinition<Params, Details, State>,
+  tool: Pick<
+    ToolDefinition<Params, Details, State>,
+    'name' | 'renderCall' | 'renderResult' | 'renderShell'
+  >,
   label: string,
   target: (args: Static<Params>, expanded: boolean) => string,
   inspect?: (

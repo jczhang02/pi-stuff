@@ -4,7 +4,7 @@
 
 Implementation of [the accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is in progress. This branch currently changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Assistant messages now have a separate leading-dot gutter around native Markdown. Thoughts now use a leading dot and inline label while retaining native italic Markdown and disclosure. Observed thinking segments are timed independently in memory; historical blocks without observations omit durations. The prototype remains visual reference, not production acceptance evidence.
 
-[Integration experiments](ui-integration.md) record public-API limits, actual captures, the approved assistant adaptation and the pending tool-history comparison. Their experimental screenshots are not the target design.
+[Integration experiments](ui-integration.md) record public-API limits, actual captures, the approved assistant and tool-history adaptations. Their experimental screenshots are not the target design.
 
 ## Welcome
 
@@ -22,11 +22,11 @@ All tools share the heading rule: a status dot, at most two compact rows, aligne
 
 Configured timeout and upstream truncation/log information have separate result blocks. Expanding reveals only retained output. Tool execution uses Pi's public native definition with the host's configured shell path and command prefix. Other extensions' Bash definitions are left untouched.
 
-Completed live calls show the actual process exit code and elapsed time. Timeout and cancellation remain visible when the body is folded, including a zero-row preview. Empty output stays visible without a hidden-row count. Failed native calls can retain their truncation/log notice only in error text; that notice is lifted into separate result blocks. Model-visible results and recorded errors are unchanged. Historical output without timing does not receive an invented duration.
+Completed live calls show `Completed` and the observed tool-execution interval. Pi does not expose a successful numeric exit code; failures display a numeric code when Pi supplies one. Timeout and cancellation remain visible when the body is folded, including a zero-row preview. Empty output stays visible without a hidden-row count. Failed native calls can retain their truncation/log notice only in error text; that notice is lifted into separate result blocks. Model-visible results and recorded errors are unchanged. Historical output without timing does not receive an invented duration.
 
-Setup and spawn errors remain visible even with a zero-row preview. The following capture shows actual commands, retained output, an unsuccessful exit and a timeout, using the same isolated host and fonts as the welcome captures.
+Setup and spawn errors remain visible even with a zero-row preview. The following compiled Pi 0.87.0 capture shows actual command results and an unsuccessful exit. Output text is supplied by fixture commands, not real lint/type checks; the [integration notes](ui-integration.md#bash-execution-and-history) include the restored view and capture details.
 
-![Bash results, default dark theme, 120 columns](assets/ui/bash-outcomes-dark-120.png)
+![Bash results, default dark theme, 100 columns](assets/ui/bash-live-dark-100.png)
 
 ## Write
 
@@ -139,6 +139,6 @@ Write/Edit reuse highlighted source and one width's wrapped body across disclosu
 
 A bounded disclosure experiment used Pi 0.85.1, Bun 1.4.0 and an 80×36 terminal: replace 1,500 TypeScript constant declarations, yielding 1,500 removed and 1,500 added rows, then alternate Ctrl+O ten times. Measured from key dispatch until the final source line or compact hidden-row count appeared, the median fell from 127 ms (119–149 ms) at `b8ffd3a` to 2 ms (1–4 ms) with caching. These observations include Terminal Control communication. They do not measure initial highlighting, memory, long-history resume or real-model latency, and do not replace the required full performance comparison.
 
-The initial system tests use actual Pi 0.85.1 under Bun 1.4.0 with an isolated deterministic provider. They check compact/expanded output, model-visible content, timeout blocks, host shell settings and global UI controls. History regressions currently fail after reload and resume: historical tool components retain native renderers. Reload rebuilds those components before the session-start registration callbacks run. Live grouping, parallel completion, individual disclosure and starting a new session pass, but history acceptance does not. This lifecycle issue must be fixed before delivery. Compiled-host, full UI, independent review, performance and extended real-model acceptance remain outstanding.
+Targeted system tests run on Pi 0.85.1 and compiled Pi 0.87.0 under Bun 1.4.0 with an isolated deterministic provider. The former reload/resume failures are fixed through the approved TUI lookup: native tools keep their execution definitions, and missing Web history receives renderer-only views. Disabled Web tools remain absent from the model request. Tests check retained history without replay or session rewriting. Full configuration/lifecycle coverage, final independent review, complete performance comparisons and extended real-model acceptance remain outstanding.
 
 An intermediate independent review of `bb03c4e..c43c503` found four blockers. Focused follow-ups verified the terminal-sequence, local group collapse, retrieval metadata-count and WebRead no-match fixes, including fractional Read limits and WebSearch's inner header. The Search display test uses the actual tool implementation with deterministic transport and a test alias; it does not establish production registration or grouping acceptance. Final full-diff review remains pending. Passing preservation tests do not establish assistant/Thoughts implementation or complete acceptance.

@@ -7,7 +7,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import {Option, Schema} from 'effect';
 
-type ToolView = Pick<
+export type ToolView = Pick<
   ToolDefinition,
   'renderCall' | 'renderResult' | 'renderShell'
 >;
@@ -25,7 +25,8 @@ const HostPrototype = Schema.Struct({
 export function registerToolDisplay(
   pi: ExtensionAPI,
   owner: MarkdownTransformer,
-  decorate: (tool: ToolDefinition, session: AgentSession) => ToolDefinition,
+  decorate: (tool: ToolDefinition, session: AgentSession) => ToolView,
+  missing: (name: string) => ToolView | undefined,
 ): void {
   const decoded = Schema.decodeUnknownOption(HostPrototype)(
     InteractiveMode.prototype,
@@ -42,7 +43,7 @@ export function registerToolDisplay(
   let ready = false;
   const lookup: Lookup = function (name) {
     const tool = original.call(this, name);
-    if (!active || !tool) return tool;
+    if (!active) return tool;
     const session = getSession.call(this);
     if (!(session instanceof AgentSession)) return tool;
     if (
@@ -54,11 +55,12 @@ export function registerToolDisplay(
     // Native TUI lookup can return renderer-only built-in fallbacks. Obtain
     // executable/schema metadata only from the public SDK's actual definition.
     const definition = session.getToolDefinition(name);
-    if (!definition) return tool;
-    const existing = {...definition, ...tool};
-    const view = decorate(existing, session);
+    const existing = definition ? {...definition, ...tool} : undefined;
+    const view = existing
+      ? decorate(existing, session)
+      : (tool ?? missing(name));
+    if (!view || view === existing || view === tool) return tool;
     const renderResult = view.renderResult;
-    if (view === existing) return tool;
     if (!renderResult) return view;
     return {
       ...view,

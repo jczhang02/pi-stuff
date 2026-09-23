@@ -161,7 +161,7 @@ A real-host regression checks mixed retrieval grouping, reload and new-session/r
 
 Write and Edit now decorate the host definitions through the same TUI lookup. Their replacement registrations and native factory calls are removed. Execution and schemas retain the host references; the existing preview, syntax-highlighting and diff components are unchanged. Renderer inputs are decoded at the display boundary.
 
-The new real-host regression failed on reload before this change. Afterward, both supported hosts retain Write previews and Edit diffs through reload and new-session/resume, even after the file is changed on disk. Expanding uses the recorded content and patch. The test checks that restoration neither rewrites the session nor changes the file. Together with existing preview, code-setting, theme/width, partial-argument and cancellation checks, each host passed 11 tests and 107 assertions. Bash and absent Web history remain pending; these short runs do not establish long-session performance.
+The new real-host regression failed on reload before this change. Afterward, both supported hosts retain Write previews and Edit diffs through reload and new-session/resume, even after the file is changed on disk. Expanding uses the recorded content and patch. The test checks that restoration neither rewrites the session nor changes the file. Together with existing preview, code-setting, theme/width, partial-argument and cancellation checks, each host passed 11 tests and 107 assertions. At that stage, Bash and absent Web history remained pending; these short runs do not establish long-session performance.
 
 ### Bash execution and history
 
@@ -177,4 +177,12 @@ These captures show live and reloaded results on compiled Pi 0.87.0 / Bun 1.4.0,
 
 ![Restored Bash results without invented elapsed time](assets/ui/bash-history-dark-100.png)
 
-Absent Web history and complete performance/compatibility acceptance remain pending.
+At that stage, absent Web history and complete performance/compatibility acceptance remained pending.
+
+### Missing Web views
+
+The TUI adapter now supplies renderer-only WebSearch, WebFetch and WebRead views when neither an actual definition nor an existing TUI view is available. Live registration and historical fallback share the same display code. No placeholder execute function, parameter schema or callable tool is created. Model validation and Web registration remain in their existing session-start callback; the SDK query is unchanged. Existing definitions and third-party views take precedence.
+
+The mixed local/Web reload regression failed before this increment and now passes. Both hosts passed 15 focused tests and 131 assertions, including disabled Web history through reload/new/resume, retained fetch/read content and search-authentication failures, byte-identical records, no additional local requests, and disabled tools absent from a subsequent model request. Same-runtime session replacement also retains Web grouping. Existing batch metadata, empty results, warnings, parallel calls and cancellation checks pass.
+
+The missing-view fallback recognizes the three owned API names. Saved tool calls do not identify an uninstalled extension's renderer, so this does not prove historical ownership for an absent third-party tool that reused one of those names. Existing foreign definitions are preserved; arbitrary extension registration orders and complete compatibility/performance acceptance remain pending. The core adapter is now 97 lines including comments and blanks.

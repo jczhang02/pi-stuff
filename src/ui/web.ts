@@ -1,3 +1,5 @@
+import {Schema} from 'effect';
+import type {ToolView} from './tool-lookup';
 import type {RetrievalGroups} from './groups';
 import type {createWebTools} from '../web/tools';
 import {displayRetrieval, type RetrievalPart} from './retrieval';
@@ -139,40 +141,76 @@ function matches(output: string, term: string): RetrievalPart[] {
   return parts;
 }
 
+const WebArgs = Schema.Struct({
+  queries: Schema.optional(Schema.Array(Schema.String)),
+  urls: Schema.optional(Schema.Array(Schema.String)),
+  contentId: Schema.optional(Schema.String),
+  find: Schema.optional(Schema.String),
+  offset: Schema.optional(Schema.Number),
+  limit: Schema.optional(Schema.Number),
+});
+
+// A view has no executable definition. History can use it before registration
+// or while a tool is disabled, without exposing a callable tool to the model.
+export function webView(
+  name: string,
+  groups?: RetrievalGroups,
+): ToolView | undefined {
+  const label =
+    name === 'web_search'
+      ? 'WebSearch'
+      : name === 'fetch_content'
+        ? 'WebFetch'
+        : name === 'get_search_content'
+          ? 'WebRead'
+          : undefined;
+  if (!label) return;
+  return displayRetrieval(
+    {name},
+    label,
+    (input, expanded) => {
+      const args = Schema.decodeUnknownSync(WebArgs)(input);
+      if (name === 'get_search_content')
+        return expanded
+          ? `${args.contentId ?? ''}${args.find === undefined ? `, offset ${args.offset ?? 0}${args.limit === undefined ? '' : `, limit ${args.limit}`}` : `, find ${args.find}`}`
+          : 'retained content';
+      const targets = (name === 'web_search' ? args.queries : args.urls) ?? [];
+      const noun =
+        name === 'web_search'
+          ? targets.length === 1
+            ? 'query'
+            : 'queries'
+          : targets.length === 1
+            ? 'page'
+            : 'pages';
+      return expanded ? targets.join('; ') : `${targets.length} ${noun}`;
+    },
+    (output, _details, input) => {
+      const args = Schema.decodeUnknownSync(WebArgs)(input);
+      if (name === 'get_search_content')
+        return args.find === undefined
+          ? pages(output)
+          : matches(output, args.find);
+      const targets = name === 'web_search' ? args.queries : args.urls;
+      if (!targets) return unparsed(output);
+      return pages(
+        output,
+        targets.length,
+        name === 'web_search' ? targets : undefined,
+      );
+    },
+    groups,
+  );
+}
+
 export function displayWebTools(
   tools: ReturnType<typeof createWebTools>,
   groups?: RetrievalGroups,
 ): void {
-  displayRetrieval(
+  for (const tool of [
     tools.webSearch,
-    'WebSearch',
-    (args, expanded) =>
-      expanded
-        ? (args.queries?.join('; ') ?? '')
-        : `${args.queries?.length ?? 0} ${args.queries?.length === 1 ? 'query' : 'queries'}`,
-    (output, _details, args) =>
-      pages(output, args.queries.length, args.queries),
-    groups,
-  );
-  displayRetrieval(
     tools.fetchContent,
-    'WebFetch',
-    (args, expanded) =>
-      expanded
-        ? (args.urls?.join('; ') ?? '')
-        : `${args.urls?.length ?? 0} ${args.urls?.length === 1 ? 'page' : 'pages'}`,
-    (output, _details, args) => pages(output, args.urls.length),
-    groups,
-  );
-  displayRetrieval(
     tools.getSearchContent,
-    'WebRead',
-    (args, expanded) =>
-      expanded
-        ? `${args.contentId ?? ''}${args.find === undefined ? `, offset ${args.offset ?? 0}${args.limit === undefined ? '' : `, limit ${args.limit}`}` : `, find ${args.find}`}`
-        : 'retained content',
-    (output, _details, args) =>
-      args.find === undefined ? pages(output) : matches(output, args.find),
-    groups,
-  );
+  ])
+    Object.assign(tool, webView(tool.name, groups));
 }

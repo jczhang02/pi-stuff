@@ -8,6 +8,7 @@ import {displayEdit} from './edit';
 import {displayRetrieval, readParts, RetrievalDetails} from './retrieval';
 import {Schema} from 'effect';
 import {registerToolDisplay} from './tool-lookup';
+import {webView} from './web';
 import type {UiSettings} from './settings';
 
 export function registerUi(
@@ -32,44 +33,49 @@ export function registerUi(
     offset: Schema.optional(Schema.Number),
     limit: Schema.optional(Schema.Number),
   });
-  registerToolDisplay(pi, owner, (tool, session) => {
-    if (
-      !session
-        .getAllTools()
-        .some(
-          entry =>
-            entry.name === tool.name && entry.sourceInfo.source === 'builtin',
-        )
-    )
-      return tool;
-    if (tool.name === 'bash') return bash.display(tool, settings);
-    if (tool.name === 'write') return displayWrite(tool, settings);
-    if (tool.name === 'edit') return displayEdit(tool, settings);
-    const label = localTools.get(tool.name);
-    if (!label) return tool;
-    return displayRetrieval(
-      {...tool},
-      label,
-      args => {
-        const target = Schema.decodeUnknownSync(localArgs)(args);
-        const path = target.path ?? (tool.name === 'read' ? '' : '.');
-        return tool.name === 'grep' || tool.name === 'find'
-          ? `${target.pattern ?? ''}, ${path}`
-          : path;
-      },
-      tool.name === 'read'
-        ? (output, details, args) => {
-            const range = Schema.decodeUnknownSync(localArgs)(args);
-            return readParts(
-              output,
-              Schema.decodeUnknownSync(RetrievalDetails)(details ?? {}),
-              range.offset,
-              range.limit,
-            );
-          }
-        : undefined,
-      groups,
-    );
-  });
+  registerToolDisplay(
+    pi,
+    owner,
+    (tool, session) => {
+      if (
+        !session
+          .getAllTools()
+          .some(
+            entry =>
+              entry.name === tool.name && entry.sourceInfo.source === 'builtin',
+          )
+      )
+        return tool;
+      if (tool.name === 'bash') return bash.display(tool, settings);
+      if (tool.name === 'write') return displayWrite(tool, settings);
+      if (tool.name === 'edit') return displayEdit(tool, settings);
+      const label = localTools.get(tool.name);
+      if (!label) return tool;
+      return displayRetrieval(
+        {...tool},
+        label,
+        args => {
+          const target = Schema.decodeUnknownSync(localArgs)(args);
+          const path = target.path ?? (tool.name === 'read' ? '' : '.');
+          return tool.name === 'grep' || tool.name === 'find'
+            ? `${target.pattern ?? ''}, ${path}`
+            : path;
+        },
+        tool.name === 'read'
+          ? (output, details, args) => {
+              const range = Schema.decodeUnknownSync(localArgs)(args);
+              return readParts(
+                output,
+                Schema.decodeUnknownSync(RetrievalDetails)(details ?? {}),
+                range.offset,
+                range.limit,
+              );
+            }
+          : undefined,
+        groups,
+      );
+    },
+    name => webView(name, groups),
+  );
   return groups;
 }
