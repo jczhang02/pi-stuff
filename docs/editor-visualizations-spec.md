@@ -10,13 +10,13 @@ Status: design interview in progress. [Issue #119](https://github.com/jczhang02/
 
 Use option B from the palette comparison: the static, bold retro gradient in pi-stuff-old commit `e61ed27e`, `packages/pi-stuff/src/conversation-ui/retro-text.ts`. Its nine RGB stops run through blue, violet, pink and warm yellow, then return to blue. Preserve that algorithm, including short strings whose endpoint colors coincide; do not substitute the old main branch's ANSI rainbow or animate it.
 
-Apply highlighting across the editor, user messages, assistant replies and tool output. The accepted surface scope does not yet settle exclusions within those surfaces, third-party renderers or Thinking.
+Apply retro highlighting only to the editor draft and submitted user messages. Assistant replies, tool output and Thinking are outside this highlighting scope. This corrects the earlier interpretation of "all surfaces"; third-party tool-renderer takeover is not part of this feature.
 
 Recognize complete `/skill:<name>` text and configured keywords. A textual skill reference does not require an installed skill and highlighting does not invoke it. Preserve the editor draft, submitted text, stored messages and provider context.
 
-Keywords are case-sensitive literal text, without regular expressions. Match whole English words and continuous Chinese substrings. The default list is empty. Exact boundaries around identifiers, hyphens, paths and mixed-language text, plus overlap precedence, remain open.
+Keywords are case-sensitive literal text, without regular expressions. Match whole English words and continuous Chinese substrings. The default list is empty. For keyword `review`, match `review`, `(review)` and `请review一下`; do not match `Review`, `preview`, `reviewing`, `code-review`, `review_count` or `src/review.ts`. Complete skill references take precedence over keywords. Resolve keywords left to right, choosing the longest match at the same start. Paint each match once, restart its gradient at its own beginning, and preserve the phase across wrapping.
 
-Use the existing global `pi-stuff.json`, with no project override. Provide a settings-panel switch; edit the keyword list in the file and apply file changes with `/reload`. Additional panel editing was not requested. Switch defaults, runtime application and error behavior remain to be finalized.
+Use the existing global `pi-stuff.json`, with no project override. Provide a settings-panel switch; edit the keyword list in the file and apply file changes with `/reload`. Additional panel editing was not requested. The switch defaults on, controls both skill and keyword highlighting, and applies and saves panel changes immediately. Disabling highlighting does not disable chart/tree. Retain the existing configuration error-handling contract.
 
 ### Chart and tree display
 
@@ -33,13 +33,9 @@ The reference behavior is documented in pi-stuff-old ADR 0017, `fenced-visualiza
 
 ## Outstanding decisions
 
-1. Whether rainbow styling excludes inline/fenced code, diffs, link destinations, semantic status/error text and Thinking.
-2. The definition of an English word at identifier, path and mixed-language boundaries.
-3. Matching precedence for overlapping keywords and skill references; whether a match restarts its gradient and retains that phase across wrapping.
-4. Default switch state, whether the switch controls both skill and keyword highlighting, and when panel changes take effect.
-5. Whether tool-output highlighting may alter third-party custom rendering, and how to preserve their own visual semantics.
+Whether user-message highlighting includes fenced code as well as prose and inline code remains open. Visible link text and link destinations must be distinguished; styling must not alter the destination. Assistant/tool status colors and third-party tool renderers no longer require decisions because they are outside the corrected scope.
 
-These are unanswered decisions, not implementation defaults.
+The remaining content boundary is an unanswered decision, not an implementation default.
 
 ## Integration and acceptance
 
