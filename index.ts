@@ -6,12 +6,14 @@ import {registerWeb} from './src/web/register';
 import {registerRtk} from './src/rtk/register';
 import {registerRtkPanel} from './src/rtk/panel';
 import {registerNaming} from './src/naming/register';
+import {registerStatusline} from './src/statusline/register';
 import {registerNamingPanel} from './src/naming/panel';
 
 export default async function (pi: ExtensionAPI) {
   const configuration = await Effect.runPromise(
     ConfigurationFile.load(join(getAgentDir(), 'pi-stuff.json')),
   );
+  registerStatusline(pi, configuration.value.statusline);
   const naming = registerNaming(pi, configuration.value.naming);
   registerNamingPanel(pi, naming, async settings => {
     const previous = configuration.value.naming;

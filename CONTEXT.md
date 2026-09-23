@@ -29,3 +29,12 @@ Editor text selected by a user-configured matching rule for the same visual emph
 
 **Fenced visualization**:
 A display of a chart or tree described by a complete Markdown code block. The visualization and its original message text represent the same conversation content.
+
+**Statusline segment**:
+A distinct piece of status information shown in Pi Stuff's session footer, such as context usage or Git state.
+
+**Third-party status segment**:
+A statusline segment whose information is supplied by another extension, rather than by Pi Stuff's core statusline.
+
+**Cache-hit ratio**:
+The proportion of input tokens served from cache in the latest valid model response on the current session branch. It is not a cumulative session ratio.

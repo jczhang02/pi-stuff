@@ -183,10 +183,11 @@ test('naming bounds input while preserving the request after a long paste and a 
     expect(automatic).toContain(
       'Research OAuth compatibility without implementing it',
     );
-    await host.terminal.screen.waitForText(
-      'research: Investigate RTK command output',
-      {timeoutMs: 4000},
-    );
+    await host.waitForName(provider.title);
+    await host.command('/name');
+    await host.terminal.screen.waitForText(`Session name: ${provider.title}`, {
+      timeoutMs: 4000,
+    });
     await host.command(
       '/autoname Current task ' +
         '说明'.repeat(3000) +

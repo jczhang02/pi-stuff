@@ -29,3 +29,12 @@ Pi Stuff 承诺在声明的运行环境中维护的 Pi 宿主版本区间. 区�
 
 **代码块可视化 (Fenced visualization)**:
 由完整 Markdown 代码块描述的图表或树的显示形式. 可视化和原始消息文本表达同一份会话内容.
+
+**状态字段 (Statusline segment)**:
+Pi Stuff 会话底栏中一项独立的状态信息, 例如上下文用量或 Git 状态.
+
+**第三方状态字段 (Third-party status segment)**:
+由其他扩展提供信息的状态字段, 区别于 Pi Stuff 核心 statusline 自身提供的字段.
+
+**缓存命中率 (Cache-hit ratio)**:
+当前会话分支最近一次有效模型响应中, 由缓存提供的输入 token 比例. 它不是会话累计比例.
