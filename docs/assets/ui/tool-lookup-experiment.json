@@ -1,0 +1,907 @@
+{
+  "productionBaseline": "12b0969a2b890491085b44874c672c2e6ad8de67",
+  "bunVersion": "1.4.0",
+  "terminalControlVersion": "1.2.1",
+  "model": "deterministic local provider, no live inference",
+  "status": "isolated candidate only; production not changed",
+  "hosts": [
+    {
+      "profile": "pinned",
+      "piVersion": "0.85.1",
+      "lookupObservation": [
+        {
+          "phase": "started:startup",
+          "event": "start",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "started:startup",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult",
+            "renderShell"
+          ]
+        },
+        {
+          "phase": "started:startup",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult",
+            "renderShell"
+          ]
+        },
+        {
+          "phase": "shutdown:reload",
+          "event": "shutdown",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "extension-loaded",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult"
+          ]
+        },
+        {
+          "phase": "extension-loaded",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult"
+          ]
+        },
+        {
+          "phase": "started:reload",
+          "event": "start",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "shutdown:new",
+          "event": "shutdown",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "started:new",
+          "event": "start",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "shutdown:resume",
+          "event": "shutdown",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "extension-loaded",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult"
+          ]
+        },
+        {
+          "phase": "extension-loaded",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult"
+          ]
+        },
+        {
+          "phase": "started:resume",
+          "event": "start",
+          "name": "",
+          "fields": []
+        }
+      ],
+      "definitionExperiment": {
+        "stages": [
+          {
+            "name": "live",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.0%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-1",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.0%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-2",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.0%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-3",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.0%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "resumed",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n Resumed session\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.0%/128k (auto)                                                                             fixture"
+          }
+        ],
+        "trace": [
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 2
+          },
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 2
+          },
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 2
+          },
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 0
+          },
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 3
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 4
+          }
+        ],
+        "exportObservation": "Wrote 285580 bytes",
+        "stderr": "",
+        "exportSizeCorrection": {
+          "rawLogLabel": "bytes",
+          "actualLoggedUnit": "JavaScript UTF-16 code units (String.length)",
+          "loggedValue": 285580,
+          "utf8Bytes": 285614
+        }
+      },
+      "groupExperiment": {
+        "stages": [
+          {
+            "name": "live",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.1%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-1",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.1%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-2",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.1%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-3",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.1%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "resumed",
+            "text": "\n pi v0.85.1\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n Resumed session\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n0.1%/128k (auto)                                                                             fixture"
+          }
+        ],
+        "assertions": 66,
+        "stderr": ""
+      },
+      "identityExperiment": {
+        "lookups": [
+          [
+            {
+              "command": false,
+              "renderer": false
+            },
+            {
+              "command": false,
+              "renderer": false
+            },
+            {
+              "command": true,
+              "commandName": "command",
+              "renderer": true
+            },
+            {
+              "command": false,
+              "renderer": false
+            }
+          ],
+          [
+            {
+              "command": false,
+              "renderer": false
+            },
+            {
+              "command": false,
+              "renderer": false
+            },
+            {
+              "command": true,
+              "commandName": "command",
+              "renderer": true
+            },
+            {
+              "command": false,
+              "renderer": false
+            }
+          ]
+        ]
+      },
+      "runtimeExperiment": {
+        "steps": [
+          {
+            "step": "two runtimes: A",
+            "hits": ["A"]
+          },
+          {
+            "step": "two runtimes: B",
+            "hits": ["B"]
+          },
+          {
+            "step": "A stopped below wrappers",
+            "hits": []
+          },
+          {
+            "step": "B remains active",
+            "hits": ["B"]
+          },
+          {
+            "step": "B stopped: A remains inactive",
+            "hits": []
+          },
+          {
+            "step": "External wrapper removed: A remains inactive",
+            "hits": []
+          },
+          {
+            "step": "Reverse teardown: C remains active",
+            "hits": ["C"]
+          },
+          {
+            "step": "Reverse teardown: D stopped",
+            "hits": []
+          },
+          {
+            "step": "Reverse teardown: both stopped",
+            "hits": []
+          }
+        ],
+        "stderr": ""
+      }
+    },
+    {
+      "profile": "compiled",
+      "piVersion": "0.87.0",
+      "lookupObservation": [
+        {
+          "phase": "started:startup",
+          "event": "start",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "started:startup",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult",
+            "renderShell"
+          ]
+        },
+        {
+          "phase": "started:startup",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult",
+            "renderShell"
+          ]
+        },
+        {
+          "phase": "shutdown:reload",
+          "event": "shutdown",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "extension-loaded",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult"
+          ]
+        },
+        {
+          "phase": "extension-loaded",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult"
+          ]
+        },
+        {
+          "phase": "started:reload",
+          "event": "start",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "shutdown:new",
+          "event": "shutdown",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "started:new",
+          "event": "start",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "shutdown:resume",
+          "event": "shutdown",
+          "name": "",
+          "fields": []
+        },
+        {
+          "phase": "extension-loaded",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult"
+          ]
+        },
+        {
+          "phase": "extension-loaded",
+          "event": "lookup",
+          "name": "read",
+          "fields": [
+            "constrainedSampling",
+            "description",
+            "execute",
+            "label",
+            "name",
+            "parameters",
+            "promptGuidelines",
+            "promptSnippet",
+            "renderCall",
+            "renderResult"
+          ]
+        },
+        {
+          "phase": "started:resume",
+          "event": "start",
+          "name": "",
+          "fields": []
+        }
+      ],
+      "definitionExperiment": {
+        "stages": [
+          {
+            "name": "live",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.5%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-1",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.5%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-2",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.5%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-3",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.5%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "resumed",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n Resumed session\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.5%/128k (auto)                                                                             fixture"
+          }
+        ],
+        "trace": [
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 2
+          },
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 2
+          },
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 2
+          },
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 2
+          },
+          {
+            "restored": true,
+            "lookups": 0
+          },
+          {
+            "name": "read",
+            "source": "builtin",
+            "invariant": true,
+            "lookups": 1
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 2
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 3
+          },
+          {
+            "name": "find",
+            "source": "cli",
+            "invariant": true,
+            "lookups": 4
+          }
+        ],
+        "exportObservation": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\nCANDIDATE_read\nSAVED_READ_BODY\n\n RTK_TURN_1_DONE\n\n\n Run RTK turn 2\n\n\nORIGINAL_grep\nORIGINAL_RESULT_grep\n\n RTK_TURN_2_DONE\n\n\n Run RTK turn 3\n\n\nCANDIDATE_find\nRESULT_find\n\n RTK_TURN_3_DONE\n\n Resumed session\n\n Error: Failed to export session: ENOENT: no such file or directory, open\n '/opt/pi-coding-agent/export-html/template.css'\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.5%/128k (auto)                                                                             fixture",
+        "stderr": ""
+      },
+      "groupExperiment": {
+        "stages": [
+          {
+            "name": "live",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.8%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-1",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.8%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-2",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.8%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "reload-3",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n Reloaded keybindings, extensions, skills, prompts, themes, and context files\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.8%/128k (auto)                                                                             fixture"
+          },
+          {
+            "name": "resumed",
+            "text": "\n pi v0.87.0\n escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  groups-candidate.ts, host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n• Read 2 files\n\n• Read(missing.txt)\n  ⎿ ENOENT: no such file or directory, access '<isolated-session>/missing.txt'\n\n• Read 1 file\n\n RTK_TURN_1_DONE\n\n Resumed session\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.8%/128k (auto)                                                                             fixture"
+          }
+        ],
+        "assertions": 66,
+        "stderr": ""
+      },
+      "identityExperiment": {
+        "lookups": [
+          [
+            {
+              "command": false,
+              "renderer": false
+            },
+            {
+              "command": false,
+              "renderer": false
+            },
+            {
+              "command": true,
+              "commandName": "command",
+              "renderer": true
+            },
+            {
+              "command": false,
+              "renderer": false
+            }
+          ],
+          [
+            {
+              "command": false,
+              "renderer": false
+            },
+            {
+              "command": false,
+              "renderer": false
+            },
+            {
+              "command": true,
+              "commandName": "command",
+              "renderer": true
+            },
+            {
+              "command": false,
+              "renderer": false
+            }
+          ]
+        ]
+      },
+      "runtimeExperiment": {
+        "steps": [
+          {
+            "step": "two runtimes: A",
+            "hits": ["A"]
+          },
+          {
+            "step": "two runtimes: B",
+            "hits": ["B"]
+          },
+          {
+            "step": "A stopped below wrappers",
+            "hits": []
+          },
+          {
+            "step": "B remains active",
+            "hits": ["B"]
+          },
+          {
+            "step": "B stopped: A remains inactive",
+            "hits": []
+          },
+          {
+            "step": "External wrapper removed: A remains inactive",
+            "hits": []
+          },
+          {
+            "step": "Reverse teardown: C remains active",
+            "hits": ["C"]
+          },
+          {
+            "step": "Reverse teardown: D stopped",
+            "hits": []
+          },
+          {
+            "step": "Reverse teardown: both stopped",
+            "hits": []
+          }
+        ],
+        "stderr": ""
+      }
+    }
+  ],
+  "pinnedExportCustomRenderers": {
+    "rtk_2_0_0": {
+      "callHtml": "<div class=\"ansi-line\">ORIGINAL_grep                                                                                       </div>",
+      "resultHtmlExpanded": "<div class=\"ansi-line\">ORIGINAL_RESULT_grep                                                                                </div>"
+    },
+    "rtk_3_0_0": {
+      "callHtml": "<div class=\"ansi-line\">CANDIDATE_find                                                                                      </div>",
+      "resultHtmlExpanded": "<div class=\"ansi-line\">RESULT_find                                                                                         </div>"
+    }
+  },
+  "compiledExportWithoutAdapter": " escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\n Press ctrl+o to show full startup help and loaded resources.\n\n Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n\n[Extensions]\n  host-controls.ts, ui-implementation\n\n[Themes]\n  catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, gruvbox-dark-medium,\ngruvbox-light-medium, rose-pine, rose-pine-dawn, tokyonight-day, tokyonight-night\n\n\n Run RTK turn 1\n\n\n\n read sample.txt\n\n\n RTK_TURN_1_DONE\n\n Error: Failed to export session: ENOENT: no such file or directory, open\n '/opt/pi-coding-agent/export-html/template.css'\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n~\n1.8%/128k (auto)                                                                             fixture\n",
+  "scriptSha256": {
+    "candidate.ts": "2aae1b604fabff891e548f40fd3daf074e049f2354f53719098635be6bac9af4",
+    "export-baseline.ts": "e252129c1c2656b9777f59126565a66da675048a71b95e08078c076fb58081d4",
+    "groups-candidate.ts": "de3e4bea14d362ff4687ab30cc8668c2fb76b6d1e65af4dd0b682a171b7c7fb7",
+    "groups-prove.ts": "14edf371d859d646bdff26db53a168b36771173a09e99bc8cffd4c0e6855fe40",
+    "identity-prove.ts": "d04579c0c3829f8035382c2ab14f62928b721f6343512427560e8e45ecd32b8e",
+    "identity.ts": "ad1d062c99eb1d8eb2845eb843dc785e4d8e9076b1f583b148487a659a5df9b3",
+    "observe.ts": "c378bd62f66f31f56afd30daffc43fc52cfc354abc81d2b3e8aab0bcc24e6d76",
+    "prove.ts": "290112b3a0153e605376bc536dd6ae5aa35342bcef1757c6675b26dca42ba3d2",
+    "run.ts": "8ec6ec0cb818578aa637ea80e4e26a871024db24ea6596616e065d52433f20f5",
+    "runtime-proof.ts": "87a7514785c0138588f281b2913ea188397056698c9943f3b50aac0a73b5c5aa",
+    "runtime-run.ts": "5cdd26c408e4a058a3da3120b266fd9b25aecfd29e02b43b09f7c2fc2021fa33"
+  },
+  "redaction": "Random isolated-session directories replaced by <isolated-session>. The retained text contains deterministic fixture content and host lifecycle/render observations, not private conversations or credentials.",
+  "experimentSettings": {
+    "lookupObservation": {
+      "productUiEnabled": true,
+      "config": {
+        "ui": {
+          "welcome": false
+        },
+        "rtk": {
+          "rewrite": false
+        }
+      },
+      "terminal": {
+        "cols": 100,
+        "rows": 45
+      },
+      "scripts": ["observe.ts", "run.ts"]
+    },
+    "definitionExperiment": {
+      "productUiEnabled": false,
+      "config": {
+        "ui": {
+          "enabled": false
+        },
+        "rtk": {
+          "rewrite": false,
+          "ansi": false
+        }
+      },
+      "terminal": {
+        "cols": 100,
+        "rows": 60
+      },
+      "scripts": ["candidate.ts", "prove.ts"]
+    },
+    "groupExperiment": {
+      "productUiEnabled": false,
+      "config": {
+        "ui": {
+          "enabled": false
+        },
+        "rtk": {
+          "rewrite": false,
+          "ansi": false
+        }
+      },
+      "terminal": {
+        "cols": 100,
+        "rows": 50
+      },
+      "scripts": ["groups-candidate.ts", "groups-prove.ts"]
+    },
+    "identityExperiment": {
+      "productUiEnabled": false,
+      "config": {
+        "ui": {
+          "enabled": false
+        }
+      },
+      "terminal": {
+        "cols": 100,
+        "rows": 30
+      },
+      "scripts": ["identity.ts", "identity-prove.ts"]
+    },
+    "runtimeExperiment": {
+      "productUiEnabled": false,
+      "config": {
+        "ui": {
+          "enabled": false
+        }
+      },
+      "terminal": {
+        "cols": 100,
+        "rows": 30
+      },
+      "scripts": ["runtime-proof.ts", "runtime-run.ts"],
+      "sdkSessions": "In-memory settings and sessions, same inline extension name, distinct /ui handlers. No SDK tool execution or TUI rendering."
+    },
+    "compiledExportWithoutAdapter": {
+      "productUiEnabled": false,
+      "config": {
+        "ui": {
+          "enabled": false
+        },
+        "rtk": {
+          "rewrite": false,
+          "ansi": false
+        }
+      },
+      "terminal": {
+        "cols": 100,
+        "rows": 30
+      },
+      "scripts": ["export-baseline.ts"]
+    }
+  },
+  "recordFormat": "Parsed observations from the named throwaway scripts. Terminal text is retained unchanged except directory redaction. The pinned export log mislabeled String.length as bytes; exportSizeCorrection records the original value and the measured UTF-8 size. Empty stderr fields refer to final successful runs; earlier candidate failures are described in the paired report.",
+  "limits": [
+    "Candidate experiments only. Production is unchanged and its two history regressions still fail.",
+    "The session-byte check covers the pre-existing fixture session file at each observed stage, not all filesystem activity or full UI-on/off equivalence.",
+    "Grouping uses only Read without explicit offset/limit, with compact-stage captures and scripted disclosure assertions. No Web grouping or full lifecycle acceptance.",
+    "Simple custom Grep/Find HTML renderers and original exported results were checked on pinned Pi; native Read HTML and production group export are not validated.",
+    "Runtime proof covers same-module SDK ownership and deactivation under two teardown orders and one foreign wrapper. No concurrent SDK UI, different configurations/module copies, or long-term wrapper/memory acceptance.",
+    "No performance or live-model endurance result is established by these probes."
+  ]
+}

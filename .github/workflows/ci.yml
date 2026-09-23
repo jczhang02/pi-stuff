@@ -52,7 +52,7 @@ jobs:
   compatibility:
     name: Pi ${{ matrix.pi }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -107,6 +107,12 @@ jobs:
           printf '%s  %s\n' "$PI_SHA256" "$RUNNER_TEMP/pi-host/archive.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/pi-host/archive.tar.gz" -C "$RUNNER_TEMP/pi-host"
           test "$("$RUNNER_TEMP/pi-host/pi/pi" --version)" = "$PI_VERSION"
+      - name: Install native Pi search tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep fd-find
+          rg --version
+          fdfind --version
       - name: Run the full offline suite with the selected compiled host
         env:
           PI_TEST_HOST: ${{ runner.temp }}/pi-host/pi/pi

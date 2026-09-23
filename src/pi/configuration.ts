@@ -3,6 +3,7 @@ import {EditorSettings} from '../editor/settings';
 import {ToolSwitches} from './tool-switches';
 import {WebSettings} from '../web/settings';
 import {RtkSettings} from '../rtk/settings';
+import {UiSettings} from '../ui/settings';
 import {StatuslineSettings} from '../statusline/settings';
 import {NamingSettings} from '../naming/settings';
 
@@ -18,6 +19,7 @@ const Configuration = Schema.Struct({
   tools: Schema.optional(ToolSwitches),
   web: Schema.optional(WebSettings),
   rtk: Schema.optional(RtkSettings),
+  ui: Schema.optional(UiSettings),
   naming: Schema.optional(NamingSettings),
   statusline: Schema.optional(StatuslineSettings),
 });

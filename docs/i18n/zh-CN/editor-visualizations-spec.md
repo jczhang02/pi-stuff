@@ -62,7 +62,7 @@ Pi 0.87.1 已将技能块和 prompt 存在同一条 user message 中. 交互渲�
 
 ## 接入与验收
 
-实现基线为 main `1369773`, 已包含合并的 statusline #117. 会话 UI #106 / PR #107 由其他负责人维护, 尚未合并. 本分支只有一个 Markdown transformer owner. Pi 每个扩展只保存一个 transformer, 因此后续接入 #107 时, 其 assistant/tool 适配器与本分支 skill 适配器必须共用该 owner; 注册两个 owner 会使其中一侧失效. 本次交付未验证与 #107 的组合行为, 未修改其他负责人的工作区.
+实现基线为 main `1369773`, 已包含合并的 statusline #117. 本任务合并前, 会话 UI #106 / PR #107 已作为 `ef6b0d5` 合入主线, 现已接入本分支. Pi 每个扩展只有一个 Markdown transformer: 可视化注册提供共享 owner, skill 适配及 UI assistant/tool 适配共用该入口. 关闭 UI 仍保留 editor 配色、chart/tree 和统一 skill 卡片. 组合分支重新执行产品及宿主套件, 补充 UI 开启/关闭时的可视化和 skill 卡片回归. 未修改其他负责人的工作区.
 
 优先使用已有宿主 editor 和 Markdown API, Markdown 转换由单一模块负责. 本次 editor retro 文本是常规语义主题色的局部例外, 例外边界确认后同步更新双语设计规范. 本规格不授权新增依赖.
 

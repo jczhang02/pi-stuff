@@ -1,0 +1,464 @@
+{
+  "host": "compiled Pi 0.87.1",
+  "runtime": "Bun 1.4.0",
+  "model": "openai-codex/gpt-6-astra",
+  "thinking": "low",
+  "revisions": ["7a6fcb5", "e012de9"],
+  "session": {
+    "sha256": "38509384ea6fda68873cbe7bc1e09a881fa5aab69107d22eaa1eb657f98c9204",
+    "bytes": 1494760,
+    "records": 488,
+    "compactions": 1,
+    "roles": {
+      "system": 1,
+      "user": 32,
+      "assistant": 206,
+      "toolResult": 244
+    },
+    "toolResults": {
+      "ls": 16,
+      "find": 1,
+      "read": 105,
+      "write": 10,
+      "bash": 53,
+      "edit": 59
+    },
+    "assistantStops": {
+      "toolUse": 174,
+      "stop": 31,
+      "error": 1
+    }
+  },
+  "stages": {
+    "initial": [
+      {
+        "phase": "start",
+        "model": "openai-codex/gpt-6-astra",
+        "revision": "7a6fcb5",
+        "started": 1790130212306
+      },
+      {
+        "phase": "turn",
+        "turn": 1,
+        "durationMs": 80131,
+        "elapsedMs": 81005,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 2,
+        "durationMs": 68118,
+        "elapsedMs": 149427,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 3,
+        "durationMs": 72153,
+        "elapsedMs": 221593,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 4,
+        "durationMs": 68211,
+        "elapsedMs": 289819,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 5,
+        "durationMs": 70228,
+        "elapsedMs": 360073,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 6,
+        "durationMs": 74267,
+        "elapsedMs": 434355,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 7,
+        "durationMs": 68299,
+        "elapsedMs": 502668,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 8,
+        "durationMs": 88343,
+        "elapsedMs": 591030,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 9,
+        "durationMs": 92409,
+        "elapsedMs": 683458,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 10,
+        "durationMs": 120400,
+        "elapsedMs": 803875,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 11,
+        "durationMs": 94421,
+        "elapsedMs": 898313,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 12,
+        "durationMs": 76546,
+        "elapsedMs": 974873,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 13,
+        "durationMs": 64521,
+        "elapsedMs": 1039415,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 14,
+        "durationMs": 56583,
+        "elapsedMs": 1096017,
+        "complete": true
+      },
+      {
+        "phase": "turn",
+        "turn": 15,
+        "durationMs": 56600,
+        "elapsedMs": 1152637,
+        "complete": true
+      },
+      {
+        "phase": "failure",
+        "error": "IncompleteCaptureError: screen capture completed with deadline instead of a settled frame",
+        "elapsedMs": 1195707
+      }
+    ],
+    "resumed": [
+      {
+        "phase": "resume",
+        "revision": "e012de9",
+        "host": "Pi0.87.1",
+        "model": "openai-codex/gpt-6-astra",
+        "started": 1790131643082,
+        "savedBytes": 755970
+      },
+      {
+        "phase": "turn",
+        "round": 16,
+        "durationMs": 34064,
+        "elapsedMs": 34878,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790131676050,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 3278514,
+            "system": 350107
+          },
+          "rss": 250232832
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 17,
+        "durationMs": 46088,
+        "elapsedMs": 80985,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790131723226,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 5688908,
+            "system": 666232
+          },
+          "rss": 269950976
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 18,
+        "durationMs": 54113,
+        "elapsedMs": 135110,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790131776288,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 8302610,
+            "system": 1017122
+          },
+          "rss": 263438336
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 19,
+        "durationMs": 60167,
+        "elapsedMs": 195290,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790131837809,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 11234825,
+            "system": 1435895
+          },
+          "rss": 280854528
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 20,
+        "durationMs": 78226,
+        "elapsedMs": 273533,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790131915933,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 15014513,
+            "system": 1956321
+          },
+          "rss": 280911872
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 21,
+        "durationMs": 36191,
+        "elapsedMs": 309740,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790131952363,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 17357971,
+            "system": 2280203
+          },
+          "rss": 287301632
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 22,
+        "durationMs": 58257,
+        "elapsedMs": 368011,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132009607,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 21220338,
+            "system": 2783451
+          },
+          "rss": 301047808
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 23,
+        "durationMs": 58315,
+        "elapsedMs": 426341,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132069012,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 24600678,
+            "system": 3223078
+          },
+          "rss": 312074240
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 24,
+        "durationMs": 58338,
+        "elapsedMs": 484703,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132126091,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 28868901,
+            "system": 3839739
+          },
+          "rss": 292892672
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 25,
+        "durationMs": 42361,
+        "elapsedMs": 527080,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132167940,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 31631165,
+            "system": 4238008
+          },
+          "rss": 300253184
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 26,
+        "durationMs": 54365,
+        "elapsedMs": 581469,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132223874,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 35250581,
+            "system": 4727031
+          },
+          "rss": 312410112
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 27,
+        "durationMs": 60456,
+        "elapsedMs": 641941,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132283159,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 38436822,
+            "system": 5181403
+          },
+          "rss": 328798208
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 28,
+        "durationMs": 44375,
+        "elapsedMs": 686341,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132328074,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 41070523,
+            "system": 5560106
+          },
+          "rss": 316223488
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 29,
+        "durationMs": 46439,
+        "elapsedMs": 732795,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132375296,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 44071862,
+            "system": 5961023
+          },
+          "rss": 324759552
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 30,
+        "durationMs": 118578,
+        "elapsedMs": 851396,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132492986,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 49319196,
+            "system": 6588578
+          },
+          "rss": 255873024
+        }
+      },
+      {
+        "phase": "turn",
+        "round": 31,
+        "durationMs": 58539,
+        "elapsedMs": 909951,
+        "captureReason": "idle",
+        "settled": {
+          "event": "agent_settled",
+          "time": 1790132552353,
+          "stopReason": "stop",
+          "idle": true,
+          "cpu": {
+            "user": 51153285,
+            "system": 6821579
+          },
+          "rss": 262889472
+        }
+      },
+      {
+        "phase": "complete",
+        "successful": 16,
+        "providerFailures": 0,
+        "elapsedMs": 909973
+      }
+    ]
+  },
+  "temporaryAuthLinkRemoved": true,
+  "limits": [
+    "Two stages of one session, not uninterrupted success.",
+    "Nineteen Bash exit-1 results are separate from the provider failure.",
+    "No Grep, Web or RTK live workload.",
+    "Disclosure and resize inputs were sent but their frames were not asserted.",
+    "Original session retained locally; account footer and source contents are not published."
+  ]
+}

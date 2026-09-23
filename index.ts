@@ -8,6 +8,9 @@ import {registerSkillMessages} from './src/skill-message/register';
 import {registerWeb} from './src/web/register';
 import {registerRtk} from './src/rtk/register';
 import {registerRtkPanel} from './src/rtk/panel';
+import {registerUi} from './src/ui/register';
+import {registerUiPanel} from './src/ui/panel';
+import {displayWebTools} from './src/ui/web';
 import {registerNaming} from './src/naming/register';
 import {registerStatusline} from './src/statusline/register';
 import {registerNamingPanel} from './src/naming/panel';
@@ -25,6 +28,20 @@ export default async function (pi: ExtensionAPI) {
       await Effect.runPromise(configuration.saveEditor(settings));
     },
   );
+  const groups = registerUi(pi, configuration.value.ui ?? {}, markdown);
+  registerUiPanel(
+    pi,
+    () => configuration.value.ui ?? {},
+    settings => Effect.runPromise(configuration.saveUi(settings)),
+  );
+  registerWeb(
+    pi,
+    configuration.value.web ?? {},
+    configuration.value.tools,
+    configuration.value.ui?.enabled === false
+      ? undefined
+      : tools => displayWebTools(tools, groups),
+  );
   registerStatusline(pi, configuration.value.statusline);
   const naming = registerNaming(pi, configuration.value.naming);
   registerNamingPanel(pi, naming, async settings => {
@@ -37,7 +54,6 @@ export default async function (pi: ExtensionAPI) {
         naming.update(configuration.value.naming ?? {});
     }
   });
-  registerWeb(pi, configuration.value.web ?? {}, configuration.value.tools);
   const rtk = registerRtk(pi, configuration.value.rtk ?? {});
   registerRtkPanel(pi, rtk, async settings => {
     try {

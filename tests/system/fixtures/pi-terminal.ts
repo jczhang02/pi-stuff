@@ -8,6 +8,18 @@ import {
 } from '@kitlangton/terminal-control';
 import {Schema} from 'effect';
 
+interface ModelCall {
+  name: string;
+  parameters: string;
+  text?: string;
+  thinking?: string;
+}
+
+interface InputPause {
+  offset: number;
+  until: Promise<void>;
+}
+
 const Request = Schema.Struct({
   model: Schema.String,
   max_tokens: Schema.optional(Schema.Number),
@@ -42,7 +54,7 @@ export type ModelRequest = typeof Request.Type;
 export async function launchPi(
   configuration = '{}',
   extraExtension?: string,
-  profile: 'rtk' | 'web' = 'rtk',
+  profile: 'rtk' | 'web' | 'ui' = 'rtk',
   mode: 'regular' | 'fullscreen' = 'fullscreen',
   modelReply?: (
     body: ModelRequest,
@@ -53,12 +65,24 @@ export async function launchPi(
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
   const agent = join(directory, 'agent');
   await mkdir(agent);
-  let tool = '';
-  let args = '{}';
+  let tool: ModelCall | undefined;
   let turn = 0;
   let result = '';
+  let response:
+    | {
+        text: string;
+        thinking: string;
+        until: Promise<void> | undefined;
+        afterText: Promise<void> | undefined;
+      }
+    | undefined;
+  let sentAssistant = '';
   let reloads = 0;
   let offered: string[] = [];
+  let remaining: ModelCall[] = [];
+  let simultaneous: ModelCall[] = [];
+  let inputPause: InputPause | undefined;
+  let callIndex = 0;
   const server = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
@@ -72,24 +96,39 @@ export async function launchPi(
       const reply = await modelReply?.(body, request.signal);
       if (reply !== undefined) return reply;
       offered = body.tools?.map(tool => tool.function.name) ?? [];
+      const previous = body.messages.findLast(
+        message => message.role === 'assistant',
+      );
+      sentAssistant = JSON.stringify(previous?.content ?? null);
       const last = body.messages.at(-1);
-      const finished = last?.role === 'tool' || tool === '';
+      const next = last?.role === 'tool' ? remaining.shift() : undefined;
+      if (next) {
+        tool = next;
+        callIndex++;
+      }
+      const finished = (last?.role === 'tool' && !next) || !tool;
+      const pause = finished ? undefined : inputPause;
       if (last?.role === 'tool')
         result = Schema.is(Schema.String)(last.content)
           ? last.content
           : JSON.stringify(last.content);
-      const delta = finished
-        ? {content: `RTK_TURN_${turn}_DONE`}
-        : {
-            tool_calls: [
-              {
-                index: 0,
-                id: `rtk_${turn}`,
+      const delta =
+        !finished && tool
+          ? {
+              tool_calls: [tool, ...simultaneous].map((call, index) => ({
+                index,
+                id: `rtk_${turn}_${callIndex}_${index}`,
                 type: 'function',
-                function: {name: tool, arguments: args},
-              },
-            ],
-          };
+                function: {
+                  name: call.name,
+                  arguments:
+                    index === 0 && pause
+                      ? call.parameters.slice(0, pause.offset)
+                      : call.parameters,
+                },
+              })),
+            }
+          : {content: response?.text ?? `RTK_TURN_${turn}_DONE`};
       const chunk = {
         id: `chat_${turn}`,
         object: 'chat.completion.chunk',
@@ -97,19 +136,100 @@ export async function launchPi(
         model: 'fixture',
         choices: [{index: 0, delta, finish_reason: null}],
       };
-      return new Response(
-        `data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({
+      const thinking = finished ? response?.thinking : tool?.thinking;
+      const preamble = [
+        ...(thinking ? [{reasoning_content: thinking}] : []),
+        ...(!finished && tool?.text ? [{content: tool.text}] : []),
+      ]
+        .map(
+          delta =>
+            `data: ${JSON.stringify({
+              ...chunk,
+              choices: [
+                {
+                  index: 0,
+                  delta,
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`,
+        )
+        .join('');
+      const initial = `${preamble}data: ${JSON.stringify(chunk)}\n\n`;
+      const completion = `data: ${JSON.stringify({
+        ...chunk,
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: finished ? 'stop' : 'tool_calls',
+          },
+        ],
+      })}\n\ndata: [DONE]\n\n`;
+      if (finished && thinking && (response?.until || response?.afterText)) {
+        const {until, afterText} = response;
+        let cancelled = false;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async start(controller) {
+              const encoder = new TextEncoder();
+              controller.enqueue(encoder.encode(preamble));
+              await until;
+              if (cancelled || request.signal.aborted) return;
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`),
+              );
+              await afterText;
+              if (cancelled || request.signal.aborted) return;
+              controller.enqueue(encoder.encode(completion));
+              controller.close();
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          {headers: {'content-type': 'text/event-stream'}},
+        );
+      }
+      if (pause && tool) {
+        const rest = `data: ${JSON.stringify({
           ...chunk,
           choices: [
             {
               index: 0,
-              delta: {},
-              finish_reason: finished ? 'stop' : 'tool_calls',
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    function: {arguments: tool.parameters.slice(pause.offset)},
+                  },
+                ],
+              },
+              finish_reason: null,
             },
           ],
-        })}\n\ndata: [DONE]\n\n`,
-        {headers: {'content-type': 'text/event-stream'}},
-      );
+        })}\n\n`;
+        let cancelled = false;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async start(controller) {
+              const encoder = new TextEncoder();
+              controller.enqueue(encoder.encode(initial));
+              await pause.until;
+              if (cancelled || request.signal.aborted) return;
+              controller.enqueue(encoder.encode(rest + completion));
+              controller.close();
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          {headers: {'content-type': 'text/event-stream'}},
+        );
+      }
+      return new Response(initial + completion, {
+        headers: {'content-type': 'text/event-stream'},
+      });
     },
   });
   let driver: TerminalControl | undefined;
@@ -174,7 +294,12 @@ export async function launchPi(
         '--no-approve',
         ...(profile === 'web'
           ? ['--no-builtin-tools']
-          : ['--tools', 'bash,read']),
+          : [
+              '--tools',
+              profile === 'ui'
+                ? 'bash,read,write,edit,grep,find,ls,web_search,fetch_content,get_search_content'
+                : 'bash,read',
+            ]),
         '--provider',
         'fixture',
         '--model',
@@ -229,13 +354,25 @@ export async function launchPi(
       await screen.keyboard.type(text.includes(' ') ? `${text} ` : text);
       await screen.keyboard.press('Enter');
     }
-    async function start(name: string, parameters: string) {
-      tool = name;
-      args = parameters;
+    async function submit() {
       result = '';
       turn++;
       await screen.keyboard.type(`Run RTK turn ${turn}`);
       await screen.keyboard.press('Enter');
+    }
+    async function startCall(
+      call: ModelCall,
+      next: ModelCall[] = [],
+      parallel: ModelCall[] = [],
+      pause?: InputPause,
+    ) {
+      remaining = [...next];
+      simultaneous = [...parallel];
+      inputPause = pause;
+      callIndex = 0;
+      tool = call.name ? call : undefined;
+      response = undefined;
+      await submit();
     }
     return {
       directory,
@@ -257,6 +394,33 @@ export async function launchPi(
       },
       close,
       command,
+      start: (name: string, parameters: string) =>
+        startCall({name, parameters}),
+      startPartialInput: (
+        name: string,
+        parameters: string,
+        offset: number,
+        until: Promise<void>,
+      ) => startCall({name, parameters}, [], [], {offset, until}),
+      sentAssistant: () => sentAssistant,
+      async startResponse(
+        text: string,
+        thinking = '',
+        until?: Promise<void>,
+        afterText?: Promise<void>,
+      ) {
+        tool = undefined;
+        inputPause = undefined;
+        remaining = [];
+        simultaneous = [];
+        response = {text, thinking, until, afterText};
+        await submit();
+      },
+      async startParallel(calls: ModelCall[]) {
+        const [first, ...parallel] = calls;
+        if (!first) throw new Error('A batch needs at least one call');
+        await startCall(first, [], parallel);
+      },
       async waitForName(name: string) {
         await screen.screen.waitUntil(
           async () => {
@@ -274,10 +438,9 @@ export async function launchPi(
           {timeoutMs: 4000},
         );
       },
-      start,
       offered: () => offered,
       async invoke(name: string, parameters: string) {
-        await start(name, parameters);
+        await startCall({name, parameters});
         try {
           await screen.screen.waitForText(`RTK_TURN_${turn}_DONE`, {
             timeoutMs: 15000,
@@ -288,6 +451,14 @@ export async function launchPi(
           throw error;
         }
         return result;
+      },
+      async sequence(calls: ModelCall[]) {
+        const [first, ...next] = calls;
+        if (!first) throw new Error('A sequence needs at least one call');
+        await startCall(first, next);
+        await screen.screen.waitForText(`RTK_TURN_${turn}_DONE`, {
+          timeoutMs: 15000,
+        });
       },
       async reload() {
         reloads++;

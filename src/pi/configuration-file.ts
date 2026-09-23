@@ -10,6 +10,7 @@ import {randomUUID} from 'node:crypto';
 import {Effect, Schema} from 'effect';
 import {ConfigurationError, readConfiguration} from './configuration';
 import type {RtkSettings} from '../rtk/settings';
+import type {UiSettings} from '../ui/settings';
 import type {NamingSettings} from '../naming/settings';
 import type {EditorSettings} from '../editor/settings';
 
@@ -88,7 +89,11 @@ export class ConfigurationFile {
     return this.save('editor', settings);
   }
 
-  private save<K extends 'rtk' | 'naming' | 'editor'>(
+  saveUi(settings: UiSettings) {
+    return this.save('ui', settings);
+  }
+
+  private save<K extends 'rtk' | 'naming' | 'editor' | 'ui'>(
     section: K,
     settings: NonNullable<Configuration[K]>,
   ) {
@@ -134,7 +139,7 @@ export class ConfigurationFile {
         Schema.is(ConfigurationError)(error)
           ? error
           : new ConfigurationError({
-              message: `Could not finish saving ${section === 'rtk' ? 'RTK' : section} settings. Check permissions or a concurrent save, then /reload to verify.`,
+              message: `Could not finish saving ${section === 'rtk' || section === 'ui' ? section.toUpperCase() : section} settings. Check permissions or a concurrent save, then /reload to verify.`,
             }),
     });
   }

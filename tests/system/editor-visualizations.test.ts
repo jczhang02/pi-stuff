@@ -5,31 +5,38 @@ import {tmpdir} from 'node:os';
 import type {ModelRequest} from './fixtures/pi-terminal';
 import {launchPi} from './fixtures/pi-terminal';
 
-test('skill and prompt render in one native-colored card, expand and survive reload', async () => {
-  const host = await launchPi(
-    '{}',
-    resolve('tests/system/fixtures/editor-visualizations.ts'),
-  );
-  try {
-    await host.command('/fixture-skill');
-    await host.terminal.screen.waitForText('Check the fixture.', {
-      timeoutMs: 5000,
-    });
-    const screen = await host.terminal.screen.text();
-    expect(screen).toContain('/skill:review Check the fixture.');
-    expect(screen).not.toContain('[skill]');
-    await host.terminal.keyboard.press('Control+O');
-    await host.terminal.screen.waitForText('Inspect every change carefully.', {
-      timeoutMs: 5000,
-    });
-    await host.reload();
-    expect(await host.terminal.screen.text()).toContain(
-      '/skill:review Check the fixture.',
+test.each([true, false])(
+  'skill and prompt render in one native-colored card, expand and survive reload; UI enabled: %s',
+  async enabled => {
+    const host = await launchPi(
+      JSON.stringify({ui: {enabled}}),
+      resolve('tests/system/fixtures/editor-visualizations.ts'),
     );
-  } finally {
-    await host.close();
-  }
-}, 30000);
+    try {
+      await host.command('/fixture-skill');
+      await host.terminal.screen.waitForText('Check the fixture.', {
+        timeoutMs: 5000,
+      });
+      const screen = await host.terminal.screen.text();
+      expect(screen).toContain('/skill:review Check the fixture.');
+      expect(screen).not.toContain('[skill]');
+      await host.terminal.keyboard.press('Control+O');
+      await host.terminal.screen.waitForText(
+        'Inspect every change carefully.',
+        {
+          timeoutMs: 5000,
+        },
+      );
+      await host.reload();
+      expect(await host.terminal.screen.text()).toContain(
+        '/skill:review Check the fixture.',
+      );
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);
 
 test('editor colors regex matches and full skills, preserves typing, and toggle persists', async () => {
   const host = await launchPi(
@@ -110,22 +117,28 @@ test('editor colors regex matches and full skills, preserves typing, and toggle 
   }
 }, 30000);
 
-test('user tree and chart display project while source survives reload', async () => {
-  const host = await launchPi();
-  try {
-    await host.terminal.keyboard.type('```tree\nproject\n  src\n  tests\n```');
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('├── src', {timeoutMs: 5000});
-    expect(await host.terminal.screen.text()).toContain('└── tests');
-    expect(await host.terminal.screen.text()).not.toContain(
-      'pi-stuff-visualization',
-    );
-    await host.reload();
-    expect(await host.terminal.screen.text()).toContain('├── src');
-  } finally {
-    await host.close();
-  }
-}, 30000);
+test.each([true, false])(
+  'user tree displays while source survives reload; UI enabled: %s',
+  async enabled => {
+    const host = await launchPi(JSON.stringify({ui: {enabled}}));
+    try {
+      await host.terminal.keyboard.type(
+        '```tree\nproject\n  src\n  tests\n```',
+      );
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText('├── src', {timeoutMs: 5000});
+      expect(await host.terminal.screen.text()).toContain('└── tests');
+      expect(await host.terminal.screen.text()).not.toContain(
+        'pi-stuff-visualization',
+      );
+      await host.reload();
+      expect(await host.terminal.screen.text()).toContain('├── src');
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);
 
 test('a pathological keyword regex cannot block editor input or a new session', async () => {
   const host = await launchPi(
@@ -310,6 +323,7 @@ test('assistant visualizations retain model source and fit a narrow terminal', a
     await host.terminal.screen.waitForText('└── tests', {timeoutMs: 5000});
     expect(await host.terminal.screen.text()).not.toContain('type: sparkline');
     expect(await host.terminal.screen.text()).toContain('Weekly counts');
+    expect(await host.terminal.screen.text()).toContain('• Module layout');
     expect(await host.terminal.screen.text()).not.toContain(
       'pi-stuff-visualization',
     );

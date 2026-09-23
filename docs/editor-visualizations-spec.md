@@ -62,7 +62,7 @@ All four topics and implementation are authorized. The agreed test seams are edi
 
 ## Integration and acceptance
 
-The implementation baseline is main `1369773`, including merged statusline #117. Conversation UI #106 / PR #107 remains separately owned and unmerged. This branch has one Markdown transformer owner. Pi stores only one transformer per extension, so the later integration of #107 must share that owner with its assistant/tool adapters and this branch's skill adapter; registering two owners would disable one side. Combined #107 behavior is not verified by this delivery. No other owner's worktree was changed.
+The implementation baseline is main `1369773`, including merged statusline #117. Before merging this task, conversation UI #106 / PR #107 landed as `ef6b0d5` and was integrated into this branch. Pi stores only one Markdown transformer per extension: visualization registration supplies that shared owner to the skill adapter and UI assistant/tool adapters. Disabling UI leaves editor colors, chart/tree and the unified skill card active. The combined branch reruns the product and host suites, including UI-enabled/disabled visualization and skill-card regressions. No other owner's worktree was changed.
 
 Prefer existing host editor and Markdown APIs. Keep one owner for Markdown projection. The requested editor retro text is a scoped exception to ordinary semantic theme colors; update the paired design rules when the exception's boundaries are agreed. No new dependency is authorized by this specification.
 

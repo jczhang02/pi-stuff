@@ -1,0 +1,30 @@
+{
+  "baseline": "6ddfe8c",
+  "bun": "1.4.0",
+  "scope": "Temporary TUI lookup candidate, WebFetch only; no production acceptance",
+  "hosts": [
+    {
+      "host": "Pi 0.85.1",
+      "stages": ["live", "reload", "disabled-reload", "disabled-resume"],
+      "requests": 2,
+      "disabledNotOffered": true,
+      "historyBytesUnchanged": true,
+      "probe": {
+        "absentViews": 2,
+        "sdkLookupUnchanged": true
+      }
+    },
+    {
+      "host": "compiled Pi 0.87.0",
+      "stages": ["live", "reload", "disabled-reload", "disabled-resume"],
+      "requests": 2,
+      "disabledNotOffered": true,
+      "historyBytesUnchanged": true,
+      "probe": {
+        "absentViews": 2,
+        "sdkLookupUnchanged": true
+      }
+    }
+  ],
+  "probeScope": "Final resumed extension instance; absentViews resets on each extension load"
+}

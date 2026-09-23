@@ -11,6 +11,7 @@ export function registerWeb(
   pi: ExtensionAPI,
   settings: WebSettings,
   switches: ToolSwitches | undefined,
+  decorate?: (tools: ReturnType<typeof createWebTools>) => void,
 ): void {
   pi.registerProvider(exaProvider);
   let model: Model<Api> | undefined;
@@ -27,6 +28,7 @@ export function registerWeb(
       exa: () => resolveExa(ctx.modelRegistry),
       openai: () => resolveOpenAI(ctx.modelRegistry, model, settings),
     });
+    if (ctx.hasUI) decorate?.(web);
     registerTool(pi, switches, web.webSearch);
     registerTool(pi, switches, web.fetchContent);
     registerTool(pi, switches, web.getSearchContent);
