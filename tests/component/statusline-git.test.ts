@@ -141,7 +141,7 @@ test('Git cancellation and timeout stop fsmonitor descendants', async () => {
         if (
           error instanceof Error &&
           'code' in error &&
-          error.code === 'ENOENT'
+          (error.code === 'ENOENT' || error.code === 'ESRCH')
         )
           return '';
         throw error;
