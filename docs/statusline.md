@@ -4,7 +4,7 @@
 
 Pi Stuff replaces the TUI footer with two rows by default. Load the package through the [development extension instructions](web-access.md#load-the-development-extension). RPC, JSON and print modes keep their native output.
 
-The first row places the directory and `ctx 31%/272k ━━━━━━━━━━ · hit 83.8%` on the left, with Git on the right. The second row has model and thinking level on the left, and existing third-party `setStatus` messages on the right. Field separators are `·`; values keep their original case. No goal or account-quota provider is included.
+The first row places the directory and `ctx 31%/272k ━━━━━━━━━━ · hit 83.8%` on the left, with Git on the right. The second row has model and thinking level on the left, and existing third-party `setStatus` messages on the right. Field separators are `·`; values keep their original case. No goal or account-quota provider is included. Session names remain available through native `/name` and `/autoname panel`; they do not occupy a footer segment.
 
 ## Git and narrow terminals
 
@@ -50,3 +50,5 @@ These are full-viewport Terminal Control captures of the unmodified package on c
 
 ![Light, 80 columns](assets/statusline/light-80.png)
 ![Dark, 50 columns](assets/statusline/dark-50.png)
+
+![Long directory and Git preserved at 50 columns](assets/statusline/long-light-50.png)

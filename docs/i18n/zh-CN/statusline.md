@@ -4,7 +4,7 @@
 
 Pi Stuff 默认用双行状态栏替换 TUI footer. 按[开发版扩展说明](web-access.md#加载开发版扩展)加载包. RPC、JSON 和 print 模式保留原生输出.
 
-第一行左侧显示目录及 `ctx 31%/272k ━━━━━━━━━━ · hit 83.8%`, 右侧显示 Git. 第二行左侧为模型和思考强度, 右侧为现有第三方 `setStatus` 消息. 字段以 `·` 分隔, 原始值保留大小写. 不包含 goal 或账号额度 provider.
+第一行左侧显示目录及 `ctx 31%/272k ━━━━━━━━━━ · hit 83.8%`, 右侧显示 Git. 第二行左侧为模型和思考强度, 右侧为现有第三方 `setStatus` 消息. 字段以 `·` 分隔, 原始值保留大小写. 不包含 goal 或账号额度 provider. 会话名仍可通过原生 `/name` 和 `/autoname panel` 查看, 不占用 footer 字段.
 
 ## Git 与窄屏
 
@@ -50,3 +50,5 @@ ctx 使用 Pi 当前上下文估算, 容量跟随当前模型. compact 后用量
 
 ![明色, 80 列](../../assets/statusline/light-80.png)
 ![暗色, 50 列](../../assets/statusline/dark-50.png)
+
+![50 列保留长目录和 Git](../../assets/statusline/long-light-50.png)
