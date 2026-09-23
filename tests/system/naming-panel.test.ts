@@ -14,6 +14,70 @@ const configured = {
   naming: {automatic: false, model: {provider: 'fixture', id: 'naming'}},
 };
 
+test.each(['regular', 'fullscreen'] as const)(
+  'native autoname completion opens the panel and preserves free-text and bare generation in %s mode',
+  async mode => {
+    const provider = new NamingProvider();
+    const host = await launchPi(
+      JSON.stringify(configured),
+      undefined,
+      'rtk',
+      mode,
+      provider.reply,
+    );
+    try {
+      await host.terminal.keyboard.type('/autoname ');
+      await host.terminal.screen.waitForText('Open AutoName panel', {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.type('pa');
+      await host.terminal.screen.waitForText('/autoname pa', {
+        timeoutMs: 4000,
+      });
+      expect(await host.terminal.screen.text()).toContain(
+        'Open AutoName panel',
+      );
+      expect(provider.requests).toHaveLength(0);
+      await host.terminal.keyboard.press('Tab');
+      await host.terminal.screen.waitForText('/autoname panel', {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText('Generate name', {
+        timeoutMs: 4000,
+      });
+      expect(provider.requests).toHaveLength(0);
+      await closeNamingHome(host);
+
+      const hint = 'panel layout keyboard navigation';
+      await host.terminal.keyboard.type(`/autoname ${hint}`);
+      await host.terminal.screen.waitForText(hint, {timeoutMs: 4000});
+      expect(await host.terminal.screen.text()).not.toContain(
+        'Open AutoName panel',
+      );
+      await host.terminal.keyboard.press('Enter');
+      await host.waitForName(provider.title);
+      expect(provider.requests).toHaveLength(1);
+      expect(JSON.stringify(provider.requests[0]?.messages)).toContain(hint);
+
+      await host.invoke('', '{}');
+      provider.title = 'research: Review native completion behavior';
+      await host.command('/autoname');
+      await host.waitForName(provider.title);
+      expect(provider.requests).toHaveLength(2);
+      expect(JSON.stringify(provider.requests[1]?.messages)).toContain(
+        'Run RTK turn 1',
+      );
+    } catch (error) {
+      console.error(await host.terminal.screen.text());
+      throw error;
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);
+
 test('panel fields save independently, preserve other configuration and apply without switching the conversation model', async () => {
   const provider = new NamingProvider();
   const host = await launchPi(

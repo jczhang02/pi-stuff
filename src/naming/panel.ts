@@ -244,6 +244,16 @@ export function registerNamingPanel(
   pi.on('session_before_tree', () => close?.());
   pi.registerCommand('autoname', {
     description: 'Generate a session name, or open the AutoName panel',
+    getArgumentCompletions: prefix =>
+      'panel'.startsWith(prefix)
+        ? [
+            {
+              value: 'panel',
+              label: 'panel',
+              description: 'Open AutoName panel',
+            },
+          ]
+        : null,
     handler: async (args, ctx) => {
       if (args.trim() !== 'panel') {
         const work = runtime.request(ctx, args);

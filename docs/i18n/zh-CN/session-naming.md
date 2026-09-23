@@ -12,6 +12,10 @@ Pi 原生 `/name Exact title` 用于直接赋名. `/autoname` 根据开场请求
 
 在 TUI 中执行 `/autoname panel`, 可以查看当前名称、修改设置或生成替代名称. Settings 是首个菜单项. Generate name 直接根据当前对话生成并应用, 不再先进入 hint 页. 空白对话保持未命名, 不调用模型. 关闭面板或进入 Settings 会取消面板启动的未完成请求, 保留已经应用的名称. 仅打开面板不消耗开场自动机会. 完整参数 `panel` 保留给面板入口, 其他 `/autoname` 文本仍作为可选任务提示.
 
+输入 `/autoname ` 或 `/autoname pa` 等匹配前缀时, Pi 原生参数补全会显示 `panel`, 描述为 `Open AutoName panel`. 补全不调用模型. 其他文本仍作为自由任务提示, 无参数 `/autoname` 仍根据对话生成名称.
+
+![编译版 Pi 0.87.1 在 100×30 终端中的原生参数补全](../../assets/session-naming/completion.png)
+
 设置逐项保存并立即生效:
 
 - **Automatic naming** 开关控制开场自动命名. 启用不会恢复当前会话的自动机会.

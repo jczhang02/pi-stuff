@@ -12,6 +12,10 @@ Generation has no progress notice and succeeds silently by updating the native s
 
 Open `/autoname panel` in a TUI to see the current name, change settings or generate a replacement. Settings is the first menu item. Generate name uses the current dialogue directly and applies the result without a hint page. A blank conversation stays unnamed and makes no model request. Closing the panel or opening Settings cancels an unfinished panel request; an applied name is kept. Opening the panel alone does not consume opening automation. The exact argument `panel` is reserved for this view; other `/autoname` text remains an optional task hint.
 
+Pi's native argument completion suggests `panel` after `/autoname ` or a matching prefix such as `/autoname pa`, with the description `Open AutoName panel`. Completion makes no model request. Other text remains a free-form task hint; `/autoname` without arguments still generates from the conversation.
+
+![Native argument completion in compiled Pi 0.87.1 at 100×30](assets/session-naming/completion.png)
+
 Settings save individually and take effect immediately:
 
 - **Automatic naming** enables or disables opening naming. Enabling it does not rearm the current session.
