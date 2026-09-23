@@ -83,7 +83,16 @@ test('editor colors regex matches and full skills, preserves typing, and toggle 
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('disabled', {timeoutMs: 5000});
     await host.terminal.keyboard.press('Escape');
+    await host.terminal.screen.waitUntil(
+      async () =>
+        (await readFile(join(host.agent, 'pi-stuff.json'), 'utf8')).includes(
+          '"enabled": false',
+        ),
+      {timeoutMs: 5000},
+    );
+    await host.reload();
     await host.terminal.keyboard.type('/skill:review ');
+    await host.terminal.screen.waitForText('/skill:review', {timeoutMs: 3000});
     const disabled = await host.terminal.screen.frame();
     expect(
       disabled.cells.filter(
@@ -239,3 +248,85 @@ for (const theme of ['dark', 'light']) {
     }
   }, 30000);
 }
+
+test('assistant visualizations retain model source and fit a narrow terminal', async () => {
+  const source =
+    'Module layout\n\n```tree\nproject\n  src\n    editor\n    visualizations\n  tests\n```\n\nWeekly counts\n\n```chart\ntype: sparkline\n2 4 3 8 5 9\n```';
+  let finish = () => {};
+  const host = await launchPi('{}', undefined, 'rtk', 'fullscreen', () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        const send = (content: string, finishReason: string | null) =>
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                id: 'visualizations',
+                object: 'chat.completion.chunk',
+                choices: [
+                  {index: 0, delta: {content}, finish_reason: finishReason},
+                ],
+              })}\n\n`,
+            ),
+          );
+        send(source.slice(0, -3), null);
+        finish = () => {
+          send('```', 'stop');
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        };
+      },
+    });
+    return new Response(stream, {
+      headers: {'content-type': 'text/event-stream'},
+    });
+  });
+  try {
+    await host.terminal.keyboard.type(
+      'Show the module layout and weekly counts.',
+    );
+    await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('type: sparkline', {
+      timeoutMs: 5000,
+    });
+    finish();
+    await host.terminal.screen.waitForText('▁', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('└── tests', {timeoutMs: 5000});
+    expect(await host.terminal.screen.text()).not.toContain('type: sparkline');
+    expect(await host.terminal.screen.text()).toContain('Weekly counts');
+    expect(await host.terminal.screen.text()).not.toContain(
+      'pi-stuff-visualization',
+    );
+    const files = (
+      await readdir(join(host.directory, 'sessions'), {recursive: true})
+    ).filter(file => file.endsWith('.jsonl'));
+    const file = join(host.directory, 'sessions', files[0] ?? '');
+    await host.terminal.screen.waitUntil(
+      async () =>
+        (await readFile(file, 'utf8')).includes(JSON.stringify(source)),
+      {timeoutMs: 5000},
+    );
+    const stored = await readFile(file, 'utf8');
+    await host.reload();
+    expect(await readFile(file, 'utf8')).toBe(stored);
+    await host.terminal.resize({cols: 60, rows: 30});
+    await host.terminal.screen.waitForText('└── tests', {timeoutMs: 5000});
+    expect(await host.terminal.screen.text()).toMatch(/[▁▂▃▄▅▆▇█]/u);
+    expect(await host.terminal.screen.text()).not.toContain('type: sparkline');
+    expect(await host.terminal.screen.text()).toContain('Weekly counts');
+    if (process.env.PI_EDITOR_EVIDENCE) {
+      const capture = await host.terminal.screen.capture({
+        includeAnsi: true,
+        settleMs: 100,
+        deadlineMs: 2000,
+      });
+      if (capture.ansi)
+        await writeFile(
+          join(process.env.PI_EDITOR_EVIDENCE, 'visualizations.ansi'),
+          capture.ansi,
+        );
+    }
+  } finally {
+    await host.close();
+  }
+}, 30000);

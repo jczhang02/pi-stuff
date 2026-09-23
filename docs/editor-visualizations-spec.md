@@ -62,7 +62,7 @@ All four topics and implementation are authorized. The agreed test seams are edi
 
 ## Integration and acceptance
 
-The baseline main revision is `94707f5`. Conversation UI work in #106 and statusline work in #117 have separate owners. Coordinate shared UI/configuration/Markdown boundaries before implementation; do not edit those owners' worktrees. Resolve integration order when their current state is known.
+The implementation baseline is main `1369773`, including merged statusline #117. Conversation UI #106 / PR #107 remains separately owned and unmerged. This branch has one Markdown transformer owner. Pi stores only one transformer per extension, so the later integration of #107 must share that owner with its assistant/tool adapters and this branch's skill adapter; registering two owners would disable one side. Combined #107 behavior is not verified by this delivery. No other owner's worktree was changed.
 
 Prefer existing host editor and Markdown APIs. Keep one owner for Markdown projection. The requested editor retro text is a scoped exception to ordinary semantic theme colors; update the paired design rules when the exception's boundaries are agreed. No new dependency is authorized by this specification.
 
@@ -93,3 +93,19 @@ Chart/tree and skill-message composition remain enabled independently of the edi
 The implementation uses the native editor factory and Markdown transformer, with narrow display adapters for editor layout, visualization fence decoration and skill insertion. Each adapter retains native storage and execution and restores its wrapper on reload/quit only if it still owns the method. The worker has no runtime package imports because the compiled host does not inherit the extension loader's package resolution.
 
 Palette provenance: [pi-footer 1b83749f](https://github.com/wobondar/pi-footer/tree/1b83749f), MIT, copyright 2026 wobondar; notice retained in `src/editor/LICENSE-pi-footer.txt`. Chart notice is retained in `src/visualizations/LICENSE-Howaboua.txt`. Parser and tree behavior were adapted from pi-stuff-old `21b636ea`, MIT, copyright 2026 JC Zhang.
+
+## Implementation evidence
+
+Production code at `15f3b62` passed separate read-only Standards and Spec reviews against `1369773`. Reviewer contexts were `implementation_standards` and `implementation_spec`, children of owner `codex:01a0cc15-4b69-7610-8c2f-351db6a5f4e6`. Both applied the mandatory thermo-nuclear review skill. Findings about chart wrapping/root loss, the native editor working indicator and Markdown skill-label placement were fixed and independently rechecked. No structural findings remain.
+
+Terminal Control exercised seven real-host scenarios on compiled Pi 0.85.1, 0.86.1 and 0.87.1, each with 7 passes and 0 failures. They cover saved settings/reload, invalid and pathological regex, cursor editing, native skill expansion and history, normal transcript colors, user/assistant visualizations, narrow layout, transition from an incomplete streamed chart to the completed graphic, and unchanged session source. The save test originally read the file before the asynchronous save completed; it now waits for the persisted value. Commands use `PI_TEST_HOST=<compiled-pi> bun test tests/system/editor-visualizations.test.ts`.
+
+These captures come from the actual compiled 0.87.1 host, replayed by Terminal Control with the design font stack. The editor captures use 100 by 30 cells and explicit black/white terminal defaults for dark/light; the chart capture uses 60 by 30. They are headless terminal captures, not photographs of a desktop terminal.
+
+- [Dark editor and submitted skill card](assets/editor-visualizations/editor-dark.png)
+- [Light editor and submitted skill card](assets/editor-visualizations/editor-light.png)
+- [Assistant tree and sparkline at 60 columns](assets/editor-visualizations/visualizations.png)
+
+A local Bun 1.4.0 benchmark used the real CustomEditor with inert terminal I/O, a 261-character draft, 100-column render, 100 warmups and seven batches of 1,000 renders. Median per-render time was 0.026 ms native and 0.056 ms with cached regex highlighting, about 0.030 ms added. This measures the ordinary render path, not end-to-end key latency or worst-case pattern cost; the pathological-regex host test separately verifies input responsiveness.
+
+No dependency was added. Reverting the implementation restores native rendering. Remove the new `editor` section from configuration before loading older strict-schema releases; canonical sessions require no migration.

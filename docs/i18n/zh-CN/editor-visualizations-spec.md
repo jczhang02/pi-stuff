@@ -62,7 +62,7 @@ Pi 0.87.1 已将技能块和 prompt 存在同一条 user message 中. 交互渲�
 
 ## 接入与验收
 
-主线基线为 `94707f5`. #106 会话 UI 和 #117 statusline 各有负责人. 实现前协调共享 UI、配置和 Markdown 边界, 不修改其他负责人的工作区. 接入顺序待核对各任务最新状态后确定.
+实现基线为 main `1369773`, 已包含合并的 statusline #117. 会话 UI #106 / PR #107 由其他负责人维护, 尚未合并. 本分支只有一个 Markdown transformer owner. Pi 每个扩展只保存一个 transformer, 因此后续接入 #107 时, 其 assistant/tool 适配器与本分支 skill 适配器必须共用该 owner; 注册两个 owner 会使其中一侧失效. 本次交付未验证与 #107 的组合行为, 未修改其他负责人的工作区.
 
 优先使用已有宿主 editor 和 Markdown API, Markdown 转换由单一模块负责. 本次 editor retro 文本是常规语义主题色的局部例外, 例外边界确认后同步更新双语设计规范. 本规格不授权新增依赖.
 
@@ -93,3 +93,19 @@ Chart/tree 和 skill 消息合并独立于 editor 开关保持启用. 原生 ski
 实现使用原生 editor factory 和 Markdown transformer, 对 editor 布局、可视化围栏显示和 skill 插入采用局部显示适配. 适配器保留原生存储和执行, reload/退出时仅在仍持有方法所有权的情况下恢复包装. Worker 不导入运行时包, 因为编译宿主不会继承扩展加载器的包解析环境.
 
 配色来源: [pi-footer 1b83749f](https://github.com/wobondar/pi-footer/tree/1b83749f), MIT, copyright 2026 wobondar; 声明保留在 `src/editor/LICENSE-pi-footer.txt`. 图表声明保留在 `src/visualizations/LICENSE-Howaboua.txt`. 解析器与树行为改编自 pi-stuff-old `21b636ea`, MIT, copyright 2026 JC Zhang.
+
+## 实现证据
+
+生产代码 `15f3b62` 已通过以 `1369773` 为基线的独立只读标准和需求审查. 审查上下文为负责人 `codex:01a0cc15-4b69-7610-8c2f-351db6a5f4e6` 的子上下文 `implementation_standards` 与 `implementation_spec`, 均使用强制 thermo-nuclear 审查技能. 图表折行/根节点丢失、原生 editor 工作指示及 Markdown skill 标签位置问题均已修复并独立复核, 无遗留结构问题.
+
+Terminal Control 在编译 Pi 0.85.1、0.86.1、0.87.1 上各执行七项真实宿主场景, 均为7通过、0失败. 覆盖设置保存/reload、无效及病态正则、光标编辑、原生 skill 展开与历史、正常消息配色、用户/assistant 可视化、窄布局、流式 chart 从未闭合源码到完成图形的转换及会话源码不变. 保存测试最初在异步写入完成前读取文件, 现已改为等待实际保存值. 命令为 `PI_TEST_HOST=<compiled-pi> bun test tests/system/editor-visualizations.test.ts`.
+
+以下截图来自实际编译 0.87.1 宿主, 由 Terminal Control 按设计字体栈回放导出. Editor 截图为100列乘30行, 分别显式使用黑/白终端默认背景以匹配深/浅主题; 图表截图为60列乘30行. 它们是无头终端捕获, 不是桌面终端照片.
+
+- [深色 editor 与已发送 skill 卡片](../../assets/editor-visualizations/editor-dark.png)
+- [浅色 editor 与已发送 skill 卡片](../../assets/editor-visualizations/editor-light.png)
+- [60列 assistant tree 与 sparkline](../../assets/editor-visualizations/visualizations.png)
+
+本地 Bun 1.4.0 基准使用真实 CustomEditor 和无操作终端 I/O, 草稿261字符、渲染宽度100列, 预热100次, 七组各1,000次渲染. 每次渲染中位数为原生0.026ms、使用已缓存正则高亮0.056ms, 增加约0.030ms. 这里只衡量普通渲染路径, 不代表端到端按键延迟或最坏正则开销; 病态正则宿主测试单独验证输入响应.
+
+未增加依赖. 撤销实现可恢复原生显示. 加载旧版严格配置版本前, 应删除新增 `editor` 配置段; 原始会话无需迁移.
