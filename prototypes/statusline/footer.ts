@@ -117,16 +117,12 @@ export function renderFooter(
   const meter =
     theme.fg('thinkingMedium', '━'.repeat(filled)) +
     theme.fg('borderMuted', '━'.repeat(10 - filled));
-  // A compact viewport omits capacity as a whole field, never shortens the meter.
-  second.push(
-    {
-      text: `${theme.fg('muted', 'ctx')} ${context}% ${meter}`,
-      side: 'left',
-      priority: 90,
-    },
-    {text: theme.fg('muted', 'window 272k'), side: 'left', priority: 20},
-    {text: theme.fg('muted', 'hit 83.8%'), side: 'left', priority: 100},
-  );
+  // Keep the requested context/capacity/hit block intact immediately after dir.
+  first.push({
+    text: `${theme.fg('muted', 'ctx')} ${context}% ${meter}${theme.fg('muted', '/ 272k')} · ${theme.fg('muted', 'hit 83.8%')}`,
+    side: 'left',
+    priority: 90,
+  });
   if (identitiesFit && state.scenario !== 'base') {
     second.push({
       text: theme.fg(

@@ -50,12 +50,28 @@ async function capture(session: Session, name: string): Promise<string> {
   assert.equal(footer.length, 2);
   assert.doesNotMatch(
     footer[0] ?? '',
-    /goal|codex used|ctx|hit/u,
-    'Repository row stays focused',
+    /goal|codex used/u,
+    'Extensions stay on the second row',
+  );
+  assert.doesNotMatch(
+    footer[1] ?? '',
+    /ctx|hit|window/u,
+    'Context stays after the directory',
+  );
+  if (footer[0]?.includes('ctx')) {
+    assert.match(
+      footer[0],
+      /^~\/dev\/\S+ · ctx 31% ━{10}\/ 272k · hit 83\.8%/u,
+    );
+  }
+  assert.equal(
+    footer.join(' ').includes('ctx'),
+    footer.join(' ').includes('hit'),
+    'Context and hit stay together',
   );
   assert.doesNotMatch(
     footer.join(' '),
-    /R620k|W8k|est \$|openai-codex|auto/u,
+    /R620k|W8k|est \$|openai-codex|auto|window/u,
     'Routine detail fields do not return at wider widths',
   );
   if (
@@ -79,11 +95,12 @@ async function capture(session: Session, name: string): Promise<string> {
       'Lowercase sample labels and clean dot separators',
     );
     assert.equal(
-      line.split(/ {2,}/u).length,
-      2,
-      'Exactly one elastic gap separates the two zones',
+      line.trimStart().split(/ {2,}/u).length,
+      line.startsWith(' ') ? 1 : 2,
+      'One elastic gap when both zones are populated',
     );
-    if (line.includes('ctx')) assert.match(line, /ctx 31% ━{10}/u);
+    if (line.includes('ctx'))
+      assert.match(line, /ctx 31% ━{10}\/ 272k · hit 83\.8%/u);
   }
   assert.ok(
     lines.slice(start + 2).every(line => line.trim() === ''),
@@ -196,7 +213,7 @@ await runEffect(async () => {
                   footer.includes('↑2 ↓1'),
                   'Both divergence counters survive',
                 );
-              if (scenario !== 'long' || cols >= 100) {
+              if (cols === 150 || (scenario !== 'long' && cols >= 80)) {
                 assert.match(footer, /hit 83\.8%/u);
                 assert.match(footer, /ctx 31% ━{10}/u);
               }
