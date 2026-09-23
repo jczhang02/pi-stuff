@@ -2,7 +2,7 @@
 
 [English](../../editor-visualizations-spec.md) · 英文为准.
 
-状态: 四项访谈均已确定: editor 高亮、chart/tree、原生 skill 触发、skill 消息合并展示. [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119) 跟踪交付. 正式实现须等待明确的共同理解确认.
+状态: 四项访谈均已确定: editor 高亮、chart/tree、原生 skill 触发、skill 消息合并展示. [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119) 跟踪交付. 维护者已通过 implement 技能授权在新 worktree 中实现.
 
 ## 已确认行为
 
@@ -58,7 +58,7 @@ Pi 0.87.1 已将技能块和 prompt 存在同一条 user message 中. 交互渲�
 3. 原生 skill 触发已确认保持不变.
 4. Skill/prompt 合并展示已确认: 正常配色的单张卡片, 原生操作在卡片内展开指令, 纯 skill 只显示标签, 恢复历史采用相同展示.
 
-四项讨论均已确定, 仍需最终共同理解确认, 再开始生产实现.
+四项讨论及实现均已获授权. 已确认测试边界为 editor 渲染/配置、Markdown 可视化转换、skill 消息合并/展开, 另做实际宿主验收. 独立审查基线为 main `1369773`.
 
 ## 接入与验收
 
@@ -68,4 +68,28 @@ Pi 0.87.1 已将技能块和 prompt 存在同一条 user message 中. 交互渲�
 
 图表算法来自 MIT 许可的 `@howaboua/pi-unicode-charts` 0.1.0, 提交 `8d63d300597488e6fa4c30ccd6a3eb0fed2d4304`. 保留源代码/许可声明, 在实现证据中记录来源. Retro 源码引用 pi-footer `1b83749f` 的 `src/ui/title-bar.ts`, 导入前核实并保留适用声明. 不新增 `UPSTREAM.md`.
 
-交付前先完成访谈并确认共同理解. 随后验证已接受的匹配示例、输入/光标/补全、原始数据保留、流式与恢复消息、可视化回退、Unicode 列宽、深浅主题和其他 UI 功能共存. 记录支持宿主的真实终端证据及普通路径性能; 配色预览不代表产品验收. 必需的独立审查、检查与合并授权遵循仓库流程.
+交付前验证已接受的匹配示例、输入/光标/补全、原始数据保留、流式与恢复消息、可视化回退、Unicode 列宽、深浅主题和其他 UI 功能共存. 记录支持宿主的真实终端证据及普通路径性能; 配色预览不代表产品验收. 必需的独立审查、检查与合并授权遵循仓库流程.
+
+## 配置与操作
+
+`/editor` 打开原生设置列表. 唯一开关保存成功后立即生效. 全局配置中的关键词填写正则源码字符串, 仍需遵循 JSON 转义:
+
+```json
+{
+  "editor": {
+    "enabled": true,
+    "keywords": [
+      {"pattern": "review"},
+      {"pattern": "\\bFIXME\\b", "caseSensitive": true}
+    ]
+  }
+}
+```
+
+修改文件后 reload. 无效正则按从1开始的条目序号报告并跳过. 正则在独立 worker 中匹配, 避免复杂表达式阻塞输入. Worker 启动后单次请求超过200ms时, 当前草稿仅保留 skill 高亮; 编辑后重新请求. 这是输入响应保护, 不改变匹配语法.
+
+Chart/tree 和 skill 消息合并独立于 editor 开关保持启用. 原生 skill 展开语义不变. 点击 skill 卡片首个内容行, 或使用 Pi 已配置的展开键查看指令.
+
+实现使用原生 editor factory 和 Markdown transformer, 对 editor 布局、可视化围栏显示和 skill 插入采用局部显示适配. 适配器保留原生存储和执行, reload/退出时仅在仍持有方法所有权的情况下恢复包装. Worker 不导入运行时包, 因为编译宿主不会继承扩展加载器的包解析环境.
+
+配色来源: [pi-footer 1b83749f](https://github.com/wobondar/pi-footer/tree/1b83749f), MIT, copyright 2026 wobondar; 声明保留在 `src/editor/LICENSE-pi-footer.txt`. 图表声明保留在 `src/visualizations/LICENSE-Howaboua.txt`. 解析器与树行为改编自 pi-stuff-old `21b636ea`, MIT, copyright 2026 JC Zhang.

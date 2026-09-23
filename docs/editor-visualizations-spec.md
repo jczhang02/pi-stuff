@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/editor-visualizations-spec.md) · English is normative.
 
-Status: all four interview topics are settled: editor highlighting, chart/tree, native skill triggering and unified skill-message display. [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119) tracks delivery. Production implementation awaits explicit shared-understanding confirmation.
+Status: all four interview topics are settled: editor highlighting, chart/tree, native skill triggering and unified skill-message display. [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119) tracks delivery. The maintainer confirmed implementation through the implement skill in a new worktree.
 
 ## Confirmed behavior
 
@@ -58,7 +58,7 @@ The maintainer confirmed these display rules. The old implementation is a behavi
 3. Native skill triggering is confirmed unchanged.
 4. Unified skill/prompt display is confirmed: one normally colored card, native instruction expansion within that card, label-only skill invocations and the same presentation for restored history.
 
-All four topics are settled. Production work still awaits final shared-understanding confirmation.
+All four topics and implementation are authorized. The agreed test seams are editor rendering/configuration, fenced Markdown projection and skill-message composition/expansion, plus actual-host acceptance. Independent review compares against main `1369773`.
 
 ## Integration and acceptance
 
@@ -68,4 +68,28 @@ Prefer existing host editor and Markdown APIs. Keep one owner for Markdown proje
 
 Chart algorithms derive from `@howaboua/pi-unicode-charts` 0.1.0, commit `8d63d300597488e6fa4c30ccd6a3eb0fed2d4304`, under MIT. Preserve source/license notices and record provenance in implementation evidence. The retro source cites pi-footer `1b83749f`, `src/ui/title-bar.ts`; verify and retain applicable notices before importing it. Do not add an `UPSTREAM.md` file.
 
-Before delivery, finish this interview and obtain shared-understanding confirmation. Then verify accepted matching examples, input/cursor/completion behavior, source preservation, streamed and restored messages, visualization fallbacks, Unicode widths, dark/light themes and coexistence with other UI features. Record supported-host terminal evidence and ordinary-path performance; an attractive palette preview is not product acceptance. Required independent review, checks and merge authorization follow the repository workflow.
+Before delivery, verify accepted matching examples, input/cursor/completion behavior, source preservation, streamed and restored messages, visualization fallbacks, Unicode widths, dark/light themes and coexistence with other UI features. Record supported-host terminal evidence and ordinary-path performance; an attractive palette preview is not product acceptance. Required independent review, checks and merge authorization follow the repository workflow.
+
+## Configuration and operation
+
+`/editor` opens the native settings list. The single switch applies immediately after a successful save. Keywords are regular-expression source strings in the global configuration; JSON escaping still applies:
+
+```json
+{
+  "editor": {
+    "enabled": true,
+    "keywords": [
+      {"pattern": "review"},
+      {"pattern": "\\bFIXME\\b", "caseSensitive": true}
+    ]
+  }
+}
+```
+
+Reload after file edits. Invalid regex entries are reported by their one-based position and skipped. Regex matching runs in a private worker so pathological expressions cannot block input. A request exceeding 200 ms after worker startup falls back to skill-only highlighting for that draft; editing starts another request. This is a responsiveness safeguard, not a different matching grammar.
+
+Chart/tree and skill-message composition remain enabled independently of the editor switch. Native skill expansion is unchanged. Click the skill card's first content row or use Pi's configured expansion binding to inspect instructions.
+
+The implementation uses the native editor factory and Markdown transformer, with narrow display adapters for editor layout, visualization fence decoration and skill insertion. Each adapter retains native storage and execution and restores its wrapper on reload/quit only if it still owns the method. The worker has no runtime package imports because the compiled host does not inherit the extension loader's package resolution.
+
+Palette provenance: [pi-footer 1b83749f](https://github.com/wobondar/pi-footer/tree/1b83749f), MIT, copyright 2026 wobondar; notice retained in `src/editor/LICENSE-pi-footer.txt`. Chart notice is retained in `src/visualizations/LICENSE-Howaboua.txt`. Parser and tree behavior were adapted from pi-stuff-old `21b636ea`, MIT, copyright 2026 JC Zhang.

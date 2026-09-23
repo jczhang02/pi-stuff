@@ -2,6 +2,9 @@ import {getAgentDir, type ExtensionAPI} from '@earendil-works/pi-coding-agent';
 import {join} from 'node:path';
 import {Effect} from 'effect';
 import {ConfigurationFile} from './src/pi/configuration-file';
+import {registerEditor} from './src/editor/register';
+import {registerVisualizations} from './src/visualizations/register';
+import {registerSkillMessages} from './src/skill-message/register';
 import {registerWeb} from './src/web/register';
 import {registerRtk} from './src/rtk/register';
 import {registerRtkPanel} from './src/rtk/panel';
@@ -12,6 +15,15 @@ import {registerNamingPanel} from './src/naming/panel';
 export default async function (pi: ExtensionAPI) {
   const configuration = await Effect.runPromise(
     ConfigurationFile.load(join(getAgentDir(), 'pi-stuff.json')),
+  );
+  const markdown = registerVisualizations(pi);
+  registerSkillMessages(pi, markdown);
+  registerEditor(
+    pi,
+    () => configuration.value.editor ?? {},
+    async settings => {
+      await Effect.runPromise(configuration.saveEditor(settings));
+    },
   );
   registerStatusline(pi, configuration.value.statusline);
   const naming = registerNaming(pi, configuration.value.naming);
