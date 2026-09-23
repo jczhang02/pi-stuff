@@ -31,8 +31,9 @@ export function registerUi(
   const localArgs = Schema.Struct({
     pattern: Schema.optional(Schema.String),
     path: Schema.optional(Schema.String),
-    offset: Schema.optional(Schema.Number),
-    limit: Schema.optional(Schema.Number),
+    // Pi removes optional nulls before execution; renderers see the raw call.
+    offset: Schema.optional(Schema.NullOr(Schema.Number)),
+    limit: Schema.optional(Schema.NullOr(Schema.Number)),
   });
   function builtinView(name: string, tool: ToolView): ToolView | undefined {
     if (name === 'bash') return bash.display(tool, settings);
@@ -56,8 +57,8 @@ export function registerUi(
             return readParts(
               output,
               Schema.decodeUnknownSync(RetrievalDetails)(details ?? {}),
-              range.offset,
-              range.limit,
+              range.offset ?? undefined,
+              range.limit ?? undefined,
             );
           }
         : undefined,
