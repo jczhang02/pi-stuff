@@ -209,3 +209,33 @@ test('a fitting directory gets its own row before Git can force truncation', () 
   expect(lines[1]).toContain('feature/statusline · +1 · ~2 · ?3');
   expect(lines.join('\n')).not.toContain('…');
 });
+
+test('long identities retain all Git fields by distributing complete counters', () => {
+  const theme = getThemeByName('dark');
+  if (!theme) throw new Error('Missing built-in theme');
+  const directory = '/home/jc/dev/customer-platform-integration';
+  const branch = 'feature/customer-platform-statusline-ui';
+  const lines = renderFooter(50, theme, {
+    ...base,
+    directory,
+    git: {
+      kind: 'ready',
+      snapshot: {
+        branch,
+        staged: 1,
+        modified: 2,
+        untracked: 3,
+        conflicts: 0,
+        ahead: 0,
+        behind: 0,
+        operation: '',
+      },
+    },
+  }).map(Bun.stripANSI);
+  expect(lines[0]).toContain(directory);
+  expect(lines[1]).toContain(branch);
+  expect(lines.join('\n')).not.toContain('…');
+  for (const field of ['+1', '~2', '?3'])
+    expect(lines.join('\n')).toContain(field);
+  expect(lines.every(line => visibleWidth(line) <= 50)).toBe(true);
+});

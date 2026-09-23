@@ -87,6 +87,30 @@ function row(width: number, fields: Field[], separator: string): string {
   );
 }
 
+// At most eight Git detail fields exist. Try every whole-field partition before
+// sacrificing an identity; a greedy split can miss a short counter that fits.
+function splitGitDetails(
+  details: string[],
+  firstSpace: number,
+  secondSpace: number,
+  separator: string,
+) {
+  for (let mask = (1 << details.length) - 1; mask >= 0; mask--) {
+    const first = details
+      .filter((_field, index) => mask & (1 << index))
+      .join(separator);
+    const second = details
+      .filter((_field, index) => !(mask & (1 << index)))
+      .join(separator);
+    if (
+      (first ? visibleWidth(first) + 2 : 0) <= firstSpace &&
+      (second ? visibleWidth(second) + 2 : 0) <= secondSpace
+    )
+      return [first, second] as const;
+  }
+  return undefined;
+}
+
 function tokens(value: number): string {
   return value >= 1_000_000
     ? `${+(value / 1_000_000).toFixed(1)}m`
@@ -162,13 +186,18 @@ export function renderFooter(
   } else if (view.git.kind === 'unknown')
     counts.push(theme.fg('muted', 'git ?'));
   const worktree = counts.join(sep);
-  const divergence = [
+  const divergenceFields = [
     snapshot?.ahead ? theme.fg('accent', `↑${snapshot.ahead}`) : '',
     snapshot?.behind ? theme.fg('warning', `↓${snapshot.behind}`) : '',
-  ]
-    .filter(Boolean)
-    .join(sep);
+  ].filter(Boolean);
+  const divergence = divergenceFields.join(sep);
   const git = [branch, worktree, divergence].filter(Boolean).join(sep);
+  const divided = splitGitDetails(
+    [...counts, ...divergenceFields],
+    width - visibleWidth(path),
+    width - visibleWidth(branch),
+    sep,
+  );
   const first: Field[] = [];
   const second: Field[] = [];
   const required = (text: string, side: Field['side']): Field => ({
@@ -189,6 +218,9 @@ export function renderFooter(
   } else if (visibleWidth(path) <= width && visibleWidth(git) <= width) {
     first.push(required(directory, 'left'));
     second.push(required(git, 'left'));
+  } else if (divided) {
+    first.push(required(directory, 'left'), required(divided[0], 'right'));
+    second.push(required(branch, 'left'), required(divided[1], 'right'));
   } else {
     first.push(
       required(
