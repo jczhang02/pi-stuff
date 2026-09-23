@@ -30,9 +30,9 @@ async function capture(session: Session, name: string): Promise<string> {
       return (
         start >= 0 &&
         completeTail &&
-        lines
-          .slice(start, start + 2)
-          .every(line => visibleWidth(line.trimEnd()) === snapshot.frame.cols)
+        visibleWidth((lines[start] ?? '').trimEnd()) === snapshot.frame.cols &&
+        (!runtime.trimEnd().endsWith('↓1') ||
+          visibleWidth(runtime.trimEnd()) === snapshot.frame.cols)
       );
     },
     {timeoutMs: 5000},
@@ -72,12 +72,11 @@ async function capture(session: Session, name: string): Promise<string> {
     'Routine detail fields do not return at wider widths',
   );
   assert.doesNotMatch(footer.join(' '), /goal|codex used|week/u);
-  for (const line of footer) {
-    assert.equal(
-      visibleWidth(line),
-      snapshot.frame.cols,
-      'Right-hand fields reach the right edge',
-    );
+  for (const [index, line] of footer.entries()) {
+    const hasRight = index === 0 || line.endsWith('↓1');
+    if (hasRight) assert.equal(visibleWidth(line), snapshot.frame.cols);
+    else assert.ok(visibleWidth(line) <= snapshot.frame.cols);
+    if (line.includes('gpt-6-astra')) assert.ok(line.startsWith('gpt-6-astra'));
     assert.doesNotMatch(
       line,
       /[A-Z]|\||^ · | · $|·  |  ·/u,
@@ -85,7 +84,7 @@ async function capture(session: Session, name: string): Promise<string> {
     );
     assert.equal(
       line.trimStart().split(/ {2,}/u).length,
-      line.startsWith(' ') ? 1 : 2,
+      hasRight ? 2 : 1,
       'One elastic gap when both zones are populated',
     );
     if (line.includes('ctx'))

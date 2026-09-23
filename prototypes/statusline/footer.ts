@@ -69,13 +69,15 @@ export function renderFooter(
   const worktree =
     state.scenario === 'base'
       ? theme.fg('muted', 'clean')
-      : theme.fg('text', '+1 ~1 ') +
+      : `${theme.fg('success', '+1')} ${theme.fg('warning', '~1')} ` +
         (state.scenario === 'long'
           ? theme.fg('error', '!1')
-          : theme.fg('text', '?1'));
+          : theme.fg('warning', '?1'));
   const divergence =
-    state.scenario === 'base' ? '' : theme.fg('muted', '↑2 ↓1');
-  const git = [theme.fg('text', branch), worktree, divergence]
+    state.scenario === 'base'
+      ? ''
+      : `${theme.fg('accent', '↑2')} ${theme.fg('warning', '↓1')}`;
+  const git = [theme.fg('accent', branch), worktree, divergence]
     .filter(Boolean)
     .join(separator);
   const required = (text: string, side: Field['side']): Field => ({
@@ -91,10 +93,10 @@ export function renderFooter(
   } else if (visibleWidth(project) + 2 + visibleWidth(branch) <= width) {
     first.push(
       required(directory, 'left'),
-      required(theme.fg('text', branch), 'right'),
+      required(theme.fg('accent', branch), 'right'),
     );
     second.push(
-      required([worktree, divergence].filter(Boolean).join(separator), 'left'),
+      required([worktree, divergence].filter(Boolean).join(separator), 'right'),
     );
   } else {
     const pathWidth = Math.max(0, width - visibleWidth(worktree) - 2);
@@ -108,7 +110,7 @@ export function renderFooter(
     );
     second.push(
       required(
-        theme.fg('text', truncateToWidth(branch, branchWidth, '…')),
+        theme.fg('accent', truncateToWidth(branch, branchWidth, '…')),
         'left',
       ),
     );
@@ -126,11 +128,11 @@ export function renderFooter(
     side: 'left',
     priority: 90,
   });
-  // If the branch occupies the second row, it owns that row's right-hand budget too.
-  if (second.every(field => field.side !== 'right')) {
+  // A wrapped branch owns the left anchor before optional model fields.
+  if (second.every(field => field.side !== 'left')) {
     second.push(
-      {text: state.model, side: 'right', priority: 80},
-      {text: theme.fg('muted', state.thinking), side: 'right', priority: 30},
+      {text: state.model, side: 'left', priority: 80},
+      {text: theme.fg('muted', state.thinking), side: 'left', priority: 30},
     );
   }
   return [row(width, first, separator), row(width, second, separator)];
