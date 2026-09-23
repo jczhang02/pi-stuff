@@ -1,0 +1,91 @@
+{
+  "baseline": "511d8d3",
+  "bun": "1.4.0",
+  "scope": "Isolated Read candidate comparison; not complete production acceptance",
+  "hosts": [
+    {
+      "profile": "pinned",
+      "pi": "0.85.1",
+      "earlyRegistrationHistory": {
+        "assertionsPassed": 66,
+        "stages": ["live", "reload-1", "reload-2", "reload-3", "resumed"]
+      },
+      "ownership": [
+        {
+          "mode": "early",
+          "order": "early-first",
+          "source": "inline",
+          "output": "PHYSICAL_READ_RESULT",
+          "foreignPreserved": false,
+          "loadDiscovery": "Error: Extension runtime not initialized. Action methods cannot be called during extension loading."
+        },
+        {
+          "mode": "early",
+          "order": "foreign-first",
+          "source": "inline",
+          "output": "FOREIGN_READ_RESULT",
+          "foreignPreserved": true,
+          "loadDiscovery": "Error: Extension runtime not initialized. Action methods cannot be called during extension loading."
+        },
+        {
+          "mode": "lookup",
+          "order": "early-first",
+          "source": "inline",
+          "output": "FOREIGN_READ_RESULT",
+          "foreignPreserved": true,
+          "loadDiscovery": "Error: Extension runtime not initialized. Action methods cannot be called during extension loading."
+        },
+        {
+          "mode": "lookup",
+          "order": "foreign-first",
+          "source": "inline",
+          "output": "FOREIGN_READ_RESULT",
+          "foreignPreserved": true,
+          "loadDiscovery": "Error: Extension runtime not initialized. Action methods cannot be called during extension loading."
+        }
+      ]
+    },
+    {
+      "profile": "compiled",
+      "pi": "0.87.0",
+      "earlyRegistrationHistory": {
+        "assertionsPassed": 66,
+        "stages": ["live", "reload-1", "reload-2", "reload-3", "resumed"]
+      },
+      "ownership": [
+        {
+          "mode": "early",
+          "order": "early-first",
+          "source": "inline",
+          "output": "PHYSICAL_READ_RESULT",
+          "foreignPreserved": false,
+          "loadDiscovery": "Error: Extension runtime not initialized. Action methods cannot be called during extension loading."
+        },
+        {
+          "mode": "early",
+          "order": "foreign-first",
+          "source": "inline",
+          "output": "FOREIGN_READ_RESULT",
+          "foreignPreserved": true,
+          "loadDiscovery": "Error: Extension runtime not initialized. Action methods cannot be called during extension loading."
+        },
+        {
+          "mode": "lookup",
+          "order": "early-first",
+          "source": "inline",
+          "output": "FOREIGN_READ_RESULT",
+          "foreignPreserved": true,
+          "loadDiscovery": "Error: Extension runtime not initialized. Action methods cannot be called during extension loading."
+        },
+        {
+          "mode": "lookup",
+          "order": "foreign-first",
+          "source": "inline",
+          "output": "FOREIGN_READ_RESULT",
+          "foreignPreserved": true,
+          "loadDiscovery": "Error: Extension runtime not initialized. Action methods cannot be called during extension loading."
+        }
+      ]
+    }
+  ]
+}

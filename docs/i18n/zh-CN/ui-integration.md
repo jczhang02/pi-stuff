@@ -2,7 +2,7 @@
 
 [English](../../../docs/ui-integration.md) · 以英文版为准.
 
-这些实验检查 Pi 扩展 API 与已确认 UI 之间的差距. 维护者已[批准 assistant/Thoughts 展示适配](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). 目前已添加 assistant 前导栏和 Thoughts 标签, 已观察到的思考区间在内存中独立计时. 工具历史接入按[另行决定](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338), 先比较公共 API 提前注册与 lookup patch.
+这些实验检查 Pi 扩展 API 与已确认 UI 之间的差距. 维护者已[批准 assistant/Thoughts 展示适配](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). 目前已添加 assistant 前导栏和 Thoughts 标签, 已观察到的思考区间在内存中独立计时. 工具历史接入按[另行决定](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338), 比较公共 API 提前注册与 lookup patch, 结果见下文.
 
 ## Assistant 和 Thoughts: 公共 API 的限制
 
@@ -108,6 +108,21 @@ HTML 导出也使用定义查询. 0.85.1 的导出保留原会话结果并使用
 
 ### 工具接入方案比较
 
-比较 pi-tool-display 的公共 API 提前注册方式与下述工具定义适配器, 暂不选定方案. 两者保持相同的执行、归属、Web 配置、生命周期和性能要求; 公共 API 满足要求时优先采用更简单方案. lookup 候选的做法如下: 通过 `/ui` 命令处理函数识别所属运行实例, 在原生历史组件构造前装饰实际定义, 保留执行与 schema; 分组索引就绪后, 仅刷新启动事件前生成的结果组件. 第三方 renderer 默认保留, 显式接管也使用同一入口. 退出时先停用适配器、再尝试恢复, 不覆盖其他扩展后装的替换.
+在 `511d8d3` 基线上, 新 Read 候选参考 pi-tool-display, 在扩展加载阶段通过 `pi.registerTool` 提前注册. 它复用产品 renderer 和检索索引, 根据当前 cwd 与图片设置调用 Pi Read 工厂, 分组索引恢复后仅使启动前结果失效一次. 该候选没有 patch Pi 方法.
 
-Pi Stuff 的 Web 定义目前同样在 `session_start` 才注册, 此查询无法装饰尚不存在的定义. 通过 Pi 公共 API 提前注册时, 必须保留认证、模型选择和非法配置处理行为. 生产验收前, 接入全部工具及 Bash 结果观测, 重跑既有历史失败测试和配置、取消、媒体、生命周期及补丁共存检查. 对完整长历史负载测量适配器开关前后的表现. `12b0969` 的两个产品 reload/resume 测试仍未修复, 临时实验通过不等于生产测试通过. 比较应先确定是否需要这个 patch, 再选择生产接入方式.
+Pi 0.85.1 和编译0.87.0在 Bun 1.4.0 下均通过相同的66次历史断言: 当前结果、连续三次 reload、新建后 resume、失败边界、左侧对齐展开、修改文件后保留历史输出及会话记录字节不变. 因此提前注册确实解决了这组 Read 历史场景. 上述 lookup 候选也已通过相同场景.
+
+归属比较在每个宿主内创建真实 SDK 会话, 分别按两种顺序加载提前注册候选和第三方 Read fixture, 对隔离文件执行最终选中的 Read 定义. 另一组改用 lookup 候选. [保留结果](../../assets/ui/tool-registration-comparison.json)包含两个宿主的观察.
+
+| 候选              | 候选先加载                       | 第三方 Read 先加载 |
+| ----------------- | -------------------------------- | ------------------ |
+| 公共 API 提前注册 | 执行原生文件读取, 覆盖第三方实现 | 保留第三方实现     |
+| lookup 适配       | 保留第三方实现                   | 保留第三方实现     |
+
+两个宿主在扩展加载阶段调用 `getAllTools()` 都抛出 `Extension runtime not initialized`. Pi 的[扩展 runner](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/extensions/runner.ts)对同名工具保留首个注册. 所检查 [pi-tool-display 的归属保护](https://github.com/MasuRii/pi-tool-display/blob/91cef7580078371f8dc49a8607222807ad6a424d/src/tool-overrides.ts)在查询不可用时继续注册. 这里测试的是同类注册策略, 不是原样运行该包的结论.
+
+**建议:** 对已有工具定义采用 lookup 适配. 提前注册候选无法在任意加载顺序下保留第三方工具. 延后注册会失去历史展示效果, 强制扩展顺序则增加用户约束. 已检查的公共 ExtensionAPI 没有注销工具或获取原执行/renderer 的接口, 无法据此交还归属. 这是所测方案的具体限制, 不代表证明所有公共 API 设计都不可行. 此比较没有批准生产工具 patch, 也没有给出性能胜负.
+
+lookup 的具体边界仍是: 通过 `/ui` 命令处理函数识别所属运行实例, 在原生历史组件构造前装饰实际定义, 保留执行与 schema; 分组索引就绪后, 仅刷新启动事件前生成的结果组件. 第三方 renderer 默认保留, 显式接管也使用同一入口. 退出时先停用适配器、再尝试恢复, 不覆盖其他扩展后装的替换.
+
+Pi Stuff 的 Web 定义目前同样在 `session_start` 才注册, 此查询无法装饰尚不存在的定义. 通过 Pi 公共 API 提前注册时, 必须保留认证、模型选择和非法配置处理行为. 生产验收前, 接入全部工具及 Bash 结果观测, 重跑既有历史失败测试和配置、取消、媒体、生命周期及补丁共存检查. 对完整长历史负载测量适配器开关前后的表现. `12b0969` 的两个产品 reload/resume 测试仍未修复, 临时实验通过不等于生产测试通过. 具体 lookup patch 仍待维护者决定. 两个候选的全部工具行为和启动/恢复/交互性能尚未验证. 提前注册已在必须满足的归属场景失败, 不能从这些小规模功能运行推导性能结论.
