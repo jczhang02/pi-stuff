@@ -1,8 +1,8 @@
-# Retro 高亮与代码块可视化
+# Editor 高亮、代码块可视化与 skill 消息展示
 
 [English](../../editor-visualizations-spec.md) · 英文为准.
 
-状态: 设计访谈进行中. [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119) 跟踪交付. 正式实现须等待明确的共同理解确认.
+状态: 按维护者要求重新依次访谈: editor 高亮、chart/tree、原生 skill 触发、skill 消息合并展示. [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119) 跟踪交付. 正式实现须等待明确的共同理解确认.
 
 ## 已确认行为
 
@@ -10,9 +10,9 @@
 
 采用配色对比中的 B: pi-stuff-old 提交 `e61ed27e` 的 `packages/pi-stuff/src/conversation-ui/retro-text.ts` 静态加粗渐变. 九个 RGB 色标经过蓝、紫、粉和暖黄, 最后回到蓝色. 保留该算法, 包括短字符串首尾可能同色的效果; 不替换成旧主分支 ANSI 彩虹, 不加动画.
 
-Retro 高亮仅用于输入框草稿和发送后的用户消息. Assistant 回复、工具输出及 Thinking 不属于高亮范围.
+Retro 高亮仅用于输入框草稿. 发送后的用户消息保留正常颜色, 包括技能标签和指令. Assistant 回复、工具输出及 Thinking 也不在高亮范围. 此决定取代此前所有用户消息高亮决定, 历史消息重新着色问题随之取消.
 
-两处共用同一套文本匹配规则. 完整 skill 引用或配置关键词匹配后就上色, 不区分正文、行内代码或围栏代码. 匹配文字的前景色采用 retro 配色, 即使原先已有语法色. 保留周边样式与背景、终端控制序列、链接目标和源文本. 不增加 Markdown 区域例外.
+完整 skill 引用或配置关键词匹配后就上色, 不区分正文、行内代码或围栏代码. 保留光标与选区行为、周边样式、终端控制序列、源文本和提交语义. 不增加 Markdown 区域例外.
 
 识别完整 `/skill:<name>` 文本和配置关键词. 文本形式的 skill 引用不要求已安装对应 skill, 高亮也不执行它. 保留编辑草稿、提交文本、存储消息和模型上下文.
 
@@ -33,15 +33,34 @@ Retro 高亮仅用于输入框草稿和发送后的用户消息. Assistant 回�
 
 参考行为位于 pi-stuff-old 主分支修订 `21b636ea` 的 ADR 0017、`fenced-visualization.ts`、`unicode-chart.ts` 和 `indentation-tree.ts`. 这里接受的是行为, 不代表直接复用其加载器或宿主补丁.
 
-## 待定决策
+## 原生 skill 触发
 
-确认当前关键词配置如何应用于已发送和恢复的用户消息. 在最终共同理解确认前核对原生 skill 消息的显示方式.
+Pi 0.87.1 仅在输入以 `/skill:` 开头时展开技能. `_expandSkillCommand` 加载匹配的技能, 在内部 `<skill>` 块后附加用户参数. 未知技能原样传递. [官方技能文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md) 将显式调用描述为确保加载技能指令的方式, 同时保留模型按需加载技能的能力.
+
+已核对的文档没有说明为何仅在首部触发. 区分命令与普通提及、避免多技能解析是根据实现作出的合理推断, 不能作为维护者明确表达的动机. 尚未授权改变触发位置; 第三项单独讨论, 不与输入框着色混为一谈.
+
+## Skill 消息合并展示
+
+维护者要求 `/skill:name prompt` 像 pi-stuff-old 一样只展示一个 user prompt message, 使用正常的用户消息颜色.
+
+Pi 0.87.1 已将技能块和 prompt 存在同一条 user message 中. 交互渲染器将其拆成 `SkillInvocationMessageComponent`, 有参数时再显示一个 `UserMessageComponent`. 本次需求针对可见的拆分, 不需要合并两条存储记录.
+
+第四项访谈确定合并后的标签/prompt 排列、技能指令查看方式、纯 skill 输入与恢复历史. 旧实现是行为参考, 不代表批准引入其用户消息彩虹色或宿主私有补丁.
+
+## 访谈顺序
+
+1. 复核仅 editor 高亮的约定; 此前配色、匹配和配置决定保留, 除非维护者修改.
+2. 根据上方保留的兼容约定复核 chart/tree.
+3. 解释原生首部触发, 再确定是否需要修改行为.
+4. 参考旧版定义单个 skill/prompt 可见消息, 保留正常用户消息颜色.
+
+以上讨论完成后仍需最终共同理解确认, 再开始生产实现.
 
 ## 接入与验收
 
 主线基线为 `94707f5`. #106 会话 UI 和 #117 statusline 各有负责人. 实现前协调共享 UI、配置和 Markdown 边界, 不修改其他负责人的工作区. 接入顺序待核对各任务最新状态后确定.
 
-优先使用已有宿主 editor 和 Markdown API, Markdown 转换由单一模块负责. 本次 retro 文本是常规语义主题色的局部例外, 例外边界确认后同步更新双语设计规范. 本规格不授权新增依赖.
+优先使用已有宿主 editor 和 Markdown API, Markdown 转换由单一模块负责. 本次 editor retro 文本是常规语义主题色的局部例外, 例外边界确认后同步更新双语设计规范. 本规格不授权新增依赖.
 
 图表算法来自 MIT 许可的 `@howaboua/pi-unicode-charts` 0.1.0, 提交 `8d63d300597488e6fa4c30ccd6a3eb0fed2d4304`. 保留源代码/许可声明, 在实现证据中记录来源. Retro 源码引用 pi-footer `1b83749f` 的 `src/ui/title-bar.ts`, 导入前核实并保留适用声明. 不新增 `UPSTREAM.md`.
 
