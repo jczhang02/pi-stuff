@@ -44,7 +44,7 @@
 - CUA 仅在验收需要真实显示时使用. 每个 driver 和 terminal 都必须运行在与宿主分离的专用显示、私有 session D-Bus 和隔离运行时中, 且不得切换主机前台. 使用 Xvfb 时清除继承的 `WAYLAND_DISPLAY`; 通过私有总线/运行时关闭单实例宿主终端复用, 并使用明确的 driver endpoint. 在运行前、运行中和运行后验证宿主焦点、指针位置和剪贴板. 无法建立隔离时阻断显示验收; 不使用主机显示, 也不把无头 Terminal Control 输出当作真实显示证据.
 - 只添加实际用例需要的初始化与生命周期辅助函数. 复用框架的输入、画面读取和等待 API, 不另建终端测试封装层.
 
-`bun test tests/system/pi-host.test.ts` 使用 Bun 启动已安装的 Pi 0.85.1 CLI, 分别运行 regular 和 fullscreen TUI 模式, 隔离设置并连接确定性本地模型. 设置 `PI_TEST_HOST=/absolute/path/to/pi` 可用同一套件验证维护者的编译宿主; 可执行文件缺失会失败, 不跳过验收. fixture 发出真实模型工具调用并加载未修改的入口. 覆盖抓取、分页/find、隐藏保留正文不落盘、reload/新会话清缓存、全局/宿主独立工具选择、无效配置恢复, 以及 Esc 取消执行中和排队的抓取. CI 使用默认离线环境, 不调用在线后端; 在线账号检查单独授权并记录证据.
+`bun test tests/system/pi-host.test.ts` 使用 Bun 启动固定的 Pi 0.87.1 CLI, 分别运行 regular 和 fullscreen TUI 模式, 隔离设置并连接确定性本地模型. 设置 `PI_TEST_HOST=/absolute/path/to/pi` 可用同一套件验证维护者的编译宿主; 可执行文件缺失会失败, 不跳过验收. fixture 发出真实模型工具调用并加载未修改的入口. 覆盖抓取、分页/find、隐藏保留正文不落盘、reload/新会话清缓存、全局/宿主独立工具选择、无效配置恢复, 以及 Esc 取消执行中和排队的抓取. CI 明确选择编译版 Pi 0.85.1、0.86.1 和 0.87.1, 每个样本使用隔离生产包运行完整离线套件. PI_TEST_VERSION 核对实际宿主, PI_TEST_PACKAGE 选择生产副本. 必需 checks 作业汇总静态质量和全部宿主样本. 运行时身份和复现方法见 [Pi 版本支持](pi-version-support.md). 这些运行不调用在线后端; 在线账号检查单独授权并记录证据.
 
 [Terminal Control 评估](https://github.com/jczhang02/pi-stuff/issues/72) 使用 Bun 1.4.0 和真实 Pi 0.85.1. 在未打开桌面窗口的情况下, 它通过了 fullscreen 启动、编辑器输入、中文 `waitForText`、鼠标拖选/复制界面、原始 SGR 滚轮输入及调整到 80x25, 并生成了 text、frame 和 SVG 产物. 嵌套 PTY 探针还显示已发布的 `run` 命令会原样转发修饰箭头、滚轮和拖选字节. 类型化 API 仍不包含修饰箭头和滚轮, 本候选的剪贴板字节也未独立断言, 因此这些场景仍是明确的适配器或证据边界. CLI 的 `run` 模式从启动起就在前台共享; 没有连接到 API 启动会话的后续 attach 路径. 这些调研证据不等于产品验收; 当前迁移验证记录在 [#74](https://github.com/jczhang02/pi-stuff/issues/74). 1.2.1 的前台 `run` 跟随外层终端的尺寸变化和 `SIGWINCH`, 不应用 CLI `resize`. API 和后台 `start` 会话支持编程调整尺寸. [Fullscreen fixture 截图](../../assets/terminal-control/pi-fullscreen.png) 展示 Terminal Control 中的滚动、中文输入和拖选复制提示, 并非原生显示截图.
 
@@ -54,7 +54,7 @@
 
 `bun test tests/system/rtk-*.test.ts` 复用隔离 Pi fixture, 使用真实模型工具调用、原生 Bash、本地可执行 fixture 和临时配置. 覆盖 rewrite 绑定与故障处理、取消且不重跑、最终结果 ANSI 清理与元数据、Pi 长输出保留文件、设置持久化与冲突, 以及内联面板. 组件测试验证原子配置存储和有界辅助进程. 这些测试同样通过 `PI_TEST_HOST` 选择编译宿主.
 
-原生 RTK 验收与确定性 fixture 分开. 已验证的 Linux 环境为编译 Pi 0.85.1、Bun 1.4.0、mise 2026.7.18 和 RTK 0.45.0. 通过 `PI_TEST_MISE_INSTALLS` 和 `PI_TEST_MISE_CONFIG` 为隔离 fixture 提供已安装 RTK 及 mise 版本配置的只读访问, RTK 数据库、XDG 目录和 mise 缓存/状态仍使用临时路径. 验收在临时仓库执行 `git status`, 检查送往模型的压缩输出, 打开全部六个原生 Usage 视图, 再调整到 56x26 和 45x20. 这验证了原生格式与发现行为, 不读取维护者统计或修改其设置. 数据边界和恢复方法见 [RTK 集成](rtk.md).
+原生 RTK 验收与确定性 fixture 分开. bb03c4e 的历史 Linux 环境为编译 Pi 0.85.1、Bun 1.4.0、mise 2026.7.18 和 RTK 0.45.0. 通过 `PI_TEST_MISE_INSTALLS` 和 `PI_TEST_MISE_CONFIG` 为隔离 fixture 提供已安装 RTK 及 mise 版本配置的只读访问, RTK 数据库、XDG 目录和 mise 缓存/状态仍使用临时路径. 验收在临时仓库执行 `git status`, 检查送往模型的压缩输出, 打开全部六个原生 Usage 视图, 再调整到 56x26 和 45x20. 这验证了原生格式与发现行为, 不读取维护者统计或修改其设置. 数据边界和恢复方法见 [RTK 集成](rtk.md).
 
 ## 执行策略
 
