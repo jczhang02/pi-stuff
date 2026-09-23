@@ -112,3 +112,25 @@ for (const prompt of ['[ref]: /url\n\n[ref]', '-\tfirst\n-\tsecond']) {
     },
   );
 }
+
+test('definition-only prompt retains its skill label through cache, resize and expansion', () => {
+  const card = new SkillMessageCard(
+    {
+      name: 'review',
+      location: '/fixture/SKILL.md',
+      content: 'Inspect carefully.',
+      userMessage: '[ref]: /url',
+    },
+    getMarkdownTheme(),
+    1,
+    [],
+  );
+  for (const width of [60, 60, 20, 60])
+    expect(card.render(width).map(stripTerminalSequences).join('\n')).toContain(
+      '/skill:review',
+    );
+  card.setExpanded(true);
+  const expanded = card.render(60).map(stripTerminalSequences).join('\n');
+  expect(expanded).toContain('/skill:review');
+  expect(expanded).toContain('Inspect carefully.');
+});

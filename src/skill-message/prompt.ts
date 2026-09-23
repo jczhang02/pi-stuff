@@ -1,4 +1,8 @@
-import {Markdown} from '@earendil-works/pi-tui';
+import {
+  Markdown,
+  stripTerminalSequences,
+  wrapTextWithAnsi,
+} from '@earendil-works/pi-tui';
 import {Schema} from 'effect';
 
 type Token = {type: string};
@@ -28,7 +32,10 @@ export function prependSkillLabel(markdown: Markdown, label: string) {
   let depth = 0;
   markdown.render = width => {
     pending = true;
-    return render(width);
+    const rows = render(width);
+    return rows.some(row => stripTerminalSequences(row).trim())
+      ? rows
+      : wrapTextWithAnsi(native.applyDefaultStyle.call(markdown, label), width);
   };
   const renderToken: RenderToken = function (token, width, next, style) {
     depth++;

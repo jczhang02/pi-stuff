@@ -1,5 +1,8 @@
 import {expect, test} from 'bun:test';
-import {resolve} from 'node:path';
+import {resolve, join} from 'node:path';
+import {mkdtemp, writeFile, readFile, readdir, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import type {ModelRequest} from './fixtures/pi-terminal';
 import {launchPi} from './fixtures/pi-terminal';
 
 test('skill and prompt render in one native-colored card, expand and survive reload', async () => {
@@ -143,3 +146,96 @@ test('a pathological keyword regex cannot block editor input or a new session', 
     await host.close();
   }
 }, 20000);
+
+for (const theme of ['dark', 'light']) {
+  test(`native skill command preserves one canonical message and ${theme} transcript colors`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pi-editor-skill-'));
+    const skillFile = join(directory, 'SKILL.md');
+    await writeFile(
+      skillFile,
+      '---\nname: review\ndescription: Inspect code.\n---\nInspect every change carefully.',
+    );
+    const requests: ModelRequest[] = [];
+    const host = await launchPi(
+      JSON.stringify({editor: {keywords: [{pattern: 'review'}]}}),
+      undefined,
+      'rtk',
+      'fullscreen',
+      body => {
+        requests.push(body);
+        return undefined;
+      },
+      ['--skill', skillFile, '--use-theme', theme],
+    );
+    try {
+      await host.command('/skill:review Check this file.');
+      await host.terminal.screen.waitForText('RTK_TURN_0_DONE', {
+        timeoutMs: 5000,
+      });
+      expect(await host.terminal.screen.text()).toContain(
+        '/skill:review Check this file.',
+      );
+      const users =
+        requests[0]?.messages.filter(message => message.role === 'user') ?? [];
+      expect(users).toHaveLength(1);
+      expect(JSON.stringify(users[0]?.content)).toContain('<skill name=');
+      expect(JSON.stringify(users[0]?.content)).toContain(
+        'Inspect every change carefully.',
+      );
+      const frame = await host.terminal.screen.frame();
+      expect(
+        frame.cells.filter(
+          cell =>
+            cell.foreground.r === 63 &&
+            cell.foreground.g === 81 &&
+            cell.foreground.b === 177 &&
+            cell.attributes.bold,
+        ),
+      ).toHaveLength(0);
+      const files = (
+        await readdir(join(host.directory, 'sessions'), {recursive: true})
+      ).filter(file => file.endsWith('.jsonl'));
+      const file = join(host.directory, 'sessions', files[0] ?? '');
+      const stored = await readFile(file, 'utf8');
+      await host.reload();
+      expect(await readFile(file, 'utf8')).toBe(stored);
+      await host.restart(['--session', file]);
+      await host.terminal.screen.waitForText('/skill:review Check this file.', {
+        timeoutMs: 5000,
+      });
+      await host.terminal.keyboard.press('Control+O');
+      await host.terminal.screen.waitForText(
+        'Inspect every change carefully.',
+        {timeoutMs: 5000},
+      );
+      await host.terminal.keyboard.press('Control+O');
+      await host.terminal.keyboard.type('Review /skill:review');
+      await host.terminal.screen.waitUntil(
+        async () =>
+          (await host.terminal.screen.frame()).cells.filter(
+            cell =>
+              cell.attributes.bold &&
+              cell.foreground.r === 63 &&
+              cell.foreground.g === 81 &&
+              cell.foreground.b === 177,
+          ).length >= 4,
+        {timeoutMs: 5000},
+      );
+      if (process.env.PI_EDITOR_EVIDENCE) {
+        const capture = await host.terminal.screen.capture({
+          includeAnsi: true,
+          settleMs: 100,
+          deadlineMs: 2000,
+        });
+        if (capture.ansi)
+          await writeFile(
+            join(process.env.PI_EDITOR_EVIDENCE, `editor-${theme}.ansi`),
+            capture.ansi,
+          );
+      }
+    } finally {
+      await host.close();
+      await rm(directory, {recursive: true, force: true});
+    }
+  }, 30000);
+}
