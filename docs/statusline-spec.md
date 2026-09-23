@@ -7,7 +7,9 @@ Design interview in progress. This records accepted decisions, not a completed i
 ## Accepted
 
 - Follow the two-row prototype at `59589c467215ec7394b36c2f60cea27e522316ad`: directory/context/cache-hit on the first-row left, Git on the right; model/thinking on the second-row left. Other status segments belong on the second-row right, yielding to required Git reflow.
-- Enable the custom statusline by default. A switch restores the native footer. Do not add per-field configuration in the first version.
+- Enable the custom statusline by default. Use global pi-stuff.json statusline.enabled (default true), applied on /reload. False restores the native footer. No new command, settings panel, project override or per-field configuration in the first version.
+- Reuse native Git change notifications instead of running a fixed two-second status poll. Exact coverage of external working-tree changes remains to be confirmed.
+- Outside a Git repository, hide Git fields. On a Git query failure or timeout, retain only trustworthy identity, show muted `git ?`, and hide stale counts. Recover on a later successful refresh; do not repeatedly notify.
 - Git includes branch or detached HEAD identity, staged/modified/untracked/conflict file counts, ahead/behind commit counts, and ongoing operations such as rebase and merge. Required identity, operation and conflict information outranks optional context metrics when narrow.
 - Context percentage remains used tokens divided by model window capacity. With automatic compaction enabled, let T be window capacity minus the effective reserveTokens for the current model: below 0.9T use accent, from 0.9T use warning, and from T use error. With automatic compaction disabled, use warning from 80% of window capacity and error from 90%. Apply the same color to the percentage and filled meter; changing model or effective compaction settings updates the thresholds.
 - Use native Pi context usage. When unknown, show `ctx ?/272k` with the actual capacity, no meter and no warning color; never substitute zero or pre-compaction usage.
@@ -18,7 +20,7 @@ Design interview in progress. This records accepted decisions, not a completed i
 
 ## Open decisions
 
-Invalid or unavailable compaction configuration; Git refresh and failure states; configuration and acceptance details.
+External working-tree refresh coverage under native notifications; live compaction configuration access and invalid/unavailable settings; acceptance details.
 
 ## Tracking
 
