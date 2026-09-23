@@ -126,7 +126,7 @@ async function launchThemeHost(
       '--tui-mode',
       'regular',
       '-e',
-      resolve('.'),
+      resolve(process.env.PI_TEST_PACKAGE ?? '.'),
       '-e',
       resolve('tests/system/fixtures/theme-discovery.ts'),
     ];
@@ -134,7 +134,13 @@ async function launchThemeHost(
       command: [piCommand, ...piArguments],
       cwd: directory,
       viewport: {cols: 120, rows: 32},
+      inheritEnv: false,
       env: {
+        HOME: directory,
+        PATH: '/usr/bin:/bin',
+        TERM: 'xterm-256color',
+        XDG_CONFIG_HOME: join(directory, 'config'),
+        XDG_DATA_HOME: join(directory, 'data'),
         PI_CODING_AGENT_DIR: agent,
         PI_CODING_AGENT_SESSION_DIR: join(directory, 'sessions'),
         PI_OFFLINE: '1',

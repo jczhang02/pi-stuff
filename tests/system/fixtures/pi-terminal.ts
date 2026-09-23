@@ -166,7 +166,7 @@ export async function launchPi(
         '--tui-mode',
         mode,
         '-e',
-        resolve('.'),
+        resolve(process.env.PI_TEST_PACKAGE ?? '.'),
         '-e',
         resolve('tests/system/fixtures/host-controls.ts'),
         ...(extraExtension === undefined ? [] : ['-e', extraExtension]),
