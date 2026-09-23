@@ -29,18 +29,24 @@ for (const theme of ['light', 'dark']) {
           await host.terminal.screen.waitForText(description!, {
             timeoutMs: 4000,
           });
-          const screen = (await host.terminal.screen.text()).split('\n');
-          const heading = screen.findIndex(line => line.startsWith(title!));
-          expect(screen[heading - 1]).toMatch(/^─+$/u);
+          const screen = (await host.terminal.screen.text())
+            .split('\n')
+            .map(line => line.trimEnd());
+          const heading = screen.findIndex(line =>
+            line.trimStart().startsWith(title!),
+          );
+          expect(screen[heading - 2]).toMatch(/^─+$/u);
           expect(screen[heading + 1]).toBe('');
-          expect(screen[heading + 2]).toBe(description!);
+          expect(screen[heading + 2]?.trim()).toBe(description!);
           if (title === 'AutoName') {
-            const name = screen.indexOf('No name yet');
+            const name = screen.findIndex(
+              line => line.trim() === 'No name yet',
+            );
             expect(name).toBeGreaterThan(heading);
             expect(screen[name + 1]).toBe('');
             expect(screen[name + 2]).toMatch(/^→ Settings/u);
-            const hint = screen.findIndex(line => line.includes('Esc Close'));
-            expect(screen[hint + 1]).toMatch(/^─+$/u);
+            const hint = screen.findIndex(line => line.includes('back'));
+            expect(screen[hint + 2]).toMatch(/^─+$/u);
           }
           homes.push(screen);
           expect(screen.find(line => line.includes('Settings'))).toMatch(
@@ -50,10 +56,10 @@ for (const theme of ['light', 'dark']) {
           await host.terminal.screen.waitForText(`${title} / Settings`, {
             timeoutMs: 4000,
           });
-          const rows = (await host.terminal.screen.text()).split('\n');
-          const behavior = rows.indexOf('Behavior');
-          expect(behavior).toBeGreaterThan(0);
-          expect(rows[behavior + 1]).toMatch(/^→ /u);
+          const rows = (await host.terminal.screen.text())
+            .split('\n')
+            .map(line => line.trimEnd());
+          expect(rows.some(line => line.includes('Type to search'))).toBe(true);
           settings.push(rows);
           await host.terminal.keyboard.press('Escape');
           await host.terminal.screen.waitForText(description!, {
@@ -72,11 +78,11 @@ for (const theme of ['light', 'dark']) {
         );
         expect(menuColumn[0]).toBeGreaterThan(0);
         expect(menuColumn[0]).toBe(menuColumn[1]);
-        expect(homes[0]!.find(line => line.includes('Navigate'))).toBe(
-          homes[1]!.find(line => line.includes('Navigate')),
+        expect(homes[0]!.find(line => line.includes('navigate'))).toBe(
+          homes[1]!.find(line => line.includes('navigate')),
         );
-        expect(settings[0]!.find(line => line.includes('Navigate'))).toBe(
-          settings[1]!.find(line => line.includes('Navigate')),
+        expect(settings[0]!.find(line => line.includes('Type to search'))).toBe(
+          settings[1]!.find(line => line.includes('Type to search')),
         );
       } catch (error) {
         console.error(await host.terminal.screen.text());
@@ -88,3 +94,45 @@ for (const theme of ['light', 'dark']) {
     30000,
   );
 }
+
+test.each(['/autoname panel', '/rtk'])(
+  'mouse navigation retains the routing owner for subsequent keyboard input: %s',
+  async command => {
+    const host = await launchPi('{"naming":{"automatic":false}}');
+    try {
+      await host.command(command);
+      await host.terminal.screen.waitForText('Settings', {timeoutMs: 4000});
+      const lines = (await host.terminal.screen.text()).split('\n');
+      const y = lines.findIndex(line => line.startsWith('→ Settings'));
+      expect(y).toBeGreaterThan(0);
+      await host.terminal.mouse({action: 'click', button: 'left', x: 4, y});
+      const title = command === '/rtk' ? 'RTK' : 'AutoName';
+      await host.terminal.screen.waitForText(`${title} / Settings`, {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.press('Control+C');
+      await host.terminal.screen.waitForText(
+        command === '/rtk' ? 'Configure RTK' : 'Current name',
+        {timeoutMs: 4000},
+      );
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText(`${title} / Settings`, {
+        timeoutMs: 4000,
+      });
+      if (command !== '/rtk') {
+        await host.terminal.keyboard.type('rules');
+        await host.terminal.keyboard.press('Enter');
+        await host.terminal.screen.waitForText('external editor', {
+          timeoutMs: 4000,
+        });
+        await host.terminal.keyboard.press('Control+C');
+        await host.terminal.screen.waitForText('AutoName / Settings', {
+          timeoutMs: 4000,
+        });
+      }
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);

@@ -40,9 +40,7 @@ test('panel fields save independently, preserve other configuration and apply wi
     });
     await host.terminal.keyboard.press('ArrowDown');
     await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Edit value', {timeoutMs: 4000});
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Newline', {timeoutMs: 4000});
+    await host.terminal.screen.waitForText('newline', {timeoutMs: 4000});
     await host.terminal.keyboard.press('Control+U');
     const rules =
       'Use a specific English task name.\nPreserve OAuth and user intent.';
@@ -53,9 +51,7 @@ test('panel fields save independently, preserve other configuration and apply wi
     });
     await host.terminal.keyboard.press('ArrowDown');
     await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Edit value', {timeoutMs: 4000});
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('enter Save', {timeoutMs: 4000});
+    await host.terminal.screen.waitForText('submit', {timeoutMs: 4000});
     await host.terminal.keyboard.press('Control+U');
     await host.terminal.keyboard.press('Control+K');
     await host.terminal.keyboard.type('0');
@@ -121,10 +117,14 @@ test('restoring defaults is confirmed, keeps the name and does not rearm the cur
     await openNamingSettings(host);
     for (let i = 0; i < 4; i++) await host.terminal.keyboard.press('ArrowDown');
     await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Restore naming defaults?', {
+    await host.terminal.screen.waitForText('All naming settings', {
       timeoutMs: 4000,
     });
     await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('Restore naming defaults?', {
+      timeoutMs: 4000,
+    });
+    await host.terminal.keyboard.press('Control+C');
     await host.terminal.screen.waitForText('Automatic naming', {
       timeoutMs: 4000,
     });
@@ -134,10 +134,13 @@ test('restoring defaults is confirmed, keeps the name and does not rearm the cur
     );
     expect((await namingConfiguration(host)).naming).toEqual(configured.naming);
     await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitForText('All naming settings', {
+      timeoutMs: 4000,
+    });
+    await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Restore naming defaults?', {
       timeoutMs: 4000,
     });
-    await host.terminal.keyboard.press('ArrowDown');
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Automatic naming', {
       timeoutMs: 4000,

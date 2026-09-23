@@ -16,13 +16,13 @@ Settings save individually and take effect immediately:
 
 - **Automatic naming** enables or disables opening naming. Enabling it does not rearm the current session.
 - **Naming model** searches Pi's authenticated models without changing the conversation model. Choose `Use current session model` to remove the override. An existing unavailable override remains inspectable; generation still fails without a fallback.
-- **Naming rules** edits the full prompt in Pi's multiline editor. `Use default` restores the built-in English rules.
-- **Maximum length** accepts a positive integer. `Use default` restores 80 code points.
-- **Restore defaults** confirms a reset of naming settings while keeping the current name.
+- **Naming rules** edits the full prompt in Pi's multiline editor. `Restore defaults → Naming rules only` restores the built-in English rules.
+- **Maximum length** accepts a positive integer. `Restore defaults → Maximum length only` restores 80 code points.
+- **Restore defaults** selects all settings or an individual rule/length default, then confirms the reset while keeping the current name.
 
-A committed configuration change cancels older naming requests without retrying. A failed save keeps the active settings and any pending request. External file edits are not overwritten: use `/reload` before retrying. Confirmed settings are durable; Esc abandons unsubmitted text, not a save already started. Session replacement or reload waits for confirmed saves to finish before loading settings into the next runtime.
+A committed configuration change cancels older naming requests without retrying. A failed save keeps the active settings and any pending request. External file edits are not overwritten: use `/reload` before retrying. Confirmed settings are durable; Native cancel abandons unsubmitted text, not a save already started. Session replacement or reload waits for confirmed saves to finish before loading settings into the next runtime.
 
-The panel uses Pi's theme, native selection and input bindings. Esc always goes back or closes, including under remapped cancel bindings. Long names and model identifiers have `[` / `]` pages. The minimum size is 56 columns by 24 rows; smaller terminals show a resize notice with an exit action. AutoName and RTK share title/borders, menu columns/spacing, settings and editor layout, keyboard hints and the local contrast correction for Pi's built-in light palette. Their actions and request/save lifetimes remain feature-owned. Custom themes are unchanged.
+The panel uses Pi's native lists, search, text dialogs and confirmation selector. Native cancel bindings apply throughout AutoName, including the size notice: by default Esc or Ctrl-C, or the configured replacement. Rules open directly in the native multiline editor, with its external-editor shortcut. Failed saves keep the submitted draft editable. The numeric input shows the current value in its title. Long names retain `[` / `]` pages; model search shows the selected identifier in the description. The minimum size remains 56 columns by 24 rows. AutoName and RTK share the native home/settings composition and list defaults. RTK reports and executable validation retain their existing specialized views. No naming progress or saved-name success notice is added.
 
 ## Configuration
 
@@ -93,9 +93,9 @@ The following eight names came from actual `openai-codex/gpt-6-astra` requests t
 | `/autoname` after the agreed task changes to OAuth risk documentation           | `docs: Document OAuth migration risks only`                            |
 | `/autoname Fix session rename races in Pi` overrides earlier dialogue           | `fix: Resolve session rename races in Pi`                              |
 
-The panel tests cover field saves and resets, multiline rules, invalid length, stale-file refusal, committed-save cancellation, panel cancellation, remapped keys, persistence status refresh and long-value pagination. The captures below were taken from compiled Pi 0.87.0 with a controlled local model, using real commands at 100×30, 56×26 and 56×24. RTK comparison captures use a local executable fixture with synthetic statistics. Their displayed title is fixture output; the live-model samples above are separate evidence.
+The native-component follow-up covers field saves and scoped resets, multiline draft recovery, invalid length, external-edit refusal, pending-save/session-replacement races, native cancel remapping, model search, persistence status refresh and long-name pagination. The current captures below use compiled Pi 0.87.1 with a controlled local model at 100×30, 56×26 and 56×24. RTK uses a local executable fixture with synthetic statistics. The naming algorithm and default prompt are unchanged; these captures are not new live-model quality samples.
 
-The compact AutoName home captures at 100×30 and 56×26 were refreshed on compiled Pi 0.87.1. Short names use their actual height, absent persistence/error messages occupy no rows, and long-name pages retain a stable height. The same follow-up passed 10 targeted cases on Pi 0.85.1 and 16 on compiled Pi 0.87.1, including shared layouts, persistence transitions and panel cancellation. Other captures retain the Pi 0.87.0 evidence above.
+Native migration verification: the full pinned-host suite passed 217 tests with 1,322 assertions. Compiled Pi 0.87.1 passed 36 panel/save/shared-layout cases with 252 assertions, followed by the final RTK repeated-toggle regression (1 case, 4 assertions). Static checks and independent standards/requirements review passed. The review fixes cover submitted-draft preservation, mouse/keyboard focus, native size-notice cancellation and committed settings display.
 
 The light terminal uses black/white default foreground/background; dark uses light text on black. Exports explicitly use `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. These are headless terminal captures, not native window/compositor evidence.
 
@@ -105,7 +105,7 @@ The light terminal uses black/white default foreground/background; dark uses lig
 
 ![Model selection at the minimum 56×24 size](assets/session-naming/panel-narrow.png)
 
-The same shared components render the RTK views below. Feature summaries differ, while heading, menu columns, settings group and keyboard hints use the same layout.
+The same shared components render the RTK views below. Feature summaries differ, while heading, menu columns, native lists and keyboard hints use the same composition.
 
 ![Dark RTK home at the same 100×30 viewport](assets/session-naming/rtk-root-dark.png)
 

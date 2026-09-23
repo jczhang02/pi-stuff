@@ -34,9 +34,9 @@ A feature that needs comparable multi-section navigation must use another struct
 
 ## Shared panel components
 
-Use RTK as the reference for common panel structure, interaction and appearance. RTK and AutoName must share components for the title and borders, menu columns and spacing, settings layout, and keyboard hints. Reusing Pi's primitives alone does not satisfy this requirement. Keep these conventions in their shared owner so subsequent changes reach both panels. Features retain ownership of their content, actions and business logic.
+RTK and AutoName share a small composition of Pi's native components for home and settings pages. Use native list themes, search, spacing and key hints without replacing their interaction rules. Common composition belongs to one shared owner; feature content, actions, persistence and request lifetimes remain feature-owned. AutoName text editing and confirmation use Pi's exported extension dialog components directly. Do not build a parallel editor or intercept native cancellation to imitate the host.
 
-RTK and AutoName home pages follow the same order: feature description, summary, then navigation. AutoName's summary shows the current name and the agreed persistence state; its menu places Settings before Generate name. Use the same navigation and settings-editing conventions, adapting fields and actions to each feature. Reuse these components for matching patterns in future panels. Shared presentation does not authorize new progress or status notices.
+RTK and AutoName home pages follow the same order: feature description, summary, then navigation. AutoName's summary shows the current name and the agreed persistence state; its menu places Settings before Generate name. Use native navigation and editing for new or migrated controls. RTK reports and its executable validator retain their existing specialized views; this does not authorize reproducing those controls in AutoName. Reuse these components for matching patterns in future panels. Shared presentation does not authorize new progress or status notices.
 
 ## Information and state
 
@@ -52,7 +52,7 @@ Verify both built-in light and dark themes. A narrowly scoped contrast correctio
 
 ## Keyboard and focus
 
-Prefer Pi's existing components and interaction patterns. Preserve configurable selection and submit bindings where applicable. Esc is the fixed back/exit key for Pi Stuff panels, including size notices and nested editors; do not replace it with a remapped cancel binding such as Ctrl+G. When a panel closes, restore focus to the input or invoking control.
+Use Pi's native components for standard selection, input, editing and confirmation. Let them handle configured selection, submit and cancel bindings, including Ctrl-C under the default bindings. Do not swallow native cancel or force Esc when the user remaps it. Custom feature controls and size notices must describe their actual bindings. RTK's existing report/executable views still use their established Esc control until separately migrated. When a panel closes, restore focus to the input or invoking control.
 
 Feature shortcuts must be directly usable on a 60% keyboard. Do not assign PageUp, PageDown, Home, End or function-row keys to feature actions. Use ordinary keys such as `[` and `]` for previous/next page, and show the actual supported keys in local help. Reuse Pi's native selection navigation without changing the host's global bindings.
 

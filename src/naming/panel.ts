@@ -1,17 +1,16 @@
 import {
+  type KeybindingsManager,
+  keyHint,
   type ExtensionAPI,
   type ExtensionContext,
   type Theme,
 } from '@earendil-works/pi-coding-agent';
 import {
-  Key,
-  matchesKey,
   SelectList,
   truncateToWidth,
   wrapTextWithAnsi,
-  type Component,
+  Container,
   type Focusable,
-  type KeybindingsManager,
   type TUI,
 } from '@earendil-works/pi-tui';
 import {Effect} from 'effect';
@@ -20,11 +19,11 @@ import {stripVTControlCharacters} from 'node:util';
 import type {NamingSettings} from './settings';
 import type {NamingRuntime} from './register';
 import {NamingSettingsPanel} from './settings-panel';
-import {PanelLayout, panelMenu} from '../pi/panel-layout';
+import {PanelLayout, PanelPage, panelMenu} from '../pi/panel-layout';
 
 type Page = 'home' | 'settings';
 
-class NamingPanel implements Component, Focusable {
+class NamingPanel extends Container implements Focusable {
   private readonly layout: PanelLayout;
   private readonly actions: SelectList;
   private readonly settings: NamingSettingsPanel;
@@ -41,13 +40,14 @@ class NamingPanel implements Component, Focusable {
   constructor(
     private readonly tui: TUI,
     private readonly theme: Theme,
-    private readonly keys: KeybindingsManager,
-    private readonly done: () => void,
+    keys: KeybindingsManager,
+    done: () => void,
     private readonly ctx: ExtensionContext,
     private readonly runtime: NamingRuntime,
     save: (settings: NamingSettings) => Promise<void>,
     notifyError: (message: string) => void,
   ) {
+    super();
     this.layout = new PanelLayout(theme);
     this.actions = panelMenu([
       {
@@ -61,7 +61,9 @@ class NamingPanel implements Component, Focusable {
         description: 'Use the current conversation',
       },
     ]);
+    this.actions.onCancel = done;
     this.actions.onSelect = item => {
+      if (this.tooSmall()) return;
       if (item.value === 'generate') void this.generate();
       else this.changePage('settings');
     };
@@ -74,7 +76,6 @@ class NamingPanel implements Component, Focusable {
       save,
       () => this.changePage('home'),
       notifyError,
-      this.layout,
     );
     void this.refresh();
   }
@@ -137,12 +138,10 @@ class NamingPanel implements Component, Focusable {
     this.renderAgain();
   }
   handleInput(data: string) {
-    if (matchesKey(data, Key.escape)) {
-      if (this.tooSmall() || this.page === 'home') this.done();
-      else if (this.page === 'settings') this.settings.handleInput(data);
+    if (this.tooSmall()) {
+      this.actions.handleInput(data);
       return;
     }
-    if (this.keys.matches(data, 'tui.select.cancel') || this.tooSmall()) return;
     if (this.page === 'home') {
       if (data === '[') this.namePage = Math.max(0, this.namePage - 1);
       else if (data === ']')
@@ -155,8 +154,15 @@ class NamingPanel implements Component, Focusable {
     return this.tui.terminal.columns < 56 || this.tui.terminal.rows < 24;
   }
   render(width: number) {
+    this.clear();
     const inner = Math.max(12, width - 4);
-    if (this.tooSmall()) return this.layout.tooSmall(width, 'AutoName', 24);
+    if (this.tooSmall())
+      return this.layout.tooSmall(
+        width,
+        'AutoName',
+        24,
+        keyHint('tui.select.cancel', 'close'),
+      );
     let lines: string[];
     if (this.page === 'home') {
       const name = stripVTControlCharacters(
@@ -166,35 +172,34 @@ class NamingPanel implements Component, Focusable {
       this.namePages = Math.max(1, Math.ceil(wrapped.length / 3));
       this.namePage = Math.min(this.namePage, this.namePages - 1);
       const slice = wrapped.slice(this.namePage * 3, this.namePage * 3 + 3);
-      lines = this.layout.home(
-        inner,
+      lines = [
         'Configure automatic naming and name this session.',
-        [
-          this.theme.fg(
-            'muted',
-            `Current name${this.namePages > 1 ? ` · ${this.namePage + 1}/${this.namePages} · [ / ]` : ''}`,
-          ),
-          ...slice,
-          ...Array<string>(Math.min(3, wrapped.length) - slice.length).fill(''),
-          ...(this.ctx.sessionManager.getSessionName() && this.saved === false
-            ? [
-                this.theme.fg('warning', 'Not saved yet'),
-                this.ctx.sessionManager.getSessionFile()
-                  ? 'Saved with the first assistant reply.'
-                  : 'Session storage is disabled for this session.',
-              ]
-            : []),
-        ],
-        this.actions,
-      );
-    } else lines = this.settings.render(inner);
+        '',
+        this.theme.fg(
+          'muted',
+          `Current name${this.namePages > 1 ? ` · ${this.namePage + 1}/${this.namePages} · [ / ]` : ''}`,
+        ),
+        ...slice,
+        ...Array<string>(Math.min(3, wrapped.length) - slice.length).fill(''),
+        ...(this.ctx.sessionManager.getSessionName() && this.saved === false
+          ? [
+              this.theme.fg('warning', 'Not saved yet'),
+              this.ctx.sessionManager.getSessionFile()
+                ? 'Saved with the first assistant reply.'
+                : 'Session storage is disabled for this session.',
+            ]
+          : []),
+      ];
+    } else {
+      this.addChild(this.settings);
+      return super.render(width);
+    }
     if (this.page === 'home' && this.error)
       lines.push(truncateToWidth(this.theme.fg('error', this.error), inner));
-    return this.layout.frame(
-      width,
-      this.page === 'home' ? 'AutoName' : 'AutoName / Settings',
-      lines,
+    this.addChild(
+      new PanelPage(this.theme, 'AutoName', this.actions, lines.join('\n')),
     );
+    return super.render(width);
   }
   invalidate() {
     this.layout.invalidate();

@@ -16,7 +16,9 @@ const configured = {
 
 function height(screen: string) {
   const lines = screen.split('\n');
-  const title = lines.findIndex(line => line.startsWith('AutoName'));
+  const title = lines.findIndex(line =>
+    line.trimStart().startsWith('AutoName'),
+  );
   const bottom = lines.findIndex(
     (line, i) => i > title && line.startsWith('─'),
   );
@@ -26,7 +28,7 @@ function height(screen: string) {
 }
 
 test.each(['light', 'dark'])(
-  'naming remains usable at minimum size in the %s theme, with stable settings rows and full long names',
+  'naming remains usable at minimum size in the %s theme, with native settings and full long names',
   async theme => {
     const name =
       'research: ' +
@@ -53,16 +55,19 @@ test.each(['light', 'dark'])(
       await host.terminal.screen.waitForText('AutoName / Settings', {
         timeoutMs: 4000,
       });
-      const settingsHeight = height(await host.terminal.screen.text());
       for (let i = 0; i < 4; i++) {
         await host.terminal.keyboard.press('ArrowDown');
-        expect(height(await host.terminal.screen.text())).toBe(settingsHeight);
+        expect(await host.terminal.screen.text()).toContain(
+          'AutoName / Settings',
+        );
       }
       await host.terminal.resize({cols: 45, rows: 20});
       await host.terminal.screen.waitForText('AutoName needs more room', {
         timeoutMs: 4000,
       });
-      expect(await host.terminal.screen.text()).toContain('Esc Close');
+      expect(await host.terminal.screen.text()).toContain(
+        'escape/ctrl+c close',
+      );
       await host.terminal.resize({cols: 100, rows: 30});
       await host.terminal.screen.waitForText('Automatic naming', {
         timeoutMs: 4000,
@@ -89,10 +94,9 @@ test('model search supports substrings, no matches, full long identifiers and cu
     await host.terminal.keyboard.press('Enter');
     await host.terminal.screen.waitForText('Search models', {timeoutMs: 4000});
     expect(await host.terminal.screen.text()).toContain('deployment-');
-    await host.terminal.keyboard.type(']');
     await host.terminal.screen.waitForText('MODEL_END', {timeoutMs: 4000});
     await host.terminal.keyboard.type('missing-match');
-    await host.terminal.screen.waitForText('No matching models', {
+    await host.terminal.screen.waitForText('No matching settings', {
       timeoutMs: 4000,
     });
     await host.terminal.keyboard.press('Control+U');
@@ -122,61 +126,55 @@ test('model search supports substrings, no matches, full long identifiers and cu
   }
 }, 30000);
 
-test('native selection remaps work while Escape remains back and exit through editors and size notice', async () => {
-  const host = await launchPi(JSON.stringify(configured));
-  try {
-    await writeFile(
-      join(host.agent, 'keybindings.json'),
-      JSON.stringify({
-        'tui.select.down': 'j',
-        'tui.select.up': 'k',
-        'tui.select.confirm': 'ctrl+y',
-        'tui.select.cancel': 'ctrl+g',
-      }),
-    );
-    await host.reload();
-    await host.command('/autoname panel');
-    await host.terminal.screen.waitForText('Generate name', {timeoutMs: 4000});
-    expect(await host.terminal.screen.text()).toContain('ctrl+y Open');
-    await host.terminal.keyboard.press('Control+Y');
-    await host.terminal.screen.waitForText('Automatic naming', {
-      timeoutMs: 4000,
-    });
-    await host.terminal.keyboard.type('jj');
-    await host.terminal.keyboard.press('Control+Y');
-    await host.terminal.screen.waitForText('Edit value', {timeoutMs: 4000});
-    await host.terminal.keyboard.press('Control+Y');
-    await host.terminal.screen.waitForText('Newline', {timeoutMs: 4000});
-    await host.terminal.keyboard.press('Control+G');
-    expect(await host.terminal.screen.text()).toContain('Newline');
-    await host.terminal.keyboard.press('Escape');
-    await host.terminal.screen.waitForText('Edit value', {timeoutMs: 4000});
-    await host.terminal.keyboard.press('Escape');
-    await host.terminal.screen.waitForText('Automatic naming', {
-      timeoutMs: 4000,
-    });
-    expect((await namingConfiguration(host)).naming?.prompt).toBeUndefined();
-    await host.terminal.resize({cols: 45, rows: 20});
-    await host.terminal.screen.waitForText('AutoName needs more room', {
-      timeoutMs: 4000,
-    });
-    await host.terminal.keyboard.press('Control+G');
-    expect(await host.terminal.screen.text()).toContain(
-      'AutoName needs more room',
-    );
-    await host.terminal.resize({cols: 20, rows: 12});
-    await host.terminal.screen.waitForText('Esc Close', {timeoutMs: 4000});
-    expect((await host.terminal.status()).state).toBe('running');
-    await host.terminal.keyboard.press('Escape');
-    await host.terminal.screen.waitUntil(
-      screen => !screen.text.includes('Esc Close'),
-      {timeoutMs: 4000},
-    );
-    await host.invoke('', '{}');
-  } finally {
-    await host.close();
-  }
-}, 30000);
+test.each([false, true])(
+  'native cancellation returns through settings and editors; remapped: %s',
+  async remapped => {
+    const host = await launchPi(JSON.stringify(configured));
+    const cancel = remapped ? 'Control+G' : 'Control+C';
+    try {
+      if (remapped) {
+        await writeFile(
+          join(host.agent, 'keybindings.json'),
+          JSON.stringify({'tui.select.cancel': 'ctrl+g'}),
+        );
+        await host.reload();
+      }
+      await openNamingSettings(host);
+      await host.terminal.keyboard.type('rules');
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText('external editor', {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.press(cancel);
+      await host.terminal.screen.waitForText('AutoName / Settings', {
+        timeoutMs: 4000,
+      });
+      expect((await namingConfiguration(host)).naming?.prompt).toBeUndefined();
+      await host.terminal.keyboard.press(cancel);
+      await host.terminal.screen.waitForText('Current name', {timeoutMs: 4000});
+      await host.terminal.keyboard.press(cancel);
+      await host.terminal.screen.waitUntil(
+        screen => !screen.text.includes('Generate name'),
+        {timeoutMs: 4000},
+      );
+      await host.invoke('', '{}');
+      await host.command('/autoname panel');
+      await host.terminal.screen.waitForText('Current name', {timeoutMs: 4000});
+      await host.terminal.resize({cols: 20, rows: 12});
+      await host.terminal.screen.waitForText('AutoName needs more', {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.press(cancel);
+      await host.terminal.screen.waitUntil(
+        screen => !screen.text.includes('AutoName needs more'),
+        {timeoutMs: 4000},
+      );
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);
 
 test('panel applies a name immediately and refreshes unsaved status when the first assistant reply persists', async () => {
   const provider = new NamingProvider();
@@ -219,10 +217,12 @@ test('panel applies a name immediately and refreshes unsaved status when the fir
     const unsaved = (await host.terminal.screen.text({settleMs: 0})).split(
       '\n',
     );
-    const name = unsaved.indexOf(provider.title);
+    const name = unsaved.findIndex(line => line.trim() === provider.title);
     expect(name).toBeGreaterThan(0);
-    expect(unsaved[name + 1]).toBe('Not saved yet');
-    expect(unsaved[name + 2]).toBe('Saved with the first assistant reply.');
+    expect(unsaved[name + 1]?.trim()).toBe('Not saved yet');
+    expect(unsaved[name + 2]?.trim()).toBe(
+      'Saved with the first assistant reply.',
+    );
     expect(unsaved[name + 3]).toBe('');
     expect(unsaved[name + 4]).toMatch(/^  Settings/u);
     release?.();
@@ -231,7 +231,7 @@ test('panel applies a name immediately and refreshes unsaved status when the fir
       {timeoutMs: 4000},
     );
     const saved = (await host.terminal.screen.text()).split('\n');
-    const savedName = saved.indexOf(provider.title);
+    const savedName = saved.findIndex(line => line.trim() === provider.title);
     expect(savedName).toBeGreaterThan(0);
     expect(saved[savedName + 1]).toBe('');
     expect(saved[savedName + 2]).toMatch(/^  Settings/u);
@@ -259,31 +259,43 @@ test('individual defaults and canceled edits preserve other naming fields', asyn
   );
   try {
     await openNamingSettings(host);
-    for (let i = 0; i < 2; i++) await host.terminal.keyboard.press('ArrowDown');
+    await host.terminal.keyboard.type('length');
     await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Edit value', {timeoutMs: 4000});
-    await host.terminal.keyboard.press('ArrowDown');
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Automatic naming', {
+    await host.terminal.screen.waitForText('Maximum length (current: 40)', {
       timeoutMs: 4000,
     });
-    expect((await namingConfiguration(host)).naming?.prompt).toBeUndefined();
-    expect((await namingConfiguration(host)).naming?.maxLength).toBe(40);
-    await host.terminal.keyboard.press('ArrowDown');
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Edit value', {timeoutMs: 4000});
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('enter Save', {timeoutMs: 4000});
-    await host.terminal.keyboard.press('Control+K');
     await host.terminal.keyboard.type('12');
-    await host.terminal.keyboard.press('Escape');
-    await host.terminal.screen.waitForText('Edit value', {timeoutMs: 4000});
-    expect((await namingConfiguration(host)).naming?.maxLength).toBe(40);
-    await host.terminal.keyboard.press('ArrowDown');
-    await host.terminal.keyboard.press('Enter');
-    await host.terminal.screen.waitForText('Automatic naming', {
+    await host.terminal.keyboard.press('Control+C');
+    await host.terminal.screen.waitForText('AutoName / Settings', {
       timeoutMs: 4000,
     });
+    expect((await namingConfiguration(host)).naming?.maxLength).toBe(40);
+    await host.terminal.keyboard.press('Control+U');
+    await host.terminal.keyboard.type('Restore');
+    for (const [choice, field] of [
+      ['Naming rules only', 'prompt'],
+      ['Maximum length only', 'maxLength'],
+    ] as const) {
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText('All naming settings', {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.press('ArrowDown');
+      if (field === 'maxLength')
+        await host.terminal.keyboard.press('ArrowDown');
+      expect(await host.terminal.screen.text()).toContain(choice);
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText('Restore naming defaults?', {
+        timeoutMs: 4000,
+      });
+      await host.terminal.keyboard.press('Enter');
+      await host.terminal.screen.waitForText('AutoName / Settings', {
+        timeoutMs: 4000,
+      });
+      expect((await namingConfiguration(host)).naming?.[field]).toBeUndefined();
+      if (field === 'prompt')
+        expect((await namingConfiguration(host)).naming?.maxLength).toBe(40);
+    }
     expect((await namingConfiguration(host)).naming).toEqual(configured.naming);
   } finally {
     await host.close();

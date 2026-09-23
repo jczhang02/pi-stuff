@@ -1,19 +1,59 @@
 import {
   DynamicBorder,
   getSelectListTheme,
-  getSettingsListTheme,
   keyText,
+  keyHint,
+  rawKeyHint,
   type Theme,
 } from '@earendil-works/pi-coding-agent';
 import {
   SelectList,
+  Container,
+  Text,
+  Spacer,
+  type Component,
   visibleWidth,
   truncateToWidth,
   wrapTextWithAnsi,
   type SelectItem,
-  type SettingsList,
 } from '@earendil-works/pi-tui';
 import {readablePanelLines} from './panel-style';
+
+// Shared composition only; native children retain their input and mouse behavior.
+export class PanelPage extends Container {
+  constructor(
+    theme: Theme,
+    title: string,
+    private readonly body: Component,
+    summary = '',
+  ) {
+    super();
+    this.addChild(new DynamicBorder());
+    this.addChild(new Spacer(1));
+    this.addChild(new Text(theme.fg('accent', theme.bold(title)), 1, 0));
+    this.addChild(new Spacer(1));
+    if (summary) {
+      this.addChild(new Text(summary, 1, 0));
+      this.addChild(new Spacer(1));
+    }
+    this.addChild(body);
+    if (body instanceof SelectList) {
+      this.addChild(new Spacer(1));
+      this.addChild(
+        new Text(
+          `${rawKeyHint(keyText('tui.select.up') === 'up' && keyText('tui.select.down') === 'down' ? '↑↓' : `${keyText('tui.select.up')}/${keyText('tui.select.down')}`, 'navigate')}  ${keyHint('tui.select.confirm', 'select')}  ${keyHint('tui.select.cancel', 'back')}`,
+          1,
+          0,
+        ),
+      );
+    }
+    this.addChild(new Spacer(1));
+    this.addChild(new DynamicBorder());
+  }
+  handleInput(data: string) {
+    this.body.handleInput?.(data);
+  }
+}
 
 export function navigationHint(
   action: 'Open' | 'Change' | 'Select',
@@ -27,17 +67,7 @@ export function navigationHint(
 }
 
 export function panelMenu(items: SelectItem[]) {
-  return new SelectList(items, items.length, getSelectListTheme(), {
-    minPrimaryColumnWidth: 18,
-    maxPrimaryColumnWidth: 18,
-  });
-}
-
-export function panelSettingsTheme(theme: Theme) {
-  return {
-    ...getSettingsListTheme(),
-    hint: () => theme.fg('dim', `  ${navigationHint('Change', 'Back')}`),
-  };
+  return new SelectList(items, items.length, getSelectListTheme());
 }
 
 // Presentation only: feature owners retain navigation, requests and save lifetimes.
@@ -65,7 +95,7 @@ export class PanelLayout {
       this.theme,
     );
   }
-  tooSmall(width: number, name: string, rows: number) {
+  tooSmall(width: number, name: string, rows: number, exitHint = 'Esc Close') {
     return this.frame(width, name, [
       ...wrapTextWithAnsi(`${name} needs more room`, Math.max(1, width)),
       ...wrapTextWithAnsi(
@@ -73,50 +103,8 @@ export class PanelLayout {
         Math.max(1, width),
       ),
       '',
-      'Esc Close',
+      exitHint,
     ]);
-  }
-  home(
-    width: number,
-    description: string,
-    summary: string[],
-    menu: SelectList,
-  ) {
-    return [
-      ...wrapTextWithAnsi(description, width),
-      '',
-      ...summary,
-      '',
-      ...menu.render(width),
-      '',
-      this.theme.fg('dim', navigationHint('Open', 'Close')),
-    ];
-  }
-  settings(
-    width: number,
-    list: SettingsList,
-    descriptions: string[],
-    error: string,
-  ) {
-    const lines = list.render(width);
-    const body = lines.slice(0, -1);
-    // Native SettingsList has one separator and one blank description row.
-    const rows =
-      descriptions.length +
-      2 +
-      Math.max(
-        ...descriptions.map(text => wrapTextWithAnsi(text, width - 4).length),
-      );
-    return [
-      this.theme.bold('Behavior'),
-      ...body,
-      ...Array<string>(Math.max(0, rows - body.length)).fill(''),
-      truncateToWidth(
-        this.theme.fg('error', error.replace(/\s+/gu, ' ')),
-        width,
-      ),
-      lines.at(-1) ?? '',
-    ];
   }
   editor(
     width: number,
