@@ -106,11 +106,12 @@ class RetrievalContent {
             : 'toolOutput';
       if (visible) {
         block.styled ??= rows.map((line, index) => {
-          const text = `${index === 0 ? '  ⎿ ' : '    '}${this.theme.fg(color, line)}`;
-          // Measure the unstyled body to avoid scanning ANSI on every fitting row.
-          return visibleWidth(line) <= width - 4
+          const prefix = index === 0 ? '  ⎿ ' : '    ';
+          const text = `${prefix}${this.theme.fg(color, line)}`;
+          // Measure and, on overflow, truncate the whole grapheme sequence before color ANSI.
+          return visibleWidth(`    ${line}`) <= width
             ? text
-            : truncateToWidth(text, width);
+            : this.theme.fg(color, truncateToWidth(`${prefix}${line}`, width));
         });
         body.push(...block.styled);
       } else {

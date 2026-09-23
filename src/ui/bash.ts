@@ -66,10 +66,15 @@ class BashResult implements Component {
           ? rows.slice(-count)
           : rows.slice(0, count);
     const lines = shown.map((line, index) => {
-      const text = `${index === 0 ? '  ⎿ ' : '    '}${this.theme.fg('toolOutput', line)}`;
-      return visibleWidth(line) <= width - 4
+      const prefix = index === 0 ? '  ⎿ ' : '    ';
+      const text = `${prefix}${this.theme.fg('toolOutput', line)}`;
+      // Measure the whole grapheme sequence; truncate before inserting color ANSI.
+      return visibleWidth(`    ${line}`) <= width
         ? text
-        : truncateToWidth(text, width);
+        : this.theme.fg(
+            'toolOutput',
+            truncateToWidth(`${prefix}${line}`, width),
+          );
     });
     if (empty && !this.running)
       lines.push(
