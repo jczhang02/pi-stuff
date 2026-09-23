@@ -28,9 +28,6 @@ export function decorateEditor(
     }),
   )(Editor.prototype);
   const render = editor.render.bind(editor);
-  let previousText: string | undefined;
-  let previousMatches: ReturnType<EditorMatcher['matches']> | undefined;
-  let palette = new Map<number, string>();
   editor.render = width => {
     const rows = render(width);
     if (!enabled()) return rows;
@@ -38,11 +35,7 @@ export function decorateEditor(
     if (Option.isNone(layout)) return rows;
     const text = editor.getText();
     const matches = matcher.matches(text);
-    if (text !== previousText || matches !== previousMatches) {
-      palette = retroColors(text, matches);
-      previousText = text;
-      previousMatches = matches;
-    }
+    if (!matches.length) return rows;
     const offsets: number[] = [];
     let total = 0;
     for (const line of editor.getLines()) {
@@ -51,6 +44,15 @@ export function decorateEditor(
     }
     const state = layout.value;
     const lines = map.buildVisualLineMap.call(editor, state.lastWidth);
+    const first = lines[state.scrollOffset];
+    const last = lines[state.scrollOffset + state.renderedVisibleLineCount - 1];
+    if (!first || !last) return rows;
+    const palette = retroColors(
+      text,
+      matches,
+      (offsets[first.logicalLine] ?? 0) + first.startCol,
+      (offsets[last.logicalLine] ?? 0) + last.startCol + last.length,
+    );
     const padding = Math.min(
       editor.getPaddingX(),
       Math.max(0, Math.floor((width - 1) / 2)),

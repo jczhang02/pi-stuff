@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/editor-performance.md).
 
-Measured on 2026-09-23 for [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119), comparing pre-feature `1369773` with production code `0c997f5`. Ordinary input has small measured overhead. Long expanded drafts have a clear regression, and pathological regex consumes substantial process CPU during editing despite responsive text input. These results do not support a blanket "no performance problems" claim. This follow-up changes benchmark tooling and evidence only.
+Measured on 2026-09-23 for [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119), comparing pre-feature `1369773` with production code `0c997f5`. Ordinary input has small measured overhead. Long expanded drafts have a clear regression, and pathological regex consumes substantial process CPU during editing despite responsive text input. These results do not support a blanket "no performance problems" claim. The initial measurement changed tooling and evidence only. The subsequent fix and its measurements are recorded below.
 
 ## Environment and method
 
@@ -79,4 +79,27 @@ bun tools/performance/terminal-colors.ts
 
 Scripts write JSON to temporary paths printed in their source; `PI_PERF_OUTPUT` overrides the output file. Retained measurements: [input](assets/editor-performance/input.json), [stress](assets/editor-performance/stress.json), [message display](assets/editor-performance/display.json), [pathological regex](assets/editor-performance/pathological.json), [color observation](assets/editor-performance/colors.json).
 
-The follow-up priority is reducing whole-draft color work for long drafts and reducing repeated expensive-pattern work. No matching semantics, timeout policy or product behavior was changed by this measurement task.
+## Performance fix and remeasurement
+
+The fix compares against `7c35b91`, whose product code is the original `0c997f5`. It caches unchanged skill ranges, generates colors only for the visible draft range while preserving whole-match Unicode phase, compiles worker regex once, and replaces candidate-by-skill overlap scans with a sorted linear scan. A failed worker must finish termination before replacement. Pending edits coalesce to the latest draft during a 1-second cooldown, doubling on consecutive failures up to 30 seconds and resetting on success. A failed draft is not automatically retried without another edit.
+
+The simpler visible-range calculation replaces the broken full-palette identity cache: default skill matching previously returned a fresh array on every redraw. Regression tests first failed for unstable match identity and offscreen palette entries, then passed after the fix. Added regression coverage also exercises actual editor scrolling, same-matcher recovery after timeout and closing during cooldown.
+
+The same maintainer host and fixture ran sequentially. The table compares freshly measured pre-fix default highlighting with fixed configurations, using the same sample counts and alternating order as above. P95 milliseconds:
+
+| Characters | Before fix, skills | Fixed, disabled | Fixed, skills | Fixed, 10 regex | Fixed, 100 regex |
+| ---------- | -----------------: | --------------: | ------------: | --------------: | ---------------: |
+| 256        |                4.7 |             5.6 |           5.2 |             4.5 |              5.5 |
+| 4,096      |                9.8 |             5.2 |           5.7 |             5.3 |              6.9 |
+| 32,768     |               12.8 |             5.6 |           6.2 |             5.3 |              6.6 |
+| 131,072    |               27.5 |             5.6 |           7.4 |             7.5 |              9.3 |
+
+At 131,072 characters, default highlighting P95 fell about 73%, with median 20.9 → 5.4 ms. The fixed 100-rule maximum was 11.4 ms. This establishes improvement for the measured workload, not zero overhead or a bound for arbitrary regex. The new baseline column is pre-fix highlighting, not the earlier pre-feature baseline. Fresh before-fix 10/100-rule input runs were not repeated; their historical results remain above.
+
+New RGB observations at 131,072 characters had P95 53.0/57.1 ms for 10/100 rules, versus historical 75.2/80.8 ms. All colors were observed, but a 32,768-character/100-rule sample reached 182.6 ms (P95 62.3 ms). Frame/polling overhead and shared-machine variation still apply; the improvement does not eliminate tails. Message rendering code is unchanged by this fix; its earlier display benchmarks remain applicable, and functional E2E is rerun.
+
+To reproduce the fix comparison, archive `7c35b91` instead of `1369773`, then run the input scripts from the fixed checkout. The color script measures the selected current package. Raw data: [fixed input](assets/editor-performance/fixed-input.json), [fixed stress](assets/editor-performance/fixed-stress.json), [fixed colors](assets/editor-performance/fixed-colors.json).
+
+The extended pathological-regex comparison includes the typing burst plus one second, a following one-second window, then two more idle seconds. Before-fix process CPU was 4.92–6.12 seconds during the 1.96–2.13-second burst window, 0–30 ms in the following second, and 10 ms in the final two seconds. Fixed CPU was 1.04–1.13 seconds during the 1.92–2.01-second burst window, 720–760 ms in the following second, and 0–10 ms in the final two seconds. Total measured CPU across all windows fell from 4.93–6.16 to 1.77–1.89 seconds (about 62–70% per corresponding round). Input P95 was 3.4 ms before and 3.3 ms after.
+
+The cooldown shifts one queued attempt into the first idle second; it does not make every idle window free. The extended window confirms the measured burst eventually settles without repeated automatic retries. Arbitrarily complex regex still costs CPU, and a later safe edit can wait for the current cooldown. Continuous pathological editing and long-duration memory growth are not covered by these short runs. Use `PI_TEST_PACKAGE=<baseline-archive>` with the same pathological script for the before-fix run, and unset it for the current package. Raw data: [before-fix pathological](assets/editor-performance/before-fix-pathological.json), [fixed pathological](assets/editor-performance/fixed-pathological.json).

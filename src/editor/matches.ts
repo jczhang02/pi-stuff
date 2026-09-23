@@ -1,4 +1,4 @@
-import type {EditorSettings, Match} from './settings';
+import type {Match} from './settings';
 
 export function skillMatches(text: string): Match[] {
   return Array.from(
@@ -9,11 +9,10 @@ export function skillMatches(text: string): Match[] {
 
 export function keywordMatches(
   text: string,
-  keywords: NonNullable<EditorSettings['keywords']>,
+  patterns: readonly RegExp[],
 ): Match[] {
   const candidates: Match[] = [];
-  for (const rule of keywords) {
-    const pattern = new RegExp(rule.pattern, rule.caseSensitive ? 'gu' : 'giu');
+  for (const pattern of patterns) {
     for (const match of text.matchAll(pattern)) {
       if (match[0].length)
         candidates.push({
@@ -23,12 +22,14 @@ export function keywordMatches(
     }
   }
   const skills = skillMatches(text);
-  const matches = candidates.filter(
-    candidate =>
-      !skills.some(
-        skill => candidate.start < skill.end && candidate.end > skill.start,
-      ),
-  );
+  candidates.sort((a, b) => a.start - b.start || b.end - a.end);
+  let skillIndex = 0;
+  const matches = candidates.filter(candidate => {
+    while ((skills[skillIndex]?.end ?? Infinity) <= candidate.start)
+      skillIndex++;
+    const skill = skills[skillIndex];
+    return !skill || skill.start >= candidate.end;
+  });
   matches.push(...skills);
   matches.sort((a, b) => a.start - b.start || b.end - a.end);
   const result: Match[] = [];

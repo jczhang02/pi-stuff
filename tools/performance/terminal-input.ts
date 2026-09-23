@@ -9,7 +9,7 @@ await Effect.runPromise(
       const baseline = process.env.PI_PERF_BASELINE;
       if (!baseline)
         throw new Error(
-          'Set PI_PERF_BASELINE to the extracted 1369773 package',
+          'Set PI_PERF_BASELINE to the extracted comparison package',
         );
       const current = process.cwd();
       const results: {

@@ -48,12 +48,16 @@ await Effect.runPromise(
           const burstWallMs = performance.now() - burstStart;
           await Bun.sleep(1000);
           const idleCpuMs = (await cpu()) - after;
+          const settledStart = await cpu();
+          await Bun.sleep(2000);
+          const settledCpuMs = (await cpu()) - settledStart;
           results.push({
             round,
             samples,
             burstCpuMs: after - before,
             burstWallMs,
             idleCpuMs,
+            settledCpuMs,
           });
           console.log(JSON.stringify(results.at(-1)));
         } finally {

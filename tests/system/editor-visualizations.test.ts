@@ -137,6 +137,22 @@ test('a pathological keyword regex cannot block editor input or a new session', 
     await host.terminal.screen.waitForText('STILL_RESPONSIVE', {
       timeoutMs: 2000,
     });
+    // Exceed the worker's request deadline before replacing the failing draft.
+    await Bun.sleep(350);
+    await host.terminal.keyboard.press('Control+C');
+    await host.terminal.keyboard.type('aaaa');
+    await host.terminal.screen.waitUntil(
+      shot =>
+        shot.frame.cells.some(
+          cell =>
+            cell.text === 'a' &&
+            cell.attributes.bold &&
+            cell.foreground.r === 63 &&
+            cell.foreground.g === 81 &&
+            cell.foreground.b === 177,
+        ),
+      {timeoutMs: 5000},
+    );
     await host.terminal.keyboard.press('Control+C');
     await host.command('/new');
     await host.terminal.screen.waitForText('fixture', {timeoutMs: 5000});

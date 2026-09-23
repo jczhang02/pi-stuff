@@ -16,14 +16,28 @@ const colors = [
 export function retroColors(
   text: string,
   matches: readonly Match[],
+  start = 0,
+  end = text.length,
 ): Map<number, string> {
   const result = new Map<number, string>();
   for (const match of matches) {
-    const characters = Array.from(text.slice(match.start, match.end));
+    if (match.start >= end) break;
+    if (match.end <= start) continue;
+    const value = text.slice(match.start, match.end);
+    let count = 0;
+    for (let cursor = 0; cursor < value.length; count++) {
+      cursor += (value.codePointAt(cursor) ?? 0) > 0xffff ? 2 : 1;
+    }
     let offset = match.start;
-    for (const [index, character] of characters.entries()) {
-      const position =
-        (index / Math.max(1, characters.length - 1)) * colors.length;
+    let index = 0;
+    for (const character of value) {
+      if (offset >= end) break;
+      if (offset < start) {
+        offset += character.length;
+        index++;
+        continue;
+      }
+      const position = (index / Math.max(1, count - 1)) * colors.length;
       const stop = Math.floor(position);
       const left = colors[stop % colors.length] ?? [63, 81, 177];
       const right = colors[(stop + 1) % colors.length] ?? left;
@@ -34,6 +48,7 @@ export function retroColors(
       );
       result.set(offset, `\x1b[1;38;2;${rgb.join(';')}m`);
       offset += character.length;
+      index++;
     }
   }
   return result;

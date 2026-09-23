@@ -13,6 +13,10 @@ export class EditorMatcher {
   private worker: Worker | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private requested = '';
+  private skillText: string | undefined;
+  private skills: readonly Match[] = [];
+  private retryDelay = 0;
+  private cooling = false;
   private completed = '';
   private result: readonly Match[] = [];
   private pending: string | undefined;
@@ -35,16 +39,21 @@ export class EditorMatcher {
     });
   }
   matches(text: string): readonly Match[] {
-    if (!this.keywords.length || this.closed) return skillMatches(text);
+    if (text !== this.skillText) {
+      this.skillText = text;
+      this.skills = skillMatches(text);
+    }
+    if (!this.keywords.length || this.closed) return this.skills;
     if (text !== this.requested) {
       this.requested = text;
       this.pending = text;
       this.dispatch();
     }
-    return text === this.completed ? this.result : skillMatches(text);
+    return text === this.completed ? this.result : this.skills;
   }
   private dispatch() {
-    if (this.busy || this.pending === undefined || this.closed) return;
+    if (this.busy || this.cooling || this.pending === undefined || this.closed)
+      return;
     const text = this.pending;
     this.pending = undefined;
     this.busy = true;
@@ -52,6 +61,7 @@ export class EditorMatcher {
       const worker = new Worker(new URL('./match-worker.ts', import.meta.url));
       this.worker = worker;
       worker.unref();
+      worker.postMessage({keywords: this.keywords});
       worker.on('message', data => {
         if (this.worker !== worker) return;
         const reply = Schema.decodeUnknownOption(Reply)(data);
@@ -61,7 +71,9 @@ export class EditorMatcher {
         }
         clearTimeout(this.timer);
         this.busy = false;
-        this.redraw();
+        this.retryDelay = 0;
+        if (Option.isSome(reply) && reply.value.text === this.requested)
+          this.redraw();
         this.dispatch();
       });
       worker.on('error', () => {
@@ -74,16 +86,29 @@ export class EditorMatcher {
       });
       this.timer = setTimeout(() => this.stopWorker(), 5000);
     } else this.timer = setTimeout(() => this.stopWorker(), 200);
-    this.worker.postMessage({text, keywords: this.keywords});
+    this.worker.postMessage({text});
   }
   private stopWorker() {
     clearTimeout(this.timer);
     const worker = this.worker;
     this.worker = undefined;
     this.busy = false;
-    void worker?.terminate();
-    this.dispatch();
+    if (this.closed) {
+      void worker?.terminate();
+      return;
+    }
+    this.cooling = true;
+    this.retryDelay = Math.min(30_000, Math.max(1000, this.retryDelay * 2));
+    // Retain only the latest draft, and never overlap retiring/replacement workers.
+    void (worker?.terminate() ?? Promise.resolve()).finally(() => {
+      if (this.closed) return;
+      this.timer = setTimeout(() => {
+        this.cooling = false;
+        this.dispatch();
+      }, this.retryDelay);
+    });
   }
+
   close() {
     this.closed = true;
     this.pending = undefined;

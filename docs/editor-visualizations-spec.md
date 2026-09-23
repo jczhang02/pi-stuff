@@ -86,7 +86,7 @@ Before delivery, verify accepted matching examples, input/cursor/completion beha
 }
 ```
 
-Reload after file edits. Invalid regex entries are reported by their one-based position and skipped. Regex matching runs in a private worker so pathological expressions cannot block input. A request exceeding 200 ms after worker startup falls back to skill-only highlighting for that draft; editing starts another request. This is a responsiveness safeguard, not a different matching grammar.
+Reload after file edits. Invalid regex entries are reported by their one-based position and skipped. Regex matching runs in a private worker so pathological expressions cannot block input. A request exceeding 200 ms after worker startup falls back to skill-only highlighting for that draft; subsequent edits retain only the latest draft. After termination completes, the latest draft queued by subsequent edits runs after a 1-second cooldown, doubling on repeated failures up to 30 seconds. A failed draft is not retried without another edit. A successful match resets the delay. Reload or shutdown cancels pending recovery. This is a responsiveness safeguard, not a different matching grammar.
 
 Chart/tree and skill-message composition remain enabled independently of the editor switch. Native skill expansion is unchanged. Click the skill card's first content row or use Pi's configured expansion binding to inspect instructions.
 
@@ -111,3 +111,5 @@ A local Bun 1.4.0 benchmark used the real CustomEditor with inert terminal I/O, 
 No dependency was added. Reverting the implementation restores native rendering. Remove the new `editor` section from configuration before loading older strict-schema releases; canonical sessions require no migration.
 
 The follow-up [real-host performance report](editor-performance.md) covers input, color completion, message display, RSS snapshots and pathological-regex CPU. It confirms long-draft latency and CPU cost during pathological-regex editing; the early microbenchmark does not establish an absence of performance problems.
+
+The performance repair against `7c35b91` passed 269 offline tests across 47 files (1,701 assertions), plus the seven focused E2E scenarios on each compiled Pi 0.85.1, 0.86.1 and 0.87.1 (28 assertions each). New coverage checks visible Unicode palette bounds, native editor scrolling, keyword recovery after a timeout and closing during cooldown. Static checks and diff checks passed. The same separate Standards/Spec reviewers rechecked the full repair diff; lifecycle verification and documentation findings were resolved, including one median-rounding correction. No review findings remain. The updated performance report retains before/after raw measurements and the remaining observation limits.
