@@ -4,7 +4,41 @@
 
 Reusing Pi's native result component reduced repeated Ctrl+O expansion from a median 1,174 ms to 33 ms. A later width-check change reduced first expansion from 1,097 ms to 102 ms in a fresh comparison. These are bounded experiments for retained retrieval output, not complete performance acceptance for [#106](https://github.com/jczhang02/pi-stuff/issues/106).
 
-## Current comparison at `0221b6f`
+## Latest measurement at `7a58c71`
+
+On 2026-09-23, the existing layout driver ran six fresh compiled Pi 0.87.1 / Bun 1.4.0 processes in UI off/on/on/off/off/on order. The binary version and SHA-256 were checked before launch. Each run retained 320 Read results (96,000 source lines) and one 100-line Write in a 4,976,301-byte session. Automatic compaction and RTK transformations were disabled; default welcome and retrieval grouping settings were retained. [Raw observations](assets/ui/review-layout-performance.json) record all samples, 24 layout calibrations, source hashes and the existing driver reference.
+
+| Observation, median             | UI off | UI on |
+| ------------------------------- | -----: | ----: |
+| Draft input, ms                 |    2.3 |   3.5 |
+| First global expansion, ms      |  6,227 |   133 |
+| Repeated global expansion, ms   |  6,182 |    56 |
+| Calibrated expanded resize, ms  |  4,929 |   130 |
+| Visible scroll range change, ms |     48 |    52 |
+| Resume to final marker, ms      |     49 |    87 |
+| Reload operation, ms            |    103 |   133 |
+| Build CPU, ms                   |  5,784 | 6,058 |
+| Interaction CPU, ms             | 81,441 | 2,055 |
+| RSS after build, MiB            |    306 |   321 |
+| RSS after interactions, MiB     |    710 |   449 |
+| RSS after restore cycles, MiB   |    646 |   526 |
+
+Repeated expansion is about 110 times faster in this workload. Resume adds about 39 ms at the median and ranges from 70–111 ms with UI enabled, versus 39–69 ms disabled. Reload ranges from 115–225 ms enabled versus 96–132 ms disabled. These samples show no multi-second UI-on restore pause. Input and scrolling differ by a few milliseconds; small differences on a shared machine are not established regressions or improvements. Build CPU is about 4.7% higher with UI enabled.
+
+The implementation avoids repeating retained-output layout work:
+
+```mermaid
+flowchart LR
+  A[Disclosure or redraw] --> B{Can reuse retained layout?}
+  B -->|Yes| C[Reuse component and rows]
+  B -->|No| D[Rebuild affected layout with Pi helpers]
+```
+
+This diagram describes the retained retrieval-output path, not every renderer. There are three independent processes per condition, 30 input observations, three first expansions, 12 repeated expansions, 12 calibrated expanded resizes and nine resume/reload pairs. All 18 resume/reload pairs preserved the original session bytes when checked after each pair. Timings include Terminal Control dispatch and observation. Resume stops at the final marker, and reload at operation readiness plus that marker; neither proves a fresh stable whole frame. The invalid compact-resize field remains excluded. RSS is instantaneous, GC and scheduling were uncontrolled, and interaction CPU includes calibration and resource commands.
+
+This run measures the current code but exercises neither Edit nor paced Thoughts. It does not establish the performance of the malformed-patch fix, timing-record restoration, physical Ghostty interaction or every tool. The older streaming comparison below still shows about 8.2% more host CPU and 69 MiB higher final RSS with UI enabled; it has not been rerun at this revision. No zero-overhead or no-leak claim follows from either experiment.
+
+## Historical comparison at `0221b6f`
 
 Six fresh-process runs completed in UI off/on/on/off/off/on order on compiled Pi 0.87.1, Bun 1.4.0 and Terminal Control 1.2.1. Each used 40 turns of eight Read calls, then one Write: 321 calls, 96,000 retained Read lines and a 4,976,301-byte session. The written probe contains 100 lines with 40 CJK characters per line. RTK transformations and automatic compaction were disabled in both conditions; welcome retained its default. The provider emits arguments in a single event. The host version was checked afterward with `pi --version`; the executable modification time preceded these runs. The driver did not record a per-launch version or binary hash. The initial report incorrectly reused the earlier 0.87.0 label.
 
