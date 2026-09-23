@@ -20,3 +20,9 @@ Pi Stuff 承诺在声明的运行环境中维护的 Pi 宿主版本区间. 区�
 
 **已验收 Pi 版本 (Verified Pi version)**:
 针对特定 Pi Stuff 修订和运行环境, 已有验收记录的 Pi 宿主版本. 这类证据比支持范围更具体.
+
+**状态字段 (Statusline segment)**:
+Pi Stuff 会话底栏中一项独立的状态信息, 例如上下文用量或 Git 状态.
+
+**第三方状态字段 (Third-party status segment)**:
+由其他扩展提供信息的状态字段, 区别于 Pi Stuff 核心 statusline 自身提供的字段.

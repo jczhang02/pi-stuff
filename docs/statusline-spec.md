@@ -1,0 +1,21 @@
+# Statusline implementation decisions
+
+[简体中文](i18n/zh-CN/statusline-spec.md) · English is normative.
+
+Design interview in progress. This records accepted decisions, not a completed implementation contract. Production changes wait for the maintainer's confirmation of shared understanding.
+
+## Accepted
+
+- Follow the two-row prototype at `59589c467215ec7394b36c2f60cea27e522316ad`: directory/context/cache-hit on the first-row left, Git on the right; model/thinking on the second-row left. Other status segments belong on the second-row right, yielding to required Git reflow.
+- Enable the custom statusline by default. A switch restores the native footer. Do not add per-field configuration in the first version.
+- Git includes branch or detached HEAD identity, staged/modified/untracked/conflict file counts, ahead/behind commit counts, and ongoing operations such as rebase and merge. Required identity, operation and conflict information outranks optional context metrics when narrow.
+- Context percentage and filled meter change color by pressure. Their thresholds must follow effective Pi compaction configuration rather than an unrelated fixed window percentage. The exact mapping is unresolved.
+- Do not implement new goal or account-quota providers.
+
+## Open decisions
+
+Compaction-relative color mapping and disabled-compaction behavior; context/cache-hit measurement; missing/stale data; Git refresh and failure states; third-party segment compatibility and footer ownership; configuration and acceptance details.
+
+## Tracking
+
+[Implementation issue #117](https://github.com/jczhang02/pi-stuff/issues/117), Beads `pi-stuff-wv0`. [Prototype #110](https://github.com/jczhang02/pi-stuff/issues/110) and [draft PR #111](https://github.com/jczhang02/pi-stuff/pull/111) remain separate. No production implementation or merge is recorded here.

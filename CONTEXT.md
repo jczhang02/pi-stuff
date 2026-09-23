@@ -20,3 +20,9 @@ The interval of Pi host versions that Pi Stuff commits to maintain in its declar
 
 **Verified Pi version**:
 A Pi host version with recorded acceptance evidence for a specific Pi Stuff revision and runtime environment. This evidence is narrower than the support range.
+
+**Statusline segment**:
+A distinct piece of status information shown in Pi Stuff's session footer, such as context usage or Git state.
+
+**Third-party status segment**:
+A statusline segment whose information is supplied by another extension, rather than by Pi Stuff's core statusline.
