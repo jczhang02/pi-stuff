@@ -109,3 +109,5 @@ These captures come from the actual compiled 0.87.1 host, replayed by Terminal C
 A local Bun 1.4.0 benchmark used the real CustomEditor with inert terminal I/O, a 261-character draft, 100-column render, 100 warmups and seven batches of 1,000 renders. Median per-render time was 0.026 ms native and 0.056 ms with cached regex highlighting, about 0.030 ms added. This measures the ordinary render path, not end-to-end key latency or worst-case pattern cost; the pathological-regex host test separately verifies input responsiveness.
 
 No dependency was added. Reverting the implementation restores native rendering. Remove the new `editor` section from configuration before loading older strict-schema releases; canonical sessions require no migration.
+
+The follow-up [real-host performance report](editor-performance.md) covers input, color completion, message display, RSS snapshots and pathological-regex CPU. It confirms long-draft latency and CPU cost during pathological-regex editing; the early microbenchmark does not establish an absence of performance problems.
