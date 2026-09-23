@@ -10,7 +10,9 @@ Status: design interview in progress. [Issue #119](https://github.com/jczhang02/
 
 Use option B from the palette comparison: the static, bold retro gradient in pi-stuff-old commit `e61ed27e`, `packages/pi-stuff/src/conversation-ui/retro-text.ts`. Its nine RGB stops run through blue, violet, pink and warm yellow, then return to blue. Preserve that algorithm, including short strings whose endpoint colors coincide; do not substitute the old main branch's ANSI rainbow or animate it.
 
-Apply retro highlighting only to the editor draft and submitted user messages. Assistant replies, tool output and Thinking are outside this highlighting scope. This corrects the earlier interpretation of "all surfaces"; third-party tool-renderer takeover is not part of this feature.
+Apply retro highlighting only to the editor draft and submitted user messages. Assistant replies, tool output and Thinking are outside this highlighting scope.
+
+Use one shared text-matching rule for both surfaces. Match complete skill references and configured keywords without classifying prose, inline code or fenced code. Matched text receives the retro foreground even when it previously had syntax coloring. Preserve surrounding styles and backgrounds, terminal controls, hyperlink destinations and source text. Do not add Markdown-region exceptions.
 
 Recognize complete `/skill:<name>` text and configured keywords. A textual skill reference does not require an installed skill and highlighting does not invoke it. Preserve the editor draft, submitted text, stored messages and provider context.
 
@@ -33,9 +35,7 @@ The reference behavior is documented in pi-stuff-old ADR 0017, `fenced-visualiza
 
 ## Outstanding decisions
 
-Whether user-message highlighting includes fenced code as well as prose and inline code remains open. Visible link text and link destinations must be distinguished; styling must not alter the destination. Assistant/tool status colors and third-party tool renderers no longer require decisions because they are outside the corrected scope.
-
-The remaining content boundary is an unanswered decision, not an implementation default.
+Confirm how the current keyword configuration applies to previously submitted and restored user messages. Verify native skill-message presentation before the final shared-understanding check.
 
 ## Integration and acceptance
 
