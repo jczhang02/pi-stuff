@@ -2,6 +2,8 @@
 
 [English](../../../docs/ui-integration.md) · 以英文版为准.
 
+下文保留早期实施阶段的实验记录. 后续批准的 skill 独立展示与思考时长持久化见[会话 UI](ui.md); 下文仅内存计时的描述属于当时实验, 不代表当前行为.
+
 这些实验检查 Pi 扩展 API 与已确认 UI 之间的差距. 维护者已[批准 assistant/Thoughts 展示适配](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). 目前已添加 assistant 前导栏和 Thoughts 标签, 已观察到的思考区间在内存中独立计时. 工具历史接入按[另行决定](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338), 比较公共 API 提前注册与 lookup patch, 结果见下文.
 
 ## Assistant 和 Thoughts: 公共 API 的限制

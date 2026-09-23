@@ -2,6 +2,8 @@
 
 [简体中文](i18n/zh-CN/ui-integration.md) · English is normative.
 
+The experiments below describe earlier implementation stages. The later approved skill display and persistent thinking durations are documented in [Conversation UI](ui.md); statements about in-memory-only timing below describe the experiment, not current behavior.
+
 These experiments examine gaps between Pi's extension API and the accepted UI. The maintainer has [approved the assistant/Thoughts display adaptation](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). The implementation adds the assistant gutter and Thoughts labels; observed thinking segments are timed in memory. Tool-history integration follows the public-API versus lookup comparison [decided separately](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338).
 
 ## Assistant and Thoughts: public API limits

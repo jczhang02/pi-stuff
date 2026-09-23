@@ -2,7 +2,7 @@
 
 [English](../../../docs/ui.md) · 以英文版为准.
 
-[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)已在本分支实现. 当前 CI 与交付状态记录于 [PR #107](https://github.com/jczhang02/pi-stuff/pull/107). 本分支修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. assistant 正文已在原生 Markdown 外添加独立前导点区域. Thoughts 已添加前导点和行内标签, 保留原生斜体 Markdown 与展开行为. 已观察到的思考区间在内存中独立计时, 没有观测数据的历史块省略时长. 原型仍是视觉参考, 不代表生产验收通过.
+[已确认 UI 规格](https://github.com/jczhang02/pi-stuff/issues/106)已在本分支实现. 当前 CI 与交付状态记录于 [PR #107](https://github.com/jczhang02/pi-stuff/pull/107). 本分支修改原生 Bash、Write、Edit、Read、Grep、Find 和 Ls 展示. Web 工具使用同一套检索展示. assistant 正文已在原生 Markdown 外添加独立前导点区域. Thoughts 已添加前导点和行内标签, 保留原生斜体 Markdown 与展开行为. 已观察到的思考区间独立计时并保存为 Pi custom entry, reload 和 resume 恢复已记录时长. 没有有效计时记录的历史块省略时长. 原型仍是视觉参考, 不代表生产验收通过.
 
 [集成实验](ui-integration.md)记录公开 API 限制、真实截图、已批准的 assistant 与工具历史适配, 其中的实验截图不是目标设计.
 
@@ -48,9 +48,25 @@ Edit 使用原生结果中的 patch, 采用单一行号栏, 删除行用旧行�
 
 内置 dark/light 和本包 Catppuccin Latte 在代码结果内使用更鲜明的绿/红底色, 色带延伸至代码区域右边缘. 上下文行保留终端底色. 带来源信息的自定义主题和索引色终端沿用其提供的语义背景色. 匿名内存主题若使用内置名称及完全相同的颜色, 则无法与内置主题区分. 此调整不修改全局主题或终端调色板.
 
+## Thoughts 计时
+
+样式保持不变: 隐藏时为 `• Thoughts · Ns`, 显示时以 `• Thoughts:` 开始, 正文使用原生斜体 Markdown. 可见性继续由 Pi 的 Hide thinking、Ctrl+T 和局部鼠标展开控制.
+
+assistant 完成时, Pi Stuff 在宿主保存消息之前追加一条 `pi-stuff:thinking-times` custom entry. 版本1保存消息时间戳及各 thinking 块索引对应的实测毫秒数. 这些记录不进入模型上下文, 不修改消息内容. 恢复时只读取一次当前分支, 将记录与后续 assistant 消息配对, 验证时间戳、索引和时长. Fork 分支保留消息前面的计时记录. 无效或不支持版本的记录被忽略; 没有计时的旧会话只保留标签. 消息完成前进程突然退出, 无法保留尚未结束的计时.
+
+关闭 UI 或回退扩展后, custom entry 不参与展示. 恢复历史不会追加记录或改写会话. 流式阶段继续使用现有内存计时, 不逐次扫描历史或落盘.
+
 ## 检索工具
 
 Read、Grep、Find 和 Ls 使用紧凑标题和保留行数提示, 原生鼠标展开或 Ctrl+O 显示文本. 无匹配、空结果、错误以及上游截断/结果数量限制警告保持可见. 只有实际 `ls` 工具调用显示 Ls, Shell 命令保留 Bash 身份. 保留原生 Read 图片缩放设置. 连续成功的本地和 Web 调用现在组成紧凑检索组. 点击摘要显示左侧对齐的紧凑工具. 展开后的组标题替换为灰色 `• Retrieval · N tools` (单个调用为 `1 tool`), 下方留一行空白, 不重复显示统计摘要. 点击此标题收起整组, 点击单个工具展开保留结果. Ctrl+O 通过原生工具展开显示组内结果. 运行中、空结果、警告、失败和普通 Bash 保持在组外. 索引只保存调用标识和计数, 不复制输出.
+
+原生 Read 读取 `SKILL.md` 时独立显示 `• Skill(目录名)`, 不加入检索组, 也不让前后的读取跨过 skill 合组. 原生展开显示记录中的路径和正文, 错误及续读提示保持可见. 没有注册新的可调用 Skill 工具.
+
+以下编译 Pi 0.87.1 截图展示同一会话在进程重启前后的效果, 终端为100×40、Catppuccin Latte. Provider 使用隔离 fixture, 文件读取真实执行, 1s 时长来自对其流式事件的实测. 字体和浅色终端默认颜色与前面的截图一致.
+
+![Skill 与实测 Thoughts, 当前会话](../../assets/ui/skill-thoughts-live.png)
+
+![Resume 后保留相同的 Skill 和 Thoughts 时长](../../assets/ui/skill-thoughts-resumed.png)
 
 并行调用即使按不同顺序完成, 仍按原始顺序显示. 等待中的调用保持可见; 成功后并入相邻成功项, 不跨过失败项. 会话关闭时释放旧 context, 避免 Pi 渲染过渡帧时访问失效引用. 新建会话不会因此崩溃, 也不保留前一个会话的分组成员.
 

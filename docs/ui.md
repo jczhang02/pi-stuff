@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/ui.md) · English is normative.
 
-[The accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is implemented on this branch. Current CI and delivery status are tracked in [PR #107](https://github.com/jczhang02/pi-stuff/pull/107). It changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Assistant messages now have a separate leading-dot gutter around native Markdown. Thoughts now use a leading dot and inline label while retaining native italic Markdown and disclosure. Observed thinking segments are timed independently in memory; historical blocks without observations omit durations. The prototype remains visual reference, not production acceptance evidence.
+[The accepted UI specification](https://github.com/jczhang02/pi-stuff/issues/106) is implemented on this branch. Current CI and delivery status are tracked in [PR #107](https://github.com/jczhang02/pi-stuff/pull/107). It changes native Bash, Write, Edit, Read, Grep, Find and Ls presentation. Web tools use the same retrieval presentation. Assistant messages now have a separate leading-dot gutter around native Markdown. Thoughts now use a leading dot and inline label while retaining native italic Markdown and disclosure. Observed thinking segments are timed independently and saved as Pi custom entries; reload and resume restore recorded durations. Historical blocks without valid measurements omit durations. The prototype remains visual reference, not production acceptance evidence.
 
 [Integration experiments](ui-integration.md) record public-API limits, actual captures, the approved assistant and tool-history adaptations. Their experimental screenshots are not the target design.
 
@@ -48,9 +48,25 @@ Edit renders the native result patch with one line-number gutter, removal number
 
 The built-in dark/light palettes and the bundled Catppuccin Latte palette use stronger green/red fills within code results. Color extends to the right edge of the code area; context lines retain the terminal background. Custom palettes with source metadata and indexed-color terminals retain their supplied semantic fills. An anonymous in-memory theme using a stock name and identical colors cannot be distinguished from that stock theme. This does not change the global theme or terminal palette.
 
+## Thoughts timing
+
+The appearance remains `• Thoughts · Ns` when hidden and `• Thoughts:` with native italic Markdown when visible. Pi's Hide thinking, Ctrl+T and local mouse disclosure still control visibility.
+
+At assistant completion, Pi Stuff appends a `pi-stuff:thinking-times` custom entry immediately before the host saves the assistant message. Version 1 contains the message timestamp and measured milliseconds keyed by thinking-block index. These entries do not enter model context and do not modify message content. Restoration reads the active branch once, pairs each record with the following assistant message and validates its timestamp, indices and durations. Forked branches retain preceding records. Unsupported or invalid records are ignored; older sessions without measurements keep the label without a duration. An abrupt process exit before message completion cannot preserve an unfinished measurement.
+
+Disabling the UI or reverting the extension leaves these custom entries inert. Restoring history adds no entries and does not rewrite the session. Live streaming still uses the existing in-memory timing; it performs no history scans or per-delta writes.
+
 ## Retrieval tools
 
 Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mouse disclosure or Ctrl+O reveals their text. No-match, empty and error results remain visible, as do upstream truncation and result-limit warnings. Ls is used only for an actual `ls` tool call; shell commands keep their Bash identity. Native Read image-resizing settings are preserved. Successful adjacent local and Web calls now form a compact group. Click its summary to show aligned compact tools. The expanded heading becomes muted `• Retrieval · N tools` (or `1 tool`), followed by one blank line; the statistical summary is hidden. Click that heading to collapse the group, or click an individual tool to reveal its retained result. Ctrl+O reveals grouped results through native tool expansion. Pending calls, empty results, warnings, failures and ordinary Bash remain outside groups. The index stores call identities and counts, not duplicate output.
+
+Native Read calls targeting `SKILL.md` display independently as `• Skill(directory-name)`, outside retrieval groups. They separate neighboring reads rather than allowing a group to span the skill. Native disclosure shows the recorded path and retained content; failures and continuation warnings remain visible. No new callable Skill tool is registered.
+
+The following compiled Pi 0.87.1 captures show the same 100×40 Catppuccin Latte session before and after a process restart. The provider is an isolated fixture; the file reads execute normally and the 1s duration is measured from its stream. Font stack and light terminal defaults match the captures above.
+
+![Skill and measured Thoughts, live](assets/ui/skill-thoughts-live.png)
+
+![The same Skill and Thoughts duration after resume](assets/ui/skill-thoughts-resumed.png)
 
 Parallel calls keep their original order even when they finish in a different order. A pending call remains visible; when it succeeds, it joins adjacent successful calls without crossing a failure. Session shutdown releases the old context before Pi can render a transition frame, so creating a new session does not crash or retain the previous group's members.
 

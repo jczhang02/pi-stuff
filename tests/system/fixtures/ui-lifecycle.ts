@@ -9,6 +9,22 @@ import {Schema} from 'effect';
 export default function (pi: ExtensionAPI) {
   const points = new Map<string, string>();
   pi.on('session_before_compact', event => {
+    if (event.customInstructions === 'fixture-keep-thinking') {
+      const kept = event.branchEntries.findLast(
+        entry =>
+          entry.type === 'message' &&
+          entry.message.role === 'assistant' &&
+          entry.message.content.some(block => block.type === 'thinking'),
+      );
+      if (!kept) throw new Error('Missing thinking message for compaction');
+      return {
+        compaction: {
+          summary: 'FIXTURE_THINKING_SUMMARY',
+          firstKeptEntryId: kept.id,
+          tokensBefore: event.preparation.tokensBefore,
+        },
+      };
+    }
     if (event.customInstructions !== 'fixture-split-retrieval') return;
     // A supported mid-turn cut: retain the second call and its following results.
     const kept = event.branchEntries.filter(

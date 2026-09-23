@@ -1,5 +1,21 @@
 import type {AssistantMessage} from '@earendil-works/pi-ai';
-import type {ExtensionAPI} from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  SessionStartEvent,
+  SessionTreeEvent,
+  SessionCompactEvent,
+} from '@earendil-works/pi-coding-agent';
+import {Option, Schema} from 'effect';
+
+const entryType = 'pi-stuff:thinking-times';
+const SavedTimes = Schema.Struct({
+  version: Schema.Literal(1),
+  timestamp: Schema.Number,
+  intervals: Schema.Array(
+    Schema.Struct({index: Schema.Number, elapsed: Schema.Number}),
+  ),
+});
 
 interface ThinkingInterval {
   elapsed: number;
@@ -11,7 +27,8 @@ interface ThinkingRun {
   running: boolean;
 }
 
-// Timings belong to observed message objects, never persisted messages or text.
+// Streaming uses object identity. A custom entry immediately preceding the
+// finalized assistant message retains measured intervals without modifying it.
 export class ThinkingTimes {
   private messages = new WeakMap<
     AssistantMessage,
@@ -21,6 +38,50 @@ export class ThinkingTimes {
   private active: ThinkingInterval | undefined;
 
   constructor(pi: ExtensionAPI) {
+    const restore = (
+      _event: SessionStartEvent | SessionTreeEvent | SessionCompactEvent,
+      ctx: ExtensionContext,
+    ) => {
+      this.messages = new WeakMap();
+      let pending: typeof SavedTimes.Type | undefined;
+      for (const entry of ctx.sessionManager.getBranch()) {
+        if (entry.type === 'custom' && entry.customType === entryType) {
+          const decoded = Schema.decodeUnknownOption(SavedTimes)(entry.data);
+          pending = Option.isSome(decoded) ? decoded.value : undefined;
+        } else if (entry.type === 'message') {
+          const message = entry.message;
+          if (
+            pending &&
+            message.role === 'assistant' &&
+            message.timestamp === pending.timestamp &&
+            pending.intervals.every(
+              interval =>
+                Number.isSafeInteger(interval.index) &&
+                interval.index >= 0 &&
+                Number.isFinite(interval.elapsed) &&
+                interval.elapsed >= 0 &&
+                message.content[interval.index]?.type === 'thinking',
+            ) &&
+            new Set(pending.intervals.map(interval => interval.index)).size ===
+              pending.intervals.length
+          ) {
+            this.messages.set(
+              message,
+              new Map(
+                pending.intervals.map(interval => [
+                  interval.index,
+                  {elapsed: interval.elapsed, started: undefined},
+                ]),
+              ),
+            );
+          }
+          pending = undefined;
+        }
+      }
+    };
+    pi.on('session_start', restore);
+    pi.on('session_tree', restore);
+    pi.on('session_compact', restore);
     pi.on('message_start', event => {
       if (event.message.role !== 'assistant') return;
       this.finish();
@@ -55,6 +116,15 @@ export class ThinkingTimes {
       if (event.message.role !== 'assistant' || !this.current) return;
       this.finish();
       this.messages.set(event.message, this.current);
+      if (this.current.size > 0)
+        pi.appendEntry(entryType, {
+          version: 1,
+          timestamp: event.message.timestamp,
+          intervals: [...this.current].map(([index, interval]) => ({
+            index,
+            elapsed: interval.elapsed,
+          })),
+        });
       this.current = undefined;
     });
     pi.on('session_shutdown', () => {

@@ -66,6 +66,7 @@ export function registerUi(
           }
         : undefined,
       groups,
+      name === 'read',
     );
   }
   registerToolDisplay(

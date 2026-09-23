@@ -1,4 +1,6 @@
-import {Schema} from 'effect';
+import {Option, Schema} from 'effect';
+import {basename, dirname, resolve} from 'node:path';
+import {homedir} from 'node:os';
 import {ToolHeading} from './heading';
 import {ResultBlock} from './result-block';
 import type {RetrievalGroups} from './groups';
@@ -27,6 +29,16 @@ type RetrievalDetails = typeof RetrievalDetails.Type;
 export interface RetrievalPart {
   kind: 'body' | 'metadata' | 'warning' | 'status';
   text: string;
+}
+
+const SkillArgs = Schema.Struct({path: Schema.String});
+function readSkill(path: string, cwd: string) {
+  const local = path.startsWith('@') ? path.slice(1) : path;
+  const absolute = local.startsWith('~/')
+    ? resolve(homedir(), local.slice(2))
+    : resolve(cwd, local);
+  if (basename(absolute) !== 'SKILL.md') return;
+  return {name: basename(dirname(absolute)) || 'SKILL.md', path};
 }
 
 // Retain only the current width's layout through Pi's native result slot.
@@ -207,6 +219,7 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
     args: Static<Params>,
   ) => RetrievalPart[],
   groups?: RetrievalGroups,
+  skillReads = false,
 ) {
   const nativeResult = tool.renderResult;
   const describe = (args: Static<Params>, expanded: boolean) => {
@@ -218,12 +231,21 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
   };
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) => {
+    const skillArgs = skillReads
+      ? Schema.decodeUnknownOption(SkillArgs)(args)
+      : Option.none();
+    const skill = Option.isSome(skillArgs)
+      ? readSkill(skillArgs.value.path, context.cwd)
+      : undefined;
     // Pi updates call renderers on every global toggle, even when successive
     // toggles coalesce into one terminal frame. Clear local overrides here too.
     groups?.visible(context.toolCallId);
     const title = new ToolHeading(
-      label,
-      describe(args, context.expanded) ?? JSON.stringify(args) ?? '',
+      skill ? 'Skill' : label,
+      skill?.name ??
+        describe(args, context.expanded) ??
+        JSON.stringify(args) ??
+        '',
       theme,
       context,
     );
@@ -232,7 +254,8 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
         title.invalidate();
       },
       handleMouse(event) {
-        if (event.y !== 0 || !groups?.summary(context.toolCallId)) return;
+        if (skill || event.y !== 0 || !groups?.summary(context.toolCallId))
+          return;
         if (event.type === 'click' && event.button === 'left') {
           groups.toggle(context.toolCallId);
           context.invalidate();
@@ -241,16 +264,23 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
         return undefined;
       },
       render(width) {
-        const summary = groups?.summary(context.toolCallId);
+        const summary = skill ? undefined : groups?.summary(context.toolCallId);
         const heading = summary
           ? [truncateToWidth(theme.fg('muted', `• ${summary}`), width)]
           : [];
-        if (groups && !groups.visible(context.toolCallId)) return heading;
+        if (!skill && groups && !groups.visible(context.toolCallId))
+          return heading;
         return [...heading, ...(summary ? [''] : []), ...title.render(width)];
       },
     };
   };
   tool.renderResult = (result, options, theme, context) => {
+    const skillArgs = skillReads
+      ? Schema.decodeUnknownOption(SkillArgs)(context.args)
+      : Option.none();
+    const skill = Option.isSome(skillArgs)
+      ? readSkill(skillArgs.value.path, context.cwd)
+      : undefined;
     if (nativeResult && result.content.some(block => block.type === 'image')) {
       // Pi renders images outside the tool's text component. Do not hide their
       // headings in a text group or replace its dimension/protocol fallback.
@@ -285,10 +315,16 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
       ...part,
       text: stripTerminalSequences(part.text).replace(/\n$/u, ''),
     }));
+    if (skill)
+      parts.unshift({
+        kind: 'metadata',
+        text: stripTerminalSequences(skill.path),
+      });
     if (!options.isPartial)
       groups?.finish(
         context.toolCallId,
-        parts.some(part => part.kind === 'body' && part.text !== '') &&
+        !skill &&
+          parts.some(part => part.kind === 'body' && part.text !== '') &&
           parts.every(part => part.kind === 'body' || part.kind === 'metadata'),
       );
     const previous = context.lastComponent;
@@ -300,7 +336,7 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
       parts,
       options,
       theme,
-      groups,
+      skill ? undefined : groups,
       context.toolCallId,
     );
   };

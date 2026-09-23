@@ -1,6 +1,6 @@
 import {expect, test} from 'bun:test';
 import {readFile, readdir, writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
 test('Welcome survives replacement and reload of an empty session', async () => {
@@ -188,8 +188,12 @@ test('Assistant gutter follows the UI switch across reload and session replaceme
   }
 }, 30000);
 
-test('Thoughts keep independent measured durations and omit them after reload', async () => {
-  const host = await launchPi('{}', undefined, 'ui');
+test('Thoughts retain independent measured durations through reload and resume', async () => {
+  const host = await launchPi(
+    '{}',
+    resolve('tests/system/fixtures/ui-lifecycle.ts'),
+    'ui',
+  );
   const gate = Promise.withResolvers<void>();
   const answerGate = Promise.withResolvers<void>();
   try {
@@ -249,7 +253,8 @@ test('Thoughts keep independent measured durations and omit them after reload', 
     expect(await readFile(session, 'utf8')).toBe(saved);
     const history = await host.terminal.screen.text();
     expect(history).toContain('• Thoughts');
-    expect(history).not.toMatch(/Thoughts · \d+s/u);
+    expect(history).toContain(first);
+    expect(history).toContain('• Thoughts · 0s');
     await host.terminal.keyboard.press('Control+T');
     await host.terminal.screen.waitForText('SLOW_REASONING', {timeoutMs: 5000});
     expect(await host.terminal.screen.text()).toContain('FAST_REASONING');
@@ -268,7 +273,39 @@ test('Thoughts keep independent measured durations and omit them after reload', 
       snapshot => !snapshot.text.includes('SLOW_REASONING'),
       {timeoutMs: 5000},
     );
-    expect(await host.terminal.screen.text()).not.toMatch(/Thoughts · \d+s/u);
+    expect(await host.terminal.screen.text()).toContain(first);
+    expect(await host.terminal.screen.text()).toContain('• Thoughts · 0s');
+    await host.command('/lifecycle-fork');
+    await host.terminal.screen.waitForText('Forked to new session', {
+      timeoutMs: 5000,
+    });
+    const forked = await host.terminal.screen.text();
+    expect(forked).toContain(first);
+    expect(forked).not.toContain('FAST_ANSWER');
+    for (const [name, contents] of [
+      [
+        'legacy',
+        saved.replaceAll('pi-stuff:thinking-times', 'fixture:unrelated'),
+      ],
+      [
+        'unsupported',
+        saved.replaceAll(
+          '"version":1,"timestamp":',
+          '"version":999,"timestamp":',
+        ),
+      ],
+      ['invalid', saved.replaceAll(/"elapsed":[\d.]+/gu, '"elapsed":-1')],
+    ]) {
+      if (!name || !contents) throw new Error('Missing timing fixture');
+      const path = join(host.directory, `${name}.jsonl`);
+      await writeFile(path, contents);
+      await host.restart(['--session', path]);
+      await host.terminal.screen.waitForText('FAST_ANSWER', {timeoutMs: 5000});
+      const history = await host.terminal.screen.text();
+      expect(history).toContain('• Thoughts');
+      expect(history).not.toMatch(/Thoughts · \d+s/u);
+      expect(await readFile(path, 'utf8')).toBe(contents);
+    }
   } finally {
     gate.resolve();
     answerGate.resolve();
@@ -290,7 +327,7 @@ test('Cancelling thinking freezes its duration and preserves native interruption
       timeoutMs: 5000,
     });
     await host.terminal.keyboard.press('Control+T');
-    await host.terminal.screen.waitForText(/• Thinking · \d+s/u, {
+    await host.terminal.screen.waitForText(/• Thinking · [1-9]\d*s/u, {
       timeoutMs: 5000,
     });
     await host.terminal.keyboard.press('Escape');
@@ -306,6 +343,8 @@ test('Cancelling thinking freezes its duration and preserves native interruption
     await host.terminal.screen.waitForText('RECOVERED_ANSWER', {
       timeoutMs: 5000,
     });
+    expect(await host.terminal.screen.text()).toContain(label);
+    await host.reload();
     expect(await host.terminal.screen.text()).toContain(label);
   } finally {
     gate.resolve();
