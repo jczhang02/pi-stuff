@@ -58,7 +58,7 @@ test.each([['regular'], ['fullscreen']] as const)(
       }
       const startup = await terminal.screen.text();
       expect(startup.split('[Extensions]\n')[1]?.split('\n\n')[0]).toContain(
-        basename(resolve('.')),
+        basename(resolve(process.env.PI_TEST_PACKAGE ?? '.')),
       );
       async function auth(label: string, source: string) {
         await terminal.keyboard.type(`/host-auth ${label}`);

@@ -19,7 +19,7 @@ This checkout contains a development web extension with independent search, page
 
 The package also includes ten light and dark [themes](docs/themes.md) from Catppuccin, Tokyo Night, Gruvbox and Rosé Pine. Choose them through Pi's theme settings; loading the package preserves your current choice.
 
-The tested target is Linux Bun-compiled Pi `0.85.1`. The stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Other platforms/host versions are unverified. Beyond Web access, RTK integration and themes, the capabilities below describe product direction, not implemented features.
+The maintained range is Linux Bun-compiled Pi `0.85.1` through `0.87.1`, with direct acceptance of `0.85.1`, `0.86.1` and `0.87.1`. Newer stable versions may be tried before acceptance. See [Pi version support](docs/pi-version-support.md) for actual host runtimes, evidence and the maintenance policy. The development stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Beyond Web access, RTK integration and themes, the capabilities below describe product direction, not implemented features.
 
 ## About
 

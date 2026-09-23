@@ -1,4 +1,4 @@
-import type {ExtensionAPI} from '@earendil-works/pi-coding-agent';
+import {type ExtensionAPI, VERSION} from '@earendil-works/pi-coding-agent';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Effect} from 'effect';
@@ -6,6 +6,12 @@ import {resolveExa} from '../../../src/web/exa-auth';
 
 // Test-only controls/observations. Never substitutes the extension's registration or I/O.
 export default function (pi: ExtensionAPI) {
+  pi.registerCommand('host-runtime', {
+    description: 'Offline acceptance fixture: report the executing host',
+    handler: async (_args, ctx) => {
+      ctx.ui.notify(`HOST_RUNTIME:pi=${VERSION}:bun=${Bun.version}`, 'info');
+    },
+  });
   pi.registerCommand('host-auth', {
     description:
       'Offline acceptance fixture: inspect synthetic Exa authentication',
