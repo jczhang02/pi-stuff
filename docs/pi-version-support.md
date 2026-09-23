@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/pi-version-support.md) · English is normative.
 
-Status: interview in progress in [#113](https://github.com/jczhang02/pi-stuff/issues/113). The decisions below were confirmed individually; version sampling and final confirmation of the complete policy remain pending. This document does not expand the current verified runtime claim.
+Status: individual decisions confirmed in [#113](https://github.com/jczhang02/pi-stuff/issues/113); final confirmation of the complete policy remains pending. This document does not expand the current verified runtime claim.
 
 ## Current evidence
 
@@ -20,9 +20,11 @@ The minimum may be raised. Before doing so, explain the concrete API or feature 
 
 The proposed implementation follows [Pi's package guidance](https://pi.dev/docs/latest/packages#declare-dependencies): imported host-provided Pi packages use wildcard peers, while development dependencies stay pinned to exact versions for reproducibility. The support policy and host evidence define the maintained range separately from the install declaration. Dependency and CI changes await confirmation of the complete design.
 
-## Open decision
+## Acceptance samples
 
-Choose the direct acceptance samples for a supported interval. The current recommendation is the exact minimum plus the latest patch in every covered minor line. For a target ending at `0.87.1`, the initial samples would be `0.85.1`, `0.86.1` and `0.87.1`. This has not yet been accepted or run. Historical patches would remain within the maintenance commitment without requiring an individual rerun of every release.
+Use the exact minimum plus the latest patch within the proposed interval for every covered minor line, without duplicate samples. For a target ending at `0.87.1`, the initial samples are `0.85.1`, `0.86.1` and `0.87.1`. This sampling policy is accepted; these additional host runs have not been performed by this documentation task. Historical patches remain within the maintenance commitment without requiring an individual rerun of every release.
+
+Before expanding the supported upper bound, accept the selected samples for the expanded interval in the declared runtime environment. Record the directly verified versions separately from the interval; sampling must not be presented as direct testing of every historical patch.
 
 ## Evidence boundaries
 
