@@ -27,6 +27,56 @@ function height(screen: string) {
   return bottom - title;
 }
 
+test('height-only size notice cannot save hidden settings through mouse clicks', async () => {
+  const host = await launchPi(JSON.stringify(configured));
+  try {
+    await openNamingSettings(host);
+    await host.terminal.resize({cols: 100, rows: 20});
+    await host.terminal.screen.waitForText('AutoName needs more room', {
+      timeoutMs: 4000,
+    });
+    const notice = (await host.terminal.screen.text()).split('\n');
+    const hintRow = notice.findIndex(line =>
+      line.includes('escape/ctrl+c close'),
+    );
+    expect(hintRow).toBeGreaterThanOrEqual(0);
+    await host.terminal.mouse({
+      action: 'click',
+      button: 'left',
+      x: 4,
+      y: hintRow,
+    });
+    await host.terminal.keyboard.press('Control+C');
+    await host.terminal.screen.waitUntil(
+      screen => !screen.text.includes('AutoName needs more room'),
+      {timeoutMs: 4000},
+    );
+    // Reload waits for any confirmed save, so a late write cannot escape the assertion.
+    await host.reload();
+    expect(await namingConfiguration(host)).toEqual(configured);
+
+    await host.terminal.resize({cols: 100, rows: 30});
+    await openNamingSettings(host);
+    const settings = (await host.terminal.screen.text()).split('\n');
+    const settingRow = settings.findIndex(line =>
+      line.includes('Automatic naming'),
+    );
+    expect(settingRow).toBeGreaterThanOrEqual(0);
+    await host.terminal.mouse({
+      action: 'click',
+      button: 'left',
+      x: 4,
+      y: settingRow,
+    });
+    await host.terminal.screen.waitUntil(
+      async () => (await namingConfiguration(host)).naming?.automatic === true,
+      {timeoutMs: 4000},
+    );
+  } finally {
+    await host.close();
+  }
+}, 30000);
+
 test.each(['light', 'dark'])(
   'naming remains usable at minimum size in the %s theme, with native settings and full long names',
   async theme => {

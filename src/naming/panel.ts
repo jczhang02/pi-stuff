@@ -10,6 +10,7 @@ import {
   truncateToWidth,
   wrapTextWithAnsi,
   Container,
+  Text,
   type Focusable,
   type TUI,
 } from '@earendil-works/pi-tui';
@@ -156,13 +157,16 @@ class NamingPanel extends Container implements Focusable {
   render(width: number) {
     this.clear();
     const inner = Math.max(12, width - 4);
-    if (this.tooSmall())
-      return this.layout.tooSmall(
+    if (this.tooSmall()) {
+      const notice = this.layout.tooSmall(
         width,
         'AutoName',
         24,
         keyHint('tui.select.cancel', 'close'),
       );
+      this.addChild(new Text(notice.join('\n'), 0, 0));
+      return super.render(width);
+    }
     let lines: string[];
     if (this.page === 'home') {
       const name = stripVTControlCharacters(
