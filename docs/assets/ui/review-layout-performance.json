@@ -1,0 +1,1827 @@
+{
+  "revision": "7a58c71d59538311f34d3f8fd34c9c1373740e86",
+  "date": "2026-09-23",
+  "host": {
+    "pi": "0.87.1",
+    "bun": "1.4.0",
+    "terminalControl": "1.2.1",
+    "sha256": "556437be2ed1b91f0dfcbe0898339d89f230184d1ab3a47defe3f2a02a2ac8ae"
+  },
+  "method": "Same layout v2 driver as current-layout-performance.json, six fresh processes off/on/on/off/off/on. Current repository fixture and host-controls. Versions and binary hash checked before launch. Source unchanged throughout measurement.",
+  "limitations": [
+    "No paced Thoughts or Edit calls in this workload.",
+    "Shared host, no CPU pinning, uncontrolled GC. RSS snapshots are not peaks.",
+    "Resume ends at visible final marker; reload ends at operation readiness and final marker, not a fresh stable whole frame.",
+    "Discard compact resizeMs: predicate can precede body reflow. Expanded resize uses calibrated body rows.",
+    "Three process samples per condition; repeated operations are not independent process samples."
+  ],
+  "sources": {
+    "src/ui/edit.ts": "be38c57364f049c82deacf46c505ba7b2523cf1bf54928e6554aa2a97d508548",
+    "tests/system/fixtures/pi-terminal.ts": "563ba85263c96873a47d2a0dac5913473153483943dd1463379671694fca4345",
+    "tests/system/fixtures/host-controls.ts": "3b8fda1fc79e8ba13b07abdcac184fd360a1fcea3b2e78e9f7ddb304610a22ee"
+  },
+  "driverReference": "current-layout-performance.json#sources",
+  "driverSha256": "4461e1e37ee2ba67cc51c0b0e8b4d6efa7755f6cd6c7b4f9bb36134d1c1f18f9",
+  "samples": [
+    {
+      "sample": 0,
+      "enabled": false,
+      "startupMs": 784.302073,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4976301,
+      "loadMs": 5588.959782,
+      "typingMs": [
+        6.699832999999671, 2.626643000000513, 4.200399000000289,
+        1.9561429999994289, 1.7803100000000995, 1.7850349999998798,
+        2.01611099999991, 2.022652999999991, 1.7765110000000277,
+        2.79358400000001
+      ],
+      "disclosureMs": [
+        6890.482685, 68.67954599999939, 6367.549783999999, 48.175263000000996,
+        6017.297451999999, 51.00055499999871, 6136.015374000002,
+        45.952095000000554, 6280.078089000002, 50.042819000002055
+      ],
+      "resizeMs": [
+        12.676289000002726, 11.082106000001659, 11.371590999995533,
+        14.964396000003035, 10.622890999999072, 12.22181499999715
+      ],
+      "expandedResizeMs": [
+        3989.348377000002, 5716.261889000001, 4504.180880999993,
+        5127.914044000005
+      ],
+      "scrollMs": [
+        74.93951899999229, 44.83241600000474, 45.44598499999847,
+        41.824030000003404
+      ],
+      "scrollRanges": [
+        {
+          "key": "PageUp",
+          "first": 75,
+          "last": 89
+        },
+        {
+          "key": "PageDown",
+          "first": 88,
+          "last": 99
+        },
+        {
+          "key": "PageUp",
+          "first": 75,
+          "last": 89
+        },
+        {
+          "key": "PageDown",
+          "first": 88,
+          "last": 99
+        }
+      ],
+      "calibratedLayouts": [
+        [
+          60,
+          " 界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_99"
+        ],
+        [
+          80,
+          " 界界界界界界界界界界界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_99"
+        ],
+        [
+          100,
+          " 界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_99"
+        ],
+        [
+          120,
+          " 界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_99"
+        ]
+      ],
+      "resumeMs": [50.08652399999846, 38.948443000001134, 58.0324879999971],
+      "reloadMs": [115.62652799999341, 102.5197610000032, 97.96713299999828],
+      "initial": {
+        "label": "initial",
+        "pid": 2481859,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 1058068,
+          "system": 115000
+        },
+        "memory": {
+          "rss": 194052096,
+          "heapUsed": 55042446,
+          "external": 25956468
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 2481859,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6184057,
+          "system": 911170
+        },
+        "memory": {
+          "rss": 320249856,
+          "heapUsed": 65085651,
+          "external": 35084849
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 2481859,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 85603780,
+          "system": 2931979
+        },
+        "memory": {
+          "rss": 744898560,
+          "heapUsed": 125636753,
+          "external": 74905943
+        }
+      },
+      "restored": {
+        "label": "restored",
+        "pid": 2481859,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 86298259,
+          "system": 3060308
+        },
+        "memory": {
+          "rss": 677830656,
+          "heapUsed": 162974793,
+          "external": 101591710
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 2481859,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 86379404,
+            "system": 3066360
+          },
+          "memory": {
+            "rss": 650211328,
+            "heapUsed": 162974793,
+            "external": 101753161
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 2481859,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 86438133,
+            "system": 3073368
+          },
+          "memory": {
+            "rss": 657240064,
+            "heapUsed": 162974793,
+            "external": 101914708
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 2481859,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 86528524,
+            "system": 3083253
+          },
+          "memory": {
+            "rss": 660406272,
+            "heapUsed": 173686639,
+            "external": 107864047
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 2481859,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 86564442,
+            "system": 3090226
+          },
+          "memory": {
+            "rss": 657649664,
+            "heapUsed": 173686639,
+            "external": 108025498
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 2481859,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 86619660,
+            "system": 3094248
+          },
+          "memory": {
+            "rss": 648171520,
+            "heapUsed": 173686639,
+            "external": 108187045
+          }
+        }
+      ]
+    },
+    {
+      "sample": 1,
+      "enabled": true,
+      "startupMs": 754.1540779999923,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4976301,
+      "loadMs": 5135.2495019999915,
+      "typingMs": [
+        5.085781000001589, 5.599943000008352, 3.7231489999976475,
+        4.085854999997537, 2.9202229999937117, 1.9030080000084126,
+        2.8116339999978663, 2.9953480000112904, 2.244169999990845,
+        3.5399909999978263
+      ],
+      "disclosureMs": [
+        112.12796899999375, 50.28083200000401, 38.22096999999485,
+        39.21157200000016, 47.273157000003266, 42.590216000011424,
+        63.35020000000077, 39.53844199999003, 74.17852599998878,
+        40.85714100000041
+      ],
+      "resizeMs": [
+        9.138220000008005, 7.460073000009288, 6.979137999995146,
+        7.880921000003582, 8.464609000002383, 8.421333999998751
+      ],
+      "expandedResizeMs": [
+        127.84082100000523, 122.70010899999761, 149.38252199999988,
+        136.1984320000047
+      ],
+      "scrollMs": [
+        52.872457999998005, 52.69159400000353, 45.68524500000058,
+        45.37291199999163
+      ],
+      "scrollRanges": [
+        {
+          "key": "PageUp",
+          "first": 74,
+          "last": 88
+        },
+        {
+          "key": "PageDown",
+          "first": 87,
+          "last": 99
+        },
+        {
+          "key": "PageUp",
+          "first": 74,
+          "last": 88
+        },
+        {
+          "key": "PageDown",
+          "first": 87,
+          "last": 99
+        }
+      ],
+      "calibratedLayouts": [
+        [
+          60,
+          "     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_99"
+        ],
+        [
+          80,
+          "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_99"
+        ],
+        [
+          100,
+          "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_99"
+        ],
+        [
+          120,
+          "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_99"
+        ]
+      ],
+      "resumeMs": [100.5425760000071, 79.24755600000208, 77.06561099999817],
+      "reloadMs": [133.08687899999495, 136.6035409999895, 143.02131999999983],
+      "initial": {
+        "label": "initial",
+        "pid": 2488462,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 993827,
+          "system": 125535
+        },
+        "memory": {
+          "rss": 197189632,
+          "heapUsed": 54052659,
+          "external": 24929705
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 2488462,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 5809825,
+          "system": 937424
+        },
+        "memory": {
+          "rss": 330227712,
+          "heapUsed": 104146976,
+          "external": 67885177
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 2488462,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 7518352,
+          "system": 1145316
+        },
+        "memory": {
+          "rss": 446586880,
+          "heapUsed": 123176389,
+          "external": 40426085
+        }
+      },
+      "restored": {
+        "label": "restored",
+        "pid": 2488462,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 8788685,
+          "system": 1332289
+        },
+        "memory": {
+          "rss": 565309440,
+          "heapUsed": 145786140,
+          "external": 88508313
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 2488462,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 8920715,
+            "system": 1349478
+          },
+          "memory": {
+            "rss": 520536064,
+            "heapUsed": 156873816,
+            "external": 94819294
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 2488462,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 8962352,
+            "system": 1354980
+          },
+          "memory": {
+            "rss": 521678848,
+            "heapUsed": 156873816,
+            "external": 94980745
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 2488462,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 9018241,
+            "system": 1362134
+          },
+          "memory": {
+            "rss": 522170368,
+            "heapUsed": 158228447,
+            "external": 95727642
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 2488462,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 9090845,
+            "system": 1381277
+          },
+          "memory": {
+            "rss": 567947264,
+            "heapUsed": 158228447,
+            "external": 95889285
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 2488462,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 9207629,
+            "system": 1397934
+          },
+          "memory": {
+            "rss": 589160448,
+            "heapUsed": 158228447,
+            "external": 96050832
+          }
+        }
+      ]
+    },
+    {
+      "sample": 2,
+      "enabled": true,
+      "startupMs": 700.169087000002,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4976301,
+      "loadMs": 5568.774676000001,
+      "typingMs": [
+        5.875073000002885, 2.9592200000042794, 2.7177280000032624,
+        2.652444999999716, 2.1555959999968763, 2.3959819999872707,
+        4.8965469999966444, 7.708597000004374, 3.102245000001858,
+        3.4010960000014165
+      ],
+      "disclosureMs": [
+        133.06698000000324, 49.15306500000588, 76.13897799998813,
+        49.95139499999641, 73.9474920000066, 42.08851499999582,
+        63.05905500000517, 48.82571600000665, 43.68228900000395,
+        40.52905899999314
+      ],
+      "resizeMs": [
+        8.386697000009008, 8.383086999994703, 8.71732900000643,
+        8.068482000002405, 9.14716999999655, 22.664418000000296
+      ],
+      "expandedResizeMs": [
+        137.53071500000078, 118.07024699999602, 135.26178799998888,
+        155.92324600000575
+      ],
+      "scrollMs": [
+        56.87847699999111, 43.54709200000798, 52.37214900000254,
+        50.10235800000373
+      ],
+      "scrollRanges": [
+        {
+          "key": "PageUp",
+          "first": 74,
+          "last": 88
+        },
+        {
+          "key": "PageDown",
+          "first": 87,
+          "last": 99
+        },
+        {
+          "key": "PageUp",
+          "first": 74,
+          "last": 88
+        },
+        {
+          "key": "PageDown",
+          "first": 87,
+          "last": 99
+        }
+      ],
+      "calibratedLayouts": [
+        [
+          60,
+          "     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_99"
+        ],
+        [
+          80,
+          "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_99"
+        ],
+        [
+          100,
+          "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_99"
+        ],
+        [
+          120,
+          "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_99"
+        ]
+      ],
+      "resumeMs": [106.3616320000001, 87.48397600000317, 70.42048699999577],
+      "reloadMs": [225.22402099998726, 114.5486130000063, 123.60942799999611],
+      "initial": {
+        "label": "initial",
+        "pid": 2489037,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 941115,
+          "system": 118557
+        },
+        "memory": {
+          "rss": 203481088,
+          "heapUsed": 55731774,
+          "external": 25940770
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 2489037,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6267871,
+          "system": 849746
+        },
+        "memory": {
+          "rss": 360964096,
+          "heapUsed": 73811487,
+          "external": 42853427
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 2489037,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 8125538,
+          "system": 1063775
+        },
+        "memory": {
+          "rss": 471027712,
+          "heapUsed": 144529432,
+          "external": 46195304
+        }
+      },
+      "restored": {
+        "label": "restored",
+        "pid": 2489037,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 9591278,
+          "system": 1233187
+        },
+        "memory": {
+          "rss": 541020160,
+          "heapUsed": 156117650,
+          "external": 11709760
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 2489037,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 9779287,
+            "system": 1246290
+          },
+          "memory": {
+            "rss": 487608320,
+            "heapUsed": 81933489,
+            "external": 46821017
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 2489037,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 9865700,
+            "system": 1268440
+          },
+          "memory": {
+            "rss": 350892032,
+            "heapUsed": 93316842,
+            "external": 53064481
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 2489037,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 9927623,
+            "system": 1272545
+          },
+          "memory": {
+            "rss": 343269376,
+            "heapUsed": 93316842,
+            "external": 53226124
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 2489037,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 10001233,
+            "system": 1298795
+          },
+          "memory": {
+            "rss": 399536128,
+            "heapUsed": 95272905,
+            "external": 54126533
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 2489037,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 10126153,
+            "system": 1310338
+          },
+          "memory": {
+            "rss": 419852288,
+            "heapUsed": 95272905,
+            "external": 54287984
+          }
+        }
+      ]
+    },
+    {
+      "sample": 3,
+      "enabled": false,
+      "startupMs": 712.781078999993,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4976301,
+      "loadMs": 5338.247984000001,
+      "typingMs": [
+        6.846640999996453, 5.347464000005857, 2.437690000006114,
+        5.797919000004185, 1.8914030000014463, 1.6877699999895412,
+        1.595990999994683, 2.0151289999921573, 2.214137999995728,
+        2.0040250000020023
+      ],
+      "disclosureMs": [
+        6226.9210449999955, 43.3590600000025, 6220.579689999999,
+        46.99897800000326, 6278.8928580000065, 46.340408999996725,
+        6352.317082000023, 41.05375500000082, 6148.057284999988,
+        47.045134000014514
+      ],
+      "resizeMs": [
+        12.53925299999537, 30.036148999992292, 14.261492000019643,
+        13.066938000003574, 11.930878000013763, 10.551402000011876
+      ],
+      "expandedResizeMs": [
+        3930.1594179999956, 5724.421860000002, 4360.173084000009, 5199.613694
+      ],
+      "scrollMs": [
+        71.56247699999949, 45.87862899998436, 42.76830500000506,
+        46.27076099999249
+      ],
+      "scrollRanges": [
+        {
+          "key": "PageUp",
+          "first": 75,
+          "last": 89
+        },
+        {
+          "key": "PageDown",
+          "first": 88,
+          "last": 99
+        },
+        {
+          "key": "PageUp",
+          "first": 75,
+          "last": 89
+        },
+        {
+          "key": "PageDown",
+          "first": 88,
+          "last": 99
+        }
+      ],
+      "calibratedLayouts": [
+        [
+          60,
+          " 界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_99"
+        ],
+        [
+          80,
+          " 界界界界界界界界界界界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_99"
+        ],
+        [
+          100,
+          " 界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_99"
+        ],
+        [
+          120,
+          " 界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_99"
+        ]
+      ],
+      "resumeMs": [56.429034999979194, 48.60514199998579, 42.00329799999599],
+      "reloadMs": [112.44290900000487, 96.19301399998949, 100.70843800000148],
+      "initial": {
+        "label": "initial",
+        "pid": 2489764,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 964278,
+          "system": 107210
+        },
+        "memory": {
+          "rss": 196157440,
+          "heapUsed": 54421178,
+          "external": 25337072
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 2489764,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 5830632,
+          "system": 895005
+        },
+        "memory": {
+          "rss": 321101824,
+          "heapUsed": 103413956,
+          "external": 66978813
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 2489764,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 84573394,
+          "system": 2757677
+        },
+        "memory": {
+          "rss": 792047616,
+          "heapUsed": 124581325,
+          "external": 72835661
+        }
+      },
+      "restored": {
+        "label": "restored",
+        "pid": 2489764,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 85279544,
+          "system": 2879603
+        },
+        "memory": {
+          "rss": 724234240,
+          "heapUsed": 170655595,
+          "external": 104525846
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 2489764,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 85338856,
+            "system": 2887546
+          },
+          "memory": {
+            "rss": 698646528,
+            "heapUsed": 170655595,
+            "external": 104687297
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 2489764,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 85418491,
+            "system": 2898628
+          },
+          "memory": {
+            "rss": 707469312,
+            "heapUsed": 179591755,
+            "external": 109921771
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 2489764,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 85492667,
+            "system": 2903620
+          },
+          "memory": {
+            "rss": 701628416,
+            "heapUsed": 180241230,
+            "external": 110326325
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 2489764,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 85530572,
+            "system": 2909596
+          },
+          "memory": {
+            "rss": 704086016,
+            "heapUsed": 180241230,
+            "external": 110487968
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 2489764,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 85561018,
+            "system": 2921416
+          },
+          "memory": {
+            "rss": 701779968,
+            "heapUsed": 180241230,
+            "external": 110649323
+          }
+        }
+      ]
+    },
+    {
+      "sample": 4,
+      "enabled": false,
+      "startupMs": 706.2966080000042,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4976301,
+      "loadMs": 5508.881801999989,
+      "typingMs": [
+        6.404326999996556, 2.7936680000275373, 2.54735099998652,
+        2.489488999999594, 7.505262000020593, 3.0941820000007283,
+        3.3276460000197403, 1.7269500000111293, 1.906304000003729,
+        1.701805000018794
+      ],
+      "disclosureMs": [
+        6145.203418000019, 43.809814999985974, 6097.468592000019,
+        43.068001000006916, 5932.332816000009, 45.00365699999384,
+        5987.432502000011, 43.81170099999872, 6215.890493999992,
+        51.5315169999958
+      ],
+      "resizeMs": [
+        13.43774900000426, 13.082328999997117, 10.757668999984162,
+        17.357422000000952, 13.718468999984907, 11.351740000012796
+      ],
+      "expandedResizeMs": [
+        4039.7003339999937, 6283.690425000037, 4729.1343789999955,
+        5340.584157999954
+      ],
+      "scrollMs": [
+        82.35728300001938, 84.39016700000502, 50.33233199996175,
+        57.56388199998764
+      ],
+      "scrollRanges": [
+        {
+          "key": "PageUp",
+          "first": 75,
+          "last": 89
+        },
+        {
+          "key": "PageDown",
+          "first": 88,
+          "last": 99
+        },
+        {
+          "key": "PageUp",
+          "first": 75,
+          "last": 89
+        },
+        {
+          "key": "PageDown",
+          "first": 88,
+          "last": 99
+        }
+      ],
+      "calibratedLayouts": [
+        [
+          60,
+          " 界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_99"
+        ],
+        [
+          80,
+          " 界界界界界界界界界界界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_99"
+        ],
+        [
+          100,
+          " 界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_99"
+        ],
+        [
+          120,
+          " 界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_99"
+        ]
+      ],
+      "resumeMs": [68.69824200001312, 47.7083800000255, 44.24465800001053],
+      "reloadMs": [130.29826599999797, 131.76344900002005, 95.61368200002471],
+      "initial": {
+        "label": "initial",
+        "pid": 2494802,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 982224,
+          "system": 141750
+        },
+        "memory": {
+          "rss": 202342400,
+          "heapUsed": 55445232,
+          "external": 25828788
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 2494802,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6018166,
+          "system": 889502
+        },
+        "memory": {
+          "rss": 366997504,
+          "heapUsed": 69651735,
+          "external": 38715021
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 2494802,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 86304694,
+          "system": 2905230
+        },
+        "memory": {
+          "rss": 667381760,
+          "heapUsed": 126125720,
+          "external": 75352286
+        }
+      },
+      "restored": {
+        "label": "restored",
+        "pid": 2494802,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 87137047,
+          "system": 3044951
+        },
+        "memory": {
+          "rss": 640352256,
+          "heapUsed": 153581547,
+          "external": 95783786
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 2494802,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 87226562,
+            "system": 3051786
+          },
+          "memory": {
+            "rss": 642146304,
+            "heapUsed": 169702938,
+            "external": 105533281
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 2494802,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 87293050,
+            "system": 3062917
+          },
+          "memory": {
+            "rss": 626855936,
+            "heapUsed": 169702938,
+            "external": 105694924
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 2494802,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 87349868,
+            "system": 3067848
+          },
+          "memory": {
+            "rss": 622510080,
+            "heapUsed": 169702938,
+            "external": 105856375
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 2494802,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 87459809,
+            "system": 3101186
+          },
+          "memory": {
+            "rss": 657113088,
+            "heapUsed": 173460878,
+            "external": 108488922
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 2494802,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 87595929,
+            "system": 3112002
+          },
+          "memory": {
+            "rss": 667885568,
+            "heapUsed": 173460878,
+            "external": 108650469
+          }
+        }
+      ]
+    },
+    {
+      "sample": 5,
+      "enabled": true,
+      "startupMs": 714.8648730000132,
+      "turns": 40,
+      "toolCalls": 321,
+      "sourceLines": 300,
+      "sessionBytes": 4976301,
+      "loadMs": 6133.04493600002,
+      "typingMs": [
+        6.371802999987267, 7.111308999999892, 7.002976000017952,
+        1.9311350000207312, 3.801800000015646, 4.426185000047553,
+        6.331096000038087, 3.274648000020534, 4.602172999992035,
+        3.2299890000140294
+      ],
+      "disclosureMs": [
+        139.83883099997183, 44.57840500003658, 49.369611000001896,
+        42.8943459999864, 41.91974300000584, 47.11579300003359,
+        66.04654699994717, 39.68846500001382, 41.21030099998461,
+        41.71455200004857
+      ],
+      "resizeMs": [
+        8.484109000011813, 7.9178670000401326, 9.67341899999883,
+        8.015677999996115, 7.374632999999449, 9.786381999962032
+      ],
+      "expandedResizeMs": [
+        117.07317600003444, 128.64006799994968, 114.86866500001634,
+        130.39193300000625
+      ],
+      "scrollMs": [
+        52.695965000020806, 52.016522000019904, 54.71851799997967,
+        50.39617600000929
+      ],
+      "scrollRanges": [
+        {
+          "key": "PageUp",
+          "first": 74,
+          "last": 88
+        },
+        {
+          "key": "PageDown",
+          "first": 87,
+          "last": 99
+        },
+        {
+          "key": "PageUp",
+          "first": 74,
+          "last": 88
+        },
+        {
+          "key": "PageDown",
+          "first": 87,
+          "last": 99
+        }
+      ],
+      "calibratedLayouts": [
+        [
+          60,
+          "     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_99"
+        ],
+        [
+          80,
+          "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_99"
+        ],
+        [
+          100,
+          "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_99"
+        ],
+        [
+          120,
+          "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_99"
+        ]
+      ],
+      "resumeMs": [110.63240100000985, 88.83060699998168, 86.95535399997607],
+      "reloadMs": [143.29533799999626, 128.1926370000001, 128.4072060000035],
+      "initial": {
+        "label": "initial",
+        "pid": 2500657,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 976484,
+          "system": 107152
+        },
+        "memory": {
+          "rss": 200019968,
+          "heapUsed": 54036210,
+          "external": 24897000
+        }
+      },
+      "loaded": {
+        "label": "loaded",
+        "pid": 2500657,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 6897599,
+          "system": 1008774
+        },
+        "memory": {
+          "rss": 336687104,
+          "heapUsed": 82563391,
+          "external": 50083534
+        }
+      },
+      "interacted": {
+        "label": "interacted",
+        "pid": 2500657,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 8742919,
+          "system": 1218585
+        },
+        "memory": {
+          "rss": 478150656,
+          "heapUsed": 145516294,
+          "external": 44568598
+        }
+      },
+      "restored": {
+        "label": "restored",
+        "pid": 2500657,
+        "bun": "1.4.0",
+        "cpu": {
+          "user": 10158808,
+          "system": 1398334
+        },
+        "memory": {
+          "rss": 551911424,
+          "heapUsed": 159981374,
+          "external": 99810619
+        }
+      },
+      "cleanup": [
+        {
+          "label": "fresh-0",
+          "pid": 2500657,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 10298993,
+            "system": 1411439
+          },
+          "memory": {
+            "rss": 519270400,
+            "heapUsed": 171249702,
+            "external": 106263442
+          }
+        },
+        {
+          "label": "fresh-1",
+          "pid": 2500657,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 10366271,
+            "system": 1420350
+          },
+          "memory": {
+            "rss": 520417280,
+            "heapUsed": 172378722,
+            "external": 106880846
+          }
+        },
+        {
+          "label": "fresh-2",
+          "pid": 2500657,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 10427250,
+            "system": 1432486
+          },
+          "memory": {
+            "rss": 431583232,
+            "heapUsed": 172378722,
+            "external": 107042393
+          }
+        },
+        {
+          "label": "fresh-3",
+          "pid": 2500657,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 10494161,
+            "system": 1452205
+          },
+          "memory": {
+            "rss": 481804288,
+            "heapUsed": 172378722,
+            "external": 107204036
+          }
+        },
+        {
+          "label": "fresh-4",
+          "pid": 2500657,
+          "bun": "1.4.0",
+          "cpu": {
+            "user": 10668197,
+            "system": 1463541
+          },
+          "memory": {
+            "rss": 507523072,
+            "heapUsed": 174164610,
+            "external": 107930944
+          }
+        }
+      ]
+    }
+  ],
+  "calibrations": [
+    {
+      "phase": "calibration",
+      "cols": 60,
+      "frameCols": 60,
+      "body": " 界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_99",
+      "host": {
+        "label": "calibration-60",
+        "pid": 2481859,
+        "bun": "1.4.0",
+        "columns": 60,
+        "rows": 36,
+        "cpu": {
+          "user": 49615158,
+          "system": 1966027
+        },
+        "memory": {
+          "rss": 749731840,
+          "heapTotal": 338772992,
+          "heapUsed": 114566350,
+          "external": 64048223,
+          "arrayBuffers": 5228
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 80,
+      "frameCols": 80,
+      "body": " 界界界界界界界界界界界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-80",
+        "pid": 2481859,
+        "bun": "1.4.0",
+        "columns": 80,
+        "rows": 36,
+        "cpu": {
+          "user": 54274387,
+          "system": 2142217
+        },
+        "memory": {
+          "rss": 725905408,
+          "heapTotal": 286406656,
+          "heapUsed": 119454832,
+          "external": 69040851,
+          "arrayBuffers": 5228
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 100,
+      "frameCols": 100,
+      "body": " 界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-100",
+        "pid": 2481859,
+        "bun": "1.4.0",
+        "columns": 100,
+        "rows": 36,
+        "cpu": {
+          "user": 59597021,
+          "system": 2303927
+        },
+        "memory": {
+          "rss": 740016128,
+          "heapTotal": 338905088,
+          "heapUsed": 126070824,
+          "external": 75659772,
+          "arrayBuffers": 5229
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 120,
+      "frameCols": 120,
+      "body": " 界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_99",
+      "host": {
+        "label": "calibration-120",
+        "pid": 2481859,
+        "bun": "1.4.0",
+        "columns": 120,
+        "rows": 36,
+        "cpu": {
+          "user": 65575473,
+          "system": 2480705
+        },
+        "memory": {
+          "rss": 716140544,
+          "heapTotal": 314063872,
+          "heapUsed": 131890942,
+          "external": 81487282,
+          "arrayBuffers": 5133
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 60,
+      "frameCols": 60,
+      "body": "     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_99",
+      "host": {
+        "label": "calibration-60",
+        "pid": 2488462,
+        "bun": "1.4.0",
+        "columns": 60,
+        "rows": 36,
+        "cpu": {
+          "user": 6520012,
+          "system": 1002166
+        },
+        "memory": {
+          "rss": 464691200,
+          "heapTotal": 134122496,
+          "heapUsed": 160994934,
+          "external": 81931817,
+          "arrayBuffers": 848183
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 80,
+      "frameCols": 80,
+      "body": "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-80",
+        "pid": 2488462,
+        "bun": "1.4.0",
+        "columns": 80,
+        "rows": 36,
+        "cpu": {
+          "user": 6624046,
+          "system": 1027589
+        },
+        "memory": {
+          "rss": 453492736,
+          "heapTotal": 158390272,
+          "heapUsed": 162249158,
+          "external": 81948473,
+          "arrayBuffers": 848314
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 100,
+      "frameCols": 100,
+      "body": "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-100",
+        "pid": 2488462,
+        "bun": "1.4.0",
+        "columns": 100,
+        "rows": 36,
+        "cpu": {
+          "user": 6723605,
+          "system": 1053277
+        },
+        "memory": {
+          "rss": 549605376,
+          "heapTotal": 218126336,
+          "heapUsed": 162249158,
+          "external": 81948605,
+          "arrayBuffers": 848446
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 120,
+      "frameCols": 120,
+      "body": "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_99",
+      "host": {
+        "label": "calibration-120",
+        "pid": 2488462,
+        "bun": "1.4.0",
+        "columns": 120,
+        "rows": 36,
+        "cpu": {
+          "user": 6948152,
+          "system": 1062890
+        },
+        "memory": {
+          "rss": 552919040,
+          "heapTotal": 209688576,
+          "heapUsed": 71592087,
+          "external": 28001867,
+          "arrayBuffers": 5229
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 60,
+      "frameCols": 60,
+      "body": "     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_99",
+      "host": {
+        "label": "calibration-60",
+        "pid": 2489037,
+        "bun": "1.4.0",
+        "columns": 60,
+        "rows": 36,
+        "cpu": {
+          "user": 7098953,
+          "system": 932863
+        },
+        "memory": {
+          "rss": 450539520,
+          "heapTotal": 149317632,
+          "heapUsed": 119959282,
+          "external": 53525941,
+          "arrayBuffers": 443375
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 80,
+      "frameCols": 80,
+      "body": "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-80",
+        "pid": 2489037,
+        "bun": "1.4.0",
+        "columns": 80,
+        "rows": 36,
+        "cpu": {
+          "user": 7298560,
+          "system": 951645
+        },
+        "memory": {
+          "rss": 480845824,
+          "heapTotal": 193500160,
+          "heapUsed": 72473115,
+          "external": 28921966,
+          "arrayBuffers": 5228
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 100,
+      "frameCols": 100,
+      "body": "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-100",
+        "pid": 2489037,
+        "bun": "1.4.0",
+        "columns": 100,
+        "rows": 36,
+        "cpu": {
+          "user": 7484591,
+          "system": 974059
+        },
+        "memory": {
+          "rss": 370872320,
+          "heapTotal": 134901760,
+          "heapUsed": 91566161,
+          "external": 33567477,
+          "arrayBuffers": 5360
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 120,
+      "frameCols": 120,
+      "body": "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_99",
+      "host": {
+        "label": "calibration-120",
+        "pid": 2489037,
+        "bun": "1.4.0",
+        "columns": 120,
+        "rows": 36,
+        "cpu": {
+          "user": 7607584,
+          "system": 995148
+        },
+        "memory": {
+          "rss": 391712768,
+          "heapTotal": 146553856,
+          "heapUsed": 92831286,
+          "external": 33595578,
+          "arrayBuffers": 5588
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 60,
+      "frameCols": 60,
+      "body": " 界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_99",
+      "host": {
+        "label": "calibration-60",
+        "pid": 2489764,
+        "bun": "1.4.0",
+        "columns": 60,
+        "rows": 36,
+        "cpu": {
+          "user": 48810340,
+          "system": 1868667
+        },
+        "memory": {
+          "rss": 782237696,
+          "heapTotal": 337817600,
+          "heapUsed": 230981489,
+          "external": 10121721,
+          "arrayBuffers": 5132
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 80,
+      "frameCols": 80,
+      "body": " 界界界界界界界界界界界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-80",
+        "pid": 2489764,
+        "bun": "1.4.0",
+        "columns": 80,
+        "rows": 36,
+        "cpu": {
+          "user": 53575539,
+          "system": 2000274
+        },
+        "memory": {
+          "rss": 721461248,
+          "heapTotal": 332209152,
+          "heapUsed": 119524827,
+          "external": 69115246,
+          "arrayBuffers": 5132
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 100,
+      "frameCols": 100,
+      "body": " 界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-100",
+        "pid": 2489764,
+        "bun": "1.4.0",
+        "columns": 100,
+        "rows": 36,
+        "cpu": {
+          "user": 58916450,
+          "system": 2129894
+        },
+        "memory": {
+          "rss": 733048832,
+          "heapTotal": 333628416,
+          "heapUsed": 126178272,
+          "external": 75766292,
+          "arrayBuffers": 5133
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 120,
+      "frameCols": 120,
+      "body": " 界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_99",
+      "host": {
+        "label": "calibration-120",
+        "pid": 2489764,
+        "bun": "1.4.0",
+        "columns": 120,
+        "rows": 36,
+        "cpu": {
+          "user": 64749827,
+          "system": 2275614
+        },
+        "memory": {
+          "rss": 754454528,
+          "heapTotal": 352001024,
+          "heapUsed": 131783012,
+          "external": 81376760,
+          "arrayBuffers": 5133
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 60,
+      "frameCols": 60,
+      "body": " 界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界 END_99",
+      "host": {
+        "label": "calibration-60",
+        "pid": 2494802,
+        "bun": "1.4.0",
+        "columns": 60,
+        "rows": 36,
+        "cpu": {
+          "user": 48153176,
+          "system": 1900731
+        },
+        "memory": {
+          "rss": 790380544,
+          "heapTotal": 329752576,
+          "heapUsed": 114590300,
+          "external": 63763005,
+          "arrayBuffers": 5228
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 80,
+      "frameCols": 80,
+      "body": " 界界界界界界界界界界界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-80",
+        "pid": 2494802,
+        "bun": "1.4.0",
+        "columns": 80,
+        "rows": 36,
+        "cpu": {
+          "user": 53017896,
+          "system": 2032750
+        },
+        "memory": {
+          "rss": 735010816,
+          "heapTotal": 288433152,
+          "heapUsed": 119559434,
+          "external": 69130445,
+          "arrayBuffers": 5228
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 100,
+      "frameCols": 100,
+      "body": " 界界界界界界界界界界界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-100",
+        "pid": 2494802,
+        "bun": "1.4.0",
+        "columns": 100,
+        "rows": 36,
+        "cpu": {
+          "user": 58600787,
+          "system": 2218102
+        },
+        "memory": {
+          "rss": 744071168,
+          "heapTotal": 331717632,
+          "heapUsed": 126725541,
+          "external": 75949846,
+          "arrayBuffers": 5229
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 120,
+      "frameCols": 120,
+      "body": " 界 END_87\n export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_88\n export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_89\n export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_90\n export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_91\n export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_92\n export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_93\n export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_94\n export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_95\n export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_96\n export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_97\n export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_98\n export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n 界 END_99",
+      "host": {
+        "label": "calibration-120",
+        "pid": 2494802,
+        "bun": "1.4.0",
+        "columns": 120,
+        "rows": 36,
+        "cpu": {
+          "user": 65148484,
+          "system": 2385973
+        },
+        "memory": {
+          "rss": 756441088,
+          "heapTotal": 344055808,
+          "heapUsed": 131682181,
+          "external": 81260585,
+          "arrayBuffers": 5229
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 60,
+      "frameCols": 60,
+      "body": "     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界 END_99",
+      "host": {
+        "label": "calibration-60",
+        "pid": 2500657,
+        "bun": "1.4.0",
+        "columns": 60,
+        "rows": 36,
+        "cpu": {
+          "user": 7725836,
+          "system": 1079277
+        },
+        "memory": {
+          "rss": 413741056,
+          "heapTotal": 139526144,
+          "heapUsed": 72200626,
+          "external": 28649973,
+          "arrayBuffers": 5132
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 80,
+      "frameCols": 80,
+      "body": "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-80",
+        "pid": 2500657,
+        "bun": "1.4.0",
+        "columns": 80,
+        "rows": 36,
+        "cpu": {
+          "user": 7899824,
+          "system": 1104441
+        },
+        "memory": {
+          "rss": 369295360,
+          "heapTotal": 133558272,
+          "heapUsed": 73459578,
+          "external": 28671453,
+          "arrayBuffers": 5359
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 100,
+      "frameCols": 100,
+      "body": "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界界界界界界界界界界界 END_99",
+      "host": {
+        "label": "calibration-100",
+        "pid": 2500657,
+        "bun": "1.4.0",
+        "columns": 100,
+        "rows": 36,
+        "cpu": {
+          "user": 8026220,
+          "system": 1131650
+        },
+        "memory": {
+          "rss": 462331904,
+          "heapTotal": 193213440,
+          "heapUsed": 91698267,
+          "external": 32823100,
+          "arrayBuffers": 5587
+        }
+      }
+    },
+    {
+      "phase": "calibration",
+      "cols": 120,
+      "frameCols": 120,
+      "body": "     export const probe087 = 87; // WIDTH_87 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_87\n     export const probe088 = 88; // WIDTH_88 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_88\n     export const probe089 = 89; // WIDTH_89 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_89\n     export const probe090 = 90; // WIDTH_90 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_90\n     export const probe091 = 91; // WIDTH_91 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_91\n     export const probe092 = 92; // WIDTH_92 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_92\n     export const probe093 = 93; // WIDTH_93 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_93\n     export const probe094 = 94; // WIDTH_94 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_94\n     export const probe095 = 95; // WIDTH_95 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_95\n     export const probe096 = 96; // WIDTH_96 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_96\n     export const probe097 = 97; // WIDTH_97 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_97\n     export const probe098 = 98; // WIDTH_98 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_98\n     export const probe099 = 99; // WIDTH_99 界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\n     界界界 END_99",
+      "host": {
+        "label": "calibration-120",
+        "pid": 2500657,
+        "bun": "1.4.0",
+        "columns": 120,
+        "rows": 36,
+        "cpu": {
+          "user": 8225473,
+          "system": 1153909
+        },
+        "memory": {
+          "rss": 405364736,
+          "heapTotal": 156286976,
+          "heapUsed": 94012534,
+          "external": 32841322,
+          "arrayBuffers": 5815
+        }
+      }
+    }
+  ]
+}

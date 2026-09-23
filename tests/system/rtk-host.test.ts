@@ -3,13 +3,15 @@ import {launchPi} from './fixtures/pi-terminal';
 import {readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 
-test('Pi executes a rewrite through the selected absolute RTK path', async () => {
-  const host = await launchPi();
-  try {
-    const executable = join(host.directory, "rtk tool's");
-    await writeFile(
-      executable,
-      `#!/bin/sh
+test.each([false, true])(
+  'UI enabled=%s preserves a rewrite through the selected absolute RTK path',
+  async enabled => {
+    const host = await launchPi();
+    try {
+      const executable = join(host.directory, "rtk tool's");
+      await writeFile(
+        executable,
+        `#!/bin/sh
 case "$1" in
   --version) printf 'rtk 0.45.0';;
   rewrite) printf 'rtk fixture';;
@@ -17,23 +19,25 @@ case "$1" in
   *) exit 2;;
 esac
 `,
-      {mode: 0o700},
-    );
-    await writeFile(
-      join(host.agent, 'pi-stuff.json'),
-      JSON.stringify({rtk: {executable}}),
-    );
-    await host.reload();
-    expect(await host.terminal.screen.text()).not.toContain(
-      'Invalid or unreadable pi-stuff.json',
-    );
-    expect(
-      await host.invoke('bash', JSON.stringify({command: 'printf RAW'})),
-    ).toBe('COMPACT\n');
-  } finally {
-    await host.close();
-  }
-}, 30000);
+        {mode: 0o700},
+      );
+      await writeFile(
+        join(host.agent, 'pi-stuff.json'),
+        JSON.stringify({ui: {enabled}, rtk: {executable}}),
+      );
+      await host.reload();
+      expect(await host.terminal.screen.text()).not.toContain(
+        'Invalid or unreadable pi-stuff.json',
+      );
+      expect(
+        await host.invoke('bash', JSON.stringify({command: 'printf RAW'})),
+      ).toBe('COMPACT\n');
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);
 
 test('Pi accepts an advisory RTK rewrite without treating it as a failure', async () => {
   const host = await launchPi();
@@ -241,16 +245,18 @@ esac
   }
 }, 30000);
 
-test('Pi cancellation blocks raw fallback and its side effects', async () => {
-  const host = await launchPi();
-  try {
-    const executable = join(host.directory, 'rtk-cancel');
-    const rewriteStarted = join(host.directory, 'rewrite-started');
-    const rawSideEffect = join(host.directory, 'raw-side-effect');
-    const rewriteSideEffect = join(host.directory, 'rewrite-side-effect');
-    await writeFile(
-      executable,
-      `#!/bin/sh
+test.each([false, true])(
+  'UI enabled=%s preserves cancellation without raw fallback or side effects',
+  async enabled => {
+    const host = await launchPi();
+    try {
+      const executable = join(host.directory, 'rtk-cancel');
+      const rewriteStarted = join(host.directory, 'rewrite-started');
+      const rawSideEffect = join(host.directory, 'raw-side-effect');
+      const rewriteSideEffect = join(host.directory, 'rewrite-side-effect');
+      await writeFile(
+        executable,
+        `#!/bin/sh
 case "$1" in
   --version) printf 'rtk 0.45.0';;
   rewrite) printf started > '${rewriteStarted}'; sleep 1; printf 'REWRITE_SIDE_EFFECT' > '${rewriteSideEffect}'; printf 'rtk raw';;
@@ -258,36 +264,38 @@ case "$1" in
   *) exit 2;;
 esac
 `,
-      {mode: 0o700},
-    );
-    await writeFile(
-      join(host.agent, 'pi-stuff.json'),
-      JSON.stringify({rtk: {executable}}),
-    );
-    await host.reload();
-    await host.start(
-      'bash',
-      JSON.stringify({command: `printf ORIGINAL > '${rawSideEffect}'`}),
-    );
-    await host.terminal.screen.waitUntil(
-      async () => {
-        try {
-          await readFile(rewriteStarted, 'utf8');
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      {timeoutMs: 5000},
-    );
-    await host.terminal.keyboard.press('Escape');
-    await new Promise<void>(resolve => setTimeout(resolve, 1_250));
-    await expect(readFile(rawSideEffect, 'utf8')).rejects.toThrow();
-    await expect(readFile(rewriteSideEffect, 'utf8')).rejects.toThrow();
-  } finally {
-    await host.close();
-  }
-}, 30000);
+        {mode: 0o700},
+      );
+      await writeFile(
+        join(host.agent, 'pi-stuff.json'),
+        JSON.stringify({ui: {enabled}, rtk: {executable}}),
+      );
+      await host.reload();
+      await host.start(
+        'bash',
+        JSON.stringify({command: `printf ORIGINAL > '${rawSideEffect}'`}),
+      );
+      await host.terminal.screen.waitUntil(
+        async () => {
+          try {
+            await readFile(rewriteStarted, 'utf8');
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        {timeoutMs: 5000},
+      );
+      await host.terminal.keyboard.press('Escape');
+      await new Promise<void>(resolve => setTimeout(resolve, 1_250));
+      await expect(readFile(rawSideEffect, 'utf8')).rejects.toThrow();
+      await expect(readFile(rewriteSideEffect, 'utf8')).rejects.toThrow();
+    } finally {
+      await host.close();
+    }
+  },
+  30000,
+);
 
 test('Pi does not execute or replay the original command after RTK starts it', async () => {
   const host = await launchPi();

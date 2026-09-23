@@ -1,0 +1,277 @@
+import type {ToolView} from './tool-lookup';
+import {Schema} from 'effect';
+import {ToolHeading} from './heading';
+import {ResultBlock} from './result-block';
+import {codeBackground} from './code-background';
+import type {UiSettings} from './settings';
+import {
+  getLanguageFromPath,
+  highlightCode,
+  type Theme,
+} from '@earendil-works/pi-coding-agent';
+import {
+  truncateToWidth,
+  wrapTextWithAnsi,
+  stripTerminalSequences,
+  visibleWidth,
+  type Component,
+} from '@earendil-works/pi-tui';
+
+interface DiffLine {
+  kind: ' ' | '+' | '-';
+  number: number;
+  source: string;
+}
+
+// The native result carries a standard patch. Reading the current file would
+// corrupt historical context after subsequent edits, so only use that patch.
+function patchHunks(patch: string): DiffLine[][] | undefined {
+  const hunks: DiffLine[][] = [];
+  let oldLine = 0;
+  let newLine = 0;
+  let oldRemaining = 0;
+  let newRemaining = 0;
+  let current: DiffLine[] | undefined;
+  for (const line of patch.replace(/\n$/u, '').split('\n')) {
+    const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$/u.exec(
+      line,
+    );
+    if (header) {
+      if (oldRemaining !== 0 || newRemaining !== 0) return undefined;
+      oldLine = Number(header[1]);
+      newLine = Number(header[3]);
+      oldRemaining = Number(header[2] ?? 1);
+      newRemaining = Number(header[4] ?? 1);
+      if (
+        ![oldLine, newLine, oldRemaining, newRemaining].every(
+          Number.isSafeInteger,
+        )
+      )
+        return undefined;
+      current = [];
+      hunks.push(current);
+      continue;
+    }
+    if (!current) {
+      if (line.startsWith('--- ') || line.startsWith('+++ ')) continue;
+      return undefined;
+    }
+    if (line === '\\ No newline at end of file') continue;
+    const kind = line[0];
+    if (kind !== ' ' && kind !== '+' && kind !== '-') return undefined;
+    if (kind !== '+') oldRemaining--;
+    if (kind !== '-') newRemaining--;
+    if (oldRemaining < 0 || newRemaining < 0) return undefined;
+    current.push({
+      kind,
+      number: kind === '-' ? oldLine : newLine,
+      source: stripTerminalSequences(line.slice(1)),
+    });
+    if (kind !== '+') oldLine++;
+    if (kind !== '-') newLine++;
+  }
+  return oldRemaining === 0 &&
+    newRemaining === 0 &&
+    hunks.some(hunk => hunk.length > 0)
+    ? hunks
+    : undefined;
+}
+
+class EditDiff implements Component {
+  private width = -1;
+  private rows: string[] = [];
+  private bodyWidth = -1;
+  private body: string[] = [];
+  private colored: DiffLine[][] | undefined;
+  private added = 0;
+  private removed = 0;
+  private digits = 1;
+
+  constructor(
+    readonly patch: string,
+    readonly path: string,
+    private readonly hunks: DiffLine[][],
+    private expanded: boolean,
+    private theme: Theme,
+    private readonly settings: UiSettings,
+  ) {}
+
+  update(expanded: boolean, theme: Theme) {
+    if (theme !== this.theme) {
+      this.colored = undefined;
+      this.bodyWidth = -1;
+    }
+    if (expanded !== this.expanded || theme !== this.theme) this.width = -1;
+    this.expanded = expanded;
+    this.theme = theme;
+  }
+
+  invalidate() {
+    // Native invalidation also covers theme proxies and late-loaded grammars.
+    // Disclosure calls update() directly and can reuse syntax and layout.
+    this.colored = undefined;
+    this.bodyWidth = -1;
+    this.width = -1;
+  }
+
+  private highlight(): DiffLine[][] {
+    if (this.colored) return this.colored;
+    const hunks = this.hunks.map(hunk => hunk.map(line => ({...line})));
+    const all = hunks.flat();
+    this.added = all.filter(line => line.kind === '+').length;
+    this.removed = all.filter(line => line.kind === '-').length;
+    this.digits = all.reduce(
+      (width, line) => Math.max(width, String(line.number).length),
+      1,
+    );
+    const language =
+      this.settings.codeHighlighting === false
+        ? undefined
+        : getLanguageFromPath(this.path);
+    for (const hunk of hunks) {
+      const oldColors = highlightCode(
+        hunk
+          .filter(line => line.kind !== '+')
+          .map(line => line.source)
+          .join('\n'),
+        language,
+      );
+      const newColors = highlightCode(
+        hunk
+          .filter(line => line.kind !== '-')
+          .map(line => line.source)
+          .join('\n'),
+        language,
+      );
+      let oldIndex = 0;
+      let newIndex = 0;
+      for (const line of hunk) {
+        line.source =
+          (line.kind === '-' ? oldColors[oldIndex] : newColors[newIndex]) ??
+          line.source;
+        if (line.kind !== '+') oldIndex++;
+        if (line.kind !== '-') newIndex++;
+      }
+    }
+    this.colored = hunks;
+    return hunks;
+  }
+
+  render(width: number): string[] {
+    if (width === this.width) return this.rows;
+    const hunks = this.highlight();
+    if (width !== this.bodyWidth) {
+      const body: string[] = [];
+      for (const [index, hunk] of hunks.entries()) {
+        if (index > 0) body.push(this.theme.fg('muted', '     …'));
+        for (const line of hunk) {
+          const color =
+            line.kind === '+'
+              ? 'toolDiffAdded'
+              : line.kind === '-'
+                ? 'toolDiffRemoved'
+                : 'toolDiffContext';
+          const gutter =
+            this.settings.diffLineNumbers === false
+              ? `${line.kind} `
+              : `${String(line.number).padStart(this.digits)} ${line.kind} `;
+          const wrapped = wrapTextWithAnsi(
+            line.source,
+            Math.max(1, width - 5 - gutter.length),
+          );
+          for (const [part, row] of wrapped.entries()) {
+            const content = `${this.theme.fg(color, part === 0 ? gutter : ' '.repeat(gutter.length))}${row}`;
+            const painted =
+              line.kind === ' ' || this.settings.diffBackgrounds === false
+                ? content
+                : codeBackground(
+                    this.theme,
+                    line.kind === '+',
+                    content +
+                      ' '.repeat(
+                        Math.max(0, width - 5 - visibleWidth(content)),
+                      ),
+                  );
+            body.push(truncateToWidth(`     ${painted}`, width));
+          }
+        }
+      }
+      this.bodyWidth = width;
+      this.body = body;
+    }
+    const summary = `  ⎿  Added ${this.added} ${this.added === 1 ? 'line' : 'lines'}, removed ${this.removed} ${this.removed === 1 ? 'line' : 'lines'}`;
+    const visible = this.expanded
+      ? this.body
+      : this.body.slice(0, this.settings.editPreviewLines ?? 6);
+    const rows = wrapTextWithAnsi(
+      this.theme.fg('muted', summary),
+      Math.max(1, width),
+    ).concat(visible);
+    const hidden = this.body.length - visible.length;
+    if (hidden > 0)
+      rows.push(
+        truncateToWidth(
+          this.theme.fg(
+            'muted',
+            `     ${hidden} more ${hidden === 1 ? 'line' : 'lines'}`,
+          ),
+          width,
+        ),
+      );
+    this.width = width;
+    this.rows = rows;
+    return rows;
+  }
+}
+
+const EditArgs = Schema.Struct({
+  path: Schema.optional(Schema.String),
+});
+const EditDetails = Schema.Struct({patch: Schema.optional(Schema.String)});
+
+export function displayEdit(definition: ToolView, settings: UiSettings) {
+  const tool = {...definition};
+  tool.renderShell = 'self';
+  tool.renderCall = (args, theme, context) =>
+    new ToolHeading(
+      'Edit',
+      Schema.decodeUnknownSync(EditArgs)(args).path ?? '',
+      theme,
+      context,
+    );
+  tool.renderResult = (result, options, theme, context) => {
+    const patch = Schema.decodeUnknownSync(EditDetails)(
+      result.details ?? {},
+    ).patch;
+    const previous = context.lastComponent;
+    const path = Schema.decodeUnknownSync(EditArgs)(context.args).path ?? '';
+    if (
+      !context.isError &&
+      previous instanceof EditDiff &&
+      previous.patch === patch &&
+      previous.path === path
+    ) {
+      previous.update(options.expanded, theme);
+      return previous;
+    }
+    const hunks = !context.isError && patch ? patchHunks(patch) : undefined;
+    if (patch && hunks)
+      return new EditDiff(
+        patch,
+        path,
+        hunks,
+        options.expanded,
+        theme,
+        settings,
+      );
+    return new ResultBlock(
+      result.content
+        .filter(block => block.type === 'text')
+        .map(block => block.text)
+        .join('\n'),
+      theme,
+      context.isError ? 'error' : 'toolOutput',
+    );
+  };
+  return tool;
+}
