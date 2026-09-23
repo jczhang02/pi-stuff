@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test';
-import {mkdir, readdir, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, readdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
@@ -221,6 +221,9 @@ test('Resumed sessions rebuild historical retrieval groups', async () => {
       path.endsWith('.jsonl'),
     );
     if (!original) throw new Error('The completed session was not persisted');
+    const savedPath = join(sessions, original);
+    const saved = await readFile(savedPath, 'utf8');
+    await writeFile(join(host.directory, 'old.txt'), 'CHANGED_ON_DISK');
     await host.command('/host-session new');
     await host.terminal.screen.waitForText('HOST_SESSION_NEW', {
       timeoutMs: 5000,
@@ -243,6 +246,20 @@ test('Resumed sessions rebuild historical retrieval groups', async () => {
       timeoutMs: 5000,
     });
     expect(await host.terminal.screen.text()).not.toContain('NEW_SESSION_BODY');
+    expect(await readFile(savedPath, 'utf8')).toBe(saved);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await host.reload();
+      await host.terminal.screen.waitForText('Read 2 files', {timeoutMs: 5000});
+      await host.terminal.keyboard.press('Control+O');
+      await host.terminal.keyboard.press('Control+O');
+      await host.terminal.screen.waitForText('OLD_SESSION_BODY', {
+        timeoutMs: 5000,
+      });
+      expect(await host.terminal.screen.text()).not.toContain(
+        'CHANGED_ON_DISK',
+      );
+      expect(await readFile(savedPath, 'utf8')).toBe(saved);
+    }
   } catch (error) {
     console.error(await host.terminal.logs.text());
     throw error;

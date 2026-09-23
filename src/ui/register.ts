@@ -1,6 +1,5 @@
 import {
   getAgentDir,
-  createReadToolDefinition,
   createGrepToolDefinition,
   createFindToolDefinition,
   createLsToolDefinition,
@@ -14,7 +13,9 @@ import {RetrievalGroups} from './groups';
 import {BashDisplay} from './bash';
 import {createWriteDisplay} from './write';
 import {createEditDisplay} from './edit';
-import {displayRetrieval, readParts} from './retrieval';
+import {displayRetrieval, readParts, RetrievalDetails} from './retrieval';
+import {Schema} from 'effect';
+import {registerToolDisplay} from './tool-lookup';
 import type {UiSettings} from './settings';
 
 export function registerUi(
@@ -22,11 +23,43 @@ export function registerUi(
   settings: UiSettings,
 ): RetrievalGroups | undefined {
   if (settings.enabled === false) return;
-  registerAssistantDisplay(pi);
+  const owner = registerAssistantDisplay(pi);
   if (settings.welcome !== false) registerWelcome(pi);
   const bash = new BashDisplay(pi);
   const groups =
     settings.retrievalGroups === false ? undefined : new RetrievalGroups(pi);
+  const readArgs = Schema.Struct({
+    path: Schema.optional(Schema.String),
+    offset: Schema.optional(Schema.Number),
+    limit: Schema.optional(Schema.Number),
+  });
+  registerToolDisplay(pi, owner, (tool, session) => {
+    if (
+      tool.name !== 'read' ||
+      !session
+        .getAllTools()
+        .some(
+          entry =>
+            entry.name === tool.name && entry.sourceInfo.source === 'builtin',
+        )
+    )
+      return tool;
+    return displayRetrieval(
+      {...tool},
+      'Read',
+      args => Schema.decodeUnknownSync(readArgs)(args).path ?? '',
+      (output, details, args) => {
+        const range = Schema.decodeUnknownSync(readArgs)(args);
+        return readParts(
+          output,
+          Schema.decodeUnknownSync(RetrievalDetails)(details ?? {}),
+          range.offset,
+          range.limit,
+        );
+      },
+      groups,
+    );
+  });
   pi.on('session_start', (_event, ctx) => {
     if (ctx.mode !== 'tui') return;
     // Only replace a native definition. Other extensions retain their renderers.
@@ -49,19 +82,6 @@ export function registerUi(
     const native = (name: string) =>
       tools.some(
         tool => tool.name === name && tool.sourceInfo.source === 'builtin',
-      );
-    if (native('read'))
-      pi.registerTool(
-        displayRetrieval(
-          createReadToolDefinition(ctx.cwd, {
-            autoResizeImages: hostSettings.getImageAutoResize(),
-          }),
-          'Read',
-          args => args.path ?? '',
-          (output, details, args) =>
-            readParts(output, details, args.offset, args.limit),
-          groups,
-        ),
       );
     if (native('grep'))
       pi.registerTool(

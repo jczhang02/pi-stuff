@@ -1,3 +1,4 @@
+import {Schema} from 'effect';
 import {ToolHeading} from './heading';
 import {ResultBlock} from './result-block';
 import type {RetrievalGroups} from './groups';
@@ -6,7 +7,6 @@ import type {
   Theme,
   ToolDefinition,
   ToolRenderResultOptions,
-  TruncationResult,
 } from '@earendil-works/pi-coding-agent';
 import {
   wrapTextWithAnsi,
@@ -15,13 +15,14 @@ import {
   visibleWidth,
 } from '@earendil-works/pi-tui';
 
-interface RetrievalDetails {
-  truncation?: TruncationResult;
-  matchLimitReached?: number;
-  resultLimitReached?: number;
-  entryLimitReached?: number;
-  linesTruncated?: boolean;
-}
+export const RetrievalDetails = Schema.Struct({
+  truncation: Schema.optional(Schema.Struct({truncated: Schema.Boolean})),
+  matchLimitReached: Schema.optional(Schema.Number),
+  resultLimitReached: Schema.optional(Schema.Number),
+  entryLimitReached: Schema.optional(Schema.Number),
+  linesTruncated: Schema.optional(Schema.Boolean),
+});
+type RetrievalDetails = typeof RetrievalDetails.Type;
 
 export interface RetrievalPart {
   kind: 'body' | 'metadata' | 'warning' | 'status';
@@ -192,11 +193,7 @@ export function readParts(
 
 // These tools share retained text and native disclosure, but keep their own
 // schema, execution and metadata. The adapter never rewrites a tool result.
-export function displayRetrieval<
-  Params extends TSchema,
-  Details extends RetrievalDetails | undefined,
-  State,
->(
+export function displayRetrieval<Params extends TSchema, Details, State>(
   tool: ToolDefinition<Params, Details, State>,
   label: string,
   target: (args: Static<Params>, expanded: boolean) => string,
@@ -260,7 +257,11 @@ export function displayRetrieval<
     }
     const parts = (
       inspect?.(output, result.details, context.args) ??
-      nativeParts(output, result.details, tool.name)
+      nativeParts(
+        output,
+        Schema.decodeUnknownSync(RetrievalDetails)(result.details ?? {}),
+        tool.name,
+      )
     ).map(part => ({
       ...part,
       text: stripTerminalSequences(part.text).replace(/\n$/u, ''),

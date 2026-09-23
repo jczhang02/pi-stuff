@@ -23,7 +23,9 @@ const ThinkingRegion = Schema.Struct({
   child: Schema.Union([Schema.instanceOf(Markdown), Schema.instanceOf(Text)]),
 });
 
-export function registerAssistantDisplay(pi: ExtensionAPI): void {
+export function registerAssistantDisplay(
+  pi: ExtensionAPI,
+): MarkdownTransformer {
   const times = new ThinkingTimes(pi);
   // The identity transformer marks only components belonging to this extension
   // runtime. It never adds display text to Markdown or provider messages.
@@ -134,4 +136,5 @@ export function registerAssistantDisplay(pi: ExtensionAPI): void {
     active = false;
     if (prototype.updateContent === update) prototype.updateContent = original;
   });
+  return owner;
 }
