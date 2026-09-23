@@ -100,6 +100,16 @@ WebSearch 的 query/provider/selection/fallback 标头也仅在展开时显示. 
 
 ![工具错误与 Web 警告, 60列](../../assets/ui/tool-errors-dark-60.png)
 
+## 第三方工具
+
+默认保留第三方 renderer. 将精确工具 API 名称写入 `ui.takeoverTools` 数组, 如 `["foreign_job"]`, reload 后这些工具使用通用展示. 标题显示工具标签及 JSON 参数, 保留的文本结果默认收起, 通过 Pi 原生交互展开. 错误保持可见. 通用结果不加入检索组, 不套用原生工具的元信息解析规则. 图片结果有原 renderer 时继续使用它. 执行、schema 和模型可见结果不变.
+
+此选项只在配置文件中编辑, 通过 `/ui` 保存常用设置时会保留. 未知名称不会注册或启用工具. 原生工具和 Pi Stuff 自有 Web 工具即使列入数组, 仍保留专用展示. 移除名称并 reload 后恢复第三方 renderer, 包括保留的历史.
+
+下图使用编译 Pi 0.87.0 / Bun 1.4.0、模拟第三方工具的 fixture、Pi 暗色主题及100×32终端. 两次调用分别展示收起的文本结果和可见失败. 这是 Terminal Control 导出, 字体与欢迎页截图相同, 不代表已安装第三方包或 Ghostty 窗口的验收.
+
+![显式通用接管](../../assets/ui/third-party-takeover-dark-100.png)
+
 ## 配置
 
 在全局 `pi-stuff.json` 中添加 `ui`, 与已有 `web`、`tools`、`rtk` 并列. 编辑后 reload Pi. 这些选项不读取项目配置.
@@ -109,6 +119,7 @@ WebSearch 的 query/provider/selection/fallback 标头也仅在展开时显示. 
   "ui": {
     "enabled": true,
     "welcome": true,
+    "takeoverTools": [],
     "retrievalGroups": true,
     "bashPreviewLines": 3,
     "bashRunningPreviewLines": 2,

@@ -7,6 +7,7 @@ import {displayWrite} from './write';
 import {displayEdit} from './edit';
 import {displayRetrieval, readParts, RetrievalDetails} from './retrieval';
 import {Schema} from 'effect';
+import {stripTerminalSequences} from '@earendil-works/pi-tui';
 import {registerToolDisplay} from './tool-lookup';
 import {webView} from './web';
 import type {UiSettings} from './settings';
@@ -44,8 +45,26 @@ export function registerUi(
             entry =>
               entry.name === tool.name && entry.sourceInfo.source === 'builtin',
           )
-      )
-        return tool;
+      ) {
+        if (!settings.takeoverTools?.includes(tool.name)) return tool;
+        const own = session.resourceLoader
+          .getExtensions()
+          .extensions.find(
+            extension => extension.markdownTransformer === owner,
+          );
+        if (own?.tools.get(tool.name)?.definition.execute === tool.execute)
+          return tool;
+        // Opted-in foreign tools get generic text disclosure, never native
+        // argument/result interpretation or retrieval-group membership.
+        return displayRetrieval(
+          {...tool},
+          stripTerminalSequences(tool.label),
+          args => JSON.stringify(args) ?? '',
+          output => [
+            {kind: output ? 'body' : 'status', text: output || '(no output)'},
+          ],
+        );
+      }
       if (tool.name === 'bash') return bash.display(tool, settings);
       if (tool.name === 'write') return displayWrite(tool, settings);
       if (tool.name === 'edit') return displayEdit(tool, settings);

@@ -100,6 +100,16 @@ Tool errors and notices keep one `⎿` per result block, with wrapped continuati
 
 ![Tool errors and Web warning, 60 columns](assets/ui/tool-errors-dark-60.png)
 
+## Third-party tools
+
+Third-party renderers remain unchanged by default. Set `ui.takeoverTools` to an array of exact tool API names, such as `["foreign_job"]`, then reload to use generic presentation for those tools. The heading shows the tool's label and JSON arguments; retained text is compact by default and opens with Pi's native disclosure. Errors remain visible. Generic results do not enter retrieval groups or interpret native-tool metadata. Image results retain the existing renderer when available. Execution, schemas and model-visible results are unchanged.
+
+This file-only option is preserved when saving common settings through `/ui`. Unknown names do not register or enable tools. Built-ins and Pi Stuff's own Web tools retain their dedicated presentation even if listed. Remove a name and reload to restore its third-party renderer, including on retained history.
+
+The capture below uses a third-party-shaped fixture in compiled Pi 0.87.0 / Bun 1.4.0, Pi dark theme and 100×32 cells. The two calls demonstrate a hidden text result and a visible failure. It is a Terminal Control export using the welcome capture's font stack, not acceptance of an installed third-party package or a Ghostty window.
+
+![Explicit generic takeover](assets/ui/third-party-takeover-dark-100.png)
+
 ## Configuration
 
 Add `ui` to the global `pi-stuff.json` beside existing `web`, `tools` and `rtk` settings. Reload Pi after editing. Project configuration is not read for these options.
@@ -109,6 +119,7 @@ Add `ui` to the global `pi-stuff.json` beside existing `web`, `tools` and `rtk` 
   "ui": {
     "enabled": true,
     "welcome": true,
+    "takeoverTools": [],
     "retrievalGroups": true,
     "bashPreviewLines": 3,
     "bashRunningPreviewLines": 2,

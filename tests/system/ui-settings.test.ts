@@ -5,7 +5,7 @@ import {launchPi} from './fixtures/pi-terminal';
 
 test('UI settings are available when disabled, preserve other sections and reject stale saves', async () => {
   const host = await launchPi(
-    '{"rtk":{"rewrite":false},"ui":{"enabled":false}}',
+    '{"rtk":{"rewrite":false},"ui":{"enabled":false,"takeoverTools":["foreign_job"]}}',
   );
   try {
     await host.command('/ui');
@@ -19,6 +19,7 @@ test('UI settings are available when disabled, preserve other sections and rejec
     const path = join(host.agent, 'pi-stuff.json');
     expect(await readFile(path, 'utf8')).toContain('"enabled": true');
     expect(await readFile(path, 'utf8')).toContain('"rewrite": false');
+    expect(await readFile(path, 'utf8')).toContain('"foreign_job"');
     await host.terminal.keyboard.press('ArrowDown');
     await host.terminal.keyboard.press('ArrowDown');
     await host.terminal.keyboard.press('Enter');
