@@ -239,3 +239,38 @@ test('long identities retain all Git fields by distributing complete counters', 
     expect(lines.join('\n')).toContain(field);
   expect(lines.every(line => visibleWidth(line) <= 50)).toBe(true);
 });
+
+test('large Git counts outrank ctx and distribute without dropping the last field', () => {
+  const theme = getThemeByName('dark');
+  if (!theme) throw new Error('Missing built-in theme');
+  const lines = renderFooter(50, theme, {
+    ...base,
+    git: {
+      kind: 'ready',
+      snapshot: {
+        branch: 'main',
+        staged: 100,
+        modified: 100,
+        untracked: 100,
+        conflicts: 100,
+        ahead: 100,
+        behind: 100,
+        operation: 'cherry-pick',
+      },
+    },
+  }).map(Bun.stripANSI);
+  for (const field of [
+    'main',
+    'cherry-pick',
+    '!100',
+    '+100',
+    '~100',
+    '?100',
+    '↑100',
+    '↓100',
+  ])
+    expect(lines.join('\n')).toContain(field);
+  expect(lines.join('\n')).not.toContain('ctx');
+  expect(lines.join('\n')).not.toContain('…');
+  expect(lines.every(line => visibleWidth(line) <= 50)).toBe(true);
+});

@@ -52,3 +52,4 @@ ctx 使用 Pi 当前上下文估算, 容量跟随当前模型. compact 后用量
 ![暗色, 50 列](../../assets/statusline/dark-50.png)
 
 ![50 列保留长目录和 Git](../../assets/statusline/long-light-50.png)
+![50 列保留长目录、长分支和完整 Git 计数](../../assets/statusline/long-fields-light-50.png)

@@ -52,3 +52,4 @@ These are full-viewport Terminal Control captures of the unmodified package on c
 ![Dark, 50 columns](assets/statusline/dark-50.png)
 
 ![Long directory and Git preserved at 50 columns](assets/statusline/long-light-50.png)
+![Long directory, long branch and whole Git counters at 50 columns](assets/statusline/long-fields-light-50.png)

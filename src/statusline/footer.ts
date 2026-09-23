@@ -191,6 +191,7 @@ export function renderFooter(
     snapshot?.behind ? theme.fg('warning', `↓${snapshot.behind}`) : '',
   ].filter(Boolean);
   const divergence = divergenceFields.join(sep);
+  const details = [worktree, divergence].filter(Boolean).join(sep);
   const git = [branch, worktree, divergence].filter(Boolean).join(sep);
   const divided = splitGitDetails(
     [...counts, ...divergenceFields],
@@ -208,13 +209,11 @@ export function renderFooter(
   if (visibleWidth(path) + visibleWidth(git) + (git ? 2 : 0) <= width) {
     first.push(required(directory, 'left'), required(git, 'right'));
   } else if (
-    visibleWidth(path) + visibleWidth(branch) + (branch ? 2 : 0) <=
-    width
+    visibleWidth(path) + visibleWidth(branch) + (branch ? 2 : 0) <= width &&
+    visibleWidth(details) <= width
   ) {
     first.push(required(directory, 'left'), required(branch, 'right'));
-    second.push(
-      required([worktree, divergence].filter(Boolean).join(sep), 'right'),
-    );
+    second.push(required(details, 'right'));
   } else if (visibleWidth(path) <= width && visibleWidth(git) <= width) {
     first.push(required(directory, 'left'));
     second.push(required(git, 'left'));
