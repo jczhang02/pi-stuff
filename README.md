@@ -23,7 +23,7 @@ The package also includes ten light and dark [themes](docs/themes.md) from Catpp
 
 The maintained range is Linux Bun-compiled Pi `0.85.1` through `0.87.1`, with direct acceptance of `0.85.1`, `0.86.1` and `0.87.1`. Newer stable versions may be tried before acceptance. See [Pi version support](docs/pi-version-support.md) for actual host runtimes, evidence and the maintenance policy. The development stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Beyond Web access, RTK integration, session naming, themes and conversation UI, the capabilities below describe product direction, not implemented features.
 
-[Conversation UI](docs/ui.md) provides a square-corner welcome, assistant and Thoughts markers, compact native/Web tools, highlighted Write/Edit previews, retrieval groups and global `/ui` settings. [Performance and real-model endurance results](docs/ui-performance.md) are recorded; the UI PR remains draft pending CI validation.
+[Conversation UI](docs/ui.md) provides a square-corner welcome, assistant and Thoughts markers, compact native/Web tools, highlighted Write/Edit previews, retrieval groups and global `/ui` settings. [Performance and real-model endurance results](docs/ui-performance.md) are recorded; see [PR #107](https://github.com/jczhang02/pi-stuff/pull/107) for current CI and review status.
 
 ## About
 

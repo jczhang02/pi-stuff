@@ -22,7 +22,7 @@
 
 维护范围为 Linux Bun 编译版 Pi `0.85.1` 至 `0.87.1`, 直接验收样本为 `0.85.1`、`0.86.1` 和 `0.87.1`. 新稳定版在验收前允许尝试. 实际宿主运行时、证据和维护政策见 [Pi 版本支持](pi-version-support.md). 开发技术栈为 TypeScript、Bun `1.4.0` 和 Effect v4 (`4.0.0-rc.112`), 纯算法保留为普通函数. 除网页访问、RTK 集成、会话命名、主题和会话 UI 外, 下方能力仍是产品方向, 不是已实现功能.
 
-[会话 UI](ui.md)提供直角欢迎页、assistant 与 Thoughts 标识、原生/Web 工具紧凑展示、Write/Edit 高亮预览、检索聚合及全局 `/ui` 设置. [性能及真实模型长会话结果](ui-performance.md)已记录; UI PR 仍等待 CI 验证, 保持草稿.
+[会话 UI](ui.md)提供直角欢迎页、assistant 与 Thoughts 标识、原生/Web 工具紧凑展示、Write/Edit 高亮预览、检索聚合及全局 `/ui` 设置. [性能及真实模型长会话结果](ui-performance.md)已记录; 当前 CI 与审查状态见 [PR #107](https://github.com/jczhang02/pi-stuff/pull/107).
 
 ## 项目目标
 
