@@ -40,6 +40,8 @@ On row one, optional context yields to full directory/Git. On row two, extension
 
 For long identities, directory and branch retain separate left/right anchors on row one when possible, moving working-tree/divergence fields to row two. If the names themselves cannot share a row, row one becomes directory/worktree and row two becomes branch/divergence. At 50 columns this long sample hides runtime metrics entirely so all identity and Git state survives. Individual names beyond the physical viewport use an ellipsis; there is no third row or overflow counter.
 
+Context and cache-hit percentages, third-party state and quota values use the theme's normal text color. Labels and context capacity remain muted. All field separators use the same muted color. This hierarchy changes no text, spacing, priority or width decisions.
+
 Ordinary Git states use neutral text; only conflicts use an error color. `clean` means no changes, `+1` staged, `~1` modified, `?1` untracked, `!1` conflicted, `↑2` ahead and `↓1` behind. Values are file counts and commit divergence, not changed-line counts. The fixtures do not cover every operation such as rebase or detached HEAD. Routine token/cache-read-write details, costs, provider and auto labels remain absent from this reduced layout.
 
 中文: Footer 固定双行、左右分区. 第一行左侧完整目录后是ctx/容量/hit整体, 右侧分支、工作区计数与提交领先/落后. 第二行左侧第三方状态, 右侧模型与思考强度. 同一区域内相邻字段用 `·` 分隔, 两个区域之间仅一个弹性间隙, 区域内部不填充空白. `+1 ~1 ?1` 等复合计数仍是一个 Git 字段, 内部使用普通空格. 自定义标签全部小写, 包括 `codex`; 实际目录、分支、模型和外部值保留原始大小写.
@@ -47,6 +49,8 @@ Ordinary Git states use neutral text; only conflicts use an error color. `clean`
 中文: ctx紧随目录, 精确样式为 `ctx 31%/272k ━━━━━━━━━━ · hit 83.8%`, 容量直接接在百分比后, 斜杠两侧不加空格, 进度条与数值之间一个空格. 容量合入ctx, 不再有独立window字段; ctx/容量/hit整块显隐. 第三方字段仍在左下, 现在从该区域最左端开始. goal/额度作为一个可选整体, 不占Git/模型锚点. 第一行ctx整体让位于完整目录/Git; 第二行扩展、思考强度先于模型退让. 不简写、不零碎回填. 普通50列保留目录、完整Git和模型/强度, 隐藏ctx块; 80列恢复. 显示时容量与十字符连续进度条均完整保留. 本原型不增加扩展API或真实数据读取.
 
 中文: 长身份优先在第一行左右保留目录与分支, 把工作区/提交计数移到第二行. 两个名称也放不下时, 第一行变为左目录/右工作区计数, 第二行为左分支/右领先落后. 该长样例在 50 列隐藏全部运行统计, 保住完整身份和 Git 状态. 单项名称超过物理宽度才使用省略号, 不加第三行或溢出计数. 普通 Git 状态为中性色, 冲突使用错误色. `clean` 为干净, `+1` 暂存、`~1` 修改、`?1` 未跟踪、`!1` 冲突、`↑2` 领先、`↓1` 落后; 数字是文件数与提交数, 不是代码行数. 样例未覆盖 rebase/detached HEAD 等所有操作. token/缓存读写明细、费用、provider和auto继续不常驻.
+
+中文: ctx/hit 百分比、第三方状态和额度数值使用主题正常文字色, 标签和上下文容量保留弱色. 所有字段圆点统一使用弱色. 只调整明暗层级, 不改变文本、间距、优先级或宽度策略.
 
 ## Evidence and limits
 

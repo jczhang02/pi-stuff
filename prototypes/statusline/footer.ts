@@ -119,16 +119,17 @@ export function renderFooter(
     theme.fg('borderMuted', '━'.repeat(10 - filled));
   // Keep the requested context/capacity/hit block intact immediately after dir.
   first.push({
-    text: `${theme.fg('muted', 'ctx')} ${context}%${theme.fg('muted', '/272k')} ${meter} · ${theme.fg('muted', 'hit 83.8%')}`,
+    text: `${theme.fg('muted', 'ctx')} ${theme.fg('text', `${context}%`)}${theme.fg('muted', '/272k')} ${meter}${separator}${theme.fg('muted', 'hit')} ${theme.fg('text', '83.8%')}`,
     side: 'left',
     priority: 90,
   });
   if (identitiesFit && state.scenario !== 'base') {
     second.push({
-      text: theme.fg(
-        'muted',
-        `goal ${state.running ? 'running' : 'active'} · codex used 5h 41% · week 63%`,
-      ),
+      text: [
+        `${theme.fg('muted', 'goal')} ${theme.fg('text', state.running ? 'running' : 'active')}`,
+        `${theme.fg('muted', 'codex used 5h')} ${theme.fg('text', '41%')}`,
+        `${theme.fg('muted', 'week')} ${theme.fg('text', '63%')}`,
+      ].join(separator),
       side: 'left',
       priority: 10,
     });
