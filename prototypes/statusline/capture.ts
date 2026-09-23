@@ -59,10 +59,7 @@ async function capture(session: Session, name: string): Promise<string> {
     'Context stays after the directory',
   );
   if (footer[0]?.includes('ctx')) {
-    assert.match(
-      footer[0],
-      /^~\/dev\/\S+ · ctx 31% ━{10}\/ 272k · hit 83\.8%/u,
-    );
+    assert.match(footer[0], /^~\/dev\/\S+ · ctx 31%\/272k ━{10} · hit 83\.8%/u);
   }
   assert.equal(
     footer.join(' ').includes('ctx'),
@@ -100,7 +97,7 @@ async function capture(session: Session, name: string): Promise<string> {
       'One elastic gap when both zones are populated',
     );
     if (line.includes('ctx'))
-      assert.match(line, /ctx 31% ━{10}\/ 272k · hit 83\.8%/u);
+      assert.match(line, /ctx 31%\/272k ━{10} · hit 83\.8%/u);
   }
   assert.ok(
     lines.slice(start + 2).every(line => line.trim() === ''),
@@ -215,7 +212,7 @@ await runEffect(async () => {
                 );
               if (cols === 150 || (scenario !== 'long' && cols >= 80)) {
                 assert.match(footer, /hit 83\.8%/u);
-                assert.match(footer, /ctx 31% ━{10}/u);
+                assert.match(footer, /ctx 31%\/272k ━{10}/u);
               }
               if (cols === 150)
                 assert.equal(footer, wide, 'Fields must restore after resize');

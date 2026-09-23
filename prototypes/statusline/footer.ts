@@ -119,7 +119,7 @@ export function renderFooter(
     theme.fg('borderMuted', '━'.repeat(10 - filled));
   // Keep the requested context/capacity/hit block intact immediately after dir.
   first.push({
-    text: `${theme.fg('muted', 'ctx')} ${context}% ${meter}${theme.fg('muted', '/ 272k')} · ${theme.fg('muted', 'hit 83.8%')}`,
+    text: `${theme.fg('muted', 'ctx')} ${context}%${theme.fg('muted', '/272k')} ${meter} · ${theme.fg('muted', 'hit 83.8%')}`,
     side: 'left',
     priority: 90,
   });

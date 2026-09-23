@@ -34,7 +34,7 @@ The footer uses two rows with left and right anchors:
 
 Adjacent fields in each zone use `·`. One elastic gap separates the two zones and puts their outer fields against the terminal edges. Compound values such as `+1 ~1 ?1` remain one Git field with ordinary internal spaces. No alignment padding appears within a zone. Authored labels are lowercase, including `codex`; actual directory, branch, model and external values retain their original casing.
 
-Context follows the directory with the exact format `ctx 31% ━━━━━━━━━━/ 272k · hit 83.8%`. The slash touches the meter and has one following space. Capacity is part of ctx; there is no separate window field. The complete context/capacity/hit block is shown or hidden together. Third-party statuses remain in the lower-left zone, now starting at its left edge. The goal/quota sample is an optional atomic group. It never takes over the Git or model anchors and is hidden first when space runs out. A future integration can pass additional complete status fields into this zone; this prototype does not add an extension API or poll real providers.
+Context follows the directory with the exact format `ctx 31%/272k ━━━━━━━━━━ · hit 83.8%`. Capacity attaches directly to the percentage, with no spaces around the slash; the meter follows after one space. Capacity is part of ctx; there is no separate window field. The complete context/capacity/hit block is shown or hidden together. Third-party statuses remain in the lower-left zone, now starting at its left edge. The goal/quota sample is an optional atomic group. It never takes over the Git or model anchors and is hidden first when space runs out. A future integration can pass additional complete status fields into this zone; this prototype does not add an extension API or poll real providers.
 
 On row one, optional context yields to full directory/Git. On row two, extension status and then thinking effort yield before the model. Fields disappear whole, without abbreviations or smaller-field backfill. At 50 columns, the ordinary sample retains directory, complete Git state and model/effort, hiding the context block; it returns at 80 columns. Visible context always retains the capacity and ten continuous meter characters.
 
@@ -44,7 +44,7 @@ Ordinary Git states use neutral text; only conflicts use an error color. `clean`
 
 中文: Footer 固定双行、左右分区. 第一行左侧完整目录后是ctx/容量/hit整体, 右侧分支、工作区计数与提交领先/落后. 第二行左侧第三方状态, 右侧模型与思考强度. 同一区域内相邻字段用 `·` 分隔, 两个区域之间仅一个弹性间隙, 区域内部不填充空白. `+1 ~1 ?1` 等复合计数仍是一个 Git 字段, 内部使用普通空格. 自定义标签全部小写, 包括 `codex`; 实际目录、分支、模型和外部值保留原始大小写.
 
-中文: ctx紧随目录, 精确样式为 `ctx 31% ━━━━━━━━━━/ 272k · hit 83.8%`, 斜杠贴进度条、后面一个空格. 容量合入ctx, 不再有独立window字段; ctx/容量/hit整块显隐. 第三方字段仍在左下, 现在从该区域最左端开始. goal/额度作为一个可选整体, 不占Git/模型锚点. 第一行ctx整体让位于完整目录/Git; 第二行扩展、思考强度先于模型退让. 不简写、不零碎回填. 普通50列保留目录、完整Git和模型/强度, 隐藏ctx块; 80列恢复. 显示时容量与十字符连续进度条均完整保留. 本原型不增加扩展API或真实数据读取.
+中文: ctx紧随目录, 精确样式为 `ctx 31%/272k ━━━━━━━━━━ · hit 83.8%`, 容量直接接在百分比后, 斜杠两侧不加空格, 进度条与数值之间一个空格. 容量合入ctx, 不再有独立window字段; ctx/容量/hit整块显隐. 第三方字段仍在左下, 现在从该区域最左端开始. goal/额度作为一个可选整体, 不占Git/模型锚点. 第一行ctx整体让位于完整目录/Git; 第二行扩展、思考强度先于模型退让. 不简写、不零碎回填. 普通50列保留目录、完整Git和模型/强度, 隐藏ctx块; 80列恢复. 显示时容量与十字符连续进度条均完整保留. 本原型不增加扩展API或真实数据读取.
 
 中文: 长身份优先在第一行左右保留目录与分支, 把工作区/提交计数移到第二行. 两个名称也放不下时, 第一行变为左目录/右工作区计数, 第二行为左分支/右领先落后. 该长样例在 50 列隐藏全部运行统计, 保住完整身份和 Git 状态. 单项名称超过物理宽度才使用省略号, 不加第三行或溢出计数. 普通 Git 状态为中性色, 冲突使用错误色. `clean` 为干净, `+1` 暂存、`~1` 修改、`?1` 未跟踪、`!1` 冲突、`↑2` 领先、`↓1` 落后; 数字是文件数与提交数, 不是代码行数. 样例未覆盖 rebase/detached HEAD 等所有操作. token/缓存读写明细、费用、provider和auto继续不常驻.
 
