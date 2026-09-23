@@ -11,7 +11,6 @@ export default function statuslinePrototype(pi: ExtensionAPI): void {
     Schema.Literals(['base', 'extended', 'long']),
   )(process.env.PI_STATUSLINE_SCENARIO);
   let completed = 0;
-  let running = false;
   let redraw = () => {};
 
   pi.registerProvider('statusline-sample', {
@@ -112,7 +111,6 @@ export default function statuslinePrototype(pi: ExtensionAPI): void {
           renderFooter(width, theme, {
             scenario,
             completed,
-            running,
             model: ctx.model?.id ?? 'gpt-6-astra',
             thinking: pi.getThinkingLevel(),
           }),
@@ -124,10 +122,6 @@ export default function statuslinePrototype(pi: ExtensionAPI): void {
     });
     pi.sendUserMessage('Show the current branch and run the checks.');
   });
-  pi.on('agent_start', () => {
-    running = true;
-    redraw();
-  });
   pi.on('message_end', event => {
     if (
       event.message.role === 'assistant' &&
@@ -136,7 +130,6 @@ export default function statuslinePrototype(pi: ExtensionAPI): void {
       completed += 1;
   });
   pi.on('agent_end', () => {
-    running = false;
     redraw();
   });
 }

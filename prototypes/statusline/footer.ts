@@ -8,7 +8,6 @@ export interface FooterState {
   model: string;
   thinking: string;
   completed: number;
-  running: boolean;
 }
 
 interface Field {
@@ -59,6 +58,10 @@ export function renderFooter(
     state.scenario === 'long'
       ? '~/dev/研究工具/pi-stuff-statusline'
       : '~/dev/pi-stuff';
+  const basename = project.lastIndexOf('/') + 1;
+  const directory =
+    theme.fg('muted', project.slice(0, basename)) +
+    theme.fg('accent', theme.bold(project.slice(basename)));
   const branch =
     state.scenario === 'long'
       ? 'codex/statusline-responsive-prototype'
@@ -66,13 +69,13 @@ export function renderFooter(
   const worktree =
     state.scenario === 'base'
       ? theme.fg('muted', 'clean')
-      : theme.fg('muted', '+1 ~1 ') +
+      : theme.fg('text', '+1 ~1 ') +
         (state.scenario === 'long'
           ? theme.fg('error', '!1')
-          : theme.fg('muted', '?1'));
+          : theme.fg('text', '?1'));
   const divergence =
     state.scenario === 'base' ? '' : theme.fg('muted', '↑2 ↓1');
-  const git = [theme.fg('muted', branch), worktree, divergence]
+  const git = [theme.fg('text', branch), worktree, divergence]
     .filter(Boolean)
     .join(separator);
   const required = (text: string, side: Field['side']): Field => ({
@@ -84,11 +87,11 @@ export function renderFooter(
   const second: Field[] = [];
   const identitiesFit = visibleWidth(project) + 2 + visibleWidth(git) <= width;
   if (identitiesFit) {
-    first.push(required(theme.bold(project), 'left'), required(git, 'right'));
+    first.push(required(directory, 'left'), required(git, 'right'));
   } else if (visibleWidth(project) + 2 + visibleWidth(branch) <= width) {
     first.push(
-      required(theme.bold(project), 'left'),
-      required(theme.fg('muted', branch), 'right'),
+      required(directory, 'left'),
+      required(theme.fg('text', branch), 'right'),
     );
     second.push(
       required([worktree, divergence].filter(Boolean).join(separator), 'left'),
@@ -96,7 +99,7 @@ export function renderFooter(
   } else {
     const pathWidth = Math.max(0, width - visibleWidth(worktree) - 2);
     first.push(
-      required(theme.bold(truncateToWidth(project, pathWidth, '…')), 'left'),
+      required(truncateToWidth(directory, pathWidth, '…'), 'left'),
       required(worktree, 'right'),
     );
     const branchWidth = Math.max(
@@ -105,7 +108,7 @@ export function renderFooter(
     );
     second.push(
       required(
-        theme.fg('muted', truncateToWidth(branch, branchWidth, '…')),
+        theme.fg('text', truncateToWidth(branch, branchWidth, '…')),
         'left',
       ),
     );
@@ -115,25 +118,14 @@ export function renderFooter(
   const context = Math.min(100, 30 + state.completed);
   const filled = Math.round(context / 10);
   const meter =
-    theme.fg('thinkingMedium', '━'.repeat(filled)) +
+    theme.fg('accent', '━'.repeat(filled)) +
     theme.fg('borderMuted', '━'.repeat(10 - filled));
   // Keep the requested context/capacity/hit block intact immediately after dir.
   first.push({
-    text: `${theme.fg('muted', 'ctx')} ${theme.fg('text', `${context}%`)}${theme.fg('muted', '/272k')} ${meter}${separator}${theme.fg('muted', 'hit')} ${theme.fg('text', '83.8%')}`,
+    text: `${theme.fg('muted', 'ctx')} ${theme.fg('accent', `${context}%`)}${theme.fg('muted', '/272k')} ${meter}${separator}${theme.fg('muted', 'hit')} ${theme.fg('text', '83.8%')}`,
     side: 'left',
     priority: 90,
   });
-  if (identitiesFit && state.scenario !== 'base') {
-    second.push({
-      text: [
-        `${theme.fg('muted', 'goal')} ${theme.fg('text', state.running ? 'running' : 'active')}`,
-        `${theme.fg('muted', 'codex used 5h')} ${theme.fg('text', '41%')}`,
-        `${theme.fg('muted', 'week')} ${theme.fg('text', '63%')}`,
-      ].join(separator),
-      side: 'left',
-      priority: 10,
-    });
-  }
   // If the branch occupies the second row, it owns that row's right-hand budget too.
   if (second.every(field => field.side !== 'right')) {
     second.push(

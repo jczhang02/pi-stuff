@@ -71,15 +71,7 @@ async function capture(session: Session, name: string): Promise<string> {
     /R620k|W8k|est \$|openai-codex|auto|window/u,
     'Routine detail fields do not return at wider widths',
   );
-  if (
-    footer.join(' ').includes('goal') ||
-    footer.join(' ').includes('codex used')
-  ) {
-    assert.ok(
-      footer[1]?.includes('goal active · codex used 5h 41% · week 63%'),
-      'Extension group must be complete, not a clipped resize frame',
-    );
-  }
+  assert.doesNotMatch(footer.join(' '), /goal|codex used|week/u);
   for (const line of footer) {
     assert.equal(
       visibleWidth(line),
