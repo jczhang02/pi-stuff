@@ -183,3 +183,29 @@ test('cache hit follows the selected native branch and ignores failed responses'
   session.branch(first);
   expect(cacheHit(session.getBranch())).toBe(83.8);
 });
+
+test('a fitting directory gets its own row before Git can force truncation', () => {
+  const theme = getThemeByName('dark');
+  if (!theme) throw new Error('Missing built-in theme');
+  const directory = '/home/jc/dev/customer-platform-integration';
+  const lines = renderFooter(50, theme, {
+    ...base,
+    directory,
+    git: {
+      kind: 'ready',
+      snapshot: {
+        branch: 'feature/statusline',
+        staged: 1,
+        modified: 2,
+        untracked: 3,
+        conflicts: 0,
+        ahead: 0,
+        behind: 0,
+        operation: '',
+      },
+    },
+  }).map(Bun.stripANSI);
+  expect(lines[0]).toBe(directory);
+  expect(lines[1]).toContain('feature/statusline · +1 · ~2 · ?3');
+  expect(lines.join('\n')).not.toContain('…');
+});

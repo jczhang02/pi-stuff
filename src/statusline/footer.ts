@@ -186,6 +186,9 @@ export function renderFooter(
     second.push(
       required([worktree, divergence].filter(Boolean).join(sep), 'right'),
     );
+  } else if (visibleWidth(path) <= width && visibleWidth(git) <= width) {
+    first.push(required(directory, 'left'));
+    second.push(required(git, 'left'));
   } else {
     first.push(
       required(
