@@ -162,3 +162,19 @@ Grep、Find 和 Ls 现与 Read 共用同一 TUI 适配器. 已删除 UI 重新�
 Write 和 Edit 现通过同一 TUI 查询装饰宿主定义, 已删除替换注册及原生工厂调用. 执行和 schema 保留宿主引用, 既有预览、语法高亮及 diff 组件不变. renderer 输入在展示边界解码.
 
 新增真实宿主回归在修改前因 reload 退回原生样式而失败. 修改后, 两个支持宿主在 reload、新建会话再 resume 后均保留 Write 预览和 Edit diff, 即使磁盘文件已被修改. 展开使用记录中的正文与 patch. 测试确认恢复不会改写会话或文件. 加上既有预览、代码设置、主题/宽度、部分参数及取消检查, 每个宿主通过11项测试、107次断言. Bash 和缺失的 Web 历史展示仍待接入; 这些短测试不代表长会话性能已验收.
+
+### Bash 执行和历史
+
+Bash 现使用同一 TUI 适配器, 不替换可执行定义. UI 不再重新创建 shell operations 或复制部分 shell 设置, Pi 保留实际执行函数及其选项和 hooks. 公开执行开始/结束事件测量所观察的工具执行区间; 已完成组件保留自己的耗时, agent run 和会话边界清除待处理观测.
+
+原生成功结果没有暴露内部退出码, 零和 null 都可能走到成功返回. 展示因此使用 `Completed`, 不推断为 `Exit code 0`. 原生失败尾注仍提供明确的退出码、超时和取消信息. 耗时包含观察到的工具执行区间, 不只是子进程时间. 恢复历史时省略未记录的耗时, 不重新运行命令.
+
+两个支持宿主各通过12项针对性测试、103次断言, 覆盖历史、会话字节与命令副作用不变、shell 设置、失败输出截断和日志、空输出、启动错误、超时/取消及跨主题和宽度的流式展开. 新测试首先因成功摘要变化而失败, 迁移后通过完整 reload/resume 场景; 本次没有独立观察 Bash 历史失败的红阶段.
+
+以下为编译 Pi 0.87.0 / Bun 1.4.0 的当前和 reload 后结果, 使用确定性 provider、Pi 暗色主题及100×36终端. Terminal Control 导出所捕获的 ANSI, 显式使用 `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. 这是终端导出, 不是 Ghostty 窗口截图. 命令输出为 fixture 文本, 不代表图中描述的 lint/type 检查实际运行过.
+
+![Bash 当前结果和实测耗时](../../assets/ui/bash-live-dark-100.png)
+
+![Bash 恢复历史, 不编造耗时](../../assets/ui/bash-history-dark-100.png)
+
+缺失的 Web 历史展示及完整性能/兼容验收仍待完成.

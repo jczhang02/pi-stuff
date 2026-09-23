@@ -105,7 +105,7 @@ test('Bash disclosure follows streamed output, completion, width and theme', asy
     const complete = await host.terminal.screen.text();
     expect(complete).toContain('⎿ FIRST');
     expect(complete).toContain('2 more lines');
-    expect(complete).toContain('Exit code 0');
+    expect(complete).toContain('Completed');
     expect(complete).not.toContain('FINAL_ROW');
     await host.terminal.keyboard.press('Control+O');
     await host.terminal.screen.waitForText('FINAL_ROW', {timeoutMs: 5000});

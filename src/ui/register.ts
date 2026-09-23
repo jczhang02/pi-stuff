@@ -1,9 +1,4 @@
-import {
-  getAgentDir,
-  SettingsManager,
-  type ExtensionAPI,
-  type BashToolOptions,
-} from '@earendil-works/pi-coding-agent';
+import type {ExtensionAPI} from '@earendil-works/pi-coding-agent';
 import {registerWelcome} from './welcome';
 import {registerAssistantDisplay} from './assistant';
 import {RetrievalGroups} from './groups';
@@ -47,6 +42,7 @@ export function registerUi(
         )
     )
       return tool;
+    if (tool.name === 'bash') return bash.display(tool, settings);
     if (tool.name === 'write') return displayWrite(tool, settings);
     if (tool.name === 'edit') return displayEdit(tool, settings);
     const label = localTools.get(tool.name);
@@ -74,25 +70,6 @@ export function registerUi(
         : undefined,
       groups,
     );
-  });
-  pi.on('session_start', (_event, ctx) => {
-    if (ctx.mode !== 'tui') return;
-    // Only replace a native definition. Other extensions retain their renderers.
-    const tools = pi.getAllTools();
-    const hostSettings = SettingsManager.create(ctx.cwd, getAgentDir(), {
-      projectTrusted: ctx.isProjectTrusted(),
-    });
-    const native = (name: string) =>
-      tools.some(
-        tool => tool.name === name && tool.sourceInfo.source === 'builtin',
-      );
-    if (!native('bash')) return;
-    const options: BashToolOptions = {};
-    const prefix = hostSettings.getShellCommandPrefix();
-    const shell = hostSettings.getShellPath();
-    if (prefix !== undefined) options.commandPrefix = prefix;
-    if (shell !== undefined) options.shellPath = shell;
-    pi.registerTool(bash.create(ctx.cwd, options, settings));
   });
   return groups;
 }

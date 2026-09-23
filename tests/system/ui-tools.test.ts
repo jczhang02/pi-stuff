@@ -466,7 +466,7 @@ test('Bash reports the actual exit status and duration outside a folded long res
     expect(failed).not.toMatch(/^\s+fifth$/mu);
     await host.invoke('bash', JSON.stringify({command: 'printf success'}));
     const successful = await host.terminal.screen.text();
-    expect(successful).toMatch(/Exit code 0 · \d+\.\d+s/u);
+    expect(successful).toMatch(/Completed · \d+\.\d+s/u);
     expect(successful).toContain('⎿ success');
   } finally {
     await host.close();
@@ -512,7 +512,7 @@ test('Bash keeps an empty outcome visible without inventing hidden output rows',
     );
     const screen = await host.terminal.screen.text();
     expect(screen).toContain('⎿ (no output)');
-    expect(screen).toContain('Exit code 0');
+    expect(screen).toContain('Completed');
     expect(screen).not.toContain('more line');
   } finally {
     await host.close();
@@ -553,7 +553,7 @@ test('Bash timeout and cancellation remain visible when output is hidden', async
     expect(cancelled).toMatch(/⎿ Cancelled · \d+\.\d+s/u);
     expect(cancelled).toContain('Error: The operation was aborted.');
     await host.invoke('bash', JSON.stringify({command: 'printf AFTER_CANCEL'}));
-    expect(await host.terminal.screen.text()).toContain('Exit code 0');
+    expect(await host.terminal.screen.text()).toContain('Completed');
   } finally {
     await host.close();
   }
@@ -572,7 +572,7 @@ test('Bash shows native setup errors even when the normal output preview is disa
     const screen = await host.terminal.screen.text();
     expect(screen).toContain(result);
     expect(screen).not.toContain('more line');
-    expect(screen).not.toContain('Exit code 0');
+    expect(screen).not.toContain('Completed');
   } finally {
     await host.close();
   }

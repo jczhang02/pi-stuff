@@ -162,3 +162,19 @@ A real-host regression checks mixed retrieval grouping, reload and new-session/r
 Write and Edit now decorate the host definitions through the same TUI lookup. Their replacement registrations and native factory calls are removed. Execution and schemas retain the host references; the existing preview, syntax-highlighting and diff components are unchanged. Renderer inputs are decoded at the display boundary.
 
 The new real-host regression failed on reload before this change. Afterward, both supported hosts retain Write previews and Edit diffs through reload and new-session/resume, even after the file is changed on disk. Expanding uses the recorded content and patch. The test checks that restoration neither rewrites the session nor changes the file. Together with existing preview, code-setting, theme/width, partial-argument and cancellation checks, each host passed 11 tests and 107 assertions. Bash and absent Web history remain pending; these short runs do not establish long-session performance.
+
+### Bash execution and history
+
+Bash now uses the same TUI adapter without replacing its executable definition. The UI no longer recreates shell operations or copies selected shell settings. Pi retains the actual execution function, including its options and hooks. Public execution start/end events measure the observed tool interval; completed components retain their own duration, and agent-run/session boundaries clear pending observations.
+
+The native successful result does not expose its internal exit code: both zero and null can reach that return path. The display therefore says `Completed`, rather than inferring `Exit code 0`. Native failure trailers still supply numeric exit codes, timeout and cancellation. Elapsed time includes the observed tool execution interval, not just the child process. Restored history omits unrecorded durations and never reruns commands.
+
+Both supported hosts passed 12 focused tests and 103 assertions covering history, unchanged records and command side effects, shell settings, failed-output truncation/logs, empty output, setup errors, timeout/cancellation and streaming disclosure across themes and widths. The new test first failed on the changed success summary; it then passed the complete reload/resume scenario after migration. This is not a separately observed red reproduction of the Bash history failure.
+
+These captures show live and reloaded results on compiled Pi 0.87.0 / Bun 1.4.0, using a deterministic provider and Pi dark theme at 100×36 cells. Terminal Control exported the captured ANSI with `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`. These are terminal exports, not Ghostty-window screenshots. The command output is fixture text; it does not claim that the depicted lint/type checks ran.
+
+![Live Bash results with observed elapsed time](assets/ui/bash-live-dark-100.png)
+
+![Restored Bash results without invented elapsed time](assets/ui/bash-history-dark-100.png)
+
+Absent Web history and complete performance/compatibility acceptance remain pending.

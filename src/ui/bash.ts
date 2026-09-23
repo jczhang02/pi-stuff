@@ -1,11 +1,8 @@
+import {Schema} from 'effect';
 import {ToolHeading} from './heading';
 import {
-  createBashToolDefinition,
-  createLocalBashOperations,
-  type BashToolDetails,
   type ExtensionAPI,
   type ToolDefinition,
-  type BashToolOptions,
   type Theme,
 } from '@earendil-works/pi-coding-agent';
 import {
@@ -17,14 +14,20 @@ import {
 } from '@earendil-works/pi-tui';
 import type {UiSettings} from './settings';
 
-interface BashOutcome {
-  exitCode?: number | null;
-  elapsedMs?: number;
-  failure?: 'Cancelled' | 'Timed out' | 'Failed';
-}
-interface BashState {
-  outcome?: BashOutcome;
-}
+const BashArgs = Schema.Struct({
+  command: Schema.optional(Schema.String),
+  timeout: Schema.optional(Schema.Number),
+});
+const BashDetails = Schema.Struct({
+  fullOutputPath: Schema.optional(Schema.String),
+  truncation: Schema.optional(
+    Schema.Struct({
+      truncated: Schema.Boolean,
+      outputLines: Schema.Number,
+      totalLines: Schema.Number,
+    }),
+  ),
+});
 interface ResultNotice {
   text: string;
   color: 'muted' | 'error' | 'warning';
@@ -42,6 +45,7 @@ class BashResult implements Component {
     private readonly metadata: ResultNotice[],
     private readonly theme: Theme,
     private readonly previewLines: number,
+    readonly elapsedMs: number | undefined,
   ) {}
 
   invalidate() {
@@ -103,68 +107,42 @@ class BashResult implements Component {
 }
 
 export class BashDisplay {
-  private readonly outcomes = new Map<string, BashOutcome>();
-  private generation = 0;
+  private readonly starts = new Map<string, number>();
+  private readonly durations = new Map<string, number>();
 
   constructor(pi: ExtensionAPI) {
-    // Results move into the native row state when rendered. Unobserved results
-    // (for example, a session closed during execution) never outlive the run.
+    pi.on('tool_execution_start', event => {
+      if (event.toolName === 'bash')
+        this.starts.set(event.toolCallId, performance.now());
+    });
+    pi.on('tool_execution_end', event => {
+      const start = this.starts.get(event.toolCallId);
+      if (start === undefined) return;
+      this.starts.delete(event.toolCallId);
+      this.durations.set(event.toolCallId, performance.now() - start);
+    });
+    // Completed observations move into their rendered components. Unrendered
+    // observations never outlive the agent run; restored history has no timing.
     const clear = () => {
-      this.generation++;
-      this.outcomes.clear();
+      this.starts.clear();
+      this.durations.clear();
     };
     pi.on('agent_end', clear);
     pi.on('session_start', clear);
     pi.on('session_shutdown', clear);
   }
 
-  create(cwd: string, options: BashToolOptions, settings: UiSettings) {
-    const native = createBashToolDefinition(cwd, options);
-    const operations = options.operations ?? createLocalBashOperations(options);
-    const tool: ToolDefinition<
-      typeof native.parameters,
-      BashToolDetails | undefined,
-      BashState
-    > = {
-      ...native,
+  display(definition: ToolDefinition, settings: UiSettings) {
+    const tool: ToolDefinition = {
+      ...definition,
       renderShell: 'self',
-      execute: async (id, args, signal, onUpdate, ctx) => {
-        const generation = this.generation;
-        const outcome: BashOutcome = {};
-        // Pi still owns spawning, output retention, cancellation and errors.
-        // A per-call closure keeps observations separate during parallel calls.
-        const observed = createBashToolDefinition(cwd, {
-          ...options,
-          operations: {
-            async exec(...parameters) {
-              const start = performance.now();
-              try {
-                const result = await operations.exec(...parameters);
-                outcome.exitCode = result.exitCode;
-                return result;
-              } catch (error) {
-                outcome.failure =
-                  error instanceof Error && error.message === 'aborted'
-                    ? 'Cancelled'
-                    : error instanceof Error &&
-                        error.message.startsWith('timeout:')
-                      ? 'Timed out'
-                      : 'Failed';
-                throw error;
-              } finally {
-                outcome.elapsedMs = performance.now() - start;
-              }
-            },
-          },
-        });
-        try {
-          return await observed.execute(id, args, signal, onUpdate, ctx);
-        } finally {
-          if (generation === this.generation) this.outcomes.set(id, outcome);
-        }
-      },
       renderCall: (args, theme, context) =>
-        new ToolHeading('Bash', args.command ?? '', theme, context),
+        new ToolHeading(
+          'Bash',
+          Schema.decodeUnknownSync(BashArgs)(args).command ?? '',
+          theme,
+          context,
+        ),
       renderResult: (result, options, theme, context) => {
         let output = stripTerminalSequences(
           result.content
@@ -175,13 +153,13 @@ export class BashDisplay {
         ).replace(/\n$/u, '');
         const metadata: ResultNotice[] = [];
         let showError = false;
+        let elapsedMs =
+          context.lastComponent instanceof BashResult
+            ? context.lastComponent.elapsedMs
+            : undefined;
         if (!options.isPartial) {
-          const observed = this.outcomes.get(context.toolCallId);
-          if (observed) {
-            context.state.outcome = observed;
-            this.outcomes.delete(context.toolCallId);
-          }
-          const outcome = context.state.outcome;
+          elapsedMs = this.durations.get(context.toolCallId) ?? elapsedMs;
+          this.durations.delete(context.toolCallId);
           // These are Pi's own final error trailers, not a parser for command/test output.
           const trailer = context.isError
             ? /(?:^|\n\n)(Command exited with code (\d+)|Command aborted|Command timed out after [^\n]+ seconds)$/u.exec(
@@ -190,29 +168,33 @@ export class BashDisplay {
             : null;
           // Setup/spawn errors are the result itself, not foldable command output.
           showError = context.isError && trailer === null;
-          let label =
-            outcome?.exitCode !== undefined
-              ? outcome.exitCode === null
-                ? 'Exit status unavailable'
-                : `Exit code ${outcome.exitCode}`
-              : outcome?.failure;
-          if (!label && trailer)
-            label = trailer[2] ? `Exit code ${trailer[2]}` : trailer[1];
-          if (!label && context.isError) label = 'Failed';
+          // Native success does not expose whether exitCode was zero or null.
+          // Only report numeric status when Pi supplies its own error trailer.
+          const label = trailer?.[2]
+            ? `Exit code ${trailer[2]}`
+            : trailer?.[1] === 'Command aborted'
+              ? 'Cancelled'
+              : trailer?.[1]?.startsWith('Command timed out')
+                ? 'Timed out'
+                : context.isError
+                  ? 'Failed'
+                  : 'Completed';
           if (trailer)
             output = output.slice(0, trailer.index).replace(/\n$/u, '');
-          if (label)
-            metadata.push({
-              text: `${label}${outcome?.elapsedMs === undefined ? '' : ` · ${(outcome.elapsedMs / 1000).toFixed(1)}s`}`,
-              color: context.isError ? 'error' : 'muted',
-            });
-        }
-        if (context.args.timeout !== undefined)
           metadata.push({
-            text: `timeout ${context.args.timeout}s`,
+            text: `${label}${elapsedMs === undefined ? '' : ` · ${(elapsedMs / 1000).toFixed(1)}s`}`,
+            color: context.isError ? 'error' : 'muted',
+          });
+        }
+        const args = Schema.decodeUnknownSync(BashArgs)(context.args);
+        if (args.timeout !== undefined)
+          metadata.push({
+            text: `timeout ${args.timeout}s`,
             color: 'muted',
           });
-        const {truncation, fullOutputPath} = result.details ?? {};
+        const {truncation, fullOutputPath} = Schema.decodeUnknownSync(
+          BashDetails,
+        )(result.details ?? {});
         // Failed native Bash calls discard details but retain this final notice.
         const footer =
           context.isError || truncation?.truncated
@@ -243,6 +225,7 @@ export class BashDisplay {
           options.isPartial
             ? (settings.bashRunningPreviewLines ?? 2)
             : (settings.bashPreviewLines ?? 3),
+          elapsedMs,
         );
       },
     };
