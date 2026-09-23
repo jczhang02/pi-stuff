@@ -25,7 +25,7 @@ A Pi host version with recorded acceptance evidence for a specific Pi Stuff revi
 A complete textual mention of a skill in the `/skill:<name>` form. A reference alone does not establish that the skill is installed or invoked.
 
 **Highlight keyword**:
-User-selected literal text that receives the same visual emphasis as a skill reference in the editor draft. Its presence does not request an action.
+Editor text selected by a user-configured matching rule for the same visual emphasis as a skill reference. A match does not request an action.
 
 **Fenced visualization**:
 A display of a chart or tree described by a complete Markdown code block. The visualization and its original message text represent the same conversation content.
