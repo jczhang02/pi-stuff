@@ -36,7 +36,7 @@ Pi executes a validated copy of tool arguments but gives renderers the original 
 
 ## Write
 
-Write retains native file execution and shows the written source with Pi syntax highlighting. The compact result shows three rendered rows and a hidden-row count; native disclosure reveals the complete retained source. The result summary counts source lines rather than terminal wrapping. Error results retain the actual tool error text.
+Write retains native file execution and shows the written source with Pi syntax highlighting and a green background. The compact result shows three rendered rows and a hidden-row count; native disclosure reveals the complete retained source. The result summary counts source lines rather than terminal wrapping. Error results retain the actual tool error text.
 
 While model arguments are still streaming, the tool heading stays visible without claiming a completed write. Real-host tests check typing, resizing to 60 columns, completion and Esc before the arguments finish. The cancelled call creates no file, and the next turn can write normally.
 
@@ -45,6 +45,8 @@ CRLF content uses the same display normalization as native Write, so previews do
 ## Edit
 
 Edit renders the native result patch with one line-number gutter, removal numbers from the old file and addition/context numbers from the new file. It highlights the available old and new source separately within each hunk, adds semantic backgrounds and shows six rendered rows before disclosure. Wrapped rows do not repeat the gutter. The summary counts added and removed source lines. Opening an old result uses its recorded patch even if the file has since changed. Syntax context outside the recorded hunks is unavailable.
+
+The built-in dark/light palettes and the bundled Catppuccin Latte palette use stronger green/red fills within code results. Color extends to the right edge of the code area; context lines retain the terminal background. Custom palettes with source metadata and indexed-color terminals retain their supplied semantic fills. An anonymous in-memory theme using a stock name and identical colors cannot be distinguished from that stock theme. This does not change the global theme or terminal palette.
 
 ## Retrieval tools
 
@@ -110,7 +112,7 @@ Add `ui` to the global `pi-stuff.json` beside existing `web`, `tools` and `rtk` 
 
 `enabled` defaults to `true`; `false` leaves native tool rendering in place. All preview limits are nonnegative integers, with the defaults shown above. Zero hides the compact body while retaining the summary and hidden-row count. Limits do not change model-visible output, upstream truncation or expanded content.
 
-`codeHighlighting` controls syntax colors in Write and Edit. `diffLineNumbers` and `diffBackgrounds` independently control the diff gutter numbers and addition/removal backgrounds. All three default to `true`. Disabling them preserves source text, `+/-` markers and native execution.
+`codeHighlighting` controls syntax colors in Write and Edit. `diffLineNumbers` and `diffBackgrounds` independently control the diff gutter numbers and addition/removal backgrounds, including the Write preview background. All three default to `true`. Disabling them preserves source text, `+/-` markers and native execution.
 
 Open `/ui` for the global switch, retrieval grouping, preview limits and code presentation. The panel uses Pi's SettingsList and remains available when UI presentation is disabled. Settings are saved immediately; use `/reload` to apply them. A stale save is rejected if the file changed externally. Saving retains other configuration sections. Theme and Hide thinking remain in Pi's own settings.
 

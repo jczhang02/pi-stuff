@@ -30,6 +30,11 @@ test('Global code presentation controls change rendering while preserving writte
     expect(
       sourceStyle(highlighted, 'const before = 1;').foregrounds.size,
     ).toBeGreaterThan(1);
+    expect(
+      sourceStyle(highlighted, 'const before = 1;').backgrounds.has(
+        JSON.stringify(highlighted.frame.background),
+      ),
+    ).toBe(false);
     await host.invoke(
       'edit',
       JSON.stringify({
@@ -99,6 +104,9 @@ test('Global code presentation controls change rendering while preserving writte
         path: 'after.ts',
         edits: [{oldText: 'const value = 1;', newText: 'const value = 2;'}],
       }),
+    );
+    expect(sourceStyle(plainWrite, 'const value = 1;').backgrounds).toEqual(
+      new Set([JSON.stringify(plainWrite.frame.background)]),
     );
     const plainDiff = await host.terminal.screen.capture();
     expect(plainDiff.text).toMatch(/^     - const value = 1;\s*$/mu);

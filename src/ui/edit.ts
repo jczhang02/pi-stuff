@@ -2,6 +2,7 @@ import type {ToolView} from './tool-lookup';
 import {Schema} from 'effect';
 import {ToolHeading} from './heading';
 import {ResultBlock} from './result-block';
+import {codeBackground} from './code-background';
 import type {UiSettings} from './settings';
 import {
   getLanguageFromPath,
@@ -12,6 +13,7 @@ import {
   truncateToWidth,
   wrapTextWithAnsi,
   stripTerminalSequences,
+  visibleWidth,
   type Component,
 } from '@earendil-works/pi-tui';
 
@@ -157,9 +159,13 @@ class EditDiff implements Component {
             const painted =
               line.kind === ' ' || this.settings.diffBackgrounds === false
                 ? content
-                : this.theme.bg(
-                    line.kind === '+' ? 'toolSuccessBg' : 'toolErrorBg',
-                    content,
+                : codeBackground(
+                    this.theme,
+                    line.kind === '+',
+                    content +
+                      ' '.repeat(
+                        Math.max(0, width - 5 - visibleWidth(content)),
+                      ),
                   );
             body.push(truncateToWidth(`     ${painted}`, width));
           }

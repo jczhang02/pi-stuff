@@ -2,6 +2,7 @@ import type {ToolView} from './tool-lookup';
 import {Schema} from 'effect';
 import {ToolHeading} from './heading';
 import {ResultBlock} from './result-block';
+import {codeBackground} from './code-background';
 import type {UiSettings} from './settings';
 import {
   getLanguageFromPath,
@@ -12,6 +13,7 @@ import {
   wrapTextWithAnsi,
   truncateToWidth,
   stripTerminalSequences,
+  visibleWidth,
   type Component,
 } from '@earendil-works/pi-tui';
 
@@ -77,7 +79,17 @@ class WrittenContent implements Component {
         ),
         width,
       ),
-      ...visible.map(line => truncateToWidth(`     ${line}`, width)),
+      ...visible.map(line => {
+        const painted =
+          this.settings.diffBackgrounds === false
+            ? line
+            : codeBackground(
+                this.theme,
+                true,
+                line + ' '.repeat(Math.max(0, width - 5 - visibleWidth(line))),
+              );
+        return truncateToWidth(`     ${painted}`, width);
+      }),
     ];
     const hidden = this.body.length - visible.length;
     if (hidden > 0)
