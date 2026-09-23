@@ -11,25 +11,42 @@ export interface FooterState {
   running: boolean;
 }
 
-interface Group {
-  priority: number;
+interface Field {
   text: string;
+  side: 'left' | 'right';
+  priority: number;
 }
 
-const joinGroups = (groups: string[]) => groups.filter(Boolean).join('  ');
-
-// Drop complete secondary groups, without backfilling gaps with small fields.
-function fit(prefix: string, groups: Group[], width: number): string {
-  const selected = [...groups];
-  const line = () => joinGroups([prefix, ...selected.map(group => group.text)]);
-  while (visibleWidth(line()) > width && selected.length > 0) {
-    const lowest = Math.min(...selected.map(group => group.priority));
+// Each zone uses dots; only the gap between left/right zones stretches.
+function row(width: number, fields: Field[], separator: string): string {
+  const selected = [...fields];
+  const zone = (side: Field['side']) =>
+    selected
+      .filter(field => field.side === side)
+      .map(field => field.text)
+      .join(separator);
+  const needed = () =>
+    visibleWidth(zone('left')) +
+    visibleWidth(zone('right')) +
+    (zone('left') && zone('right') ? 2 : 0);
+  while (
+    needed() > width &&
+    selected.some(field => Number.isFinite(field.priority))
+  ) {
+    const lowest = Math.min(...selected.map(field => field.priority));
     selected.splice(
-      selected.findIndex(group => group.priority === lowest),
+      selected.findIndex(field => field.priority === lowest),
       1,
     );
   }
-  return line();
+  const left = zone('left');
+  const right = zone('right');
+  if (!right) return left;
+  return (
+    left +
+    ' '.repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right))) +
+    right
+  );
 }
 
 export function renderFooter(
@@ -37,11 +54,7 @@ export function renderFooter(
   theme: Theme,
   state: FooterState,
 ): string[] {
-  const context = Math.min(100, 30 + state.completed);
-  const filled = Math.round(context / 10);
-  const meter =
-    theme.fg('thinkingMedium', '━'.repeat(filled)) +
-    theme.fg('borderMuted', '━'.repeat(10 - filled));
+  const separator = theme.fg('muted', ' · ');
   const project =
     state.scenario === 'long'
       ? '~/dev/研究工具/pi-stuff-statusline'
@@ -50,58 +63,86 @@ export function renderFooter(
     state.scenario === 'long'
       ? 'codex/statusline-responsive-prototype'
       : 'main';
-  const changes =
+  const worktree =
     state.scenario === 'base'
       ? theme.fg('muted', 'clean')
       : theme.fg('muted', '+1 ~1 ') +
         (state.scenario === 'long'
           ? theme.fg('error', '!1')
-          : theme.fg('muted', '?1')) +
-        theme.fg('muted', ' ↑2 ↓1');
-  const bracket = (text: string) =>
-    theme.fg('muted', '(') + text + theme.fg('muted', ')');
-  const branchText = theme.fg('muted', branch);
-  const git = bracket(`${branchText} ${changes}`);
-  const names = bracket(branchText);
-  const counts = bracket(changes);
-  const identitiesFit = visibleWidth(project) + 1 + visibleWidth(git) <= width;
-  const namesFit = visibleWidth(project) + 1 + visibleWidth(names) <= width;
-  const directoryWidth = namesFit
-    ? width
-    : Math.max(0, width - visibleWidth(changes) - 1);
-  const directory = theme.bold(truncateToWidth(project, directoryWidth, '…'));
-  const identity = truncateToWidth(
-    `${directory} ${identitiesFit ? git : namesFit ? names : changes}`,
-    width,
-    '…',
-  );
-  const gitOverflow = identitiesFit
-    ? ''
-    : namesFit
-      ? counts
-      : truncateToWidth(names, width, '…');
+          : theme.fg('muted', '?1'));
+  const divergence =
+    state.scenario === 'base' ? '' : theme.fg('muted', '↑2 ↓1');
+  const git = [theme.fg('muted', branch), worktree, divergence]
+    .filter(Boolean)
+    .join(separator);
+  const required = (text: string, side: Field['side']): Field => ({
+    text,
+    side,
+    priority: Infinity,
+  });
+  const first: Field[] = [];
+  const second: Field[] = [];
+  const identitiesFit = visibleWidth(project) + 2 + visibleWidth(git) <= width;
+  if (identitiesFit) {
+    first.push(required(theme.bold(project), 'left'), required(git, 'right'));
+  } else if (visibleWidth(project) + 2 + visibleWidth(branch) <= width) {
+    first.push(
+      required(theme.bold(project), 'left'),
+      required(theme.fg('muted', branch), 'right'),
+    );
+    second.push(
+      required([worktree, divergence].filter(Boolean).join(separator), 'left'),
+    );
+  } else {
+    const pathWidth = Math.max(0, width - visibleWidth(worktree) - 2);
+    first.push(
+      required(theme.bold(truncateToWidth(project, pathWidth, '…')), 'left'),
+      required(worktree, 'right'),
+    );
+    const branchWidth = Math.max(
+      0,
+      width - visibleWidth(divergence) - (divergence ? 2 : 0),
+    );
+    second.push(
+      required(
+        theme.fg('muted', truncateToWidth(branch, branchWidth, '…')),
+        'left',
+      ),
+    );
+    if (divergence) second.push(required(divergence, 'right'));
+  }
 
-  const model = `${state.model} ${theme.fg('muted', state.thinking)}`;
-  const cache = theme.fg('muted', 'hit 83.8%');
-  const contextCore = `${theme.fg('muted', 'ctx')} ${context}% ${meter}`;
-  const contextFull = `${contextCore} ${theme.fg('muted', '/272k')}`;
-  const contextText =
-    visibleWidth(joinGroups([gitOverflow, model, contextFull, cache])) <= width
-      ? contextFull
-      : contextCore;
-  const groups: Group[] = [
-    {priority: 80, text: model},
-    {priority: 90, text: contextText},
-    {priority: 100, text: cache},
-  ];
-  if (state.scenario !== 'base' && identitiesFit) {
-    groups.push({
-      priority: 10,
+  const context = Math.min(100, 30 + state.completed);
+  const filled = Math.round(context / 10);
+  const meter =
+    theme.fg('thinkingMedium', '━'.repeat(filled)) +
+    theme.fg('borderMuted', '━'.repeat(10 - filled));
+  // A compact viewport omits capacity as a whole field, never shortens the meter.
+  second.push(
+    {
+      text: `${theme.fg('muted', 'ctx')} ${context}% ${meter}`,
+      side: 'left',
+      priority: 90,
+    },
+    {text: theme.fg('muted', 'window 272k'), side: 'left', priority: 20},
+    {text: theme.fg('muted', 'hit 83.8%'), side: 'left', priority: 100},
+  );
+  if (identitiesFit && state.scenario !== 'base') {
+    second.push({
       text: theme.fg(
         'muted',
-        `goal ${state.running ? 'running' : 'active'} · Codex used 5h 41% · week 63%`,
+        `goal ${state.running ? 'running' : 'active'} · codex used 5h 41% · week 63%`,
       ),
+      side: 'left',
+      priority: 10,
     });
   }
-  return [identity, fit(gitOverflow, groups, width)];
+  // If the branch occupies the second row, it owns that row's right-hand budget too.
+  if (second.every(field => field.side !== 'right')) {
+    second.push(
+      {text: state.model, side: 'right', priority: 80},
+      {text: theme.fg('muted', state.thinking), side: 'right', priority: 30},
+    );
+  }
+  return [row(width, first, separator), row(width, second, separator)];
 }

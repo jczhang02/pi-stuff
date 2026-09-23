@@ -23,23 +23,30 @@ bun run tui stop pi-statusline
 
 中文: 在原型 worktree 中执行上述命令. 省略 `PI_TEST_HOST` 后使用安装的 Pi 0.85.1 CLI; 暗色主题选 `catppuccin-mocha`. `base` 是干净分支, `extended` 加入改动、goal 和额度, `long` 包含长分支、中文目录与冲突. 原生编辑器支持输入、Enter 提交、Esc 取消约两秒的样例回复. 成功回复增加统计. 缩放时调整前台终端本身; 已运行的实例可以用 `/reload` 载入修改.
 
-## Layout and Git notation
+## Layout and extension placement
 
-Row one is only repository identity: a bold full directory and a parenthesized Git group. Ordinary Git counters are neutral; only conflicts use an error color. Row two has three primary groups: model/effort, context and cache hit. Two spaces separate groups; within each group there is one space. There is no right alignment or viewport-filling padding.
+The footer uses two rows with left and right anchors:
 
-The previous always-visible input/output totals, cache-read/write counters, subscription cost estimate, provider and auto-compaction indicator were removed from this layout study. They competed with the three primary signals. Extra width no longer brings them back. This prototype adds no hidden details panel or new shortcut; native Pi behavior outside the footer is unchanged.
+| Row    | Left zone                                                 | Right zone                                     |
+| ------ | --------------------------------------------------------- | ---------------------------------------------- |
+| First  | Full directory                                            | Branch, working-tree counts, commit divergence |
+| Second | Context, optional capacity, cache hit, third-party status | Model, thinking effort                         |
 
-Goal and quota remain one secondary group on row two in the extended scenarios. The entire group yields before primary information and is suppressed when Git spans both rows. Secondary groups disappear in priority order, without smaller fields filling the gaps. Context capacity is retained only when the complete primary row fits; at 50 columns the ordinary sample still retains model/effort, the fixed ten-character continuous meter and hit.
+Adjacent fields in each zone use `·`. One elastic gap separates the two zones and puts their outer fields against the terminal edges. Compound values such as `+1 ~1 ?1` remain one Git field with ordinary internal spaces. No alignment padding appears within a zone. Authored labels are lowercase, including `codex`; actual directory, branch, model and external values retain their original casing.
 
-Git samples distinguish `clean`, `+1` staged, `~1` modified, `?1` untracked, `!1` conflicted, `↑2` ahead and `↓1` behind. Zero counts are omitted. These are file counts and commit divergence, not line-change counts. The fixtures do not cover every Git operation, such as rebase or detached HEAD.
+Third-party statuses have one place: after the core statistics in the lower-left zone. The goal/quota sample is an optional atomic group. It never takes over the Git or model anchors and is hidden first when space runs out. A future integration can pass additional complete status fields into this zone; this prototype does not add an extension API or poll real providers.
 
-When the full Git group exceeds row one, counters move to row two before runtime groups. If directory and branch cannot fit together, row one holds the directory/counters and row two starts with the full branch. All tested 50–150-column cases retain full sample identities and every nonzero Git counter. Physically oversized individual names use an ellipsis; the prototype does not add a third row or an overflow count.
+After extension status, capacity and thinking effort yield before model/context/hit. Fields disappear whole, without abbreviations or smaller-field backfill. At 50 columns, the ordinary sample retains directory, complete Git state, context meter, hit and the model; thinking effort and capacity are hidden. The meter remains ten continuous characters.
 
-中文: 第一行只放仓库身份: 加粗完整目录和括号内的 Git 组. 普通 Git 计数统一中性色, 只有冲突使用错误色. 第二行以模型/强度、ctx、cache hit 三组为主. 组间两个空格, 组内一个空格, 不右对齐或填满终端宽度.
+For long identities, directory and branch retain separate left/right anchors on row one when possible, moving working-tree/divergence fields to row two. If the names themselves cannot share a row, row one becomes directory/worktree and row two becomes branch/divergence. At 50 columns this long sample hides runtime metrics entirely so all identity and Git state survives. Individual names beyond the physical viewport use an ellipsis; there is no third row or overflow counter.
 
-中文: 取消常驻 input/output 总量、缓存读写明细、订阅费用估算、provider 和 auto 标记, 避免它们与主要信息争夺注意力. 宽屏不会再把这些字段加回来. 原型不新增详情面板或快捷键, footer 之外仍使用原生 Pi 行为. 扩展场景中的 goal/额度合为第二行的一个次要组, 比主要信息更早整组隐藏; Git 占两行时不显示扩展组. 按优先级删除整组, 不用小字段填空. ctx 容量只在主要信息全部放得下时显示; 普通 50 列仍保留模型/强度、固定十字符连续进度条和 hit.
+Ordinary Git states use neutral text; only conflicts use an error color. `clean` means no changes, `+1` staged, `~1` modified, `?1` untracked, `!1` conflicted, `↑2` ahead and `↓1` behind. Values are file counts and commit divergence, not changed-line counts. The fixtures do not cover every operation such as rebase or detached HEAD. Routine token/cache-read-write details, costs, provider and auto labels remain absent from this reduced layout.
 
-中文: Git 中 `clean` 表示干净, `+1` 暂存、`~1` 修改、`?1` 未跟踪、`!1` 冲突、`↑2` 领先、`↓1` 落后. 零值省略, 数值分别是文件数和提交数, 不是代码行数. 样例不覆盖 rebase、detached HEAD 等所有 Git 操作. Git 组放不下第一行时, 计数移至第二行运行信息之前. 目录和分支也放不下时, 第一行保留目录/计数, 第二行以完整分支开头. 测试的 50–150 列内保留完整样例身份与所有非零计数; 名称本身超过物理空间才显示省略号, 不加第三行或溢出计数.
+中文: Footer 固定双行、左右分区. 第一行左侧完整目录, 右侧分支、工作区计数与提交领先/落后. 第二行左侧 ctx、可选容量、hit及第三方状态, 右侧模型与思考强度. 同一区域内相邻字段用 `·` 分隔, 两个区域之间仅一个弹性间隙, 区域内部不填充空白. `+1 ~1 ?1` 等复合计数仍是一个 Git 字段, 内部使用普通空格. 自定义标签全部小写, 包括 `codex`; 实际目录、分支、模型和外部值保留原始大小写.
+
+中文: 第三方字段固定接在左下核心统计之后. goal/额度样例是一个可选整体, 不占用 Git 或模型的锚点, 窄屏时最先隐藏. 未来接入可在此区域加入完整状态字段, 本原型不增加扩展 API 或真实数据读取. 接着隐藏容量和思考强度, 然后才是模型/ctx/hit. 不简写、不零碎回填. 普通 50 列保留目录、完整 Git、连续十字符进度条、hit和模型, 隐藏容量与思考强度.
+
+中文: 长身份优先在第一行左右保留目录与分支, 把工作区/提交计数移到第二行. 两个名称也放不下时, 第一行变为左目录/右工作区计数, 第二行为左分支/右领先落后. 该长样例在 50 列隐藏全部运行统计, 保住完整身份和 Git 状态. 单项名称超过物理宽度才使用省略号, 不加第三行或溢出计数. 普通 Git 状态为中性色, 冲突使用错误色. `clean` 为干净, `+1` 暂存、`~1` 修改、`?1` 未跟踪、`!1` 冲突、`↑2` 领先、`↓1` 落后; 数字是文件数与提交数, 不是代码行数. 样例未覆盖 rebase/detached HEAD 等所有操作. token/缓存读写明细、费用、provider和auto继续不常驻.
 
 ## Evidence and limits
 
@@ -48,7 +55,7 @@ The PNGs are actual headless Terminal Control captures at 150/100/80/50 columns 
 ![Light, extended, 150 columns](captures/catppuccin-latte-extended-150.png)
 ![Dark, long directory and branch, 50 columns](captures/catppuccin-mocha-long-50.png)
 
-The one-shot driver covers each theme/scenario at 150 → 100 → 80 → 50 → 150, then editing, submit, cancellation and resubmit. Assertions check two rows, full sample identities and Git states at every width, continuous meter and hit when space allows, bounded group spacing, whole extension groups, absence of removed details and restoration. The driver waits for a complete optional group or its disappearance after resize, then captures a stable frame; partial goal/quota tails fail verification. See [verification.txt](captures/verification.txt).
+The one-shot driver covers each theme/scenario at 150 → 100 → 80 → 50 → 150, then editing, submit, cancellation and resubmit. Assertions check two rows, full sample identities and Git states at every width, continuous meter and hit when space allows, left/right alignment, dot separators, lowercase sample labels, whole extension groups, absence of removed details and restoration. The driver waits for both right anchors and a complete runtime-row tail after resize, then captures a stable frame. It rejects partial extension values. See [verification.txt](captures/verification.txt).
 
 ```sh
 PI_TEST_HOST=/opt/bin/pi bun prototypes/statusline/capture.ts /tmp/pi-statusline-captures
@@ -58,7 +65,7 @@ git diff --check
 
 Environment: Bun 1.4.0, compiled Pi 0.87.1, Terminal Control 1.2.1, repository API declarations at Pi 0.85.1. Temporary settings/sessions are cleaned up. The local provider and all displayed directory/Git/account/usage data are deterministic samples; no Git status, account quota, real model request or check command is executed. The native editor, message rendering, streaming, cancellation and resize are real Pi behavior. The provider uses Pi's [documented extension API](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/custom-provider.md).
 
-中文: PNG 来自真实无头 Terminal Control, 包含完整 16 行终端视口, 覆盖明暗主题和 150/100/80/50 列, 字体栈见上. 它们不是裁剪的设计图或原生 Ghostty/合成器截图. 一次性驱动验证各场景的缩窄与恢复、编辑、提交、取消和再次提交, 检查双行、完整目录/分支/Git 计数、可容纳时的连续进度条/hit、有限组间距、扩展组整体显隐、无已移除明细及恢复结果. 缩放后等待可选组完整出现或消失再抓稳定帧, 截断的 goal/额度尾巴会导致验证失败. 复现命令及版本见上. 临时设置/会话会清理. 所有目录、Git、账号与用量均为确定样例, 不查询真实状态、不调用模型或检查命令; 编辑器、消息、流式输出、取消和缩放使用原生 Pi.
+中文: PNG 来自真实无头 Terminal Control, 包含完整 16 行终端视口, 覆盖明暗主题和 150/100/80/50 列, 字体栈见上. 它们不是裁剪的设计图或原生 Ghostty/合成器截图. 一次性驱动验证各场景的缩窄与恢复、编辑、提交、取消和再次提交, 检查双行、完整目录/分支/Git 计数、可容纳时的连续进度条/hit、左右对齐、圆点分隔、小写样例标签、扩展组整体显隐、无已移除明细及恢复结果. 缩放后等待两个右侧锚点和完整行尾再抓稳定帧, 截断的扩展组会导致验证失败. 复现命令及版本见上. 临时设置/会话会清理. 所有目录、Git、账号与用量均为确定样例, 不查询真实状态、不调用模型或检查命令; 编辑器、消息、流式输出、取消和缩放使用原生 Pi.
 
 ## Tracking
 

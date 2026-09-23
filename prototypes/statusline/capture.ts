@@ -23,13 +23,17 @@ async function capture(session: Session, name: string): Promise<string> {
       const lines = snapshot.text.split('\n');
       const start = lines.findIndex(line => line.startsWith('~/dev/'));
       const runtime = lines[start + 1] ?? '';
-      // Resized old frames can end in a partial meter as well as a partial extension.
-      const completeTail =
-        runtime.trimEnd().endsWith('hit 83.8%') ||
-        runtime
-          .trimEnd()
-          .endsWith('goal active · Codex used 5h 41% · week 63%');
-      return start >= 0 && completeTail;
+      // A resized old frame must not masquerade as a newly right-aligned row.
+      const completeTail = /(?:medium|gpt-6-astra|↓1)$/u.test(
+        runtime.trimEnd(),
+      );
+      return (
+        start >= 0 &&
+        completeTail &&
+        lines
+          .slice(start, start + 2)
+          .every(line => visibleWidth(line.trimEnd()) === snapshot.frame.cols)
+      );
     },
     {timeoutMs: 5000},
   );
@@ -46,7 +50,7 @@ async function capture(session: Session, name: string): Promise<string> {
   assert.equal(footer.length, 2);
   assert.doesNotMatch(
     footer[0] ?? '',
-    /goal|Codex|ctx|hit/u,
+    /goal|codex used|ctx|hit/u,
     'Repository row stays focused',
   );
   assert.doesNotMatch(
@@ -54,18 +58,30 @@ async function capture(session: Session, name: string): Promise<string> {
     /R620k|W8k|est \$|openai-codex|auto/u,
     'Routine detail fields do not return at wider widths',
   );
-  if (footer.join(' ').includes('goal') || footer.join(' ').includes('Codex')) {
+  if (
+    footer.join(' ').includes('goal') ||
+    footer.join(' ').includes('codex used')
+  ) {
     assert.ok(
-      footer[1]?.includes('goal active · Codex used 5h 41% · week 63%'),
+      footer[1]?.includes('goal active · codex used 5h 41% · week 63%'),
       'Extension group must be complete, not a clipped resize frame',
     );
   }
   for (const line of footer) {
-    assert.ok(visibleWidth(line) <= snapshot.frame.cols);
+    assert.equal(
+      visibleWidth(line),
+      snapshot.frame.cols,
+      'Right-hand fields reach the right edge',
+    );
     assert.doesNotMatch(
       line,
-      / {3}|\|/u,
-      'Group gaps stay bounded; no alignment padding',
+      /[A-Z]|\||^ · | · $|·  |  ·/u,
+      'Lowercase sample labels and clean dot separators',
+    );
+    assert.equal(
+      line.split(/ {2,}/u).length,
+      2,
+      'Exactly one elastic gap separates the two zones',
     );
     if (line.includes('ctx')) assert.match(line, /ctx 31% ━{10}/u);
   }
@@ -158,7 +174,7 @@ await runEffect(async () => {
                     : '~/dev/pi-stuff',
                 ),
               );
-              if (scenario === 'base') assert.match(footer, /main clean/u);
+              if (scenario === 'base') assert.match(footer, /main · clean/u);
               else {
                 assert.ok(
                   footer.includes(
@@ -170,11 +186,16 @@ await runEffect(async () => {
                 );
                 assert.ok(
                   footer.includes(
-                    scenario === 'long' ? '+1 ~1 !1 ↑2 ↓1' : '+1 ~1 ?1 ↑2 ↓1',
+                    scenario === 'long' ? '+1 ~1 !1' : '+1 ~1 ?1',
                   ),
-                  'All nonzero Git states survive every tested width',
+                  'All working-tree counters survive every tested width',
                 );
               }
+              if (scenario !== 'base')
+                assert.ok(
+                  footer.includes('↑2 ↓1'),
+                  'Both divergence counters survive',
+                );
               if (scenario !== 'long' || cols >= 100) {
                 assert.match(footer, /hit 83\.8%/u);
                 assert.match(footer, /ctx 31% ━{10}/u);
