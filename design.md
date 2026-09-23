@@ -50,6 +50,8 @@ Use Pi's active theme and semantic colors for text, selection, borders, success,
 
 Verify both built-in light and dark themes. A narrowly scoped contrast correction may adjust a demonstrated low-contrast built-in color within the feature, without mutating Pi's global theme or replacing custom palette values. Record the tested palette/background and retain semantic hue and text labels.
 
+The editor-only retro gradient specified in [editor visualizations](docs/editor-visualizations-spec.md) is an approved exception to semantic theme colors. Skill references and configured keywords use static bold RGB colors in the draft; submitted messages retain normal theme colors.
+
 ## Keyboard and focus
 
 Use Pi's native components for standard selection, input, editing and confirmation. Let them handle configured selection, submit and cancel bindings, including Ctrl-C under the default bindings. Do not swallow native cancel or force Esc when the user remaps it. Custom feature controls and size notices must describe their actual bindings. RTK's existing report/executable views still use their established Esc control until separately migrated. When a panel closes, restore focus to the input or invoking control.

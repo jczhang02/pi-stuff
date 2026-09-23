@@ -25,12 +25,10 @@ const ThinkingRegion = Schema.Struct({
 
 export function registerAssistantDisplay(
   pi: ExtensionAPI,
-): MarkdownTransformer {
+  owner: MarkdownTransformer,
+) {
   const times = new ThinkingTimes(pi);
-  // The identity transformer marks only components belonging to this extension
-  // runtime. It never adds display text to Markdown or provider messages.
-  const owner: MarkdownTransformer = text => text;
-  pi.registerMarkdownTransformer(owner);
+  // The shared transformer identifies components owned by this extension.
   const prototype = AssistantMessageComponent.prototype;
   const original = prototype.updateContent;
   let active = true;
@@ -136,5 +134,4 @@ export function registerAssistantDisplay(
     active = false;
     if (prototype.updateContent === update) prototype.updateContent = original;
   });
-  return owner;
 }

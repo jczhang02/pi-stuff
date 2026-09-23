@@ -12,6 +12,7 @@ import {ConfigurationError, readConfiguration} from './configuration';
 import type {RtkSettings} from '../rtk/settings';
 import type {UiSettings} from '../ui/settings';
 import type {NamingSettings} from '../naming/settings';
+import type {EditorSettings} from '../editor/settings';
 
 type Configuration = Effect.Success<ReturnType<typeof readConfiguration>>;
 const missing = Schema.is(Schema.Struct({code: Schema.Literal('ENOENT')}));
@@ -84,11 +85,15 @@ export class ConfigurationFile {
     return this.save('naming', settings);
   }
 
+  saveEditor(settings: EditorSettings) {
+    return this.save('editor', settings);
+  }
+
   saveUi(settings: UiSettings) {
     return this.save('ui', settings);
   }
 
-  private save<K extends 'rtk' | 'naming' | 'ui'>(
+  private save<K extends 'rtk' | 'naming' | 'editor' | 'ui'>(
     section: K,
     settings: NonNullable<Configuration[K]>,
   ) {
@@ -134,7 +139,7 @@ export class ConfigurationFile {
         Schema.is(ConfigurationError)(error)
           ? error
           : new ConfigurationError({
-              message: `Could not finish saving ${section === 'naming' ? 'naming' : section.toUpperCase()} settings. Check permissions or a concurrent save, then /reload to verify.`,
+              message: `Could not finish saving ${section === 'rtk' || section === 'ui' ? section.toUpperCase() : section} settings. Check permissions or a concurrent save, then /reload to verify.`,
             }),
     });
   }

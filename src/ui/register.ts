@@ -1,4 +1,7 @@
-import type {ExtensionAPI} from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  MarkdownTransformer,
+} from '@earendil-works/pi-coding-agent';
 import {registerWelcome} from './welcome';
 import {registerAssistantDisplay} from './assistant';
 import {RetrievalGroups} from './groups';
@@ -16,9 +19,10 @@ import type {UiSettings} from './settings';
 export function registerUi(
   pi: ExtensionAPI,
   settings: UiSettings,
+  owner: MarkdownTransformer,
 ): RetrievalGroups | undefined {
   if (settings.enabled === false) return;
-  const owner = registerAssistantDisplay(pi);
+  registerAssistantDisplay(pi, owner);
   if (settings.welcome !== false) registerWelcome(pi);
   const groups =
     settings.retrievalGroups === false ? undefined : new RetrievalGroups(pi);

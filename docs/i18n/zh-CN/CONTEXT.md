@@ -21,6 +21,15 @@ Pi Stuff 承诺在声明的运行环境中维护的 Pi 宿主版本区间. 区�
 **已验收 Pi 版本 (Verified Pi version)**:
 针对特定 Pi Stuff 修订和运行环境, 已有验收记录的 Pi 宿主版本. 这类证据比支持范围更具体.
 
+**Skill 引用 (Skill reference)**:
+以完整 `/skill:<name>` 形式出现的 skill 文本引用. 单凭引用不能断定该 skill 已安装或已调用.
+
+**高亮关键词 (Highlight keyword)**:
+输入框内由用户配置的匹配规则选中的文本, 获得与 skill 引用相同的视觉强调. 匹配不代表请求执行操作.
+
+**代码块可视化 (Fenced visualization)**:
+由完整 Markdown 代码块描述的图表或树的显示形式. 可视化和原始消息文本表达同一份会话内容.
+
 **状态字段 (Statusline segment)**:
 Pi Stuff 会话底栏中一项独立的状态信息, 例如上下文用量或 Git 状态.
 

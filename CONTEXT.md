@@ -21,6 +21,15 @@ The interval of Pi host versions that Pi Stuff commits to maintain in its declar
 **Verified Pi version**:
 A Pi host version with recorded acceptance evidence for a specific Pi Stuff revision and runtime environment. This evidence is narrower than the support range.
 
+**Skill reference**:
+A complete textual mention of a skill in the `/skill:<name>` form. A reference alone does not establish that the skill is installed or invoked.
+
+**Highlight keyword**:
+Editor text selected by a user-configured matching rule for the same visual emphasis as a skill reference. A match does not request an action.
+
+**Fenced visualization**:
+A display of a chart or tree described by a complete Markdown code block. The visualization and its original message text represent the same conversation content.
+
 **Statusline segment**:
 A distinct piece of status information shown in Pi Stuff's session footer, such as context usage or Git state.
 

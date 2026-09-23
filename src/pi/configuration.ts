@@ -1,4 +1,5 @@
 import {Effect, Schema} from 'effect';
+import {EditorSettings} from '../editor/settings';
 import {ToolSwitches} from './tool-switches';
 import {WebSettings} from '../web/settings';
 import {RtkSettings} from '../rtk/settings';
@@ -14,6 +15,7 @@ export class ConfigurationError extends Schema.TaggedError<ConfigurationError>()
 ) {}
 
 const Configuration = Schema.Struct({
+  editor: Schema.optional(EditorSettings),
   tools: Schema.optional(ToolSwitches),
   web: Schema.optional(WebSettings),
   rtk: Schema.optional(RtkSettings),
