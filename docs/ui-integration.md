@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/ui-integration.md) · English is normative.
 
-These experiments examine gaps between Pi's extension API and the accepted UI. The maintainer has [approved the assistant/Thoughts display adaptation](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). The implementation adds the assistant gutter and Thoughts labels; per-block timing remains unfinished. Tool-history integration must first compare public-API early registration with the lookup patch, as [decided separately](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338).
+These experiments examine gaps between Pi's extension API and the accepted UI. The maintainer has [approved the assistant/Thoughts display adaptation](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). The implementation adds the assistant gutter and Thoughts labels; observed thinking segments are timed in memory. Tool-history integration must first compare public-API early registration with the lookup patch, as [decided separately](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338).
 
 ## Assistant and Thoughts: public API limits
 
@@ -60,7 +60,7 @@ This compiled Pi 0.87.0 / Bun 1.4.0 capture uses an isolated deterministic provi
 
 ### Thoughts labels
 
-The next slice decorates the child inside Pi's existing Thoughts mouse region. Visible thinking begins with `• Thoughts: `; hidden thinking shows `• Thoughts`. Native italic Markdown is retained, as allowed by the maintainer. The label reserves width without altering the Markdown source, so lists keep their structure. Continuation rows use the same two-column gutter as the assistant text. Timing is not implemented yet, so these captures contain no duration.
+The next slice decorates the child inside Pi's existing Thoughts mouse region. Visible thinking begins with `• Thoughts: `; hidden thinking shows `• Thoughts`. Native italic Markdown is retained, as allowed by the maintainer. The label reserves width without altering the Markdown source, so lists keep their structure. Continuation rows use the same two-column gutter as the assistant text. Running blocks display `Thinking · Ns` in both visibility states. Completed hidden blocks display `Thoughts · Ns`; visible blocks append the duration to the body. These captures show an observed two-second reasoning interval.
 
 Ctrl+T and local clicks still use Pi's visibility state. Review reproduced a crash when reloading and replacing a session containing Thoughts: the initial styling callback retained a stale extension context. The corrected callback retains Pi's live theme proxy instead. The regression test covers that transition and the next response.
 
@@ -68,7 +68,13 @@ The captures below use the same compiled host, isolated provider, 80×24 virtual
 
 ![Visible Thoughts with native Markdown](assets/ui/thoughts-visible-dark-80.png)
 
-![Hidden Thoughts without invented timing](assets/ui/thoughts-hidden-dark-80.png)
+![Hidden Thoughts with measured timing](assets/ui/thoughts-hidden-dark-80.png)
+
+### Timing boundaries
+
+Timing uses Pi's public message events and a monotonic clock. A thinking start/delta begins or resumes a segment; text/tool output stops it, even when a provider delays `thinking_end` until the end of the whole response. Consecutive thinking blocks that Pi displays together sum their observed segments. Cancellation freezes the current segment. No timer, persisted field or message rewrite is added. Running labels update by whole seconds during Pi's existing redraws; completed output retains its cached layout.
+
+A WeakMap associates each observed message object with its timings, including the finalized object. Reload and session replacement discard observations. Restored blocks retain the Thoughts label without an invented duration. The tests check two different durations, progress while the provider pauses, exclusion of a paused answer phase, cancellation/recovery, reload/resume and byte-identical saved records. The paused-provider fixture controls network delivery, not the displayed duration.
 
 The tool experiment below remains a candidate alongside early public-API registration.
 

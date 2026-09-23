@@ -54,7 +54,14 @@ export async function launchPi(
   let tool: ModelCall | undefined;
   let turn = 0;
   let result = '';
-  let response: {text: string; thinking: string} | undefined;
+  let response:
+    | {
+        text: string;
+        thinking: string;
+        until: Promise<void> | undefined;
+        afterText: Promise<void> | undefined;
+      }
+    | undefined;
   let sentAssistant = '';
   let reloads = 0;
   let offered: string[] = [];
@@ -143,6 +150,31 @@ export async function launchPi(
           },
         ],
       })}\n\ndata: [DONE]\n\n`;
+      if (finished && thinking && (response?.until || response?.afterText)) {
+        const {until, afterText} = response;
+        let cancelled = false;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async start(controller) {
+              const encoder = new TextEncoder();
+              controller.enqueue(encoder.encode(preamble));
+              await until;
+              if (cancelled || request.signal.aborted) return;
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`),
+              );
+              await afterText;
+              if (cancelled || request.signal.aborted) return;
+              controller.enqueue(encoder.encode(completion));
+              controller.close();
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          {headers: {'content-type': 'text/event-stream'}},
+        );
+      }
       if (pause && tool) {
         const rest = `data: ${JSON.stringify({
           ...chunk,
@@ -339,12 +371,17 @@ export async function launchPi(
         until: Promise<void>,
       ) => startCall({name, parameters}, [], [], {offset, until}),
       sentAssistant: () => sentAssistant,
-      async startResponse(text: string, thinking = '') {
+      async startResponse(
+        text: string,
+        thinking = '',
+        until?: Promise<void>,
+        afterText?: Promise<void>,
+      ) {
         tool = undefined;
         inputPause = undefined;
         remaining = [];
         simultaneous = [];
-        response = {text, thinking};
+        response = {text, thinking, until, afterText};
         await submit();
       },
       async startParallel(calls: ModelCall[]) {

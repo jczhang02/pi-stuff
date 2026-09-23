@@ -9,8 +9,10 @@ import {
   MouseRegion,
   Text,
   truncateToWidth,
+  wrapTextWithAnsi,
 } from '@earendil-works/pi-tui';
 import {Option, Schema} from 'effect';
+import {ThinkingTimes} from './thinking';
 
 const AssistantLayout = Schema.Struct({
   contentContainer: Schema.instanceOf(Container),
@@ -22,6 +24,7 @@ const ThinkingRegion = Schema.Struct({
 });
 
 export function registerAssistantDisplay(pi: ExtensionAPI): void {
+  const times = new ThinkingTimes(pi);
   // The identity transformer marks only components belonging to this extension
   // runtime. It never adds display text to Markdown or provider messages.
   const owner: MarkdownTransformer = text => text;
@@ -50,37 +53,75 @@ export function registerAssistantDisplay(pi: ExtensionAPI): void {
       !layout.value.markdownTransformers.includes(owner)
     )
       return;
+    const runs = times.runs(message);
+    let runIndex = 0;
     for (const component of layout.value.contentContainer.children) {
       const region =
         component instanceof MouseRegion
           ? Schema.decodeUnknownOption(ThinkingRegion)(component)
           : Option.none();
       const thinking = Option.isSome(region);
+      const run = thinking ? runs[runIndex++] : undefined;
       const child = Option.isSome(region) ? region.value.child : component;
       if (!(child instanceof Markdown) && !(thinking && child instanceof Text))
         continue;
-      const label = thinking && child instanceof Markdown ? 'Thoughts: ' : '';
       const padding: object = child;
       if (!Schema.is(MarkdownLayout)(padding)) continue;
-      if (thinking && child instanceof Text) child.setText('Thoughts');
       // Native assembly creates fresh Markdown children. Validate its layout
       // field before replacing horizontal padding with the message gutter.
       Object.assign(padding, {paddingX: 0});
       const render = child.render.bind(child);
       let previous: string[] | undefined;
       let previousWidth: number | undefined;
+      let previousLabel: string | undefined;
       let rendered: string[] = [];
+      let hiddenLabel: string | undefined;
       child.render = width => {
+        const seconds = run?.seconds;
+        const title = `${run?.running ? 'Thinking' : 'Thoughts'}${seconds === undefined ? '' : ` · ${seconds}s`}`;
+        const label =
+          thinking && child instanceof Markdown
+            ? run?.running
+              ? `${title} `
+              : 'Thoughts: '
+            : '';
+        if (thinking && child instanceof Text) {
+          if (title !== hiddenLabel) {
+            child.setText(title);
+            hiddenLabel = title;
+          }
+        }
         const lines = render(Math.max(1, width - 2 - label.length));
-        if (previous === lines && previousWidth === width) return rendered;
+        if (
+          previous === lines &&
+          previousWidth === width &&
+          previousLabel === label
+        )
+          return rendered;
         previous = lines;
         previousWidth = width;
-        rendered = lines.map((line, index) => {
-          const prefix = index === 0 ? `• ${label}` : '  ';
-          return truncateToWidth(
-            `${thinking ? thinkingStyle(prefix) : prefix}${thinking && child instanceof Text ? thinkingStyle(line) : line}`,
-            width,
-          );
+        previousLabel = label;
+        rendered = lines.flatMap((line, index) => {
+          const body =
+            index === lines.length - 1 &&
+            thinking &&
+            child instanceof Markdown &&
+            seconds !== undefined &&
+            !run?.running
+              ? wrapTextWithAnsi(
+                  `${index === 0 && label ? thinkingStyle(label) : ''}${line.trimEnd()}${thinkingStyle(`  ${seconds}s`)}`,
+                  Math.max(1, width - 2),
+                )
+              : [
+                  `${index === 0 && label ? thinkingStyle(label) : ''}${thinking && child instanceof Text ? thinkingStyle(line) : line}`,
+                ];
+          return body.map((row, continuation) => {
+            const prefix = index === 0 && continuation === 0 ? '• ' : '  ';
+            return truncateToWidth(
+              `${thinking ? thinkingStyle(prefix) : prefix}${row}`,
+              width,
+            );
+          });
         });
         return rendered;
       };

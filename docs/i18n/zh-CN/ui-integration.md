@@ -2,7 +2,7 @@
 
 [English](../../../docs/ui-integration.md) · 以英文版为准.
 
-这些实验检查 Pi 扩展 API 与已确认 UI 之间的差距. 维护者已[批准 assistant/Thoughts 展示适配](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). 目前已添加 assistant 前导栏和 Thoughts 标签, 各块独立计时仍未完成. 工具历史接入按[另行决定](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338), 先比较公共 API 提前注册与 lookup patch.
+这些实验检查 Pi 扩展 API 与已确认 UI 之间的差距. 维护者已[批准 assistant/Thoughts 展示适配](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5786103200). 目前已添加 assistant 前导栏和 Thoughts 标签, 已观察到的思考区间在内存中独立计时. 工具历史接入按[另行决定](https://github.com/jczhang02/pi-stuff/issues/106#issuecomment-5785970338), 先比较公共 API 提前注册与 lookup patch.
 
 ## Assistant 和 Thoughts: 公共 API 的限制
 
@@ -60,7 +60,7 @@ PI_TEST_HOST=/opt/bin/pi bun test tests/system/ui-messages.test.ts
 
 ### Thoughts 标签
 
-后续实现修饰 Pi 原有 Thoughts 鼠标区域中的子组件. 展开时以 `• Thoughts: ` 开头, 收起时显示 `• Thoughts`. 按维护者允许的方案保留原生斜体 Markdown. 标签预留宽度但不改写 Markdown 源文, 列表结构不变. 续行与 assistant 正文一样保留两列前导区域. 计时尚未实现, 因而截图没有时长.
+后续实现修饰 Pi 原有 Thoughts 鼠标区域中的子组件. 展开时以 `• Thoughts: ` 开头, 收起时显示 `• Thoughts`. 按维护者允许的方案保留原生斜体 Markdown. 标签预留宽度但不改写 Markdown 源文, 列表结构不变. 续行与 assistant 正文一样保留两列前导区域. 运行中的展开与收起态均显示 `Thinking · Ns`. 完成后收起态显示 `Thoughts · Ns`, 展开态在正文末尾添加时长. 这些截图展示实测两秒的 reasoning 区间.
 
 Ctrl+T 和局部点击仍使用 Pi 的可见性状态. 审查复现了含 Thoughts 会话 reload 后再新建会话的崩溃: 初版样式回调保留了失效的扩展 context. 修正后仅保留 Pi 动态主题代理. 回归测试覆盖这次切换及下一次回答.
 
@@ -68,7 +68,13 @@ Ctrl+T 和局部点击仍使用 Pi 的可见性状态. 审查复现了含 Though
 
 ![展开的 Thoughts 与原生 Markdown](../../assets/ui/thoughts-visible-dark-80.png)
 
-![收起的 Thoughts, 不编造时长](../../assets/ui/thoughts-hidden-dark-80.png)
+![收起的 Thoughts 与实测时长](../../assets/ui/thoughts-hidden-dark-80.png)
+
+### 计时边界
+
+计时使用 Pi 公开消息事件和单调时钟. thinking start/delta 开始或恢复一个区间; text/tool 输出立即结束该区间, 即使 provider 要等整条回答结束才发送 `thinking_end`. Pi 合并展示的连续 thinking 块累加各自实测区间. 取消时冻结当前区间. 不添加定时器、持久化字段或消息改写. 运行标签随 Pi 原有重绘按整秒更新, 已完成内容保留布局缓存.
+
+WeakMap 将各个已观察消息对象及最终消息关联到计时. reload 和切换会话会清除观测数据, 恢复的历史块只保留 Thoughts 标签. 测试检查两轮不同时长、provider 暂停时继续计数、排除正文暂停时间、取消后恢复、reload/resume 及保存记录字节不变. 暂停 fixture 控制网络传输, 不指定界面显示的时长.
 
 下方工具实验仍是与公共 API 提前注册并列的候选.
 

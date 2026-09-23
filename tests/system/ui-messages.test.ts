@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test';
-import {writeFile} from 'node:fs/promises';
+import {readFile, readdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launchPi} from './fixtures/pi-terminal';
 
@@ -184,6 +184,131 @@ test('Assistant gutter follows the UI switch across reload and session replaceme
       expect(row.trimEnd()).toBe(`${enabled ? '• ' : ' '}${answer}`);
     }
   } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('Thoughts keep independent measured durations and omit them after reload', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  const gate = Promise.withResolvers<void>();
+  const answerGate = Promise.withResolvers<void>();
+  try {
+    await host.terminal.resize({cols: 100, rows: 45});
+    await host.startResponse(
+      'SLOW_ANSWER',
+      'SLOW_REASONING',
+      gate.promise,
+      answerGate.promise,
+    );
+    await host.terminal.screen.waitForText('SLOW_REASONING', {timeoutMs: 5000});
+    await host.terminal.keyboard.press('Control+T');
+    await host.terminal.screen.waitForText(/• Thinking · [1-9]\d*s/u, {
+      timeoutMs: 5000,
+    });
+    gate.resolve();
+    await host.terminal.screen.waitForText('SLOW_ANSWER', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText(/• Thoughts · \d+s/u, {
+      timeoutMs: 5000,
+    });
+    const first =
+      (
+        await host.terminal.screen.capture({
+          allowIncomplete: true,
+          deadlineMs: 200,
+        })
+      ).text.match(/• Thoughts · (\d+)s/u)?.[0] ?? '';
+    expect(Number(first.match(/(\d+)s/u)?.[1])).toBeGreaterThanOrEqual(1);
+    await Bun.sleep(1200);
+    const duringAnswer = await host.terminal.screen.capture({
+      allowIncomplete: true,
+      deadlineMs: 200,
+    });
+    expect(duringAnswer.text).toContain(first);
+    expect(duringAnswer.text).not.toContain('• Thinking');
+    answerGate.resolve();
+    await host.startResponse('FAST_ANSWER', 'FAST_REASONING');
+    await host.terminal.screen.waitForText('FAST_ANSWER', {timeoutMs: 5000});
+    const rows = (await host.terminal.screen.text())
+      .split('\n')
+      .filter(row => row.includes('• Thoughts ·'));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain(first);
+    expect(rows[1]).toContain('• Thoughts · 0s');
+    expect(host.sentAssistant()).toBe('"SLOW_ANSWER"');
+    const sessions = join(host.directory, 'sessions');
+    const path = (await readdir(sessions, {recursive: true})).find(path =>
+      path.endsWith('.jsonl'),
+    );
+    if (!path) throw new Error('The completed session was not persisted');
+    const session = join(sessions, path);
+    const saved = await readFile(session, 'utf8');
+    expect(saved).toContain('"thinking":"SLOW_REASONING"');
+    expect(saved).toContain('"thinking":"FAST_REASONING"');
+    expect(saved).not.toContain('Thoughts');
+    await host.reload();
+    expect(await readFile(session, 'utf8')).toBe(saved);
+    const history = await host.terminal.screen.text();
+    expect(history).toContain('• Thoughts');
+    expect(history).not.toMatch(/Thoughts · \d+s/u);
+    await host.terminal.keyboard.press('Control+T');
+    await host.terminal.screen.waitForText('SLOW_REASONING', {timeoutMs: 5000});
+    expect(await host.terminal.screen.text()).toContain('FAST_REASONING');
+    await host.command('/host-session new');
+    await host.terminal.screen.waitForText('HOST_SESSION_NEW', {
+      timeoutMs: 5000,
+    });
+    await host.command(`/host-session ${session}`);
+    await host.terminal.screen.waitForText('Resumed session', {
+      timeoutMs: 5000,
+    });
+    expect(await host.terminal.screen.text()).toContain('SLOW_REASONING');
+    expect(await readFile(session, 'utf8')).toBe(saved);
+    await host.terminal.keyboard.press('Control+T');
+    await host.terminal.screen.waitUntil(
+      snapshot => !snapshot.text.includes('SLOW_REASONING'),
+      {timeoutMs: 5000},
+    );
+    expect(await host.terminal.screen.text()).not.toMatch(/Thoughts · \d+s/u);
+  } finally {
+    gate.resolve();
+    answerGate.resolve();
+    await host.close();
+  }
+}, 30000);
+
+test('Cancelling thinking freezes its duration and preserves native interruption', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  const gate = Promise.withResolvers<void>();
+  try {
+    await host.terminal.resize({cols: 100, rows: 45});
+    await host.startResponse(
+      'UNREACHED_ANSWER',
+      'CANCELLED_REASONING',
+      gate.promise,
+    );
+    await host.terminal.screen.waitForText('CANCELLED_REASONING', {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.press('Control+T');
+    await host.terminal.screen.waitForText(/• Thinking · \d+s/u, {
+      timeoutMs: 5000,
+    });
+    await host.terminal.keyboard.press('Escape');
+    await host.terminal.screen.waitForText(/operation(?: was)? aborted/iu, {
+      timeoutMs: 5000,
+    });
+    gate.resolve();
+    const cancelled = await host.terminal.screen.text();
+    expect(cancelled).toMatch(/• Thoughts · \d+s/u);
+    expect(cancelled).not.toContain('UNREACHED_ANSWER');
+    const label = cancelled.match(/• Thoughts · \d+s/u)?.[0] ?? '';
+    await host.startResponse('RECOVERED_ANSWER', 'RECOVERED_REASONING');
+    await host.terminal.screen.waitForText('RECOVERED_ANSWER', {
+      timeoutMs: 5000,
+    });
+    expect(await host.terminal.screen.text()).toContain(label);
+  } finally {
+    gate.resolve();
     await host.close();
   }
 }, 30000);
