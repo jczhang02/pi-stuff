@@ -38,7 +38,7 @@ A separate scenario inserts a fresh ` Review` and checks that this new word's `R
 | 32,768     |                          59.5 |                           58.1 |                                  28.1 / 18.8 |
 | 131,072    |                          75.2 |                           80.8 |                                  19.6 / 19.1 |
 
-The observed color time is an upper bound: it includes frame retrieval and `waitUntil` polling at 10 ms. No-input observation itself has a median of roughly 13–18 ms, so these values are not pure worker times and P95 values must not simply be subtracted. All new keyword colors were confirmed without timeout. At 131,072 characters, color observation P95 was 75–81 ms, with a 104 ms maximum. Full visual updates for long drafts cost more than first character appearance. Dense-overlap and arbitrary-pattern color completion were not measured.
+The observed color time is an upper bound: it includes frame retrieval and `waitUntil` polling at 10 ms. No-input observation itself has a median of roughly 13–18 ms, so these values are not pure worker times and P95 values must not simply be subtracted. All new keyword colors were confirmed without timeout. At 131,072 characters, color observation P95 was 75–81 ms, with a 104 ms maximum. RGB confirmation occurs after character observation; this difference cannot all be attributed to product coloring. Dense-overlap and arbitrary-pattern color completion were not measured.
 
 ## Message display
 
