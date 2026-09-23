@@ -156,3 +156,95 @@ test('Coerced retrieval arguments stay visible between adjacent groups', async (
     await host.close();
   }
 }, 30000);
+
+test('Malformed Edit patches retain successful results through disclosure and reload', async () => {
+  const host = await launchPi(
+    '{}',
+    resolve('tests/system/fixtures/ui-invalid-patch.ts'),
+    'ui',
+  );
+  try {
+    for (const patch of [
+      'not a unified patch',
+      '@@ -1 +1 @@\n',
+      '@@ -1 +1 @@\n-before\n',
+      '@@ -1 +1 @@\n-before\n+after\nUNKNOWN',
+      '@@ -1 +1 @@\n-before\n+after\n@@ -5 +5 @@\n-truncated',
+    ]) {
+      await host.command('/new');
+      await host.terminal.screen.waitUntil(
+        async () => !(await host.terminal.screen.text()).includes('Edit('),
+        {timeoutMs: 5000},
+      );
+      await writeFile(join(host.directory, 'display.patch'), patch);
+      await writeFile(join(host.directory, 'source.txt'), 'before');
+      const result = await host.invoke(
+        'edit',
+        JSON.stringify({
+          path: 'source.txt',
+          edits: [{oldText: 'before', newText: 'after'}],
+        }),
+      );
+      expect(result).toContain('Successfully replaced');
+      expect(await readFile(join(host.directory, 'source.txt'), 'utf8')).toBe(
+        'after',
+      );
+      for (const stage of ['compact', 'expanded', 'reload']) {
+        if (stage === 'expanded')
+          await host.terminal.keyboard.press('Control+O');
+        if (stage === 'reload') await host.reload();
+        const screen = await host.terminal.screen.text();
+        expect(screen).toContain('• Edit(source.txt)');
+        expect(screen).toContain(`⎿  ${result}`);
+        expect(screen).not.toContain('Added ');
+      }
+    }
+  } finally {
+    await host.close();
+  }
+}, 60000);
+
+test('Native Edit retains separated hunks, missing final newlines and empty-file changes', async () => {
+  const host = await launchPi('{}', undefined, 'ui');
+  try {
+    await host.terminal.resize({cols: 120, rows: 60});
+    const before = Array.from(
+      {length: 24},
+      (_, i) => `const value${i} = ${i};`,
+    ).join('\n');
+    await writeFile(join(host.directory, 'hunks.ts'), before);
+    await host.invoke(
+      'edit',
+      JSON.stringify({
+        path: 'hunks.ts',
+        edits: [
+          {oldText: 'const value0 = 0;', newText: 'const first = 100;'},
+          {oldText: 'const value23 = 23;', newText: 'const last = 200;'},
+        ],
+      }),
+    );
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('const last = 200;', {
+      timeoutMs: 5000,
+    });
+    const screen = await host.terminal.screen.text();
+    expect(screen).toContain('Added 2 lines, removed 2 lines');
+    expect(screen).toMatch(/1 \+ const first = 100;/u);
+    expect(screen).toMatch(/24 \+ const last = 200;/u);
+    expect(screen).not.toContain('Successfully replaced');
+    await writeFile(join(host.directory, 'empty.txt'), 'remove');
+    await host.invoke(
+      'edit',
+      JSON.stringify({
+        path: 'empty.txt',
+        edits: [{oldText: 'remove', newText: ''}],
+      }),
+    );
+    expect(await host.terminal.screen.text()).toContain(
+      'Added 0 lines, removed 1 line',
+    );
+    expect(await readFile(join(host.directory, 'empty.txt'), 'utf8')).toBe('');
+  } finally {
+    await host.close();
+  }
+}, 30000);

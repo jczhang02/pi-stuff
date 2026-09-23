@@ -25,23 +25,43 @@ interface DiffLine {
 
 // The native result carries a standard patch. Reading the current file would
 // corrupt historical context after subsequent edits, so only use that patch.
-function patchHunks(patch: string): DiffLine[][] {
+function patchHunks(patch: string): DiffLine[][] | undefined {
   const hunks: DiffLine[][] = [];
   let oldLine = 0;
   let newLine = 0;
+  let oldRemaining = 0;
+  let newRemaining = 0;
   let current: DiffLine[] | undefined;
-  for (const line of patch.split('\n')) {
-    const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u.exec(line);
+  for (const line of patch.replace(/\n$/u, '').split('\n')) {
+    const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$/u.exec(
+      line,
+    );
     if (header) {
+      if (oldRemaining !== 0 || newRemaining !== 0) return undefined;
       oldLine = Number(header[1]);
-      newLine = Number(header[2]);
+      newLine = Number(header[3]);
+      oldRemaining = Number(header[2] ?? 1);
+      newRemaining = Number(header[4] ?? 1);
+      if (
+        ![oldLine, newLine, oldRemaining, newRemaining].every(
+          Number.isSafeInteger,
+        )
+      )
+        return undefined;
       current = [];
       hunks.push(current);
       continue;
     }
-    if (!current) continue;
+    if (!current) {
+      if (line.startsWith('--- ') || line.startsWith('+++ ')) continue;
+      return undefined;
+    }
+    if (line === '\\ No newline at end of file') continue;
     const kind = line[0];
-    if (kind !== ' ' && kind !== '+' && kind !== '-') continue;
+    if (kind !== ' ' && kind !== '+' && kind !== '-') return undefined;
+    if (kind !== '+') oldRemaining--;
+    if (kind !== '-') newRemaining--;
+    if (oldRemaining < 0 || newRemaining < 0) return undefined;
     current.push({
       kind,
       number: kind === '-' ? oldLine : newLine,
@@ -50,7 +70,11 @@ function patchHunks(patch: string): DiffLine[][] {
     if (kind !== '+') oldLine++;
     if (kind !== '-') newLine++;
   }
-  return hunks;
+  return oldRemaining === 0 &&
+    newRemaining === 0 &&
+    hunks.some(hunk => hunk.length > 0)
+    ? hunks
+    : undefined;
 }
 
 class EditDiff implements Component {
@@ -66,6 +90,7 @@ class EditDiff implements Component {
   constructor(
     readonly patch: string,
     readonly path: string,
+    private readonly hunks: DiffLine[][],
     private expanded: boolean,
     private theme: Theme,
     private readonly settings: UiSettings,
@@ -91,7 +116,7 @@ class EditDiff implements Component {
 
   private highlight(): DiffLine[][] {
     if (this.colored) return this.colored;
-    const hunks = patchHunks(this.patch);
+    const hunks = this.hunks.map(hunk => hunk.map(line => ({...line})));
     const all = hunks.flat();
     this.added = all.filter(line => line.kind === '+').length;
     this.removed = all.filter(line => line.kind === '-').length;
@@ -218,18 +243,10 @@ export function displayEdit(definition: ToolView, settings: UiSettings) {
     const patch = Schema.decodeUnknownSync(EditDetails)(
       result.details ?? {},
     ).patch;
-    if (context.isError || !patch)
-      return new ResultBlock(
-        result.content
-          .filter(block => block.type === 'text')
-          .map(block => block.text)
-          .join('\n'),
-        theme,
-        context.isError ? 'error' : 'toolOutput',
-      );
     const previous = context.lastComponent;
     const path = Schema.decodeUnknownSync(EditArgs)(context.args).path ?? '';
     if (
+      !context.isError &&
       previous instanceof EditDiff &&
       previous.patch === patch &&
       previous.path === path
@@ -237,7 +254,24 @@ export function displayEdit(definition: ToolView, settings: UiSettings) {
       previous.update(options.expanded, theme);
       return previous;
     }
-    return new EditDiff(patch, path, options.expanded, theme, settings);
+    const hunks = !context.isError && patch ? patchHunks(patch) : undefined;
+    if (patch && hunks)
+      return new EditDiff(
+        patch,
+        path,
+        hunks,
+        options.expanded,
+        theme,
+        settings,
+      );
+    return new ResultBlock(
+      result.content
+        .filter(block => block.type === 'text')
+        .map(block => block.text)
+        .join('\n'),
+      theme,
+      context.isError ? 'error' : 'toolOutput',
+    );
   };
   return tool;
 }
