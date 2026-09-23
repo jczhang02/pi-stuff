@@ -50,7 +50,7 @@ Discuss the exact combined label/prompt layout, access to skill instructions, sk
 ## Ordered interview
 
 1. Editor-only coloring is confirmed: text matching rather than invocation, regex entries with expression-defined boundaries, case-insensitive defaults with per-rule overrides, and invalid-entry isolation. Preserve input responsiveness when evaluating user patterns; implementation details require verification, not additional product exceptions.
-2. Recheck chart/tree using the retained compatibility contract above.
+2. Chart/tree is confirmed against the full compatibility contract above, including user-message projection without retro recoloring. Continue with native skill triggering.
 3. Explain native beginning-only invocation, then establish whether a behavior change is desired.
 4. Define the single visible skill/prompt message using the old display as a reference and normal user-message colors.
 
