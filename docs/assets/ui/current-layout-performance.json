@@ -1,6 +1,6 @@
 {
   "commit": "0221b6f7207e87fac83f279b8e4b0e458f6fd958",
-  "host": "Compiled Pi 0.87.0, Bun 1.4.0, Terminal Control 1.2.1, Linux x86_64",
+  "host": "Compiled Pi 0.87.1, Bun 1.4.0, Terminal Control 1.2.1, Linux x86_64",
   "settings": "UI off/on/on/off/off/on; RTK rewrite and ANSI false; automatic compaction false; default welcome; dark 100x36 initially",
   "limitations": [
     "resizeMs is excluded: its predicate does not establish completed host reflow.",
@@ -10,7 +10,8 @@
     "reloadMs observes operation readiness, not guaranteed final redraw.",
     "interacted CPU includes calibration and resource observations.",
     "Single-event provider, not paced streaming or real-model endurance.",
-    "RSS is instantaneous; no forced GC, peak measurement or leak conclusion."
+    "RSS is instantaneous; no forced GC, peak measurement or leak conclusion.",
+    "Host version verified retrospectively with pi --version; executable mtime preceded these runs. No per-launch version/hash was recorded. Initial report reused an outdated 0.87.0 label."
   ],
   "samples": [
     {

@@ -3,6 +3,8 @@ import {
   type ExtensionAPI,
 } from '@earendil-works/pi-coding-agent';
 
+import {Schema} from 'effect';
+
 // Exercise public session actions without replacing product event handlers.
 export default function (pi: ExtensionAPI) {
   const points = new Map<string, string>();
@@ -37,6 +39,10 @@ export default function (pi: ExtensionAPI) {
       for (const entry of ctx.sessionManager.getBranch()) {
         if (entry.type !== 'message') continue;
         const message = entry.message;
+        // Newer hosts persist system-prompt snapshots. Replay conversational
+        // records only; the destination session owns its system context.
+        if (Schema.is(Schema.Struct({role: Schema.Literal('system')}))(message))
+          continue;
         if (
           message.role === 'assistant' &&
           message.content.some(block => block.type === 'toolCall')
