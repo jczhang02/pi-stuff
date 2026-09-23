@@ -3,6 +3,7 @@ import type {
   ExtensionContext,
   MessageEndEvent,
   SessionStartEvent,
+  SessionCompactEvent,
   SessionTreeEvent,
 } from '@earendil-works/pi-coding-agent';
 
@@ -46,15 +47,21 @@ export class RetrievalGroups {
       this.expanded = () => false;
     };
     const restore = (
-      _event: SessionStartEvent | SessionTreeEvent,
+      _event: SessionStartEvent | SessionTreeEvent | SessionCompactEvent,
       ctx: ExtensionContext,
     ) => {
       reset();
       this.expanded = () => ctx.ui.getToolsExpanded();
-      for (const entry of ctx.sessionManager.getBranch()) {
+      const entries = ctx.sessionManager.buildContextEntries();
+      const compaction =
+        entries[0]?.type === 'compaction' ? entries[0] : undefined;
+      for (const entry of entries) {
         if (entry.type === 'message') this.message(entry.message);
         else if (entry.type === 'branch_summary' || entry.type === 'compaction')
           this.tail = undefined;
+        // Pi prepends the summary to context. Its parent retains the actual
+        // boundary between kept history and the continuation after compaction.
+        if (entry.id === compaction?.parentId) this.tail = undefined;
       }
     };
     pi.on('session_start', restore);
@@ -62,6 +69,7 @@ export class RetrievalGroups {
     // Drop the old context before it becomes stale during session replacement.
     pi.on('session_shutdown', reset);
     pi.on('session_tree', restore);
+    pi.on('session_compact', restore);
     pi.on('message_end', event => this.message(event.message));
   }
 

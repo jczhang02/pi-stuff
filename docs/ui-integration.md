@@ -186,3 +186,15 @@ The TUI adapter now supplies renderer-only WebSearch, WebFetch and WebRead views
 The mixed local/Web reload regression failed before this increment and now passes. Both hosts passed 15 focused tests and 131 assertions, including disabled Web history through reload/new/resume, retained fetch/read content and search-authentication failures, byte-identical records, no additional local requests, and disabled tools absent from a subsequent model request. Same-runtime session replacement also retains Web grouping. Existing batch metadata, empty results, warnings, parallel calls and cancellation checks pass.
 
 The missing-view fallback recognizes the three owned API names. Saved tool calls do not identify an uninstalled extension's renderer, so this does not prove historical ownership for an absent third-party tool that reused one of those names. Existing foreign definitions are preserved; arbitrary extension registration orders and complete compatibility/performance acceptance remain pending. The core adapter is now 97 lines including comments and blanks.
+
+### Compaction and retrieval boundaries
+
+A mid-turn compaction exposed a display bug: when the first call of a three-call retrieval group was summarized away, the remaining two calls stayed hidden because the group still pointed to the removed leader. The index now restores from Pi's `buildContextEntries()` and listens to `session_compact`, before Pi rebuilds the transcript. It does not change compaction or session storage.
+
+Pi places the latest compaction summary at the start of that context list. The index uses the summary entry's existing `parentId` to retain its chronological boundary, so a direct tool continuation after compaction starts a separate group. Without that step, a restored two-call group and the next call incorrectly merged into `Read 3 files`.
+
+Both failures were observed before their fixes. The system tests drive native `/compact` with a fixed summary and a legal assistant-message cut, check retained results after a disk change and reload, and restore a session built with Pi's public SessionManager from actual tool messages to check the continuation boundary. They do not trigger automatic context overflow or use a live summarization model. Tree/fork, retrieval failure/cancellation and Web-history regressions run alongside them.
+
+This capture shows the retained two-call group expanded after compaction on compiled Pi 0.87.0 / Bun 1.4.0. Terminal Control exported a 100×28 dark-theme capture using `JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono`; it is not a Ghostty-window screenshot.
+
+![Retained retrievals after a mid-turn compaction](assets/ui/compaction-history-dark-100.png)
