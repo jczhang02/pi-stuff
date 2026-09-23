@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
-    name: checks
+  quality:
+    name: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -37,8 +37,6 @@ jobs:
         run: bun run lint
       - name: Type check owned code
         run: bun run typecheck
-      - name: Run offline product and Pi terminal tests
-        run: bun run test
       - name: Validate workflows with actionlint 1.7.12
         run: |
           mkdir -p "$RUNNER_TEMP/actionlint"
@@ -50,3 +48,83 @@ jobs:
             "$RUNNER_TEMP/actionlint/archive.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/actionlint/archive.tar.gz" -C "$RUNNER_TEMP/actionlint"
           "$RUNNER_TEMP/actionlint/actionlint"
+
+  compatibility:
+    name: Pi ${{ matrix.pi }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pi: 0.85.1
+            typebox: 1.3.7
+            sha256: 494e498f47d74d21f40b3386f6a5e921a3d49531a169cab55bbdaca0ea1fe25a
+          - pi: 0.86.1
+            typebox: 1.3.27
+            sha256: 2494f5587a8774a10296d00a7e504e7ad05596ca93e057cb89372c8b1a7f46a9
+          - pi: 0.87.1
+            typebox: 1.3.27
+            sha256: 80d78dd62d50049a006b981d994c61255bcc10e730b0c278d4ea0a755909764c
+    env:
+      PI_VERSION: ${{ matrix.pi }}
+      PI_SHA256: ${{ matrix.sha256 }}
+      TYPEBOX_VERSION: ${{ matrix.typebox }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - name: Install tooling dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare an isolated production package without host peers
+        run: |
+          mkdir -p "$RUNNER_TEMP/pi-stuff-package"
+          cp -R index.ts src themes package.json bun.lock "$RUNNER_TEMP/pi-stuff-package/"
+          bun install --cwd "$RUNNER_TEMP/pi-stuff-package" \
+            --frozen-lockfile --production --omit peer --ignore-scripts
+          test ! -e "$RUNNER_TEMP/pi-stuff-package/node_modules/@earendil-works"
+          test ! -e "$RUNNER_TEMP/pi-stuff-package/node_modules/typebox"
+      - name: Check the selected Pi API
+        run: |
+          bun add --dev --exact --ignore-scripts \
+            "@earendil-works/pi-ai@$PI_VERSION" \
+            "@earendil-works/pi-agent-core@$PI_VERSION" \
+            "@earendil-works/pi-coding-agent@$PI_VERSION" \
+            "@earendil-works/pi-tui@$PI_VERSION" \
+            "typebox@$TYPEBOX_VERSION"
+          bun run typecheck
+      - name: Download and verify the selected Linux compiled host
+        run: |
+          mkdir -p "$RUNNER_TEMP/pi-host"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://github.com/earendil-works/pi/releases/download/v$PI_VERSION/pi-linux-x64.tar.gz" \
+            -o "$RUNNER_TEMP/pi-host/archive.tar.gz"
+          printf '%s  %s\n' "$PI_SHA256" "$RUNNER_TEMP/pi-host/archive.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/pi-host/archive.tar.gz" -C "$RUNNER_TEMP/pi-host"
+          test "$("$RUNNER_TEMP/pi-host/pi/pi" --version)" = "$PI_VERSION"
+      - name: Run the full offline suite with the selected compiled host
+        env:
+          PI_TEST_HOST: ${{ runner.temp }}/pi-host/pi/pi
+          PI_TEST_PACKAGE: ${{ runner.temp }}/pi-stuff-package
+          PI_TEST_VERSION: ${{ matrix.pi }}
+        run: bun run test
+
+  checks:
+    name: checks
+    if: ${{ always() }}
+    needs: [quality, compatibility]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require all quality and compatibility checks
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          COMPATIBILITY_RESULT: ${{ needs.compatibility.result }}
+        run: |
+          test "$QUALITY_RESULT" = success
+          test "$COMPATIBILITY_RESULT" = success
