@@ -16,9 +16,9 @@ Match complete skill references and configured keywords without classifying pros
 
 Recognize complete `/skill:<name>` text and configured keywords. A textual skill reference does not require an installed skill and highlighting does not invoke it. Preserve the editor draft, submitted text, stored messages and provider context.
 
-Keyword matching supports regular expressions and is case-insensitive by default. This supersedes the earlier case-sensitive, literal-only requirement. The default keyword list remains empty. Whether every entry is a regex or literal and regex entries coexist, how whole-word boundaries are expressed, case-sensitive overrides and malformed-pattern handling remain to be settled. Do not carry forward the earlier `Review` exclusion or silently combine the previous word/path exceptions with regex semantics. Complete skill references take precedence over keywords. Resolve keywords left to right, choosing the longest match at the same start. Paint each match once, restart its gradient at its own beginning, and preserve the phase across wrapping.
+Every keyword entry is a regular expression, case-insensitive by default, with an optional per-rule case-sensitive override. The default list is empty. The expression alone defines matching boundaries; do not add language-specific whole-word or path exceptions. For example, `review` also matches `Review` and the matching portion of `preview`; use explicit regex boundaries when needed. Regex metacharacters in literal text must be escaped. Complete skill references take precedence over keywords. Resolve keywords left to right, choosing the longest match at the same start. Paint each match once, restart its gradient at its own beginning, and preserve the phase across wrapping.
 
-Use the existing global `pi-stuff.json`, with no project override. Provide a settings-panel switch; edit the keyword list in the file and apply file changes with `/reload`. Additional panel editing was not requested. The switch defaults on, controls both skill and keyword highlighting, and applies and saves panel changes immediately. Disabling highlighting does not disable chart/tree. Retain the existing file/schema error-handling contract; handling an invalid regex entry remains a separate pending decision.
+Use the existing global `pi-stuff.json`, with no project override. Provide a settings-panel switch; edit the keyword list in the file and apply file changes with `/reload`. Additional panel editing was not requested. The switch defaults on, controls both skill and keyword highlighting, and applies and saves panel changes immediately. Disabling highlighting does not disable chart/tree. Retain the existing file/schema error-handling contract. Skip invalid regex entries and report them once per configuration load, while valid rules and the editor continue working.
 
 ### Chart and tree display
 
@@ -49,7 +49,7 @@ Discuss the exact combined label/prompt layout, access to skill instructions, sk
 
 ## Ordered interview
 
-1. Editor-only coloring is confirmed as text matching, not installed-skill validation or invocation. Settle regex configuration, boundaries, flags and invalid-pattern handling before moving to chart/tree. Preserve input responsiveness when evaluating user patterns; the implementation strategy remains open.
+1. Editor-only coloring is confirmed: text matching rather than invocation, regex entries with expression-defined boundaries, case-insensitive defaults with per-rule overrides, and invalid-entry isolation. Preserve input responsiveness when evaluating user patterns; implementation details require verification, not additional product exceptions.
 2. Recheck chart/tree using the retained compatibility contract above.
 3. Explain native beginning-only invocation, then establish whether a behavior change is desired.
 4. Define the single visible skill/prompt message using the old display as a reference and normal user-message colors.
