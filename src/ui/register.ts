@@ -8,7 +8,7 @@ import {displayEdit} from './edit';
 import {displayRetrieval, readParts, RetrievalDetails} from './retrieval';
 import {Schema} from 'effect';
 import {stripTerminalSequences} from '@earendil-works/pi-tui';
-import {registerToolDisplay} from './tool-lookup';
+import {registerToolDisplay, type ToolView} from './tool-lookup';
 import {webView} from './web';
 import type {UiSettings} from './settings';
 
@@ -34,6 +34,36 @@ export function registerUi(
     offset: Schema.optional(Schema.Number),
     limit: Schema.optional(Schema.Number),
   });
+  function builtinView(name: string, tool: ToolView): ToolView | undefined {
+    if (name === 'bash') return bash.display(tool, settings);
+    if (name === 'write') return displayWrite(tool, settings);
+    if (name === 'edit') return displayEdit(tool, settings);
+    const label = localTools.get(name);
+    if (!label) return;
+    return displayRetrieval(
+      {...tool, name},
+      label,
+      args => {
+        const target = Schema.decodeUnknownSync(localArgs)(args);
+        const path = target.path ?? (name === 'read' ? '' : '.');
+        return name === 'grep' || name === 'find'
+          ? `${target.pattern ?? ''}, ${path}`
+          : path;
+      },
+      name === 'read'
+        ? (output, details, args) => {
+            const range = Schema.decodeUnknownSync(localArgs)(args);
+            return readParts(
+              output,
+              Schema.decodeUnknownSync(RetrievalDetails)(details ?? {}),
+              range.offset,
+              range.limit,
+            );
+          }
+        : undefined,
+      groups,
+    );
+  }
   registerToolDisplay(
     pi,
     owner,
@@ -65,36 +95,10 @@ export function registerUi(
           ],
         );
       }
-      if (tool.name === 'bash') return bash.display(tool, settings);
-      if (tool.name === 'write') return displayWrite(tool, settings);
-      if (tool.name === 'edit') return displayEdit(tool, settings);
-      const label = localTools.get(tool.name);
-      if (!label) return tool;
-      return displayRetrieval(
-        {...tool},
-        label,
-        args => {
-          const target = Schema.decodeUnknownSync(localArgs)(args);
-          const path = target.path ?? (tool.name === 'read' ? '' : '.');
-          return tool.name === 'grep' || tool.name === 'find'
-            ? `${target.pattern ?? ''}, ${path}`
-            : path;
-        },
-        tool.name === 'read'
-          ? (output, details, args) => {
-              const range = Schema.decodeUnknownSync(localArgs)(args);
-              return readParts(
-                output,
-                Schema.decodeUnknownSync(RetrievalDetails)(details ?? {}),
-                range.offset,
-                range.limit,
-              );
-            }
-          : undefined,
-        groups,
-      );
+      return builtinView(tool.name, tool) ?? tool;
     },
-    name => webView(name, groups),
+    (name, native) =>
+      (native ? builtinView(name, native) : undefined) ?? webView(name, groups),
   );
   return groups;
 }

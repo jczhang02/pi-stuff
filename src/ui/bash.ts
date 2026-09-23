@@ -1,10 +1,7 @@
+import type {ToolView} from './tool-lookup';
 import {Schema} from 'effect';
 import {ToolHeading} from './heading';
-import {
-  type ExtensionAPI,
-  type ToolDefinition,
-  type Theme,
-} from '@earendil-works/pi-coding-agent';
+import {type ExtensionAPI, type Theme} from '@earendil-works/pi-coding-agent';
 import {
   truncateToWidth,
   wrapTextWithAnsi,
@@ -137,8 +134,8 @@ export class BashDisplay {
     pi.on('session_shutdown', clear);
   }
 
-  display(definition: ToolDefinition, settings: UiSettings) {
-    const tool: ToolDefinition = {
+  display(definition: ToolView, settings: UiSettings) {
+    const tool: ToolView = {
       ...definition,
       renderShell: 'self',
       renderCall: (args, theme, context) =>

@@ -1,5 +1,4 @@
 import type {ExtensionAPI} from '@earendil-works/pi-coding-agent';
-import {Type} from 'typebox';
 import {visibleWidth} from '@earendil-works/pi-tui';
 import {BashDisplay} from '../../../src/ui/bash';
 import {displayRetrieval} from '../../../src/ui/retrieval';
@@ -12,18 +11,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (label, ctx) => {
       const tools = [
         displayRetrieval({name: 'read'}, 'Read', () => 'fixture.txt'),
-        bash.display(
-          {
-            name: 'bash',
-            label: 'Bash',
-            description: 'Render-only fixture',
-            parameters: Type.Object({}),
-            async execute() {
-              throw new Error('Width fixture must not execute');
-            },
-          },
-          {},
-        ),
+        {name: 'bash', ...bash.display({}, {})},
       ];
       for (const tool of tools) {
         for (const text of [

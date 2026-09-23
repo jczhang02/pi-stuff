@@ -1,9 +1,9 @@
+import type {ToolView} from './tool-lookup';
 import {Schema} from 'effect';
 import {ToolHeading} from './heading';
 import {ResultBlock} from './result-block';
 import type {UiSettings} from './settings';
 import {
-  type ToolDefinition,
   getLanguageFromPath,
   highlightCode,
   type Theme,
@@ -101,7 +101,7 @@ const WriteArgs = Schema.Struct({
   content: Schema.optional(Schema.String),
 });
 
-export function displayWrite(definition: ToolDefinition, settings: UiSettings) {
+export function displayWrite(definition: ToolView, settings: UiSettings) {
   const tool = {...definition};
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) =>

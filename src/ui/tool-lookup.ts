@@ -26,7 +26,7 @@ export function registerToolDisplay(
   pi: ExtensionAPI,
   owner: MarkdownTransformer,
   decorate: (tool: ToolDefinition, session: AgentSession) => ToolView,
-  missing: (name: string) => ToolView | undefined,
+  missing: (name: string, native: ToolView | undefined) => ToolView | undefined,
 ): void {
   const decoded = Schema.decodeUnknownOption(HostPrototype)(
     InteractiveMode.prototype,
@@ -58,7 +58,7 @@ export function registerToolDisplay(
     const existing = definition ? {...definition, ...tool} : undefined;
     const view = existing
       ? decorate(existing, session)
-      : (tool ?? missing(name));
+      : (missing(name, tool) ?? tool);
     if (!view || view === existing || view === tool) return tool;
     const renderResult = view.renderResult;
     if (!renderResult) return view;
