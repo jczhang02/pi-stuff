@@ -150,3 +150,9 @@ The existing real-host resume test failed before this slice and passed afterward
 The focused Read suites pass on both hosts: seven tests and 65 assertions each. The capture below shows compiled Pi 0.87.0 after reload, with the restored group open and only the first result expanded. It uses a deterministic local provider, Pi dark theme and a 100×32 Terminal Control export, not a native Ghostty window.
 
 ![Restored Read group with local result disclosure](assets/ui/read-history-dark-100.png)
+
+### Remaining local retrieval tools
+
+Grep, Find and Ls now use the same TUI adapter as Read. Their UI registration replacements and native factory calls were removed; execution and tool schemas stay with Pi. The adapter itself remains 95 lines including comments and blank lines. This migration adds 28 and removes 45 production lines relative to `f8af471`, a net reduction of 17; these are increment counts, not the complete UI implementation size.
+
+A real-host regression checks mixed retrieval grouping, reload and new-session/resume, left-aligned mouse disclosure, saved-record byte equality and retained Grep output after the source file changes. It failed before the migration and passed on both supported hosts afterward. Write, Edit, Bash and absent Web history remain to be migrated.

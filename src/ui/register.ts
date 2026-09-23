@@ -1,8 +1,5 @@
 import {
   getAgentDir,
-  createGrepToolDefinition,
-  createFindToolDefinition,
-  createLsToolDefinition,
   SettingsManager,
   type ExtensionAPI,
   type BashToolOptions,
@@ -28,14 +25,22 @@ export function registerUi(
   const bash = new BashDisplay(pi);
   const groups =
     settings.retrievalGroups === false ? undefined : new RetrievalGroups(pi);
-  const readArgs = Schema.Struct({
+  const localTools = new Map([
+    ['read', 'Read'],
+    ['grep', 'Grep'],
+    ['find', 'Find'],
+    ['ls', 'Ls'],
+  ]);
+  const localArgs = Schema.Struct({
+    pattern: Schema.optional(Schema.String),
     path: Schema.optional(Schema.String),
     offset: Schema.optional(Schema.Number),
     limit: Schema.optional(Schema.Number),
   });
   registerToolDisplay(pi, owner, (tool, session) => {
+    const label = localTools.get(tool.name);
     if (
-      tool.name !== 'read' ||
+      !label ||
       !session
         .getAllTools()
         .some(
@@ -46,17 +51,25 @@ export function registerUi(
       return tool;
     return displayRetrieval(
       {...tool},
-      'Read',
-      args => Schema.decodeUnknownSync(readArgs)(args).path ?? '',
-      (output, details, args) => {
-        const range = Schema.decodeUnknownSync(readArgs)(args);
-        return readParts(
-          output,
-          Schema.decodeUnknownSync(RetrievalDetails)(details ?? {}),
-          range.offset,
-          range.limit,
-        );
+      label,
+      args => {
+        const target = Schema.decodeUnknownSync(localArgs)(args);
+        const path = target.path ?? (tool.name === 'read' ? '' : '.');
+        return tool.name === 'grep' || tool.name === 'find'
+          ? `${target.pattern ?? ''}, ${path}`
+          : path;
       },
+      tool.name === 'read'
+        ? (output, details, args) => {
+            const range = Schema.decodeUnknownSync(localArgs)(args);
+            return readParts(
+              output,
+              Schema.decodeUnknownSync(RetrievalDetails)(details ?? {}),
+              range.offset,
+              range.limit,
+            );
+          }
+        : undefined,
       groups,
     );
   });
@@ -82,36 +95,6 @@ export function registerUi(
     const native = (name: string) =>
       tools.some(
         tool => tool.name === name && tool.sourceInfo.source === 'builtin',
-      );
-    if (native('grep'))
-      pi.registerTool(
-        displayRetrieval(
-          createGrepToolDefinition(ctx.cwd),
-          'Grep',
-          args => `${args.pattern ?? ''}, ${args.path ?? '.'}`,
-          undefined,
-          groups,
-        ),
-      );
-    if (native('find'))
-      pi.registerTool(
-        displayRetrieval(
-          createFindToolDefinition(ctx.cwd),
-          'Find',
-          args => `${args.pattern ?? ''}, ${args.path ?? '.'}`,
-          undefined,
-          groups,
-        ),
-      );
-    if (native('ls'))
-      pi.registerTool(
-        displayRetrieval(
-          createLsToolDefinition(ctx.cwd),
-          'Ls',
-          args => args.path ?? '.',
-          undefined,
-          groups,
-        ),
       );
     if (!native('bash')) return;
     const options: BashToolOptions = {};
