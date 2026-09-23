@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/editor-visualizations-spec.md) · English is normative.
 
-Status: design interview restarted in the maintainer's requested order: editor highlighting, chart/tree, native skill triggering, then unified skill-message display. [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119) tracks delivery. Production implementation awaits explicit shared-understanding confirmation.
+Status: all four interview topics are settled: editor highlighting, chart/tree, native skill triggering and unified skill-message display. [Issue #119](https://github.com/jczhang02/pi-stuff/issues/119) tracks delivery. Production implementation awaits explicit shared-understanding confirmation.
 
 ## Confirmed behavior
 
@@ -45,16 +45,20 @@ The maintainer requests one visible user prompt message for `/skill:name prompt`
 
 Pi 0.87.1 already stores the skill block and prompt in one user message. The interactive renderer splits it into a `SkillInvocationMessageComponent` and, when arguments exist, a `UserMessageComponent`. The request concerns this visible split; it does not require merging two stored records.
 
-Discuss the exact combined label/prompt layout, access to skill instructions, skill-only input and restored history in the fourth interview topic. The old implementation is a behavioral reference, not approval to import its rainbow user-message styling or private host patches.
+Display the full `/skill:<name>` label and an ordinary prompt together in one user-message card, preserving normal colors, background, spacing and Markdown rendering. A prompt beginning with a list, quote or code block starts below the label to preserve its structure.
+
+Skill instructions are collapsed by default. Use the native expansion operation to show them after the prompt within the same card, without duplicating the prompt. A skill-only invocation shows the label alone and still supports instruction expansion. Apply the same presentation to restored history. Preserve canonical session records and model input.
+
+The maintainer confirmed these display rules. The old implementation is a behavioral reference, not approval to import its rainbow user-message styling or private host patches.
 
 ## Ordered interview
 
 1. Editor-only coloring is confirmed: text matching rather than invocation, regex entries with expression-defined boundaries, case-insensitive defaults with per-rule overrides, and invalid-entry isolation. Preserve input responsiveness when evaluating user patterns; implementation details require verification, not additional product exceptions.
 2. Chart/tree is confirmed against the full compatibility contract above, including user-message projection without retro recoloring.
-3. Native skill triggering is confirmed unchanged. Continue with unified skill-message display.
-4. Define the single visible skill/prompt message using the old display as a reference and normal user-message colors.
+3. Native skill triggering is confirmed unchanged.
+4. Unified skill/prompt display is confirmed: one normally colored card, native instruction expansion within that card, label-only skill invocations and the same presentation for restored history.
 
-Production work still awaits final shared-understanding confirmation after these topics.
+All four topics are settled. Production work still awaits final shared-understanding confirmation.
 
 ## Integration and acceptance
 
