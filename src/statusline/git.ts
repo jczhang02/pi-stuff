@@ -1,4 +1,4 @@
-import {execFile} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {stat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Effect, Schema} from 'effect';
@@ -22,27 +22,72 @@ function command(cwd: string, args: string[], signal: AbortSignal) {
   return Effect.tryPromise({
     try: effectSignal =>
       new Promise<string>((resolve, reject) => {
-        execFile(
-          'git',
-          ['--no-optional-locks', ...args],
-          {
-            cwd,
-            signal: AbortSignal.any([signal, effectSignal]),
-            timeout: 2000,
-            maxBuffer: 4 * 1024 * 1024,
-            encoding: 'utf8',
-            env: {...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0'},
-          },
-          (error, stdout, stderr) => {
-            if (error)
-              reject(
-                new GitError({
-                  outside: stderr.includes('not a git repository'),
-                }),
-              );
-            else resolve(stdout);
-          },
-        );
+        const abortSignal = AbortSignal.any([signal, effectSignal]);
+        if (abortSignal.aborted) {
+          reject(new GitError({outside: false}));
+          return;
+        }
+        let settled = false;
+        const child = spawn('git', ['--no-optional-locks', ...args], {
+          cwd,
+          detached: process.platform !== 'win32',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: {...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0'},
+        });
+        const stdout: Buffer[] = [];
+        const stderr: Buffer[] = [];
+        let bytes = 0;
+        const killGroup = () => {
+          try {
+            if (child.pid !== undefined && process.platform !== 'win32')
+              process.kill(-child.pid, 'SIGKILL');
+            else child.kill('SIGKILL');
+          } catch {
+            // The group may have exited before cancellation arrived.
+          }
+        };
+        const cleanup = () => {
+          clearTimeout(timeout);
+          abortSignal.removeEventListener('abort', abort);
+        };
+        const abort = () => {
+          if (settled) return;
+          settled = true;
+          killGroup();
+          cleanup();
+          reject(new GitError({outside: false}));
+        };
+        const timeout = setTimeout(abort, 2000);
+        for (const [stream, chunks] of [
+          [child.stdout, stdout],
+          [child.stderr, stderr],
+        ] as const) {
+          stream.on('data', (chunk: Buffer) => {
+            if (settled) return;
+            bytes += chunk.byteLength;
+            if (bytes > 4 * 1024 * 1024) abort();
+            else chunks.push(chunk);
+          });
+        }
+        child.once('error', abort);
+        child.once('close', code => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          if (code === 0) resolve(Buffer.concat(stdout).toString('utf8'));
+          else {
+            killGroup();
+            reject(
+              new GitError({
+                outside: Buffer.concat(stderr)
+                  .toString('utf8')
+                  .includes('not a git repository'),
+              }),
+            );
+          }
+        });
+        abortSignal.addEventListener('abort', abort, {once: true});
+        if (abortSignal.aborted) abort();
       }),
     catch: error =>
       error instanceof GitError ? error : new GitError({outside: false}),

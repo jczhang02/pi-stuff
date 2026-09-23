@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test';
-import {mkdtemp, writeFile, rm, mkdir, chmod} from 'node:fs/promises';
+import {mkdtemp, writeFile, rm, mkdir, chmod, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Effect} from 'effect';
@@ -120,6 +120,66 @@ test('Git process failure, timeout and cancellation discard counts and recover',
     ).toEqual({kind: 'outside'});
   } finally {
     process.env.PATH = previous;
+    await rm(root, {recursive: true, force: true});
+  }
+}, 10000);
+
+test('Git cancellation and timeout stop fsmonitor descendants', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'statusline-git-descendants-'));
+  let helper = 0;
+  const git = async (...args: string[]) => {
+    const child = Bun.spawn(['git', ...args], {
+      cwd: root,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    expect(await child.exited).toBe(0);
+  };
+  const alive = async () => {
+    const status = await readFile(`/proc/${helper}/stat`, 'utf8').catch(
+      () => '',
+    );
+    return status !== '' && !status.includes(') Z ');
+  };
+  try {
+    await git('init', '-b', 'fixture');
+    await writeFile(join(root, 'tracked'), 'x');
+    await git('add', 'tracked');
+    await writeFile(
+      join(root, 'monitor'),
+      '#!/bin/sh\necho $$ > monitor.pid\nexec /bin/sleep 30\n',
+      {mode: 0o700},
+    );
+    await git('config', 'core.fsmonitor', join(root, 'monitor'));
+    for (const cancel of [true, false]) {
+      await rm(join(root, 'monitor.pid'), {force: true});
+      const controller = new AbortController();
+      const pending = Effect.runPromise(readGit(root, controller.signal));
+      try {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          helper = Number(
+            await readFile(join(root, 'monitor.pid'), 'utf8').catch(() => '0'),
+          );
+          if (helper) break;
+          await Bun.sleep(20);
+        }
+        expect(helper).toBeGreaterThan(0);
+        if (cancel) controller.abort();
+        expect(await pending).toEqual({kind: 'unknown'});
+        for (let attempt = 0; attempt < 50 && (await alive()); attempt++)
+          await Bun.sleep(10);
+        expect(await alive()).toBe(false);
+      } finally {
+        controller.abort();
+        await pending;
+        if (helper) {
+          try {
+            process.kill(helper, 'SIGKILL');
+          } catch {}
+        }
+      }
+    }
+  } finally {
     await rm(root, {recursive: true, force: true});
   }
 }, 10000);

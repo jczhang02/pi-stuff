@@ -87,28 +87,101 @@ function row(width: number, fields: Field[], separator: string): string {
   );
 }
 
-// At most eight Git detail fields exist. Try every whole-field partition before
-// sacrificing an identity; a greedy split can miss a short counter that fits.
-function splitGitDetails(
+function required(text: string, side: Field['side']): Field {
+  return {text, side, priority: Infinity};
+}
+
+// Search both branch placements and whole-detail partitions. Keep all details
+// before shortening identities; drop lower-priority details only as whole fields.
+function gitRows(
+  width: number,
+  directory: string,
+  branch: string,
   details: string[],
-  firstSpace: number,
-  secondSpace: number,
-  separator: string,
+  sep: string,
 ) {
-  for (let mask = (1 << details.length) - 1; mask >= 0; mask--) {
-    const first = details
-      .filter((_field, index) => mask & (1 << index))
-      .join(separator);
-    const second = details
-      .filter((_field, index) => !(mask & (1 << index)))
-      .join(separator);
-    if (
-      (first ? visibleWidth(first) + 2 : 0) <= firstSpace &&
-      (second ? visibleWidth(second) + 2 : 0) <= secondSpace
-    )
-      return [first, second] as const;
+  const directoryWidth = visibleWidth(directory);
+  const branchWidth = visibleWidth(branch);
+  const minimumDirectory = Math.min(3, directoryWidth, width);
+  const minimumBranch = Math.min(3, branchWidth, width);
+  for (let count = details.length; count >= 0; count--) {
+    const fields = details.slice(0, count);
+    let best:
+      | {first: Field[]; second: Field[]; retained: number; pathWidth: number}
+      | undefined;
+    for (const branchFirst of [true, false]) {
+      for (let partition = 0; partition < 1 << count; partition++) {
+        const mask = branchFirst ? (1 << count) - 1 - partition : partition;
+        const firstDetails = fields
+          .filter((_text, i) => mask & (1 << i))
+          .join(sep);
+        const secondDetails = fields
+          .filter((_text, i) => !(mask & (1 << i)))
+          .join(sep);
+        const firstWidth = visibleWidth(firstDetails);
+        const secondWidth = visibleWidth(secondDetails);
+        let pathSpace: number;
+        let branchSpace: number;
+        if (branchFirst) {
+          if (secondWidth > width) continue;
+          const detailSpace =
+            firstWidth + (branch && firstDetails ? visibleWidth(sep) : 0);
+          const gap = directory && (branch || firstDetails) ? 2 : 0;
+          pathSpace = Math.min(
+            directoryWidth,
+            width - detailSpace - gap - minimumBranch,
+          );
+          branchSpace = Math.min(
+            branchWidth,
+            width - detailSpace - gap - pathSpace,
+          );
+        } else {
+          pathSpace = Math.min(
+            directoryWidth,
+            width - firstWidth - (directory && firstDetails ? 2 : 0),
+          );
+          branchSpace = Math.min(
+            branchWidth,
+            width - secondWidth - (branch && secondDetails ? 2 : 0),
+          );
+        }
+        if (pathSpace < minimumDirectory || branchSpace < minimumBranch)
+          continue;
+        const retained = pathSpace + branchSpace;
+        if (
+          best &&
+          (retained < best.retained ||
+            (retained === best.retained && pathSpace <= best.pathWidth))
+        )
+          continue;
+        const path = truncateToWidth(directory, pathSpace, '…');
+        const name = truncateToWidth(branch, branchSpace, '…');
+        const first = [required(path, 'left')];
+        const second: Field[] = [];
+        if (branchFirst) {
+          first.push(
+            required([name, firstDetails].filter(Boolean).join(sep), 'right'),
+          );
+          second.push(required(secondDetails, 'right'));
+        } else {
+          first.push(required(firstDetails, 'right'));
+          const git = [name, secondDetails].filter(Boolean).join(sep);
+          if (visibleWidth(git) <= width) second.push(required(git, 'left'));
+          else
+            second.push(
+              required(name, 'left'),
+              required(secondDetails, 'right'),
+            );
+        }
+        best = {first, second, retained, pathWidth: pathSpace};
+      }
+    }
+    if (best) return best;
   }
-  return undefined;
+  return {
+    first: [required(truncateToWidth(directory, width, '…'), 'left')],
+    second: [required(truncateToWidth(branch, width, '…'), 'left')],
+  };
 }
 
 function tokens(value: number): string {
@@ -185,65 +258,9 @@ export function renderFooter(
     if (!counts.length) counts.push(theme.fg('muted', 'clean'));
   } else if (view.git.kind === 'unknown')
     counts.push(theme.fg('muted', 'git ?'));
-  const worktree = counts.join(sep);
-  const divergenceFields = [
-    snapshot?.ahead ? theme.fg('accent', `↑${snapshot.ahead}`) : '',
-    snapshot?.behind ? theme.fg('warning', `↓${snapshot.behind}`) : '',
-  ].filter(Boolean);
-  const divergence = divergenceFields.join(sep);
-  const details = [worktree, divergence].filter(Boolean).join(sep);
-  const git = [branch, worktree, divergence].filter(Boolean).join(sep);
-  const divided = splitGitDetails(
-    [...counts, ...divergenceFields],
-    width - visibleWidth(path),
-    width - visibleWidth(branch),
-    sep,
-  );
-  const first: Field[] = [];
-  const second: Field[] = [];
-  const required = (text: string, side: Field['side']): Field => ({
-    text,
-    side,
-    priority: Infinity,
-  });
-  if (visibleWidth(path) + visibleWidth(git) + (git ? 2 : 0) <= width) {
-    first.push(required(directory, 'left'), required(git, 'right'));
-  } else if (
-    visibleWidth(path) + visibleWidth(branch) + (branch ? 2 : 0) <= width &&
-    visibleWidth(details) <= width
-  ) {
-    first.push(required(directory, 'left'), required(branch, 'right'));
-    second.push(required(details, 'right'));
-  } else if (visibleWidth(path) <= width && visibleWidth(git) <= width) {
-    first.push(required(directory, 'left'));
-    second.push(required(git, 'left'));
-  } else if (divided) {
-    first.push(required(directory, 'left'), required(divided[0], 'right'));
-    second.push(required(branch, 'left'), required(divided[1], 'right'));
-  } else {
-    first.push(
-      required(
-        truncateToWidth(
-          directory,
-          Math.max(0, width - visibleWidth(worktree) - (worktree ? 2 : 0)),
-          '…',
-        ),
-        'left',
-      ),
-      required(worktree, 'right'),
-    );
-    second.push(
-      required(
-        truncateToWidth(
-          branch,
-          Math.max(0, width - visibleWidth(divergence) - (divergence ? 2 : 0)),
-          '…',
-        ),
-        'left',
-      ),
-      required(divergence, 'right'),
-    );
-  }
+  if (snapshot?.ahead) counts.push(theme.fg('accent', `↑${snapshot.ahead}`));
+  if (snapshot?.behind) counts.push(theme.fg('warning', `↓${snapshot.behind}`));
+  const {first, second} = gitRows(width, directory, branch, counts, sep);
   first.push({text: context(theme, view, sep), side: 'left', priority: 90});
   if (!second.some(field => field.side === 'left' && field.text)) {
     second.push(

@@ -274,3 +274,73 @@ test('large Git counts outrank ctx and distribute without dropping the last fiel
   expect(lines.join('\n')).not.toContain('…');
   expect(lines.every(line => visibleWidth(line) <= 50)).toBe(true);
 });
+
+test('branch placement and shortened identities retain complete Git fields', () => {
+  const theme = getThemeByName('dark');
+  if (!theme) throw new Error('Missing built-in theme');
+  for (const [width, directory, branch] of [
+    [50, '/home/jc/dev/tool', 'feature/statusline-audit'],
+    [30, '~/dev/pi-stuff', 'main'],
+  ] as const) {
+    const lines = renderFooter(width, theme, {
+      ...base,
+      directory,
+      git: {
+        kind: 'ready',
+        snapshot: {
+          branch,
+          operation: 'cherry-pick',
+          staged: 100,
+          modified: 100,
+          untracked: 100,
+          conflicts: 100,
+          ahead: 100,
+          behind: 100,
+        },
+      },
+    }).map(Bun.stripANSI);
+    const text = lines.join('\n');
+    for (const field of [
+      'cherry-pick',
+      '!100',
+      '+100',
+      '~100',
+      '?100',
+      '↑100',
+      '↓100',
+    ])
+      expect(text).toContain(field);
+    expect(lines.every(line => visibleWidth(line) <= width)).toBe(true);
+    if (width === 50) {
+      expect(text).toContain(directory);
+      expect(text).toContain(branch);
+    } else expect(lines[0]).toStartWith('~/');
+  }
+});
+
+test('an oversized directory uses the whole row when Git fits the other row', () => {
+  const theme = getThemeByName('dark');
+  if (!theme) throw new Error('Missing built-in theme');
+  const directory =
+    '/home/jc/dev/customer-platform-integration/worktrees/feature';
+  const lines = renderFooter(50, theme, {
+    ...base,
+    directory,
+    git: {
+      kind: 'ready',
+      snapshot: {
+        branch: 'main',
+        operation: '',
+        staged: 1,
+        modified: 0,
+        untracked: 0,
+        conflicts: 0,
+        ahead: 0,
+        behind: 0,
+      },
+    },
+  }).map(Bun.stripANSI);
+  expect(lines[0]).toBe(directory.slice(0, 49) + '…');
+  expect(lines[1]).toContain('main');
+  expect(lines[1]).toContain('+1');
+});
