@@ -155,4 +155,10 @@ The focused Read suites pass on both hosts: seven tests and 65 assertions each. 
 
 Grep, Find and Ls now use the same TUI adapter as Read. Their UI registration replacements and native factory calls were removed; execution and tool schemas stay with Pi. The adapter itself remains 95 lines including comments and blank lines. This migration adds 28 and removes 45 production lines relative to `f8af471`, a net reduction of 17; these are increment counts, not the complete UI implementation size.
 
-A real-host regression checks mixed retrieval grouping, reload and new-session/resume, left-aligned mouse disclosure, saved-record byte equality and retained Grep output after the source file changes. It failed before the migration and passed on both supported hosts afterward. Write, Edit, Bash and absent Web history remain to be migrated.
+A real-host regression checks mixed retrieval grouping, reload and new-session/resume, left-aligned mouse disclosure, saved-record byte equality and retained Grep output after the source file changes. It failed before the migration and passed on both supported hosts afterward. At that stage, Write, Edit, Bash and absent Web history remained to be migrated.
+
+### Write and Edit history
+
+Write and Edit now decorate the host definitions through the same TUI lookup. Their replacement registrations and native factory calls are removed. Execution and schemas retain the host references; the existing preview, syntax-highlighting and diff components are unchanged. Renderer inputs are decoded at the display boundary.
+
+The new real-host regression failed on reload before this change. Afterward, both supported hosts retain Write previews and Edit diffs through reload and new-session/resume, even after the file is changed on disk. Expanding uses the recorded content and patch. The test checks that restoration neither rewrites the session nor changes the file. Together with existing preview, code-setting, theme/width, partial-argument and cancellation checks, each host passed 11 tests and 107 assertions. Bash and absent Web history remain pending; these short runs do not establish long-session performance.

@@ -1,8 +1,9 @@
+import {Schema} from 'effect';
 import {ToolHeading} from './heading';
 import {ResultBlock} from './result-block';
 import type {UiSettings} from './settings';
 import {
-  createWriteToolDefinition,
+  type ToolDefinition,
   getLanguageFromPath,
   highlightCode,
   type Theme,
@@ -95,11 +96,21 @@ class WrittenContent implements Component {
   }
 }
 
-export function createWriteDisplay(cwd: string, settings: UiSettings) {
-  const tool = createWriteToolDefinition(cwd);
+const WriteArgs = Schema.Struct({
+  path: Schema.optional(Schema.String),
+  content: Schema.optional(Schema.String),
+});
+
+export function displayWrite(definition: ToolDefinition, settings: UiSettings) {
+  const tool = {...definition};
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) =>
-    new ToolHeading('Write', args.path ?? '', theme, context);
+    new ToolHeading(
+      'Write',
+      Schema.decodeUnknownSync(WriteArgs)(args).path ?? '',
+      theme,
+      context,
+    );
   tool.renderResult = (result, options, theme, context) => {
     if (context.isError)
       return new ResultBlock(
@@ -111,8 +122,9 @@ export function createWriteDisplay(cwd: string, settings: UiSettings) {
         'error',
       );
     const previous = context.lastComponent;
-    const source = context.args.content ?? '';
-    const path = context.args.path ?? '';
+    const args = Schema.decodeUnknownSync(WriteArgs)(context.args);
+    const source = args.content ?? '';
+    const path = args.path ?? '';
     if (
       previous instanceof WrittenContent &&
       previous.source === source &&

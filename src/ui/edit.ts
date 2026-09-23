@@ -1,8 +1,9 @@
+import {Schema} from 'effect';
 import {ToolHeading} from './heading';
 import {ResultBlock} from './result-block';
 import type {UiSettings} from './settings';
 import {
-  createEditToolDefinition,
+  type ToolDefinition,
   getLanguageFromPath,
   highlightCode,
   type Theme,
@@ -192,13 +193,25 @@ class EditDiff implements Component {
   }
 }
 
-export function createEditDisplay(cwd: string, settings: UiSettings) {
-  const tool = createEditToolDefinition(cwd);
+const EditArgs = Schema.Struct({
+  path: Schema.optional(Schema.String),
+});
+const EditDetails = Schema.Struct({patch: Schema.optional(Schema.String)});
+
+export function displayEdit(definition: ToolDefinition, settings: UiSettings) {
+  const tool = {...definition};
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) =>
-    new ToolHeading('Edit', args.path ?? '', theme, context);
+    new ToolHeading(
+      'Edit',
+      Schema.decodeUnknownSync(EditArgs)(args).path ?? '',
+      theme,
+      context,
+    );
   tool.renderResult = (result, options, theme, context) => {
-    const patch = result.details?.patch;
+    const patch = Schema.decodeUnknownSync(EditDetails)(
+      result.details ?? {},
+    ).patch;
     if (context.isError || !patch)
       return new ResultBlock(
         result.content
@@ -209,7 +222,7 @@ export function createEditDisplay(cwd: string, settings: UiSettings) {
         context.isError ? 'error' : 'toolOutput',
       );
     const previous = context.lastComponent;
-    const path = context.args.path ?? '';
+    const path = Schema.decodeUnknownSync(EditArgs)(context.args).path ?? '';
     if (
       previous instanceof EditDiff &&
       previous.patch === patch &&

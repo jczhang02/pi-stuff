@@ -8,8 +8,8 @@ import {registerWelcome} from './welcome';
 import {registerAssistantDisplay} from './assistant';
 import {RetrievalGroups} from './groups';
 import {BashDisplay} from './bash';
-import {createWriteDisplay} from './write';
-import {createEditDisplay} from './edit';
+import {displayWrite} from './write';
+import {displayEdit} from './edit';
 import {displayRetrieval, readParts, RetrievalDetails} from './retrieval';
 import {Schema} from 'effect';
 import {registerToolDisplay} from './tool-lookup';
@@ -38,9 +38,7 @@ export function registerUi(
     limit: Schema.optional(Schema.Number),
   });
   registerToolDisplay(pi, owner, (tool, session) => {
-    const label = localTools.get(tool.name);
     if (
-      !label ||
       !session
         .getAllTools()
         .some(
@@ -49,6 +47,10 @@ export function registerUi(
         )
     )
       return tool;
+    if (tool.name === 'write') return displayWrite(tool, settings);
+    if (tool.name === 'edit') return displayEdit(tool, settings);
+    const label = localTools.get(tool.name);
+    if (!label) return tool;
     return displayRetrieval(
       {...tool},
       label,
@@ -77,18 +79,6 @@ export function registerUi(
     if (ctx.mode !== 'tui') return;
     // Only replace a native definition. Other extensions retain their renderers.
     const tools = pi.getAllTools();
-    if (
-      tools.some(
-        tool => tool.name === 'write' && tool.sourceInfo.source === 'builtin',
-      )
-    )
-      pi.registerTool(createWriteDisplay(ctx.cwd, settings));
-    if (
-      tools.some(
-        tool => tool.name === 'edit' && tool.sourceInfo.source === 'builtin',
-      )
-    )
-      pi.registerTool(createEditDisplay(ctx.cwd, settings));
     const hostSettings = SettingsManager.create(ctx.cwd, getAgentDir(), {
       projectTrusted: ctx.isProjectTrusted(),
     });
