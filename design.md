@@ -32,11 +32,17 @@ Pi Stuff must not use either of these multi-section control overlays: a modal wi
 
 A feature that needs comparable multi-section navigation must use another structure and follow the applicable real-component prototype process before that structure is accepted. Rejecting these overlays does not approve the drilldown prototype or any other replacement.
 
+## Shared panel components
+
+RTK and AutoName share a small composition of Pi's native components for home and settings pages. Use native list themes, search, spacing and key hints without replacing their interaction rules. Common composition belongs to one shared owner; feature content, actions, persistence and request lifetimes remain feature-owned. AutoName text editing and confirmation use Pi's exported extension dialog components directly. Do not build a parallel editor or intercept native cancellation to imitate the host.
+
+RTK and AutoName home pages follow the same order: feature description, summary, then navigation. AutoName's summary shows the current name and the agreed persistence state; its menu places Settings before Generate name. Use native navigation and editing for new or migrated controls. RTK reports and its executable validator retain their existing specialized views; this does not authorize reproducing those controls in AutoName. Reuse these components for matching patterns in future panels. Shared presentation does not authorize new progress or status notices.
+
 ## Information and state
 
 Make the current operation, key result and available next action easy to identify. Choose the layout and supporting detail with the feature.
 
-Distinguish loading, no data, no matching results and failure where applicable. Give long-running operations visible status feedback. Show a percentage only when actual progress can be calculated. Prefer Pi's existing components and presentation conventions for these states.
+Distinguish loading, no data, no matching results and failure where applicable within the feature's agreed interface. New progress/status notices, such as a `Naming...` statusline message or a loading notification, require explicit maintainer approval for that presentation. A request to implement a capability does not authorize adding these notices. Record the agreed feedback with the feature; using Pi's native API does not remove this requirement. Show a percentage only when actual progress can be calculated.
 
 ## Theme and feedback colors
 
@@ -46,11 +52,11 @@ Verify both built-in light and dark themes. A narrowly scoped contrast correctio
 
 ## Keyboard and focus
 
-Prefer Pi's existing components and interaction patterns. Preserve configurable selection and submit bindings where applicable. Esc is the fixed back/exit key for Pi Stuff panels, including size notices and nested editors; do not replace it with a remapped cancel binding such as Ctrl+G. When a panel closes, restore focus to the input or invoking control.
+Use Pi's native components for standard selection, input, editing and confirmation. Let them handle configured selection, submit and cancel bindings, including Ctrl-C under the default bindings. Do not swallow native cancel or force Esc when the user remaps it. Custom feature controls and size notices must describe their actual bindings. RTK's existing report/executable views still use their established Esc control until separately migrated. When a panel closes, restore focus to the input or invoking control.
 
 Feature shortcuts must be directly usable on a 60% keyboard. Do not assign PageUp, PageDown, Home, End or function-row keys to feature actions. Use ordinary keys such as `[` and `]` for previous/next page, and show the actual supported keys in local help. Reuse Pi's native selection navigation without changing the host's global bindings.
 
-Keep dimensions and control positions stable within a page during loading, refresh, saving and pagination. Different page types may use different heights: compact short menus and settings instead of padding them to a report's height. Reserve only the space needed for that page's transient feedback and wrapped descriptions. Long reports use a bounded content area with pagination and a visible page position; they must not enlarge the dialog as more records arrive. Resizing the terminal may change the content budget. Wrapping and pagination must preserve access to retained text, while clearly distinguishing any upstream truncation or explicit report-size limit.
+Size short menus and summaries to their current content. Omit absent status and error rows; do not pad short values to their maximum height. Shared structure does not require equal panel heights. Keep control positions stable while an operation is pending and across pages of the same long content, reserving only the space needed for that interaction. A completed result or a change in visible status may change the summary height. Keep settings compact while allowing for their wrapped field descriptions. Long reports use a bounded content area with pagination and a visible page position; they must not enlarge the dialog as more records arrive. Resizing the terminal may change the content budget. Wrapping and pagination must preserve access to retained text, while clearly distinguishing any upstream truncation or explicit report-size limit.
 
 Paged tables retain their title and column headers on every page. When a report has different sections, keep each page's section and column meanings visible. Parse external reports into the fields the interface presents; do not substitute a raw CLI dump for a structured view.
 

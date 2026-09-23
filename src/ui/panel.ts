@@ -2,13 +2,7 @@ import {
   getSettingsListTheme,
   type ExtensionAPI,
 } from '@earendil-works/pi-coding-agent';
-import {
-  Container,
-  Text,
-  SettingsList,
-  Key,
-  matchesKey,
-} from '@earendil-works/pi-tui';
+import {Container, Text, SettingsList} from '@earendil-works/pi-tui';
 import {Schema} from 'effect';
 import {ConfigurationError} from '../pi/configuration';
 import {UiSettings} from './settings';
@@ -81,15 +75,14 @@ export function registerUiPanel(
         const list = new SettingsList(
           values,
           6,
-          {
-            ...getSettingsListTheme(),
-            hint: () =>
-              theme.fg('dim', '↑↓ Navigate · Enter Change · Esc Close'),
-          },
+          getSettingsListTheme(),
           (id, value) => {
             void change(id, value);
           },
-          done,
+          () => {
+            closed = true;
+            done();
+          },
         );
         body.addChild(list);
         body.addChild(feedback);
@@ -133,14 +126,9 @@ export function registerUiPanel(
           handleMouse: event =>
             saving ? {handled: true} : body.handleMouse(event),
           handleInput(data) {
-            if (matchesKey(data, Key.escape)) {
-              closed = true;
-              done();
-              return;
-            }
-            if (saving || keys.matches(data, 'tui.select.cancel')) return;
+            if (saving && !keys.matches(data, 'tui.select.cancel')) return;
             list.handleInput(data);
-            tui.requestRender();
+            if (!closed) tui.requestRender();
           },
           dispose() {
             closed = true;

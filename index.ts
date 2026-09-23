@@ -8,6 +8,8 @@ import {registerRtkPanel} from './src/rtk/panel';
 import {registerUi} from './src/ui/register';
 import {registerUiPanel} from './src/ui/panel';
 import {displayWebTools} from './src/ui/web';
+import {registerNaming} from './src/naming/register';
+import {registerNamingPanel} from './src/naming/panel';
 
 export default async function (pi: ExtensionAPI) {
   const configuration = await Effect.runPromise(
@@ -27,6 +29,17 @@ export default async function (pi: ExtensionAPI) {
       ? undefined
       : tools => displayWebTools(tools, groups),
   );
+  const naming = registerNaming(pi, configuration.value.naming);
+  registerNamingPanel(pi, naming, async settings => {
+    const previous = configuration.value.naming;
+    try {
+      await Effect.runPromise(configuration.saveNaming(settings));
+    } finally {
+      // Cancel old requests only after the new configuration was committed.
+      if (configuration.value.naming !== previous)
+        naming.update(configuration.value.naming ?? {});
+    }
+  });
   const rtk = registerRtk(pi, configuration.value.rtk ?? {});
   registerRtkPanel(pi, rtk, async settings => {
     try {

@@ -3,6 +3,7 @@ import {ToolSwitches} from './tool-switches';
 import {WebSettings} from '../web/settings';
 import {RtkSettings} from '../rtk/settings';
 import {UiSettings} from '../ui/settings';
+import {NamingSettings} from '../naming/settings';
 
 export class ConfigurationError extends Schema.TaggedError<ConfigurationError>()(
   'ConfigurationError',
@@ -16,6 +17,7 @@ const Configuration = Schema.Struct({
   web: Schema.optional(WebSettings),
   rtk: Schema.optional(RtkSettings),
   ui: Schema.optional(UiSettings),
+  naming: Schema.optional(NamingSettings),
 });
 
 export function readConfiguration(

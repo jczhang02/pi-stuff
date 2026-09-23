@@ -1,6 +1,6 @@
 import {expect, test} from 'bun:test';
 import {stripVTControlCharacters} from 'node:util';
-import {readablePanelLines} from '../../src/rtk/display';
+import {readablePanelLines} from '../../src/pi/panel-style';
 
 test('light panel accents retain content and exceed 4.5 contrast on off-white', () => {
   const input = [

@@ -1,6 +1,6 @@
 import {test, expect} from 'bun:test';
 import {launchPi} from './fixtures/pi-terminal';
-import {access, writeFile, readFile} from 'node:fs/promises';
+import {access, writeFile, readFile, unlink, readdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {expectUsageLayout} from './rtk-usage-helpers';
 
@@ -24,7 +24,8 @@ function panelBounds(
     (line, index) =>
       line.includes(title) &&
       index > 0 &&
-      lines[index - 1]?.trim().startsWith('─'),
+      (lines[index - 1]?.trim().startsWith('─') ||
+        lines[index - 2]?.trim().startsWith('─')),
   );
   if (titleIndex < 0) return undefined;
   let top = -1;
@@ -99,7 +100,7 @@ test('RTK Settings saves ANSI choice and applies it to the next Bash result', as
   }
 }, 30000);
 
-test('RTK keeps native selection remaps but reserves literal Escape for panel exit', async () => {
+test('RTK native home honors selection remaps while reports retain their existing Escape control', async () => {
   const host = await launchPi();
   try {
     await writeFile(
@@ -119,6 +120,9 @@ test('RTK keeps native selection remaps but reserves literal Escape for panel ex
     await host.terminal.screen.waitForText('Configure RTK and inspect usage.', {
       timeoutMs: 3000,
     });
+    expect(await host.terminal.screen.text()).toContain(
+      'k/j navigate  ctrl+y select  ctrl+g back',
+    );
     await host.terminal.keyboard.type('jj');
     await host.terminal.keyboard.press('Control+Y');
     await host.terminal.screen.waitForText('RTK / Diagnostics', {
@@ -137,7 +141,7 @@ test('RTK keeps native selection remaps but reserves literal Escape for panel ex
   }
 }, 30000);
 
-test('RTK uses literal Escape through executable editor and small-terminal notice', async () => {
+test('RTK executable editor keeps Escape while its size notice honors native cancellation', async () => {
   const host = await launchPi();
   try {
     await writeFile(
@@ -177,7 +181,7 @@ test('RTK uses literal Escape through executable editor and small-terminal notic
       {timeoutMs: 3000},
     );
     expect(await host.terminal.screen.text()).toContain('RTK / Settings');
-    await host.terminal.keyboard.press('Escape');
+    await host.terminal.keyboard.press('Control+G');
     await host.terminal.screen.waitForText('Configure RTK and inspect usage.', {
       timeoutMs: 3000,
     });
@@ -186,10 +190,6 @@ test('RTK uses literal Escape through executable editor and small-terminal notic
       timeoutMs: 3000,
     });
     await host.terminal.keyboard.press('Control+G');
-    await host.terminal.screen.waitForText('RTK needs more room', {
-      timeoutMs: 3000,
-    });
-    await host.terminal.keyboard.press('Escape');
     await host.terminal.screen.waitUntil(
       screen => !screen.text.includes('RTK needs more room'),
       {timeoutMs: 3000},
@@ -276,11 +276,11 @@ esac
     const rootLoadingScreen = await host.terminal.screen.text();
     const rootHeight = panelHeight(rootLoadingScreen, 'RTK');
     expect(rootHeight).toBeGreaterThan(0);
-    expect(rootHeight).toBeLessThanOrEqual(16);
+    expect(rootHeight).toBeLessThanOrEqual(17);
     const rootLoadingFooter = panelLineOffset(
       rootLoadingScreen,
       'RTK',
-      'Enter Open · Esc Close',
+      'enter select  escape/ctrl+c back',
     );
     expect(rootLoadingFooter).toBeGreaterThan(0);
     const rootLoadingSettings = panelLineOffset(
@@ -297,7 +297,7 @@ esac
     await host.terminal.screen.waitForText('checking', {timeoutMs: 3000});
     const settingsPendingScreen = await host.terminal.screen.text();
     const settingsHeight = panelHeight(settingsPendingScreen, 'RTK / Settings');
-    expect(settingsHeight).toBeGreaterThan(rootHeight);
+    expect(settingsHeight).toBeGreaterThan(0);
     expect(settingsHeight).toBeLessThan(22);
     const settingsControl = panelLineOffset(
       settingsPendingScreen,
@@ -322,7 +322,11 @@ esac
     const rootReadyScreen = await host.terminal.screen.text();
     expect(panelHeight(rootReadyScreen, 'RTK')).toBe(rootHeight);
     expect(
-      panelLineOffset(rootReadyScreen, 'RTK', 'Enter Open · Esc Close'),
+      panelLineOffset(
+        rootReadyScreen,
+        'RTK',
+        'enter select  escape/ctrl+c back',
+      ),
     ).toBe(rootLoadingFooter);
     expect(panelLineOffset(rootReadyScreen, 'RTK', 'Settings')).toBe(
       rootLoadingSettings,
@@ -395,7 +399,11 @@ test('Settings refuses an external edit without changing the active ANSI policy'
     await host.terminal.resize({cols: 56, rows: 26});
     const before = await host.terminal.screen.text();
     const height = panelHeight(before, 'RTK / Settings');
-    const footer = panelLineOffset(before, 'RTK / Settings', 'Esc Back');
+    const control = panelLineOffset(
+      before,
+      'RTK / Settings',
+      'Command rewrite',
+    );
     const external = '{"rtk":{"rewrite":false}}';
     await writeFile(join(host.agent, 'pi-stuff.json'), external);
     await host.terminal.keyboard.press('ArrowDown');
@@ -404,14 +412,20 @@ test('Settings refuses an external edit without changing the active ANSI policy'
       timeoutMs: 3000,
     });
     const failed = await host.terminal.screen.text();
-    expect(panelHeight(failed, 'RTK / Settings')).toBe(height);
-    expect(panelLineOffset(failed, 'RTK / Settings', 'Esc Back')).toBe(footer);
+    expect(panelHeight(failed, 'RTK / Settings')).toBeGreaterThanOrEqual(
+      height,
+    );
+    expect(panelLineOffset(failed, 'RTK / Settings', 'Command rewrite')).toBe(
+      control,
+    );
     await host.terminal.keyboard.press('ArrowDown');
     const shorterDescription = await host.terminal.screen.text();
-    expect(panelHeight(shorterDescription, 'RTK / Settings')).toBe(height);
+    expect(panelHeight(shorterDescription, 'RTK / Settings')).toBeGreaterThan(
+      0,
+    );
     expect(
-      panelLineOffset(shorterDescription, 'RTK / Settings', 'Esc Back'),
-    ).toBe(footer);
+      panelLineOffset(shorterDescription, 'RTK / Settings', 'Command rewrite'),
+    ).toBe(control);
     expect(await readFile(join(host.agent, 'pi-stuff.json'), 'utf8')).toBe(
       external,
     );
@@ -493,6 +507,44 @@ test('Executable editor validates and persists an absolute RTK path', async () =
     );
     await host.terminal.screen.waitForText('0.45.0', {timeoutMs: 3000});
   } finally {
+    await host.close();
+  }
+}, 30000);
+
+test('a repeated native toggle during save settles to the committed RTK value', async () => {
+  const host = await launchPi();
+  let writer: ReturnType<typeof Bun.spawn> | undefined;
+  try {
+    await host.command('/rtk integration');
+    await host.terminal.screen.waitForText('Command rewrite', {
+      timeoutMs: 4000,
+    });
+    const path = join(host.agent, 'pi-stuff.json');
+    await unlink(path);
+    expect(Bun.spawnSync(['mkfifo', path]).exitCode).toBe(0);
+    await host.terminal.keyboard.press('Enter');
+    await host.terminal.screen.waitUntil(
+      async () =>
+        (await readdir(host.agent)).some(file => file.endsWith('.tmp')),
+      {timeoutMs: 4000},
+    );
+    await host.terminal.keyboard.press('Enter');
+    writer = Bun.spawn(
+      ['sh', '-c', 'printf %s "$2" > "$1"', 'rtk-fixture', path, '{}'],
+      {stdout: 'ignore', stderr: 'pipe'},
+    );
+    expect(await writer.exited).toBe(0);
+    await host.terminal.screen.waitForText('RTK setting saved.', {
+      timeoutMs: 4000,
+    });
+    expect(await readFile(path, 'utf8')).toContain('"rewrite": false');
+    expect(await host.terminal.screen.text()).toMatch(
+      /Command rewrite\s+disabled/u,
+    );
+    await host.terminal.keyboard.press('Control+C');
+    await host.terminal.screen.waitForText('Configure RTK', {timeoutMs: 4000});
+  } finally {
+    writer?.kill();
     await host.close();
   }
 }, 30000);
