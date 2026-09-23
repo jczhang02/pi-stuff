@@ -137,9 +137,18 @@ test('Git cancellation and timeout stop fsmonitor descendants', async () => {
   };
   const alive = async () => {
     const status = await readFile(`/proc/${helper}/stat`, 'utf8').catch(
-      () => '',
+      error => {
+        if (
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'ENOENT'
+        )
+          return '';
+        throw error;
+      },
     );
-    return status !== '' && !status.includes(') Z ');
+    // Linux exposes zombie and dead states while a killed process is reaped.
+    return status !== '' && !/\) [ZXx] /.test(status);
   };
   try {
     await git('init', '-b', 'fixture');
