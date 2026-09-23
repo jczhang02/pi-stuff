@@ -33,7 +33,33 @@ Each condition has three process samples, 30 draft inputs, three first expansion
 
 Before measuring expanded resize, calibration at 60/80/100/120 columns required all 40 CJK characters and the final marker on the last source line, with a displayed row reaching within four cells of the target width. Recorded host and frame widths agreed in all 24 calibrations. Timed resizes then waited for those exact body rows. Scroll measurements waited for an earlier source range on PageUp and the original bottom range on PageDown. These measure the observed content change, not whole-frame stability or first-time layout at an unseen width. CPU during interactions includes calibration and resource commands.
 
-All 18 resume/reload cycles preserved the original session bytes. Startup includes fixture setup and host launch, without proving the complete welcome was drawn. Reload ends at operation readiness and the final marker, which does not guarantee a fresh final redraw. RSS is instantaneous, not peak usage; garbage collection and host scheduling were uncontrolled. Small samples do not prove absence of leaks. Paced streaming and extended real-model testing remain outstanding.
+All 18 resume/reload cycles preserved the original session bytes. Startup includes fixture setup and host launch, without proving the complete welcome was drawn. Reload ends at operation readiness and the final marker, which does not guarantee a fresh final redraw. RSS is instantaneous, not peak usage; garbage collection and host scheduling were uncontrolled. Small samples do not prove absence of leaks. Paced streaming and real-model endurance results follow below.
+
+## Paced thinking and answer output
+
+At `fdbf7d2`, six fresh processes ran in UI off/on/on/off/off/on order on compiled Pi 0.87.1 and Bun 1.4.0. Each retained 64 Read calls (19,200 source lines), then received 200 thinking lines and 400 Markdown answer lines, one line every target 25 ms. Automatic compaction and RTK transformations were disabled; native thinking was visible. All six runs completed, and the saved final thinking and answer exactly matched the emitted content. [Raw observations and driver sources](assets/ui/paced-stream-performance.json) retain all emissions, observations and resource snapshots.
+
+| Observation, median across three processes   | UI off |  UI on |
+| -------------------------------------------- | -----: | -----: |
+| Per-process median thinking marker delay, ms |   12.0 |   13.3 |
+| Per-process median answer marker delay, ms   |   70.2 |   56.5 |
+| Input during thinking, ms                    |    1.8 |    1.8 |
+| Input during answer, ms                      |   23.7 |   26.8 |
+| Host CPU during stream, ms                   | 11,323 | 12,253 |
+| RSS before stream, MiB                       |    224 |    231 |
+| RSS after stream, MiB                        |    301 |    369 |
+
+Each process has four thinking-marker and five answer-marker observations, plus one draft input in each phase. Marker delay measures SSE enqueue to terminal observation, including transport, host rendering and Terminal Control; it does not measure pure rendering or whole-frame stability. Actual emission intervals had a median of about 25.17 ms in both conditions, with maxima of 26.78 ms off and 29.54 ms on. Total duration was about 15.2 seconds in both conditions, dominated by deliberate pacing.
+
+This workload showed no large input or marker-delay regression. UI-on host CPU increased about 8.2%; final RSS was higher by about 69 MiB at the median. RSS snapshots are not peak measurements and garbage collection was uncontrolled. Three process samples do not prove no leaks or a universal latency bound. These costs remain part of the result, rather than a claim of zero overhead.
+
+## Real-model endurance
+
+A two-stage run used `openai-codex/gpt-6-astra` with low thinking on compiled Pi 0.87.1 / Bun 1.4.0. It worked on an isolated synthetic ledger project, reading data, editing source and running tests. The first stage at `7a6fcb5` completed 15 rounds before a WebSocket 1006 provider failure and a terminal capture wait failure, after about 19 minutes 56 seconds. The same saved session resumed at `e012de9`, completing 16 more rounds over 15 minutes 10 seconds. Every resumed round ended with native `agent_settled`, `stopReason: stop` and `idle: true`; no new provider failure occurred.
+
+[Recorded round outcomes](assets/ui/real-model-endurance.json) retain the timing, final session hash and counts. The combined run lasted about 35 minutes 6 seconds and retained 31 successful final answers, 244 tool results and one compaction in a 1,494,760-byte session with 488 records. Calls were Read 105, Edit 59, Bash 53, Ls 16, Write 10 and Find 1. Nineteen Bash results had exit code 1 during the coding workload; these are distinct from the one provider failure. The last recorded test command passed 109 tests with 968 assertions. The owned terminal/driver closed and the temporary authentication link was removed.
+
+Independent evidence review confirmed this satisfies the requested real-model long-session exercise. It was not an uninterrupted failure-free run. Grep, Web and RTK were not part of this live workload; their functional coverage comes from separate host tests. The driver sent Ctrl+O and resized across 60/80/120/100 columns, but did not assert every resulting frame. Model wait time, uncontrolled scheduling and observer overhead prevent using this run as an input-latency or memory-leak benchmark.
 
 The experiments below describe earlier revisions. The historical Read/retrieval/Web restore failures were addressed by the display-lookup integration; current history evidence is recorded in [UI integration](ui-integration.md). The five-column combining-character gutter overflow was fixed in `0221b6f`, with 14 tests and 108 assertions on each supported host. These updates do not imply universal Unicode correctness or complete acceptance.
 
@@ -117,4 +143,4 @@ For the initial cache increment, retrieval/group/error suites passed 19 cases an
 
 After the width check, the same three suites passed 20 cases and failed those two history cases on each host: 193 assertions on pinned Pi, 192 on compiled Pi. The compiled reload case failed at the wait, before the next assertion. New host coverage preserves complete CJK and combining-character output at 60/80/120 columns. This preservation test passed before the production change too. A separate renderer comparison passed 2,640 before/after layout comparisons and 5,280 assertions across dark/light themes, 11 selected widths (1–7, 12, 60, 80, 120), four result-part kinds and compact/expanded/partial states. These comparisons establish unchanged rows and bounded widths, not complete lifecycle acceptance.
 
-No numerical acceptance budget was agreed. This experiment does not accept long-history resume, paced streaming, scroll latency, expanded resize, welcome startup, native-display interaction or long-duration real-model sessions. The current comparison above adds bounded resume, scroll and expanded-resize evidence. Paced streaming, complete welcome rendering, extended real-model sessions and final full-diff review still require acceptance evidence; the history/assistant integration decisions are no longer pending.
+No numerical acceptance budget was agreed. This experiment does not accept long-history resume, paced streaming, scroll latency, expanded resize, welcome startup, native-display interaction or long-duration real-model sessions. The current comparison above adds bounded resume, scroll and expanded-resize evidence. The paced-stream and two-stage real-model results above add those measurements; full-diff code review and follow-ups are recorded in [UI verification](ui.md#verification-status). These observations do not establish physical-window behavior or universal performance bounds.
