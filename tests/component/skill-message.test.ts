@@ -79,3 +79,36 @@ test('skill-only card and narrow resize keep label and instruction access', () =
     'Inspect carefully.',
   );
 });
+
+for (const prompt of ['[ref]: /url\n\n[ref]', '-\tfirst\n-\tsecond']) {
+  test(
+    'skill label does not change prompt parsing: ' + JSON.stringify(prompt),
+    () => {
+      const card = new SkillMessageCard(
+        {
+          name: 'review',
+          location: '/fixture/SKILL.md',
+          content: 'Instructions',
+          userMessage: prompt,
+        },
+        getMarkdownTheme(),
+        1,
+        [],
+      );
+      const text = card.render(60).map(stripTerminalSequences).join('\n');
+      if (prompt.startsWith('[ref]')) {
+        expect(text).toContain('ref (/url)');
+        expect(text).not.toContain('[ref]:');
+      } else {
+        expect(
+          text
+            .split('\n')
+            .find(line => line.includes('/skill:review'))
+            ?.trim(),
+        ).toBe('/skill:review');
+        expect(text).toContain('first');
+        expect(text).toContain('second');
+      }
+    },
+  );
+}

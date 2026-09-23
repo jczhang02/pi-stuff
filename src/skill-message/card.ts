@@ -5,10 +5,13 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import {
   Box,
+  Markdown,
   Spacer,
   type MarkdownTheme,
   MouseRegion,
 } from '@earendil-works/pi-tui';
+
+import {prependSkillLabel} from './prompt';
 
 export class SkillMessageCard extends UserMessageComponent {
   private expanded = false;
@@ -21,13 +24,7 @@ export class SkillMessageCard extends UserMessageComponent {
   ) {
     const label = `/skill:${skill.name}`;
     const prompt = skill.userMessage ?? '';
-    const block = /^(?: {4}| {0,3}(?:[-+*] |\d+[.)] |[>#`~]|\|))/u.test(prompt);
-    super(
-      label + (prompt ? (block ? '\n\n' : ' ') + prompt : ''),
-      style,
-      padding,
-      transformers,
-    );
+    super(prompt || label, style, padding, transformers);
     this.padding = padding;
     this.setOutputPad(padding);
   }
@@ -41,6 +38,9 @@ export class SkillMessageCard extends UserMessageComponent {
     super.setOutputPad(padding);
     const box = this.children[0];
     if (!(box instanceof Box)) return;
+    const prompt = box.children[0];
+    if (this.skill.userMessage && prompt instanceof Markdown)
+      prependSkillLabel(prompt, `/skill:${this.skill.name}`);
     if (this.expanded) {
       const instructions = new UserMessageComponent(
         'Skill instructions\n\n' + this.skill.content,

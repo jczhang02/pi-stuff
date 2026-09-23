@@ -31,8 +31,10 @@ export function registerEditor(
     previous = ctx.ui.getEditorComponent();
     factory = (tui, theme, keys) => {
       matcher?.close();
+      const options = {paddingX: 0, embedWorkingStatus: true};
       const editor =
-        previous?.(tui, theme, keys) ?? new CustomEditor(tui, theme, keys);
+        previous?.(tui, theme, keys) ??
+        new CustomEditor(tui, theme, keys, options);
       redraw = () => tui.requestRender();
       if (!(editor instanceof CustomEditor)) return editor;
       matcher = new EditorMatcher(settings, redraw);
