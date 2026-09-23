@@ -101,3 +101,35 @@ test('RTK saves retain an existing configuration symlink', async () => {
     await rm(directory, {recursive: true, force: true});
   }
 });
+
+test('naming and RTK share one configuration revision through an existing symlink', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'pi-naming-config-'));
+  const path = join(directory, 'pi-stuff.json');
+  const target = join(directory, 'managed.json');
+  try {
+    await writeFile(target, '{"tools":{"web_search":false}}');
+    await symlink(target, path);
+    const owner = await Effect.runPromise(ConfigurationFile.load(path));
+    const stale = await Effect.runPromise(ConfigurationFile.load(path));
+    await Effect.runPromise(
+      owner.saveNaming({automatic: false, prompt: 'Keep the core task.'}),
+    );
+    await Effect.runPromise(owner.saveRtk({ansi: false}));
+    expect(await readlink(path)).toBe(target);
+    expect(owner.value).toEqual({
+      tools: {web_search: false},
+      rtk: {ansi: false},
+      naming: {automatic: false, prompt: 'Keep the core task.'},
+    });
+    await expect(Effect.runPromise(stale.saveNaming({}))).rejects.toThrow(
+      'Settings changed on disk',
+    );
+    expect(stale.value.naming).toBeUndefined();
+    expect((await readdir(directory)).toSorted()).toEqual([
+      'managed.json',
+      'pi-stuff.json',
+    ]);
+  } finally {
+    await rm(directory, {recursive: true, force: true});
+  }
+});

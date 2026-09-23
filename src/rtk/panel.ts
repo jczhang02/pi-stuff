@@ -1,18 +1,17 @@
-import type {ExtensionAPI, Theme} from '@earendil-works/pi-coding-agent';
 import {
-  DynamicBorder,
-  getSelectListTheme,
   getSettingsListTheme,
+  keyHint,
+  type ExtensionAPI,
+  type Theme,
 } from '@earendil-works/pi-coding-agent';
 import {
   SelectList,
+  Container,
+  Text,
+  Spacer,
   SettingsList,
   Key,
   matchesKey,
-  visibleWidth,
-  truncateToWidth,
-  wrapTextWithAnsi,
-  type Component,
   type Focusable,
   type KeybindingsManager,
   type TUI,
@@ -22,7 +21,8 @@ import type {RtkSettings} from './settings';
 import type {RtkRuntime} from './runtime';
 import {ExecutableEditor} from './executable-editor';
 import {UsageView} from './usage';
-import {dataRow, fillRows, readablePanelLines} from './display';
+import {fillRows} from './display';
+import {PanelLayout, PanelPage, panelMenu} from '../pi/panel-layout';
 import {DiagnosticsView} from './diagnostics';
 
 type Page = 'Settings' | 'Usage' | 'Diagnostics';
@@ -33,12 +33,12 @@ const SETTINGS_DESCRIPTIONS = {
   executable: 'Automatic discovery or a validated absolute path.',
 };
 
-class RtkPanel implements Component, Focusable {
+class RtkPanel extends Container implements Focusable {
   focused = false;
   private page: Page | undefined;
   private readonly sections: SelectList;
   private readonly settings: SettingsList;
-  private readonly border: DynamicBorder;
+  private readonly layout: PanelLayout;
   private readonly controller = new AbortController();
   private probeController: AbortController | undefined;
   private status = 'checking';
@@ -53,13 +53,14 @@ class RtkPanel implements Component, Focusable {
     private readonly tui: TUI,
     private readonly theme: Theme,
     private readonly keys: KeybindingsManager,
-    private readonly done: () => void,
+    done: () => void,
     private readonly runtime: RtkRuntime,
     private readonly cwd: string,
     private readonly save: (settings: RtkSettings) => Promise<void>,
     private readonly notify: (message: string, type: 'info' | 'error') => void,
     initialPage: Page | undefined,
   ) {
+    super();
     this.page = initialPage;
     this.diagnostics = new DiagnosticsView(
       theme,
@@ -77,30 +78,26 @@ class RtkPanel implements Component, Focusable {
       () => tui.requestRender(),
       message => notify(message, 'error'),
     );
-    this.border = new DynamicBorder(text => theme.fg('borderAccent', text));
-    this.sections = new SelectList(
-      [
-        {
-          value: 'Settings',
-          label: 'Settings',
-          description: 'Rewrite, cleanup, executable',
-        },
-        {
-          value: 'Usage',
-          label: 'Usage',
-          description: 'Totals, periods and history',
-        },
-        {
-          value: 'Diagnostics',
-          label: 'Diagnostics',
-          description: 'Resolution and configuration',
-        },
-      ],
-      3,
-      getSelectListTheme(),
-      {minPrimaryColumnWidth: 18, maxPrimaryColumnWidth: 18},
-    );
+    this.layout = new PanelLayout(theme);
+    this.sections = panelMenu([
+      {
+        value: 'Settings',
+        label: 'Settings',
+        description: 'Rewrite, cleanup, executable',
+      },
+      {
+        value: 'Usage',
+        label: 'Usage',
+        description: 'Totals, periods and history',
+      },
+      {
+        value: 'Diagnostics',
+        label: 'Diagnostics',
+        description: 'Resolution and configuration',
+      },
+    ]);
     this.sections.onSelect = item => {
+      if (this.tooSmall()) return;
       this.usage.cancelPending();
       this.diagnostics.cancelPending();
       if (
@@ -141,6 +138,7 @@ class RtkPanel implements Component, Focusable {
           submenu: (_value, close) => {
             this.editor = new ExecutableEditor(
               theme,
+              this.layout,
               runtime.settings.executable,
               runtime.settings.executable ?? this.runtimeInfo?.path ?? '',
               cwd,
@@ -168,14 +166,23 @@ class RtkPanel implements Component, Focusable {
         },
       ],
       5,
-      {
-        ...getSettingsListTheme(),
-        hint: () => theme.fg('dim', '  ↑↓ Navigate · Enter Change · Esc Back'),
-      },
+      getSettingsListTheme(),
       (id, value) => {
+        if (this.saving) {
+          this.settings.updateValue(
+            id,
+            (id === 'ansi'
+              ? this.runtime.settings.ansi
+              : this.runtime.settings.rewrite) === false
+              ? 'disabled'
+              : 'enabled',
+          );
+          return;
+        }
         void this.change(id, value);
       },
       () => this.back(),
+      {enableSearch: true},
     );
     void this.probe();
     if (initialPage === 'Diagnostics') void this.diagnostics.refresh();
@@ -212,6 +219,8 @@ class RtkPanel implements Component, Focusable {
     } catch (error) {
       this.error = stripVTControlCharacters(String(error));
       this.notify(this.error, 'error');
+    } finally {
+      this.saving = false;
       this.settings.updateValue(
         id,
         (id === 'ansi'
@@ -220,8 +229,6 @@ class RtkPanel implements Component, Focusable {
           ? 'disabled'
           : 'enabled',
       );
-    } finally {
-      this.saving = false;
       if (!this.controller.signal.aborted) this.tui.requestRender();
     }
   }
@@ -236,116 +243,93 @@ class RtkPanel implements Component, Focusable {
   }
 
   handleInput(data: string) {
+    if (this.tooSmall()) {
+      this.sections.handleInput(data);
+      return;
+    }
+    if (!this.editor && (this.page === undefined || this.page === 'Settings')) {
+      if (this.page === undefined) {
+        if (data === 'r') void this.usage.refresh();
+        else this.sections.handleInput(data);
+      } else this.settings.handleInput(data);
+      this.tui.requestRender();
+      return;
+    }
     if (matchesKey(data, Key.escape)) {
-      if (this.tooSmall() || this.page === undefined) this.done();
-      else if (this.editor) this.editor.handleInput(data);
+      if (this.editor) this.editor.handleInput(data);
       else this.back();
       this.tui.requestRender();
       return;
     }
     if (this.keys.matches(data, 'tui.select.cancel')) return;
-    if (this.tooSmall() || this.saving) return;
-    if (this.page === undefined) {
-      if (data === 'r') void this.usage.refresh();
-      else this.sections.handleInput(data);
-    } else if (this.page === 'Settings') this.settings.handleInput(data);
+    if (this.saving) return;
+    if (this.editor) this.editor.handleInput(data);
     else if (this.page === 'Usage') this.usage.handleInput(data);
     else if (this.page === 'Diagnostics') this.diagnostics.handleInput(data);
     this.tui.requestRender();
   }
 
   render(width: number) {
-    const border = this.border.render(width)[0] ?? '';
+    this.clear();
     const inner = Math.max(12, width - 4);
     if (this.tooSmall())
-      return readablePanelLines(
-        [
-          border,
-          this.theme.fg('warning', 'RTK needs more room'),
-          ...wrapTextWithAnsi(
-            'Resize to at least 56 columns and 26 rows.',
-            inner,
-          ),
-          '',
-          'Esc close',
-          border,
-        ],
-        this.theme,
+      return this.layout.tooSmall(
+        width,
+        'RTK',
+        26,
+        keyHint('tui.select.cancel', 'close'),
       );
-    const title = this.theme.bold(
-      this.theme.fg('accent', this.page ? `RTK / ${this.page}` : 'RTK'),
-    );
-    const gap =
-      width < 76
-        ? 2
-        : Math.max(2, inner - visibleWidth(title) - visibleWidth(this.status));
-    const lines =
-      this.page === undefined
-        ? [
+    if (this.page === undefined) {
+      this.addChild(
+        new PanelPage(
+          this.theme,
+          `RTK  ${this.status}`,
+          this.sections,
+          [
             'Configure RTK and inspect usage.',
             '',
             this.theme.fg('muted', this.usage.titleStatus()),
             ...fillRows(this.usage.rootSummary(inner), 2),
-            '',
-            ...this.sections.render(inner),
-            '',
-            this.theme.fg('dim', '↑↓ Navigate · Enter Open · Esc Close'),
-          ]
-        : this.page === 'Settings'
-          ? this.settingsLines(inner)
-          : this.page === 'Usage'
-            ? this.usage.render(inner)
-            : this.diagnostics.render(inner);
-    return readablePanelLines(
-      [
-        border,
-        `${title}${' '.repeat(gap)}${this.theme.fg('muted', this.status)}`,
-        '',
-        ...lines,
-        border,
-      ],
-      this.theme,
+          ].join('\n'),
+        ),
+      );
+      return super.render(width);
+    }
+    if (this.page === 'Settings' && !this.editor) {
+      const body = new Container();
+      body.addChild(
+        new Text(
+          `Runtime: ${this.runtimeInfo ? 'available' : this.status} · ${this.runtimeInfo?.version ?? '-'} · ${this.runtimeInfo?.source ?? '-'}`,
+          1,
+          0,
+        ),
+      );
+      body.addChild(new Spacer(1));
+      body.addChild(this.settings);
+      if (this.error)
+        body.addChild(new Text(this.theme.fg('error', this.error), 1, 0));
+      this.addChild(new PanelPage(this.theme, 'RTK / Settings', body));
+      return super.render(width);
+    }
+    const lines =
+      this.page === 'Settings'
+        ? this.settings.render(inner)
+        : this.page === 'Usage'
+          ? this.usage.render(inner)
+          : this.diagnostics.render(inner);
+    return this.layout.frame(
+      width,
+      this.page ? `RTK / ${this.page}` : 'RTK',
+      lines,
+      this.status,
     );
-  }
-
-  private settingsLines(width: number): string[] {
-    const settings = this.settings.render(width);
-    if (this.editor) return settings;
-    // Match native SettingsList's description width; reserve only its longest
-    // description so selection does not move the feedback or keyboard hint.
-    const descriptionRows = Math.max(
-      ...Object.values(SETTINGS_DESCRIPTIONS).map(
-        text => wrapTextWithAnsi(text, width - 4).length,
-      ),
-    );
-    return [
-      this.theme.bold('Runtime'),
-      dataRow(
-        this.theme,
-        'Status',
-        this.runtimeInfo ? 'available' : this.status,
-        width,
-      ),
-      dataRow(this.theme, 'Version', this.runtimeInfo?.version ?? '-', width),
-      dataRow(
-        this.theme,
-        'Resolved by',
-        this.runtimeInfo?.source ?? '-',
-        width,
-      ),
-      '',
-      this.theme.bold('Behavior'),
-      ...fillRows(settings.slice(0, -1), 5 + descriptionRows),
-      truncateToWidth(this.error.replace(/\s+/gu, ' '), width),
-      settings.at(-1) ?? '',
-    ];
   }
 
   private tooSmall() {
     return this.tui.terminal.columns < 56 || this.tui.terminal.rows < 26;
   }
   invalidate() {
-    this.border.invalidate();
+    this.layout.invalidate();
     this.sections.invalidate();
     this.settings.invalidate();
     this.usage.invalidate();

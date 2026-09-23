@@ -1,10 +1,18 @@
 import {mkdtemp, mkdir, writeFile, rm, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
-import {TerminalControl, type Session} from '@kitlangton/terminal-control';
+import {
+  TerminalControl,
+  type Session,
+  type LaunchOptions,
+} from '@kitlangton/terminal-control';
 import {Schema} from 'effect';
 
 const Request = Schema.Struct({
+  model: Schema.String,
+  max_tokens: Schema.optional(Schema.Number),
+  max_completion_tokens: Schema.optional(Schema.Number),
+  reasoning_effort: Schema.optional(Schema.String),
   messages: Schema.Array(
     Schema.Struct({
       role: Schema.String,
@@ -28,6 +36,7 @@ const Request = Schema.Struct({
     ),
   ),
 });
+export type ModelRequest = typeof Request.Type;
 
 // The real host loads the product entrypoint. Only the external model is deterministic.
 export async function launchPi(
@@ -35,6 +44,11 @@ export async function launchPi(
   extraExtension?: string,
   profile: 'rtk' | 'web' = 'rtk',
   mode: 'regular' | 'fullscreen' = 'fullscreen',
+  modelReply?: (
+    body: ModelRequest,
+    signal: AbortSignal,
+  ) => Response | undefined | Promise<Response | undefined>,
+  startupArgs: readonly string[] = [],
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'pi-stuff-rtk-'));
   const agent = join(directory, 'agent');
@@ -55,6 +69,8 @@ export async function launchPi(
       )
         return new Response(null, {status: 404});
       const body = Schema.decodeUnknownSync(Request)(await request.json());
+      const reply = await modelReply?.(body, request.signal);
+      if (reply !== undefined) return reply;
       offered = body.tools?.map(tool => tool.function.name) ?? [];
       const last = body.messages.at(-1);
       const finished = last?.role === 'tool' || tool === '';
@@ -120,7 +136,7 @@ export async function launchPi(
             baseUrl: `${server.url}v1`,
             api: 'openai-completions',
             apiKey: 'offline-fixture',
-            models: [{id: 'fixture'}],
+            models: [{id: 'fixture'}, {id: 'naming'}],
           },
         },
       }),
@@ -139,7 +155,7 @@ export async function launchPi(
         DBUS_SESSION_BUS_ADDRESS: undefined,
       },
     });
-    terminal = await driver.launch({
+    const launchOptions: LaunchOptions = {
       command: [
         process.env.PI_TEST_HOST ?? process.execPath,
         ...(process.env.PI_TEST_HOST
@@ -170,6 +186,7 @@ export async function launchPi(
         '-e',
         resolve('tests/system/fixtures/host-controls.ts'),
         ...(extraExtension === undefined ? [] : ['-e', extraExtension]),
+        ...startupArgs,
       ],
       cwd: directory,
       viewport:
@@ -203,8 +220,9 @@ export async function launchPi(
         MISE_CACHE_DIR: join(directory, 'mise-cache'),
         MISE_STATE_DIR: join(directory, 'mise-state'),
       },
-    });
-    const screen = terminal;
+    };
+    terminal = await driver.launch(launchOptions);
+    let screen = terminal;
     await screen.screen.waitForText('fixture', {timeoutMs: 15000});
     async function command(text: string) {
       // Trailing space dismisses exact argument completion before submission.
@@ -222,9 +240,40 @@ export async function launchPi(
     return {
       directory,
       agent,
-      terminal: screen,
+      get terminal() {
+        return screen;
+      },
+      async restart(args: readonly string[], waitForTui = true) {
+        await screen.stop();
+        await rm(join(directory, 'observed-session-name'), {force: true});
+        if (!driver) throw new Error('Fixture driver is closed');
+        terminal = await driver.launch({
+          ...launchOptions,
+          command: [...launchOptions.command, ...args],
+        });
+        screen = terminal;
+        if (waitForTui)
+          await screen.screen.waitForText('fixture', {timeoutMs: 15000});
+      },
       close,
       command,
+      async waitForName(name: string) {
+        await screen.screen.waitUntil(
+          async () => {
+            try {
+              return (
+                (await readFile(
+                  join(directory, 'observed-session-name'),
+                  'utf8',
+                )) === name
+              );
+            } catch {
+              return false;
+            }
+          },
+          {timeoutMs: 4000},
+        );
+      },
       start,
       offered: () => offered,
       async invoke(name: string, parameters: string) {
