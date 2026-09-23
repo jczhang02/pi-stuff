@@ -18,9 +18,11 @@
 
 [会话命名](session-naming.md)只在开场生成一次名称, 支持手动 `/autoname` 替换, 并提供与 RTK 共用组件的 `/autoname panel` 面板, 管理名称、模型、规则和长度.
 
+[状态栏](statusline.md)提供双行 footer, 显示原生 ctx、缓存命中率、本地 Git 和现有扩展字段, 可通过全局开关恢复原生 footer.
+
 包内还提供 Catppuccin、Tokyo Night、Gruvbox 和 Rosé Pine 共十款明暗[主题](themes.md). 通过 Pi 主题设置选择, 加载包会保留当前选择.
 
-维护范围为 Linux Bun 编译版 Pi `0.85.1` 至 `0.87.1`, 直接验收样本为 `0.85.1`、`0.86.1` 和 `0.87.1`. 新稳定版在验收前允许尝试. 实际宿主运行时、证据和维护政策见 [Pi 版本支持](pi-version-support.md). 开发技术栈为 TypeScript、Bun `1.4.0` 和 Effect v4 (`4.0.0-rc.112`), 纯算法保留为普通函数. 除网页访问、RTK 集成、会话命名、主题和会话 UI 外, 下方能力仍是产品方向, 不是已实现功能.
+维护范围为 Linux Bun 编译版 Pi `0.85.1` 至 `0.87.1`, 直接验收样本为 `0.85.1`、`0.86.1` 和 `0.87.1`. 新稳定版在验收前允许尝试. 实际宿主运行时、证据和维护政策见 [Pi 版本支持](pi-version-support.md). 开发技术栈为 TypeScript、Bun `1.4.0` 和 Effect v4 (`4.0.0-rc.112`), 纯算法保留为普通函数. 除网页访问、RTK 集成、会话命名、状态栏、主题和会话 UI 外, 下方能力仍是产品方向, 不是已实现功能.
 
 [会话 UI](ui.md)提供直角欢迎页、assistant 与 Thoughts 标识、原生/Web 工具紧凑展示、Write/Edit 高亮预览、检索聚合及全局 `/ui` 设置. [性能及真实模型长会话结果](ui-performance.md)已记录; 当前 CI 与审查状态见 [PR #107](https://github.com/jczhang02/pi-stuff/pull/107).
 
@@ -58,6 +60,7 @@ cd pi-stuff
 - [src/rtk/](../../../src/rtk/) 管理 RTK 发现、命令改写、最终结果清理和内联面板.
 - [src/ui/](../../../src/ui/) 管理会话展示及其设置.
 - [src/naming/](../../../src/naming/) 管理命名资格、请求限制、结果发布保护和命名面板.
+- [src/statusline/](../../../src/statusline/) 管理 footer 布局、原生用量和事件触发的 Git 快照.
 - [themes/](../../../themes/) 保存包声明中的静态 Pi 主题资源.
 - [tests/component/](../../../tests/component/) 验证模块行为; [tests/system/](../../../tests/system/) 在真实 Pi 宿主中加载扩展.
 

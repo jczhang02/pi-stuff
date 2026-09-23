@@ -50,7 +50,11 @@ test('saved names succeed silently and blank-session hints only report the unsav
     await host.invoke('', '{}');
     provider.title = 'fix: Preserve the saved session name';
     await host.command('/autoname');
-    await host.terminal.screen.waitForText(provider.title, {timeoutMs: 4000});
+    await host.waitForName(provider.title);
+    await host.command('/name');
+    await host.terminal.screen.waitForText(`Session name: ${provider.title}`, {
+      timeoutMs: 4000,
+    });
     expect(provider.requests).toHaveLength(2);
     expect(await host.terminal.logs.text()).not.toContain('Session named:');
   } finally {

@@ -9,6 +9,7 @@ import {registerUi} from './src/ui/register';
 import {registerUiPanel} from './src/ui/panel';
 import {displayWebTools} from './src/ui/web';
 import {registerNaming} from './src/naming/register';
+import {registerStatusline} from './src/statusline/register';
 import {registerNamingPanel} from './src/naming/panel';
 
 export default async function (pi: ExtensionAPI) {
@@ -29,6 +30,7 @@ export default async function (pi: ExtensionAPI) {
       ? undefined
       : tools => displayWebTools(tools, groups),
   );
+  registerStatusline(pi, configuration.value.statusline);
   const naming = registerNaming(pi, configuration.value.naming);
   registerNamingPanel(pi, naming, async settings => {
     const previous = configuration.value.naming;

@@ -19,9 +19,11 @@ This checkout contains a development web extension with independent search, page
 
 [Session naming](docs/session-naming.md) generates an opening title once, with explicit `/autoname` replacements and an `/autoname panel` view sharing RTK panel components for names, model, rules and length.
 
+[Statusline](docs/statusline.md) adds a two-row footer with native context usage, cache hit, local Git state and existing extension statuses. A global switch restores the native footer.
+
 The package also includes ten light and dark [themes](docs/themes.md) from Catppuccin, Tokyo Night, Gruvbox and Rosé Pine. Choose them through Pi's theme settings; loading the package preserves your current choice.
 
-The maintained range is Linux Bun-compiled Pi `0.85.1` through `0.87.1`, with direct acceptance of `0.85.1`, `0.86.1` and `0.87.1`. Newer stable versions may be tried before acceptance. See [Pi version support](docs/pi-version-support.md) for actual host runtimes, evidence and the maintenance policy. The development stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Beyond Web access, RTK integration, session naming, themes and conversation UI, the capabilities below describe product direction, not implemented features.
+The maintained range is Linux Bun-compiled Pi `0.85.1` through `0.87.1`, with direct acceptance of `0.85.1`, `0.86.1` and `0.87.1`. Newer stable versions may be tried before acceptance. See [Pi version support](docs/pi-version-support.md) for actual host runtimes, evidence and the maintenance policy. The development stack is TypeScript, Bun `1.4.0` and Effect v4 (`4.0.0-rc.112`); pure algorithms remain ordinary functions. Beyond Web access, RTK integration, session naming, statusline, themes and conversation UI, the capabilities below describe product direction, not implemented features.
 
 [Conversation UI](docs/ui.md) provides a square-corner welcome, assistant and Thoughts markers, compact native/Web tools, highlighted Write/Edit previews, retrieval groups and global `/ui` settings. [Performance and real-model endurance results](docs/ui-performance.md) are recorded; see [PR #107](https://github.com/jczhang02/pi-stuff/pull/107) for current CI and review status.
 
@@ -59,6 +61,7 @@ The [source-layout rules](docs/agents/engineering.md#source-layout) govern entry
 - [src/rtk/](src/rtk/) owns RTK discovery, command rewriting, final-result cleanup and the inline panel.
 - [src/ui/](src/ui/) owns conversation presentation and its settings.
 - [src/naming/](src/naming/) owns naming eligibility, bounded requests, guarded publication and the naming panel.
+- [src/statusline/](src/statusline/) owns footer layout, native usage and event-triggered Git snapshots.
 - [themes/](themes/) contains static Pi theme resources declared by the package.
 - [tests/component/](tests/component/) exercises module behavior; [tests/system/](tests/system/) loads the extension in the real Pi host.
 
