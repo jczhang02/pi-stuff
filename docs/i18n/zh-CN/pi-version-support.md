@@ -2,7 +2,7 @@
 
 [English](../../pi-version-support.md) · 英文为准.
 
-状态: [#113](https://github.com/jczhang02/pi-stuff/issues/113) 中的决定已逐项确认, 完整政策仍待最终确认. 本文不扩大当前已验证的运行环境声明.
+状态: 维护者已于 2026-09-23 确认完整政策. [#113](https://github.com/jczhang02/pi-stuff/issues/113) 保存实施规格. 政策确认不扩大当前已验证的运行环境声明.
 
 ## 当前证据
 
@@ -18,7 +18,7 @@
 
 ## 包声明方向
 
-拟议实施遵循 [Pi 官方包规范](https://pi.dev/docs/latest/packages#declare-dependencies): 导入的宿主提供 Pi 包使用通配 peer, 开发依赖仍固定精确版本以保证可复现. 支持政策和宿主证据单独界定维护范围. 依赖和 CI 改动等待完整方案确认.
+实施遵循 [Pi 官方包规范](https://pi.dev/docs/latest/packages#declare-dependencies): 导入的宿主提供 Pi 包使用通配 peer, 开发依赖仍固定精确版本以保证可复现. 支持政策和宿主证据单独界定维护范围. 依赖和 CI 改动已在 #113 中定义, 本文档任务尚未实施.
 
 ## 验收样本
 

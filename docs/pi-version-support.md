@@ -2,7 +2,7 @@
 
 [简体中文](i18n/zh-CN/pi-version-support.md) · English is normative.
 
-Status: individual decisions confirmed in [#113](https://github.com/jczhang02/pi-stuff/issues/113); final confirmation of the complete policy remains pending. This document does not expand the current verified runtime claim.
+Status: the maintainer confirmed the complete policy on 2026-09-23. [#113](https://github.com/jczhang02/pi-stuff/issues/113) holds the implementation specification. Policy acceptance does not expand the current verified runtime claim.
 
 ## Current evidence
 
@@ -18,7 +18,7 @@ The minimum may be raised. Before doing so, explain the concrete API or feature 
 
 ## Packaging direction
 
-The proposed implementation follows [Pi's package guidance](https://pi.dev/docs/latest/packages#declare-dependencies): imported host-provided Pi packages use wildcard peers, while development dependencies stay pinned to exact versions for reproducibility. The support policy and host evidence define the maintained range separately from the install declaration. Dependency and CI changes await confirmation of the complete design.
+The implementation follows [Pi's package guidance](https://pi.dev/docs/latest/packages#declare-dependencies): imported host-provided Pi packages use wildcard peers, while development dependencies stay pinned to exact versions for reproducibility. The support policy and host evidence define the maintained range separately from the install declaration. Dependency and CI changes are specified in #113 and have not been implemented by this documentation task.
 
 ## Acceptance samples
 
