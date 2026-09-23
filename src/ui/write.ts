@@ -61,7 +61,7 @@ class WrittenContent implements Component {
         this.source === ''
           ? []
           : this.highlighted.flatMap(line =>
-              wrapTextWithAnsi(line, Math.max(1, width - 4)),
+              wrapTextWithAnsi(line, Math.max(1, width - 5)),
             );
       this.bodyWidth = width;
     }
@@ -73,11 +73,11 @@ class WrittenContent implements Component {
       truncateToWidth(
         this.theme.fg(
           'muted',
-          `  ⎿ Wrote ${count} ${count === 1 ? 'line' : 'lines'}`,
+          `  ⎿  Wrote ${count} ${count === 1 ? 'line' : 'lines'}`,
         ),
         width,
       ),
-      ...visible.map(line => truncateToWidth(`    ${line}`, width)),
+      ...visible.map(line => truncateToWidth(`     ${line}`, width)),
     ];
     const hidden = this.body.length - visible.length;
     if (hidden > 0)
@@ -85,7 +85,7 @@ class WrittenContent implements Component {
         truncateToWidth(
           this.theme.fg(
             'muted',
-            `    ${hidden} more ${hidden === 1 ? 'line' : 'lines'}`,
+            `     ${hidden} more ${hidden === 1 ? 'line' : 'lines'}`,
           ),
           width,
         ),

@@ -27,9 +27,9 @@ test('Wrapped Read, Edit and Write errors stay aligned with their result block',
       );
       const body = rows.slice(first, end);
       expect(body.length).toBeGreaterThan(1);
-      expect(body[0]).toStartWith('  ⎿ ');
+      expect(body[0]).toStartWith('  ⎿  ');
       for (const continuation of body.slice(1))
-        expect(continuation).toStartWith('    ');
+        expect(continuation).toStartWith('     ');
     }
   } finally {
     await host.close();
@@ -51,11 +51,11 @@ test('Wrapped Web batch warnings keep their own connector and aligned continuati
     expect(result).toContain('error: authentication:');
     const rows = (await host.terminal.screen.text()).split('\n');
     const first = rows.findIndex(row =>
-      row.includes('⎿ error: authentication:'),
+      row.includes('⎿  error: authentication:'),
     );
     expect(first).toBeGreaterThan(-1);
     expect(rows[first + 1]?.trim()).not.toBe('');
-    expect(rows[first + 1]).toStartWith('    ');
+    expect(rows[first + 1]).toStartWith('     ');
   } finally {
     await host.close();
   }

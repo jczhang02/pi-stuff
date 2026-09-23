@@ -101,8 +101,8 @@ test('Global code presentation controls change rendering while preserving writte
       }),
     );
     const plainDiff = await host.terminal.screen.capture();
-    expect(plainDiff.text).toMatch(/^    - const value = 1;\s*$/mu);
-    expect(plainDiff.text).toMatch(/^    \+ const value = 2;\s*$/mu);
+    expect(plainDiff.text).toMatch(/^     - const value = 1;\s*$/mu);
+    expect(plainDiff.text).toMatch(/^     \+ const value = 2;\s*$/mu);
     const style = sourceStyle(plainDiff, 'const value = 2;');
     expect(style.foregrounds.size).toBe(1);
     expect(style.backgrounds).toEqual(

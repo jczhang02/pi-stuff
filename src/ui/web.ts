@@ -145,9 +145,9 @@ const WebArgs = Schema.Struct({
   queries: Schema.optional(Schema.Array(Schema.String)),
   urls: Schema.optional(Schema.Array(Schema.String)),
   contentId: Schema.optional(Schema.String),
-  find: Schema.optional(Schema.String),
-  offset: Schema.optional(Schema.Number),
-  limit: Schema.optional(Schema.Number),
+  find: Schema.optional(Schema.NullOr(Schema.String)),
+  offset: Schema.optional(Schema.NullOr(Schema.Number)),
+  limit: Schema.optional(Schema.NullOr(Schema.Number)),
 });
 
 // A view has no executable definition. History can use it before registration
@@ -172,7 +172,7 @@ export function webView(
       const args = Schema.decodeUnknownSync(WebArgs)(input);
       if (name === 'get_search_content')
         return expanded
-          ? `${args.contentId ?? ''}${args.find === undefined ? `, offset ${args.offset ?? 0}${args.limit === undefined ? '' : `, limit ${args.limit}`}` : `, find ${args.find}`}`
+          ? `${args.contentId ?? ''}${args.find == null ? `, offset ${args.offset ?? 0}${args.limit == null ? '' : `, limit ${args.limit}`}` : `, find ${args.find}`}`
           : 'retained content';
       const targets = (name === 'web_search' ? args.queries : args.urls) ?? [];
       const noun =
@@ -188,9 +188,7 @@ export function webView(
     (output, _details, input) => {
       const args = Schema.decodeUnknownSync(WebArgs)(input);
       if (name === 'get_search_content')
-        return args.find === undefined
-          ? pages(output)
-          : matches(output, args.find);
+        return args.find == null ? pages(output) : matches(output, args.find);
       const targets = name === 'web_search' ? args.queries : args.urls;
       if (!targets) return unparsed(output);
       return pages(

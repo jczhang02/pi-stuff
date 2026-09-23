@@ -140,11 +140,11 @@ test.each([
           timeoutMs: 5000,
         });
         await host.terminal.screen.waitForText(
-          `⎿ ${range.output.split('\n')[0]}`,
+          `⎿  ${range.output.split('\n')[0]}`,
           {timeoutMs: 5000},
         );
         const visible = await host.terminal.screen.text();
-        expect(visible).toContain(`⎿ ${range.output.split('\n')[0]}`);
+        expect(visible).toContain(`⎿  ${range.output.split('\n')[0]}`);
         for (const line of range.output.split('\n').filter(Boolean))
           expect(visible).toContain(line);
         expect(visible).not.toContain('CHANGED_AFTER_READ');

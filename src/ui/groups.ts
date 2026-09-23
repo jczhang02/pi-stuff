@@ -156,6 +156,8 @@ export class RetrievalGroups {
   summary(id: string): string | undefined {
     const group = this.calls.get(id)?.group;
     if (!group || group.leader.id !== id) return undefined;
+    if (this.visible(id))
+      return `Retrieval · ${group.members.size} ${group.members.size === 1 ? 'tool' : 'tools'}`;
     const count = (label: string) => group.counts.get(label) ?? 0;
     const parts: string[] = [];
     const read = count('Read');

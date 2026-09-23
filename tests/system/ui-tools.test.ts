@@ -33,7 +33,7 @@ test('Bash previews three rows and expands retained output without changing the 
   }
 }, 30000);
 
-test('Bash keeps timeout as a separate result block and retains host shell configuration', async () => {
+test('Bash omits configured timeout while retaining host shell configuration', async () => {
   const host = await launchPi('{"rtk":{"rewrite":false}}');
   try {
     await writeFile(
@@ -53,8 +53,8 @@ test('Bash keeps timeout as a separate result block and retains host shell confi
     );
     expect(result).toBe('kept\n');
     const screen = await host.terminal.screen.text();
-    expect(screen).toContain('⎿ kept');
-    expect(screen).toContain('⎿ timeout 7s');
+    expect(screen).toContain('⎿  kept');
+    expect(screen).not.toContain('timeout 7s');
     expect(screen).not.toContain('more lines');
   } finally {
     await host.close();
@@ -91,7 +91,7 @@ test('Global Bash preview limit changes visible rows while retaining the full re
       ),
     ).toBe('one\ntwo\nthree\n');
     const screen = await host.terminal.screen.text();
-    expect(screen).toContain('⎿ one');
+    expect(screen).toContain('⎿  one');
     expect(screen).toContain('2 more lines');
     expect(screen).not.toMatch(/^\s+two$/mu);
   } finally {
@@ -397,8 +397,8 @@ test('Global preview limits apply to Write, Edit and running Bash without discar
       allowIncomplete: true,
       deadlineMs: 200,
     });
-    expect(running.text).toContain('⎿ 4 more lines');
-    expect(running.text).not.toMatch(/^\s+⎿ RUN_ONE$/mu);
+    expect(running.text).toContain('⎿  4 more lines');
+    expect(running.text).not.toMatch(/^\s+⎿  RUN_ONE$/mu);
     expect(running.text).not.toMatch(/^\s+RUN_FOUR$/mu);
     await writeFile(join(host.directory, 'finish-preview'), 'done');
     await host.terminal.screen.waitForText('RTK_TURN_3_DONE', {
@@ -426,7 +426,7 @@ test('Long Write and Edit titles use two compact rows and reveal the full path o
     const written = (await host.terminal.screen.text()).split('\n');
     const write = written.findIndex(line => line.includes('Write('));
     expect(written[write + 1]).toContain('…');
-    expect(written[write + 2]).toContain('⎿ Wrote 1 line');
+    expect(written[write + 2]).toContain('⎿  Wrote 1 line');
     await host.invoke(
       'edit',
       JSON.stringify({
@@ -437,7 +437,7 @@ test('Long Write and Edit titles use two compact rows and reveal the full path o
     const edited = (await host.terminal.screen.text()).split('\n');
     const edit = edited.findIndex(line => line.includes('Edit('));
     expect(edited[edit + 1]).toContain('…');
-    expect(edited[edit + 2]).toContain('⎿ Added 1 line');
+    expect(edited[edit + 2]).toContain('⎿  Added 1 line');
     expect(edited.join('\n')).not.toContain('sample.ts)');
     await host.terminal.keyboard.press('Control+O');
     await host.terminal.screen.waitForText('sample.ts)', {timeoutMs: 5000});
@@ -449,7 +449,7 @@ test('Long Write and Edit titles use two compact rows and reveal the full path o
   }
 }, 30000);
 
-test('Bash reports the actual exit status and duration outside a folded long result', async () => {
+test('Bash keeps failure status outside folded output and omits success metadata', async () => {
   const host = await launchPi('{"rtk":{"rewrite":false}}');
   try {
     const result = await host.invoke(
@@ -462,12 +462,12 @@ test('Bash reports the actual exit status and duration outside a folded long res
     expect(result).toContain('Command exited with code 17');
     const failed = await host.terminal.screen.text();
     expect(failed).toContain('Exit code 17');
-    expect(failed).toMatch(/Exit code 17 · \d+\.\d+s/u);
+    expect(failed).not.toMatch(/Exit code 17 ·/u);
     expect(failed).not.toMatch(/^\s+fifth$/mu);
     await host.invoke('bash', JSON.stringify({command: 'printf success'}));
     const successful = await host.terminal.screen.text();
-    expect(successful).toMatch(/Completed · \d+\.\d+s/u);
-    expect(successful).toContain('⎿ success');
+    expect(successful).not.toContain('Completed');
+    expect(successful).toContain('⎿  success');
   } finally {
     await host.close();
   }
@@ -511,8 +511,8 @@ test('Bash keeps an empty outcome visible without inventing hidden output rows',
       '(no output)',
     );
     const screen = await host.terminal.screen.text();
-    expect(screen).toContain('⎿ (no output)');
-    expect(screen).toContain('Completed');
+    expect(screen).toContain('⎿  (no output)');
+    expect(screen).not.toContain('Completed');
     expect(screen).not.toContain('more line');
   } finally {
     await host.close();
@@ -531,8 +531,8 @@ test('Bash timeout and cancellation remain visible when output is hidden', async
     expect(result).toContain('TIMEOUT_BODY');
     expect(result).toContain('Command timed out after 0.15 seconds');
     const timedOut = await host.terminal.screen.text();
-    expect(timedOut).toMatch(/⎿ Timed out · \d+\.\d+s/u);
-    expect(timedOut).toContain('⎿ timeout 0.15s');
+    expect(timedOut).toContain('⎿  Timed out after 0.15s');
+    expect(timedOut).not.toContain('⎿  timeout');
     await host.start(
       'bash',
       JSON.stringify({command: 'printf CANCEL_READY; sleep 10'}),
@@ -544,16 +544,22 @@ test('Bash timeout and cancellation remain visible when output is hidden', async
             allowIncomplete: true,
             deadlineMs: 200,
           })
-        ).text.includes('⎿ CANCEL_READY'),
+        ).text.includes('⎿  CANCEL_READY'),
       {timeoutMs: 5000},
     );
     await host.terminal.keyboard.press('Escape');
-    await host.terminal.screen.waitForText('Cancelled ·', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('⎿  Cancelled', {timeoutMs: 5000});
     const cancelled = await host.terminal.screen.text();
-    expect(cancelled).toMatch(/⎿ Cancelled · \d+\.\d+s/u);
+    expect(cancelled).toContain('⎿  Cancelled');
     expect(cancelled).toContain('Error: The operation was aborted.');
     await host.invoke('bash', JSON.stringify({command: 'printf AFTER_CANCEL'}));
-    expect(await host.terminal.screen.text()).toContain('Completed');
+    expect(await host.terminal.screen.text()).toContain(
+      'Bash(printf AFTER_CANCEL)',
+    );
+    await host.terminal.keyboard.press('Control+O');
+    await host.terminal.screen.waitForText('⎿  AFTER_CANCEL', {
+      timeoutMs: 5000,
+    });
   } finally {
     await host.close();
   }

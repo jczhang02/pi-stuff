@@ -94,7 +94,7 @@ class RetrievalContent {
       if (part.kind === 'body' && part.text === '') continue;
       const rows = (block.rows ??= wrapTextWithAnsi(
         part.text,
-        Math.max(1, width - 4),
+        Math.max(1, width - 5),
       ));
       const visible =
         this.options.expanded || this.options.isPartial || part.kind !== 'body';
@@ -106,10 +106,10 @@ class RetrievalContent {
             : 'toolOutput';
       if (visible) {
         block.styled ??= rows.map((line, index) => {
-          const prefix = index === 0 ? '  ⎿ ' : '    ';
+          const prefix = index === 0 ? '  ⎿  ' : '     ';
           const text = `${prefix}${this.theme.fg(color, line)}`;
           // Measure and, on overflow, truncate the whole grapheme sequence before color ANSI.
-          return visibleWidth(`    ${line}`) <= width
+          return visibleWidth(`     ${line}`) <= width
             ? text
             : this.theme.fg(color, truncateToWidth(`${prefix}${line}`, width));
         });
@@ -119,7 +119,7 @@ class RetrievalContent {
           truncateToWidth(
             this.theme.fg(
               'muted',
-              `  ⎿ ${rows.length} more ${rows.length === 1 ? 'line' : 'lines'}`,
+              `  ⎿  ${rows.length} more ${rows.length === 1 ? 'line' : 'lines'}`,
             ),
             width,
           ),
@@ -209,6 +209,13 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
   groups?: RetrievalGroups,
 ) {
   const nativeResult = tool.renderResult;
+  const describe = (args: Static<Params>, expanded: boolean) => {
+    try {
+      return target(args, expanded);
+    } catch {
+      return undefined;
+    }
+  };
   tool.renderShell = 'self';
   tool.renderCall = (args, theme, context) => {
     // Pi updates call renderers on every global toggle, even when successive
@@ -216,7 +223,7 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
     groups?.visible(context.toolCallId);
     const title = new ToolHeading(
       label,
-      target(args, context.expanded),
+      describe(args, context.expanded) ?? JSON.stringify(args) ?? '',
       theme,
       context,
     );
@@ -239,7 +246,7 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
           ? [truncateToWidth(theme.fg('muted', `• ${summary}`), width)]
           : [];
         if (groups && !groups.visible(context.toolCallId)) return heading;
-        return [...heading, ...title.render(width)];
+        return [...heading, ...(summary ? [''] : []), ...title.render(width)];
       },
     };
   };
@@ -259,14 +266,22 @@ export function displayRetrieval<Params extends TSchema, Details, State>(
       groups?.finish(context.toolCallId, false);
       return new ResultBlock(output, theme, 'error');
     }
-    const parts = (
-      inspect?.(output, result.details, context.args) ??
-      nativeParts(
-        output,
-        Schema.decodeUnknownSync(RetrievalDetails)(result.details ?? {}),
-        tool.name,
-      )
-    ).map(part => ({
+    let parsed: RetrievalPart[];
+    try {
+      parsed =
+        describe(context.args, options.expanded) === undefined
+          ? [{kind: 'status', text: output || '(no output)'}]
+          : (inspect?.(output, result.details, context.args) ??
+            nativeParts(
+              output,
+              Schema.decodeUnknownSync(RetrievalDetails)(result.details ?? {}),
+              tool.name,
+            ));
+    } catch {
+      // Unknown arguments or details remain visible and do not join groups.
+      parsed = [{kind: 'status', text: output || '(no output)'}];
+    }
+    const parts = parsed.map(part => ({
       ...part,
       text: stripTerminalSequences(part.text).replace(/\n$/u, ''),
     }));

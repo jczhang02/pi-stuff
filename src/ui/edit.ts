@@ -136,7 +136,7 @@ class EditDiff implements Component {
     if (width !== this.bodyWidth) {
       const body: string[] = [];
       for (const [index, hunk] of hunks.entries()) {
-        if (index > 0) body.push(this.theme.fg('muted', '    …'));
+        if (index > 0) body.push(this.theme.fg('muted', '     …'));
         for (const line of hunk) {
           const color =
             line.kind === '+'
@@ -150,7 +150,7 @@ class EditDiff implements Component {
               : `${String(line.number).padStart(this.digits)} ${line.kind} `;
           const wrapped = wrapTextWithAnsi(
             line.source,
-            Math.max(1, width - 4 - gutter.length),
+            Math.max(1, width - 5 - gutter.length),
           );
           for (const [part, row] of wrapped.entries()) {
             const content = `${this.theme.fg(color, part === 0 ? gutter : ' '.repeat(gutter.length))}${row}`;
@@ -161,14 +161,14 @@ class EditDiff implements Component {
                     line.kind === '+' ? 'toolSuccessBg' : 'toolErrorBg',
                     content,
                   );
-            body.push(truncateToWidth(`    ${painted}`, width));
+            body.push(truncateToWidth(`     ${painted}`, width));
           }
         }
       }
       this.bodyWidth = width;
       this.body = body;
     }
-    const summary = `  ⎿ Added ${this.added} ${this.added === 1 ? 'line' : 'lines'}, removed ${this.removed} ${this.removed === 1 ? 'line' : 'lines'}`;
+    const summary = `  ⎿  Added ${this.added} ${this.added === 1 ? 'line' : 'lines'}, removed ${this.removed} ${this.removed === 1 ? 'line' : 'lines'}`;
     const visible = this.expanded
       ? this.body
       : this.body.slice(0, this.settings.editPreviewLines ?? 6);
@@ -182,7 +182,7 @@ class EditDiff implements Component {
         truncateToWidth(
           this.theme.fg(
             'muted',
-            `    ${hidden} more ${hidden === 1 ? 'line' : 'lines'}`,
+            `     ${hidden} more ${hidden === 1 ? 'line' : 'lines'}`,
           ),
           width,
         ),

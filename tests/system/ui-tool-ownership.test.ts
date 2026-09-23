@@ -87,7 +87,7 @@ test('Generic takeover preserves foreign arguments, details and visible failures
     expect(compact).toContain('2 more lines');
     expect(compact).not.toContain('FOREIGN_JOB_VIEW');
     await host.terminal.keyboard.press('Control+O');
-    await host.terminal.screen.waitForText('⎿ JOB:A-19', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('⎿  JOB:A-19', {timeoutMs: 5000});
     await host.terminal.keyboard.press('Control+O');
     expect(
       await host.invoke(
@@ -95,7 +95,7 @@ test('Generic takeover preserves foreign arguments, details and visible failures
         JSON.stringify({jobId: 'A-20', fail: true}),
       ),
     ).toContain('JOB_FAILED:A-20');
-    expect(await host.terminal.screen.text()).toContain('⎿ JOB_FAILED:A-20');
+    expect(await host.terminal.screen.text()).toContain('⎿  JOB_FAILED:A-20');
   } finally {
     await host.close();
   }

@@ -45,10 +45,10 @@ test('Bash history retains output and failures without replaying commands or inv
       const compact = await host.terminal.screen.text();
       expect(compact).toContain('Bash(');
       expect(compact).toContain('2 more lines');
-      expect(compact).toContain('⎿ timeout 7s');
+      expect(compact).not.toContain('timeout 7s');
       expect(compact).toContain('Exit code 17');
-      if (stage === 'live') expect(compact).toMatch(/Completed · \d+\.\d+s/u);
-      else expect(compact).not.toMatch(/· \d+\.\d+s/u);
+      expect(compact).not.toContain('Completed');
+      expect(compact).not.toMatch(/· \d+\.\d+s/u);
       await host.terminal.keyboard.press('Control+O');
       await host.terminal.screen.waitUntil(
         async () => /^\s+five$/mu.test(await host.terminal.screen.text()),

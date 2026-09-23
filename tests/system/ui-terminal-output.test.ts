@@ -195,7 +195,7 @@ test.each([
         'bash',
         JSON.stringify({command: 'echo RUNNING; sleep 60'}),
       );
-      await host.terminal.screen.waitForText(/^\s*(?:⎿ )?RUNNING\s*$/mu, {
+      await host.terminal.screen.waitForText(/^\s*(?:⎿  )?RUNNING\s*$/mu, {
         timeoutMs: 5000,
       });
       await host.terminal.keyboard.press('Escape');

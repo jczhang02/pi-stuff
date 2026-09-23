@@ -72,6 +72,8 @@ test('Retrieval group opens aligned compact calls before revealing an individual
       timeoutMs: 5000,
     });
     const open = (await host.terminal.screen.text()).split('\n');
+    expect(open.join('\n')).toContain('• Retrieval · 2 tools\n\n');
+    expect(open.join('\n')).not.toContain('Read 2 files');
     const first = open.findIndex(row => row.includes('Read(first.txt)'));
     const second = open.findIndex(row => row.includes('Read(second.txt)'));
     expect(open[first]?.indexOf('•')).toBe(x);
@@ -108,7 +110,9 @@ test('Retrieval group opens aligned compact calls before revealing an individual
     await host.terminal.keyboard.press('Control+O');
     await host.terminal.screen.waitForText('SECOND_BODY', {timeoutMs: 5000});
     const expanded = (await host.terminal.screen.text()).split('\n');
-    const groupY = expanded.findIndex(row => row.includes('Read 2 files'));
+    const groupY = expanded.findIndex(row =>
+      row.includes('Retrieval · 2 tools'),
+    );
     expect(groupY).toBeGreaterThanOrEqual(0);
     await host.terminal.mouse({action: 'click', x, y: groupY, button: 'left'});
     await host.terminal.screen.waitUntil(
@@ -249,7 +253,9 @@ test('Resumed sessions rebuild historical retrieval groups', async () => {
     expect(await readFile(savedPath, 'utf8')).toBe(saved);
     for (let attempt = 0; attempt < 3; attempt++) {
       await host.reload();
-      await host.terminal.screen.waitForText('Read 2 files', {timeoutMs: 5000});
+      await host.terminal.screen.waitForText('Retrieval · 2 tools', {
+        timeoutMs: 5000,
+      });
       await host.terminal.keyboard.press('Control+O');
       await host.terminal.keyboard.press('Control+O');
       await host.terminal.screen.waitForText('OLD_SESSION_BODY', {
@@ -474,7 +480,7 @@ test('Cancelled retrieval stays visible between completed groups and the next tu
     expect(cancelled.slice(0, web)).toContain('Read 1 file');
     expect(nextRead).toBeGreaterThan(web);
     expect(cancelled.slice(web, nextRead)).toContain(
-      '⎿ All fibers interrupted without error',
+      '⎿  All fibers interrupted without error',
     );
     await host.invoke('read', read.parameters);
     const resumed = await host.terminal.screen.text();

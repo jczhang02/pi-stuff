@@ -1,17 +1,16 @@
 import type {ExtensionAPI} from '@earendil-works/pi-coding-agent';
 import {visibleWidth} from '@earendil-works/pi-tui';
-import {BashDisplay} from '../../../src/ui/bash';
+import {displayBash} from '../../../src/ui/bash';
 import {displayRetrieval} from '../../../src/ui/retrieval';
 
 export default function (pi: ExtensionAPI) {
-  const bash = new BashDisplay(pi);
   pi.registerCommand('check-result-width', {
     description:
       'Check result components at widths too small for the full host UI',
     handler: async (label, ctx) => {
       const tools = [
         displayRetrieval({name: 'read'}, 'Read', () => 'fixture.txt'),
-        {name: 'bash', ...bash.display({}, {})},
+        {name: 'bash', ...displayBash({}, {})},
       ];
       for (const tool of tools) {
         for (const text of [

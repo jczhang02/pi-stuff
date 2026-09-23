@@ -20,13 +20,19 @@ These are actual Pi 0.85.1 / Bun 1.4.0 isolated terminal captures loading the ex
 
 All tools share the heading rule: a status dot, at most two compact rows, aligned continuations and the complete target on disclosure. Bash shows the command and `⎿` output. Completed output previews three rendered rows; running output shows the latest two. Hidden retained rows are counted as `n more lines`. Pi handles mouse disclosure and Ctrl+O. Short results retain the same native disclosure behavior even when both views look identical.
 
-Configured timeout and upstream truncation/log information have separate result blocks. Expanding reveals only retained output. Tool execution uses Pi's public native definition with the host's configured shell path and command prefix. Other extensions' Bash definitions are left untouched.
+Upstream truncation and log information have separate result blocks. Each `⎿` is followed by two ordinary spaces; continuation text begins in the same column, after five spaces. Expanding reveals only retained output. Tool execution uses Pi's public native definition with the host's configured shell path and command prefix. Other extensions' Bash definitions are left untouched.
 
-Completed live calls show `Completed` and the observed tool-execution interval. Pi does not expose a successful numeric exit code; failures display a numeric code when Pi supplies one. Timeout and cancellation remain visible when the body is folded, including a zero-row preview. Empty output stays visible without a hidden-row count. Failed native calls can retain their truncation/log notice only in error text; that notice is lifted into separate result blocks. Model-visible results and recorded errors are unchanged. Historical output without timing does not receive an invented duration.
+Successful calls show output without `Completed`, elapsed time or the configured timeout. Empty output shows `(no output)`. Failures retain the native exit code when available, actual timeout duration (for example `Timed out after 10s`) or cancellation. These notices stay visible even with a zero-row preview. Setup and spawn errors remain visible. Failed native calls can retain their truncation/log notice only in error text; that notice is lifted into separate result blocks. Model-visible results and recorded errors are unchanged.
 
-Setup and spawn errors remain visible even with a zero-row preview. The following compiled Pi 0.87.0 capture shows actual command results and an unsuccessful exit. Output text is supplied by fixture commands, not real lint/type checks; the [integration notes](ui-integration.md#bash-execution-and-history) include the restored view and capture details.
+The following captures show the current result spacing, Bash success/failure, Write/Edit and retrieval groups. Compiled Pi 0.87.1 / Bun 1.4.0, isolated deterministic provider, 100×52 cells. Commands and file operations actually execute; the printed test summary is fixture output. Terminal Control exports use JetBrainsMono Nerd Font Mono, Symbols Nerd Font Mono, LXGW WenKai Mono. These are terminal captures, not Ghostty-window acceptance. The light fixture sets the terminal defaults to foreground `#4c4f69` and background `#eff1f5`; the extension does not modify the palette.
 
-![Bash results, default dark theme, 100 columns](assets/ui/bash-live-dark-100.png)
+![Current tool layout, dark, group collapsed](assets/ui/tool-layout-dark-collapsed.png)
+
+![Current tool layout, Catppuccin Latte, group collapsed](assets/ui/tool-layout-latte-collapsed.png)
+
+## Display input handling
+
+Pi executes a validated copy of tool arguments but gives renderers the original values. Optional nulls are treated as omitted where applicable. Missing streaming fields keep a heading without claiming a completed operation. If a dedicated renderer's argument or result-details decoding fails, owned tools retain our heading and the complete original result instead of reverting to a bare native tool name or inventing counts. Such retrieval results stay outside groups. Extra unknown fields do not invalidate otherwise usable input. This affects presentation only; execution, schemas, session records and third-party ownership remain unchanged.
 
 ## Write
 
@@ -40,35 +46,21 @@ CRLF content uses the same display normalization as native Write, so previews do
 
 Edit renders the native result patch with one line-number gutter, removal numbers from the old file and addition/context numbers from the new file. It highlights the available old and new source separately within each hunk, adds semantic backgrounds and shows six rendered rows before disclosure. Wrapped rows do not repeat the gutter. The summary counts added and removed source lines. Opening an old result uses its recorded patch even if the file has since changed. Syntax context outside the recorded hunks is unavailable.
 
-The same Write/Edit sequence with default code settings, then with syntax colors, diff numbers and backgrounds disabled. Both captures use the isolated host at 80 columns.
-
-![Default code presentation](assets/ui/code-default-dark-80.png)
-
-![Code presentation with optional styling disabled](assets/ui/code-plain-dark-80.png)
-
-The same code sequence under compiled Pi 0.87.0 / Bun 1.4.0 with Catppuccin Latte, at 60, 80 and 120 columns. The isolated test terminal was configured with foreground `#4c4f69` and background `#eff1f5` before launching Pi; the capture's terminal cells confirmed those defaults. This fixes the earlier export-background mismatch without adding palette control to the extension. These captures establish virtual-terminal layout and colors, not a Ghostty-window test.
-
-![Latte code presentation, 60 columns](assets/ui/code-latte-60.png)
-
-![Latte code presentation, 80 columns](assets/ui/code-latte-80.png)
-
-![Latte code presentation, 120 columns](assets/ui/code-latte-120.png)
-
 ## Retrieval tools
 
-Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mouse disclosure or Ctrl+O reveals their text. No-match, empty and error results remain visible, as do upstream truncation and result-limit warnings. Ls is used only for an actual `ls` tool call; shell commands keep their Bash identity. Native Read image-resizing settings are preserved. Successful adjacent local and Web calls now form a compact group. Click its summary to show aligned compact tools, then click a tool to reveal its retained result. Ctrl+O reveals grouped results through native tool expansion. Pending calls, empty results, warnings, failures and ordinary Bash remain outside groups. The index stores call identities and counts, not duplicate output.
+Read, Grep, Find and Ls share a compact heading and retained-row hint. Native mouse disclosure or Ctrl+O reveals their text. No-match, empty and error results remain visible, as do upstream truncation and result-limit warnings. Ls is used only for an actual `ls` tool call; shell commands keep their Bash identity. Native Read image-resizing settings are preserved. Successful adjacent local and Web calls now form a compact group. Click its summary to show aligned compact tools. The expanded heading becomes muted `• Retrieval · N tools` (or `1 tool`), followed by one blank line; the statistical summary is hidden. Click that heading to collapse the group, or click an individual tool to reveal its retained result. Ctrl+O reveals grouped results through native tool expansion. Pending calls, empty results, warnings, failures and ordinary Bash remain outside groups. The index stores call identities and counts, not duplicate output.
 
 Parallel calls keep their original order even when they finish in a different order. A pending call remains visible; when it succeeds, it joins adjacent successful calls without crossing a failure. Session shutdown releases the old context before Pi can render a transition frame, so creating a new session does not crash or retain the previous group's members.
 
-The group summary can collapse its members even after Ctrl+O expanded all tools. A later Ctrl+O change resets that local override. Assistant text, Thoughts (including hidden Thoughts), writes and new user turns separate groups. Host tests also cover local result limits, no-match outcomes and Web batch failures between successful reads.
+The group heading can collapse its members even after Ctrl+O expanded all tools. A later Ctrl+O change resets that local override. Assistant text, Thoughts (including hidden Thoughts), writes and new user turns separate groups. Host tests also cover local result limits, no-match outcomes and Web batch failures between successful reads.
 
 Cancelling a pending Web call between completed reads leaves its result visible in place. The successful reads remain separate groups, and a later turn does not merge across the cancelled call or replay the request. The assistant's cancellation message remains native.
 
-These 100-column captures show global expansion followed by a click on the group summary. Pi 0.87.0 / Bun 1.4.0, default dark theme, isolated deterministic provider, with native quiet startup enabled. Export fonts match the welcome captures. The global status remains expanded after the local group closes.
+These captures show the same sessions with the group opened by mouse. The tools remain aligned with other conversation tools, and their bodies remain individually collapsible.
 
-![Retrieval members after Ctrl+O](assets/ui/retrieval-global-expanded.png)
+![Expanded retrieval group, dark](assets/ui/tool-layout-dark-expanded.png)
 
-![The same group locally collapsed](assets/ui/retrieval-local-collapsed.png)
+![Expanded retrieval group, Catppuccin Latte](assets/ui/tool-layout-latte-expanded.png)
 
 Read results containing images stay outside text groups and delegate result rendering to Pi. Pi retains image display, conversion and its text fallback with MIME type and dimensions. The fallback has been checked on the pinned host and the installed Pi 0.87.0 compiled host; actual Kitty/Ghostty image display still needs visual acceptance.
 
@@ -84,31 +76,13 @@ WebRead find with no excerpts shows `No matches found`; an empty page shows `No 
 
 WebSearch's query/provider/selection/fallback header is also expansion-only. An empty search body shows `No results found`. Source text that resembles this header is retained, including fetched pages and multiline queries.
 
-These Pi 0.87.0 / Bun 1.4.0 captures use the real search implementation with deterministic transport under a test alias, at 100 columns in the default dark theme. They verify display, not live search or grouping. Export fonts match the welcome captures.
-
-![Compact Search results](assets/ui/search-compact.png)
-
-![Expanded Search results](assets/ui/search-expanded.png)
-
-The following compiled Pi 0.87.0 / Bun 1.4.0 captures show a limited Read, two fetched pages and a WebRead with no matches, first compact and then expanded. They use an isolated deterministic provider, default dark theme and 100 columns; export fonts match the welcome captures. The expanded view retains each page's metadata beside its body.
-
-![Body counts and visible no-match result](assets/ui/retrieval-counts-compact.png)
-
-![Expanded bodies and associated metadata](assets/ui/retrieval-counts-expanded.png)
-
-Tool errors and notices keep one `⎿` per result block, with wrapped continuations aligned beneath the text. The 60-column capture includes actual Read/Write errors and a Web authentication warning; no credential value is displayed.
-
-![Tool errors and Web warning, 60 columns](assets/ui/tool-errors-dark-60.png)
+Tool errors and notices keep one `⎿` per result block, with the same two-space gap and aligned continuations as ordinary output.
 
 ## Third-party tools
 
 Third-party renderers remain unchanged by default. Set `ui.takeoverTools` to an array of exact tool API names, such as `["foreign_job"]`, then reload to use generic presentation for those tools. The heading shows the tool's label and JSON arguments; retained text is compact by default and opens with Pi's native disclosure. Errors remain visible. Generic results do not enter retrieval groups or interpret native-tool metadata. Image results retain the existing renderer when available. Execution, schemas and model-visible results are unchanged.
 
 This file-only option is preserved when saving common settings through `/ui`. Unknown names do not register or enable tools. Built-ins and Pi Stuff's own Web tools retain their dedicated presentation even if listed. Remove a name and reload to restore its third-party renderer, including on retained history.
-
-The capture below uses a third-party-shaped fixture in compiled Pi 0.87.0 / Bun 1.4.0, Pi dark theme and 100×32 cells. The two calls demonstrate a hidden text result and a visible failure. It is a Terminal Control export using the welcome capture's font stack, not acceptance of an installed third-party package or a Ghostty window.
-
-![Explicit generic takeover](assets/ui/third-party-takeover-dark-100.png)
 
 ## Configuration
 
@@ -143,6 +117,8 @@ Open `/ui` for the global switch, retrieval grouping, preview limits and code pr
 The UI implementation is owned by `src/ui/`; the entrypoint registers it after shared configuration decoding. The options above are implemented.
 
 ## Verification status
+
+Terminal Control 1.2.1 misplaces a combining mark in the last column when autowrap is disabled. This reproduces with `printf` alone, without Pi. At the affected 60-column boundary, tests check this expansion's emitted ANSI for the complete combining sequence, plus screen base-character order and accent count; 80/120-column checks compare the full displayed text. The limitation is in virtual-terminal cell capture, not evidence that physical-terminal rendering has been verified.
 
 Retrieval results reuse Pi's native result component and retain only the current width's layout. The final six-process, 321-call comparison measured repeated expansion at a median 5,918 ms with UI off and 36 ms with UI on; resume was 49 ms off and 73 ms on. In a separate paced-stream comparison, host CPU increased 8.2% and final instantaneous RSS was about 69 MiB higher with UI on. These workloads showed no sustained output backlog, but do not establish zero overhead or universal performance bounds. [Measurements and limits](ui-performance.md) retain the raw observations and earlier optimization experiments.
 

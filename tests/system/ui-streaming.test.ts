@@ -84,35 +84,35 @@ test('Bash disclosure follows streamed output, completion, width and theme', asy
           'cat initial.txt; while [ ! -f advance ]; do sleep 0.05; done; cat appended.txt; while [ ! -f finish ]; do sleep 0.05; done',
       }),
     );
-    await host.terminal.screen.waitForText('⎿ SECOND', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('⎿  SECOND', {timeoutMs: 5000});
     await host.terminal.keyboard.press('Control+O');
-    await host.terminal.screen.waitForText('⎿ FIRST', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('⎿  FIRST', {timeoutMs: 5000});
     await host.terminal.keyboard.press('Control+O');
-    await host.terminal.screen.waitForText('⎿ SECOND', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('⎿  SECOND', {timeoutMs: 5000});
     await writeFile(join(host.directory, 'advance'), 'ready');
-    await host.terminal.screen.waitForText('⎿ WIDE_', {timeoutMs: 5000});
+    await host.terminal.screen.waitForText('⎿  WIDE_', {timeoutMs: 5000});
     const running = await host.terminal.screen.capture({
       allowIncomplete: true,
       deadlineMs: 200,
     });
     expect(running.text).toContain('FINAL_ROW');
     expect(running.text).toContain('3 more lines');
-    expect(running.text).not.toContain('⎿ SECOND');
+    expect(running.text).not.toContain('⎿  SECOND');
     await writeFile(join(host.directory, 'finish'), 'ready');
     await host.terminal.screen.waitForText('RTK_TURN_1_DONE', {
       timeoutMs: 5000,
     });
     const complete = await host.terminal.screen.text();
-    expect(complete).toContain('⎿ FIRST');
+    expect(complete).toContain('⎿  FIRST');
     expect(complete).toContain('2 more lines');
-    expect(complete).toContain('Completed');
+    expect(complete).not.toContain('Completed');
     expect(complete).not.toContain('FINAL_ROW');
     await host.terminal.keyboard.press('Control+O');
     await host.terminal.screen.waitForText('FINAL_ROW', {timeoutMs: 5000});
     const dark = await host.terminal.screen.capture();
     const darkY = dark.text.split('\n').findIndex(row => row.includes('WIDE_'));
     const darkColor = dark.frame.cells.find(
-      cell => cell.y === darkY && cell.x === 4,
+      cell => cell.y === darkY && cell.x === 5,
     )?.foreground;
     expect(darkColor).toBeDefined();
     await host.command('/host-theme catppuccin-latte');
@@ -124,7 +124,7 @@ test('Bash disclosure follows streamed output, completion, width and theme', asy
       .split('\n')
       .findIndex(row => row.includes('WIDE_'));
     const lightColor = light.frame.cells.find(
-      cell => cell.y === lightY && cell.x === 4,
+      cell => cell.y === lightY && cell.x === 5,
     )?.foreground;
     expect(lightColor).toBeDefined();
     expect(lightColor).not.toEqual(darkColor);
