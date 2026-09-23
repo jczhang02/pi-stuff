@@ -26,3 +26,6 @@ A distinct piece of status information shown in Pi Stuff's session footer, such 
 
 **Third-party status segment**:
 A statusline segment whose information is supplied by another extension, rather than by Pi Stuff's core statusline.
+
+**Cache-hit ratio**:
+The proportion of input tokens served from cache in the latest valid model response on the current session branch. It is not a cumulative session ratio.

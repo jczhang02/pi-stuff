@@ -26,3 +26,6 @@ Pi Stuff 会话底栏中一项独立的状态信息, 例如上下文用量或 Gi
 
 **第三方状态字段 (Third-party status segment)**:
 由其他扩展提供信息的状态字段, 区别于 Pi Stuff 核心 statusline 自身提供的字段.
+
+**缓存命中率 (Cache-hit ratio)**:
+当前会话分支最近一次有效模型响应中, 由缓存提供的输入 token 比例. 它不是会话累计比例.
